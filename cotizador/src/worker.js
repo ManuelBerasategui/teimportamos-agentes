@@ -1,5 +1,5 @@
 /**
- * Agente de WhatsApp · Te Importamos (v14.7)
+ * Agente de WhatsApp · Te Importamos (v14.8)
  * Cloudflare Workers + Gemini (gratis) con respaldo de Cloudflare AI.
  *
  * Variables: WA_TOKEN, WA_PHONE_ID, VERIFY_TOKEN, GEMINI_KEY, ADMIN_PHONE (varios separados por coma)
@@ -729,7 +729,8 @@ Antes de derivar juntá estos datos, preguntando de a 1 o 2 cosas por mensaje y 
  b) cantidad (unidades/pares)
  c) talles y cantidad por talle (si es ropa o calzado) o variantes (color, capacidad, etc.)
  d) si busca solo ese modelo o también otros (cuáles)
- e) origen y calidad: réplica de China, original, de algún lugar en particular, o le da lo mismo
+ e) original o réplica
+ f) si ya tiene proveedor o necesita que se lo busquemos
 Cuando tengas TODO (o el cliente diga que le da lo mismo lo que falte), poné "datos_completos": true y avisale que el equipo lo busca con proveedores. Mientras falte algo, "datos_completos": false y preguntá lo que falta.
 
 PESO DESDE IMÁGENES: solo completá peso_kg de una captura si ves claramente el rótulo "peso bruto" / "gross weight" / "single gross weight" POR UNIDAD. Si no estás seguro, dejalo null (el sistema se lo pide por escrito al cliente). Nunca confundas peso con medidas, precio o cantidad.
@@ -742,7 +743,8 @@ ${NEGOCIO.guiaAlibaba("")}
 - Si escribe los datos a mano (precios por cantidad y peso), tomalos como válidos.
 - China/Alibaba: pedí el link o 2 capturas (tabla de precios por cantidad + "Empaque y entrega" con peso bruto) y la cantidad.
 - Si manda una foto o nombre de un producto que hay que salir a buscar (marca, iPhone, ropa, calzado, camisetas, algo sin captura de proveedor con precios): marcá requiere_busqueda true, completá descripcion_producto con todo lo visible y seguí el PROTOCOLO DE BÚSQUEDA. NO pidas capturas de Alibaba en ese caso.
-- Si la cantidad es menor al mínimo, explicá con amabilidad por qué hay mínimos.
+- Si la cantidad es menor al mínimo del proveedor: NUNCA le propongas subir al mínimo ni le cambies la cantidad. Se cotiza por la cantidad que pidió y el equipo busca otro proveedor que venda esa cantidad.
+- FOTOS: mirá con atención cada imagen que manda (producto, precios, textos, peso) y usá lo que se ve. Nunca digas que no la ves ni pidas el link si ya mandó foto o link. Si no se lee el precio, pedilo UNA sola vez.
 - Nunca asumas la cantidad: cada producto nuevo requiere que el cliente diga cuántas unidades quiere.
 - Mientras estés juntando datos para cotizar, NO derives.
 - NUNCA prometas averiguar algo vos (peso, proveedor, precio): si el cliente no puede darte un dato, poné accion "derivar" con estado "consulta" y decile que lo ve el equipo.
@@ -1281,7 +1283,10 @@ async function procesar(env, de, msg, nombre) {
 
   // ¿Es solo un saludo (o el texto automático del link de Instagram/TikTok) sin ninguna consulta concreta?
   const sinRelleno = texto.replace(MENSAJE_LINK, " ").replace(/\b(buenas tardes|buenas noches|buen d[ií]a|buenos d[ií]as|hola+|buenas+|holis?|hey|qu[eé] tal|qu[eé] onda|c[oó]mo (va|andas|est[aá]s)|todo bien)\b/gi, " ").replace(/[\s!?.,¿¡]+/g, "");
-  const saludoPuro = msg.type === "text" && sinRelleno.length === 0;   // saludo o texto del link de IG sin consulta: va el menú
+  // Intención genérica sin producto ("quiero importar", "quiero traer un producto", "una consulta"): también va el menú
+  const sinGenerico = sinRelleno.length && sinRelleno.length < 70 ? texto.replace(MENSAJE_LINK, " ").replace(/\b(buenas tardes|buenas noches|buen d[ií]a|buenos d[ií]as|hola+|buenas+|holis?|hey|qu[eé] tal|qu[eé] onda|c[oó]mo (va|andas|est[aá]s)|todo bien|como va|gracias)\b/gi, " ")
+    .replace(/\b(te|les?) (hago|queria hacer|quer[ií]a hacer) una consulta\b|\buna consulta\b|\bconsulta\b|\binfo(rmaci[oó]n)?\b|\b(yo )?(quiero|quisiera|quer[ií]a|me gustar[ií]a|necesito|busco|estoy (buscando|queriendo|pensando en))( poder)? (importar|traer|comprar)( (un|una|unos|unas|algo|algunos?|algunas?|productos?|cosas|mercader[ií]a|de china|desde china|de afuera|del exterior|para revender|para vender|por mayor|al por mayor))*\b|\bc[oó]mo (es|funciona|trabajan)( para importar| el tema)?\b|\bimportan\b|\bc[oó]mo (hago|puedo) (para )?importar\b/gi, " ").replace(/[\s!?.,¿¡]+/g, "") : "x";
+  const saludoPuro = msg.type === "text" && (sinRelleno.length === 0 || sinGenerico.length === 0);   // saludo o texto del link de IG sin consulta: va el menú
   const inactivo = !ultimoAnterior || Date.now() - ultimoAnterior > 12 * 3600e3;
   const casoAbierto = (e.derivado && Date.now() - Date.parse(e.derivado.cuando) < 3 * 86400e3) || e.actual?.nombre || (e.combo && e.combo.paso !== "armado") || Object.keys(e.listos || {}).length && !inactivo;
   // Menú: solo cuando no dijo qué busca. Si ya preguntó algo concreto, la IA le responde directo (saludando)
@@ -1467,7 +1472,8 @@ async function procesar(env, de, msg, nombre) {
   const charlaCliente = `${texto} ${r.descripcion_producto || ""} ${e.historial.filter((h) => h.r === "c").slice(-6).map((h) => h.t).join(" ")}`;
   const rubroBusqueda = /zapatill|calzado|camiset|remera|buzo|ropa|indumentaria|campera|jean|pantal|botin|nba|nfl|futbol|fútbol/i.test(charlaCliente);
   const sinPrecios = !e.actual.tramos?.length && !(p.tramos || []).some((t) => num(t.precio));
-  const necesitaBusqueda = !e.actual.tramos?.length && !pag && (r.requiere_busqueda === true || (img && sinPrecios && rubroBusqueda) || (link && !/alibaba|1688|aliexpress|made-in-china/i.test(link)));
+  if (pag || e.actual.tramos?.length || (img && r.es_proveedor === true)) e.busq = null;   // llegó un proveedor con precios: deja de ser búsqueda
+  const necesitaBusqueda = !e.actual.tramos?.length && !pag && (!!e.busq || r.requiere_busqueda === true || (img && sinPrecios && rubroBusqueda) || (link && !/alibaba|1688|aliexpress|made-in-china/i.test(link)));
 
   // Deriva al equipo: avisa con todo el caso, reenvía la foto y pausa al agente con ese cliente
   const derivarCaso = async (estado, resumen, msgCliente, yaRespondio) => {
@@ -1507,17 +1513,18 @@ async function procesar(env, de, msg, nombre) {
   const enCotizacion = traeProducto || pesoTexto || confirmaPeso || soloDatos || noEncuentra || (e.actual.nombre && (cantidadTexto || aceptaMinimo));
   e.esperaPeso = false;
 
-  if (listo && e.cantidad < minimo) {
-    e.ofrecido = minimo; e.cantidad = null;
-    await decir(`el proveedor vende desde ${minimo} unidades, es el minimo que pide la fabrica||te cotizo esa cantidad?||si no podemos ver un cupo compartido con otros clientes`);
-  } else if (listo) {
+  // Pide menos que el mínimo del proveedor: se cotiza IGUAL por la cantidad que pidió (nunca se le cambia la cantidad);
+  // el equipo busca otro proveedor que venda esa cantidad
+  const bajoMinimo = listo && e.cantidad < minimo;
+  if (listo) {
     e.pidioPeso = 0;
     const item = { ...e.actual, cantidad: e.cantidad };
     e.listos = [...(e.listos || []).filter((x) => x.nombre !== item.nombre), item].slice(-5);
     const textos = [textoCotizacion([item], e.oferta)];
     if (e.listos.length > 1) textos.push(textoCotizacion(e.listos, e.oferta));
     e.actual = {}; e.cantidad = null;
-    const modo = (await env.ESTADO.get("modo")) || "aprobacion";
+    const modo = bajoMinimo ? "aprobacion" : (await env.ESTADO.get("modo")) || "aprobacion";
+    if (bajoMinimo) await crearTarea(env, { tipo: "proveedor", tel: de, nombre: e.nombre, titulo: `Buscar proveedor que venda ${item.cantidad} u de ${item.nombre || "el producto"} (el actual pide mínimo ${minimo})`, detalle: `El cliente quiere ${item.cantidad} unidades. El proveedor del link vende desde ${minimo}.${item.link ? "\nLink: " + item.link : ""}` });
     if (modo === "auto") {
       for (const t of textos) await decir(t);
       await evento(env, "cotizacion", de, `china|${item.nombre || ""}`);
@@ -1528,7 +1535,7 @@ async function procesar(env, de, msg, nombre) {
       await env.ESTADO.put(`pend:${id}`, JSON.stringify({ para: de, textos }), { expirationTtl: 3 * 86400 });
       await decir("listo ya tengo todo||estoy terminando de armar tu cotizacion y en un ratito te la paso");
       await env.ESTADO.put("pend:ultimo", id, { expirationTtl: 3 * 86400 });
-      await crearTarea(env, { tipo: "cotizacion", tel: de, nombre: e.nombre, ref: id, titulo: `${cotizarItems([item]).total > 8000 || precioPorCantidad(item.tramos, item.cantidad) > 300 ? "⚠️ REVISAR MONTO · " : ""}Cotización: ${item.nombre || "producto"} x${item.cantidad}${item.estimado ? " (PESO ESTIMADO " + item.peso_kg + " kg)" : item.pesoFoto ? " (peso leído de la foto: " + item.peso_kg + " kg)" : ""}`, detalle: textos.join("\n\n———\n\n") + `\n\nDATOS USADOS: precio unitario USD ${precioPorCantidad(item.tramos, item.cantidad).toFixed(2)}${e.origenPrecio ? " (" + e.origenPrecio + ")" : ""} · peso ${item.peso_kg} kg/u${item.estimado ? " ESTIMADO" : item.pesoFoto ? " leído de la foto" : ""} · cantidad ${item.cantidad}` + (item.link ? "\nLink: " + item.link : "") });
+      await crearTarea(env, { tipo: "cotizacion", tel: de, nombre: e.nombre, ref: id, titulo: `${bajoMinimo ? "⚠️ BAJO MÍNIMO (prov. pide " + minimo + ") · " : ""}${cotizarItems([item]).total > 8000 || precioPorCantidad(item.tramos, item.cantidad) > 300 ? "⚠️ REVISAR MONTO · " : ""}Cotización: ${item.nombre || "producto"} x${item.cantidad}${item.estimado ? " (PESO ESTIMADO " + item.peso_kg + " kg)" : item.pesoFoto ? " (peso leído de la foto: " + item.peso_kg + " kg)" : ""}`, detalle: textos.join("\n\n———\n\n") + `\n\nDATOS USADOS: precio unitario USD ${precioPorCantidad(item.tramos, item.cantidad).toFixed(2)}${e.origenPrecio ? " (" + e.origenPrecio + ")" : ""} · peso ${item.peso_kg} kg/u${item.estimado ? " ESTIMADO" : item.pesoFoto ? " leído de la foto" : ""} · cantidad ${item.cantidad}` + (item.link ? "\nLink: " + item.link : "") });
       await avisoCorto(env, "Fijate que te dejé una cotización para confirmar. Panel > Pendientes");
     }
     r.accion = "ninguna";
@@ -1539,18 +1546,42 @@ async function procesar(env, de, msg, nombre) {
     r.accion = "ninguna";
     await guardarLead(env, de, e, { ...r, lead: { ...(r.lead || {}), interes: encontrados[0].nombre, etapa: "consulta" } });
     return guardar();
-  } else if (necesitaBusqueda && r.datos_completos !== true && (e.busquedaTurnos || 0) < 5 && r.accion !== "derivar") {
-    // Todavía faltan datos (foto, cantidad, talles, otros modelos, origen/calidad): los pide antes de derivar
-    e.busquedaTurnos = (e.busquedaTurnos || 0) + 1;
+  } else if (necesitaBusqueda) {
+    // PROTOCOLO DE BÚSQUEDA determinístico: registra lo que YA mandó (foto/link, cantidad, original o réplica, proveedor)
+    // y pregunta cada cosa que falta UNA sola vez. Nunca pide capturas de Alibaba acá.
+    const b = e.busq || (e.busq = { pregunto: {} });
+    const hist = e.historial.filter((h) => h.r === "c");
+    if (link || img || hist.some((h) => h.img || /https?:\/\//i.test(h.t))) b.ref = b.ref || link || "foto";
     if (img) e.fotoBusqueda = msg.image?.id || e.fotoBusqueda;
-    e.actual = {};   // no es un producto de proveedor: no se piden capturas de Alibaba
-    await decir(r.respuesta || "contame un poco mas||cuantas unidades y que talles necesitas?");
+    if (link) b.link = link;
+    if (cantidadTexto && !b.cant) b.cant = cantidadTexto;
+    if (b.cant) e.cantidad = e.cantidad || b.cant;
+    if (/original|r[eé]plica|replica|copia|imitaci|\b(aaa|1:1|g5|ag)\b|me da (lo mismo|igual)|cualquiera/i.test(texto)) b.calidad = /original/i.test(texto) && !/r[eé]plica|copia/i.test(texto) ? "original" : /me da (lo mismo|igual)|cualquiera/i.test(texto) ? "le da igual" : "réplica";
+    if (/proveedor|busc(alo|alos|ala|alas|ame|amelo|uen|ar)|no tengo|ya tengo|consegu(ime|ilo|ir)|ustedes/i.test(texto) && b.pregunto.prov) b.prov = /ya tengo|tengo (un |el )?proveedor|mi proveedor/i.test(texto) ? "tiene proveedor" : "que lo busquemos";
+    const ropa = rubroBusqueda;
+    if (ropa && /talle|\b(3[4-9]|4[0-6]|xs|s|m|l|xl|xxl)\b/i.test(texto)) b.talles = true;
+    const falta = [
+      !b.ref && ["ref", "me pasas una foto o link de referencia del producto?"],
+      !b.cant && ["cant", "cuantas unidades queres traer?"],
+      ropa && !b.talles && ["talles", "que talles y cuantos de cada uno?"],
+      !b.calidad && ["calidad", "lo queres original o replica?"],
+      !b.prov && ["prov", "ya tenes proveedor o queres que te lo busquemos nosotros?"],
+    ].filter((x) => x && !b.pregunto[x[0]]);
+    const completo = b.ref && b.cant && b.calidad && (b.prov || b.pregunto.prov) && (!ropa || b.talles || b.pregunto.talles);
+    if (completo || !falta.length || r.accion === "derivar") {
+      const det = `Busca ${r.descripcion_producto || e.actual.nombre || "un producto"}${b.cant ? " x" + b.cant : ""}${b.calidad ? " · " + b.calidad : ""}${b.prov ? " · " + b.prov : ""}${b.link ? " · link: " + b.link : ""}`;
+      e.busq = null;
+      return derivarCaso("busqueda_proveedor", det, DERIVACION.alCliente());
+    }
+    const pedir = falta.slice(0, 2);
+    for (const [k] of pedir) b.pregunto[k] = 1;
+    const visto = link ? `ya vi el link${r.descripcion_producto ? " (" + r.descripcion_producto.slice(0, 60) + ")" : ""}` : img ? `ya vi la foto${r.descripcion_producto ? ", " + r.descripcion_producto.slice(0, 60) : ""}` : "";
+    const respuestaIA = /\?/.test(texto) && r.respuesta ? r.respuesta.split("||")[0] : "";
+    await decir([respuestaIA || (visto ? `${ok()}, ${visto}` : ok()), ...(pedir.length ? pedir.map((x) => x[1]) : ["me pasas una foto o link de referencia?"])].join("||"));
     if (r.resumen_cliente) e.resumen = r.resumen_cliente;
+    e.actual = {};
     await guardarLead(env, de, e, { ...r, lead: { ...(r.lead || {}), etapa: "consulta", interes: r.descripcion_producto || "búsqueda" } });
     return guardar();
-  } else if (necesitaBusqueda) {
-    e.busquedaTurnos = 0;
-    return derivarCaso("busqueda_proveedor", `Busca ${r.descripcion_producto || e.actual.nombre || "un producto"}${e.cantidad ? " x" + e.cantidad : ""}`, DERIVACION.alCliente());
   } else if (enCotizacion && !(traeProducto || pesoTexto || confirmaPeso) && r.respuesta && (/\?|se puede|puedo|cu[aá]nto|c[oó]mo|m[ií]nimo|menos|tama[nñ]o|medida|plazo|tarda|demora|env[ií]o|precio/i.test(texto) || ((e.actual.tramos || []).length && e.ultimaFirma === `${(e.actual.tramos || []).length}|${!!e.actual.peso_kg}|${e.actual.nombre}`))) {
     // El cliente preguntó algo (o ya le pedimos esto mismo): la IA responde la pregunta y pide lo que falta, sin repetir el texto fijo
     await decir(r.respuesta);
@@ -1560,9 +1591,9 @@ async function procesar(env, de, msg, nombre) {
     if (!tramos.length) {
       // Nunca pedir lo mismo dos veces igual: 1ª captura, 2ª el precio escrito, 3ª lo cotiza el equipo
       e.pidioCaptura = (e.pidioCaptura || 0) + 1;
-      if (e.pidioCaptura >= 3) { e.pidioCaptura = 0; return derivarCaso("consulta", `No logró leer el precio de ${e.actual.nombre || "el producto"}${e.actual.link ? " (" + e.actual.link + ")" : ""}${e.cantidad ? " x" + e.cantidad : ""}: cotizalo vos`, "dale, lo cotizamos nosotros y te pasamos el precio en un rato", true); }
-      if (e.pidioCaptura === 2) await decir(`no llego a ver el precio${nom ? " de" + nom.replace(" de", "") : ""}||escribime nomas el precio por unidad que ves en la publicacion (ej: US$ 2,50 o ¥18)${!e.cantidad ? " y cuantas unidades queres" : ""}`);
-      else await decir(`genial${nom ? ", vi que es" + nom.replace(" de", "") : ""}||me pasas captura de la parte de precios? (donde dice US$ o ¥ y las cantidades)${!e.cantidad ? "||y cuantas unidades queres traer?" : ""}`);
+      if (e.pidioCaptura >= 2) { e.pidioCaptura = 0; return derivarCaso("consulta", `No logró leer el precio de ${e.actual.nombre || "el producto"}${e.actual.link ? " (" + e.actual.link + ")" : ""}${e.cantidad ? " x" + e.cantidad : ""}: cotizalo vos`, "dale, lo cotizamos nosotros y te pasamos el precio en un rato", true); }
+      if (false) await decir(`no llego a ver el precio${nom ? " de" + nom.replace(" de", "") : ""}||escribime nomas el precio por unidad que ves en la publicacion (ej: US$ 2,50 o ¥18)${!e.cantidad ? " y cuantas unidades queres" : ""}`);
+      else await decir(`genial${nom ? ", vi que es" + nom.replace(" de", "") : ""}||no llego a ver bien el precio||me pasas captura de la parte de precios (donde dice US$ o ¥ y las cantidades) o me escribis el precio por unidad?${!e.cantidad ? "||y cuantas unidades queres traer?" : ""}`);
     }
     else if (!e.actual.peso_kg) {
       e.esperaPeso = true;
