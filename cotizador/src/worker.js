@@ -1,5 +1,5 @@
 /**
- * Agente de WhatsApp · Te Importamos (v14.8)
+ * Agente de WhatsApp · Te Importamos (v14.9)
  * Cloudflare Workers + Gemini (gratis) con respaldo de Cloudflare AI.
  *
  * Variables: WA_TOKEN, WA_PHONE_ID, VERIFY_TOKEN, GEMINI_KEY, ADMIN_PHONE (varios separados por coma)
@@ -1210,6 +1210,29 @@ const SALUDO = /^(hola|buenas|buen d[ií]a|buenas tardes|buenas noches|hey|holi)
 // Texto automático del link wa.me de Instagram/TikTok
 const MENSAJE_LINK = /vi un video tuyo y quiero importar un producto\.?/gi;
 
+const histC2 = (e) => e.historial.filter((h) => h.r === "c").slice(-3).map((h) => h.t).join(" ");
+// ---- Red de seguridad sobre lo que escribe la IA (errores reales vistos en los chats) ----
+const PROFORMA = /proforma|packing ?list|pack ?list|packlist|factura comercial|\binvoice\b|lista de (productos|precios) del proveedor/i;
+async function corregirRespuesta(env, de, e, texto, r) {
+  let t = String(r.respuesta || "");
+  const histC = e.historial.filter((h) => h.r === "c").slice(-8).map((h) => h.t).join(" ");
+  // 1) Dice que armó / va a mandar un combo sin listarlo (Leonn): se arma de verdad o se pide el presupuesto
+  if (!r.armar_combo && /(arm[eéo]|gener[oó]|prepar[oé]|te paso|te mando|te detallo).{0,40}combo|combo.{0,30}(con lo mejor|que armamos|incluye)|te (mando|paso|detallo) (las opciones|los productos|el detalle)/i.test(t) && !/https?:/.test(t)) {
+    const presu = presupuestoEnTexto(texto) || presupuestoEnTexto(histC);
+    if (presu) r.armar_combo = { rubro: null, presupuesto: presu, preferencia: "surtido", elegidos: [] };
+    else t = "dale, te lo armo con productos y cantidades||con que presupuesto contas mas o menos?";
+  }
+  // 2) Promete "te paso el link / catálogo / opciones / foto" y no lo manda (Juanch, Libreriatomi, Dylan)
+  if (/te (paso|mando|env[ií]o|dejo|muestro|comparto)\b.{0,35}(link|cat[aá]logo|opciones|fotos?|modelos|lo que m[aá]s sale|lo que hay)/i.test(t) && !/https?:/.test(t)) {
+    if (/grupo/i.test(t)) t = t.replace(/,?\s*dame un (segundo|minuto)[^|/]*/i, "") + "||" + NEGOCIO.grupoMayorista;
+    else t = t.replace(/te paso la foto[^|/]*/i, "las fotos las ves en la web") + `||${WEB}/catalogo`;
+  }
+  t = t.replace(/,?\s*dame un (segundo|minutito|minuto) que (lo|la|te lo) busco/gi, "");
+  // 3) Nunca adelanta montos mientras hay una cotización esperando aprobación (Lucas)
+  if (/(usd|u\$s|us\$|d[oó]lares)\s*\d|\d[\d.,]*\s*(usd|d[oó]lares)/i.test(t) && (await hayTarea(env, de, "cotizacion"))) t = "ya casi la tengo||apenas este lista te paso la cotizacion completa por aca";
+  return t;
+}
+
 async function procesar(env, de, msg, nombre) {
   if (msg.type === "audio" && !(await env.ESTADO.get(`pausa:${de}`))) {
     const t = await transcribir(env, msg.audio.id).catch(() => null);
@@ -1280,6 +1303,12 @@ async function procesar(env, de, msg, nombre) {
   const ultimoAnterior = e.ultimoMensaje;
   e.ultimoMensaje = Date.now();
   if (e.esVaper) { e.esVaper = false; await derivarVaper(env, de, e, decir); await guardarLead(env, de, e, { lead: { etapa: "derivado", interes: "vapers" } }); return guardar(); }
+  // Pide el grupo de WhatsApp: se pasa el link directo (antes prometía buscarlo y derivaba)
+  if (msg.type === "text" && /\bgrupo\b/i.test(texto) && /whats|sum|entr|un[ií]|link|pas|quiero|agreg|meter/i.test(texto) && texto.length < 120) {
+    await decir(NEGOCIO.opcion4(NEGOCIO.grupoMayorista));
+    await guardarLead(env, de, e, { lead: { interes: "grupo mayorista" } });
+    return guardar();
+  }
 
   // ¿Es solo un saludo (o el texto automático del link de Instagram/TikTok) sin ninguna consulta concreta?
   const sinRelleno = texto.replace(MENSAJE_LINK, " ").replace(/\b(buenas tardes|buenas noches|buen d[ií]a|buenos d[ií]as|hola+|buenas+|holis?|hey|qu[eé] tal|qu[eé] onda|c[oó]mo (va|andas|est[aá]s)|todo bien)\b/gi, " ").replace(/[\s!?.,¿¡]+/g, "");
@@ -1354,6 +1383,7 @@ async function procesar(env, de, msg, nombre) {
     await alertaRiesgo(env, de, e, `la IA no respondió. Último mensaje: ${texto || "(imagen)"}`, true);
     return guardar();
   }
+  if (r.respuesta) r.respuesta = await corregirRespuesta(env, de, e, texto, r);
   // ---- Comprobante de pago ----
   if (img && r.comprobante) {
     const id = id4(), cp = r.comprobante;
@@ -1460,11 +1490,14 @@ async function procesar(env, de, msg, nombre) {
   if (!e.actual.peso_kg && !pesoTexto && e.esperaPeso && e.pesoEstimado && e.actual.tramos?.length && (/no (s[eé]|lo s[eé]|tengo|figura|dice|aparece|encuentro|encontr|sabr)|ni idea|no hay/i.test(texto) || (e.pidioPeso || 0) >= 2)) { e.actual.peso_kg = e.pesoEstimado; e.actual.estimado = true; }
   if (!traeProducto && !pesoTexto && !e.actual.peso_kg && num(p.peso_kg)) e.actual.peso_kg = num(p.peso_kg);
 
+  // Cantidad dicha ANTES de mandar el producto ("necesitamos 15", "unas 50"): se recuerda para no volver a preguntarla
+  if (cantidadTexto && !/\$|pesos|mil\b|\bk\b|presupuesto|lucas|ars/i.test(sinLink) && cantidadTexto < 100000) e.cantidadDicha = cantidadTexto;
   // ---- Cantidad: solo si la escribió en ESTE mensaje ----
   const aceptaMinimo = e.ofrecido && !cantidadTexto && /\b(s[ií]|dale|de una|ok|okey|bueno|esa|perfecto|va|avancemos|cotizame)\b/i.test(texto);
   if (aceptaMinimo) e.cantidad = e.ofrecido;
   else if (cantidadTexto && (e.actual.tramos?.length || e.actual.nombre || traeProducto)) e.cantidad = cantidadTexto;
   e.ofrecido = null;
+  if (!e.cantidad && e.cantidadDicha && e.actual.nombre) e.cantidad = e.cantidadDicha;
   if (r.resumen_cliente) e.resumen = r.resumen_cliente;
 
   // Producto sin proveedor (foto suelta, marca, ropa, link de ML...): no se puede cotizar solo
@@ -1516,8 +1549,12 @@ async function procesar(env, de, msg, nombre) {
   // Pide menos que el mínimo del proveedor: se cotiza IGUAL por la cantidad que pidió (nunca se le cambia la cantidad);
   // el equipo busca otro proveedor que venda esa cantidad
   const bajoMinimo = listo && e.cantidad < minimo;
-  if (listo) {
+  if (PROFORMA.test(texto) || (img && PROFORMA.test(histC2(e)))) {
+    // Proforma / packing list con varios productos: la cotiza el equipo con esos datos (no se piden precios ni pesos de a uno)
+    return derivarCaso("consulta", `Mandó proforma / packing list para cotizar${e.actual?.nombre ? " (" + e.actual.nombre + ")" : ""}: armá la cotización con esos datos`, "buenisimo, con eso armamos la cotizacion||lo revisa el equipo y te la pasamos en un rato", true);
+  } else if (listo) {
     e.pidioPeso = 0;
+    if (/\?/.test(texto) && r.respuesta && !/\d/.test(r.respuesta)) await decir(r.respuesta.split("||")[0]);   // primero responde lo que preguntó
     const item = { ...e.actual, cantidad: e.cantidad };
     e.listos = [...(e.listos || []).filter((x) => x.nombre !== item.nombre), item].slice(-5);
     const textos = [textoCotizacion([item], e.oferta)];
@@ -1539,7 +1576,7 @@ async function procesar(env, de, msg, nombre) {
       await avisoCorto(env, "Fijate que te dejé una cotización para confirmar. Panel > Pendientes");
     }
     r.accion = "ninguna";
-  } else if (necesitaBusqueda && !/\b(no|ni)\b/i.test(texto) && r.ofrecer_catalogo === true && (encontrados = buscarEnCatalogo(await catalogo(env), `${texto} ${r.descripcion_producto || ""}`)).length && encontrados.map((x) => x.nombre).join() !== (e.catalogoOfrecido || []).join()) {
+  } else if (necesitaBusqueda && !/\b(no|ni)\b/i.test(texto) && r.ofrecer_catalogo === true && (encontrados = buscarEnCatalogo(await catalogo(env), `${texto} ${r.descripcion_producto || ""}`)).length && !(e.catalogoOfrecido || []).length && !/no (quiero|busco|me interesa)|eso no|otra cosa/i.test(texto)) {
     // Lo tenemos en el catálogo: se ofrece directo, sin derivar
     e.catalogoOfrecido = encontrados.map((x) => x.nombre);
     await decir(`${ok()}, eso lo tenemos||${encontrados.map((x) => `- ${x.nombre} ${pesos(x.precio)} por transferencia\n${x.url}`).join("\n\n")}||cuantas unidades necesitas? el minimo suele ser de 5`);
