@@ -1,0 +1,13 @@
+// Worker del agente de WhatsApp + panel. Lo publica Cloudflare solo al subir cambios a GitHub.
+// Las claves (WA_TOKEN, GEMINI_KEY, VERIFY_TOKEN, PANEL_USUARIOS, etc.) viven en Cloudflare, NO acá.
+{
+  "name": "cotizador",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-10-01",
+  "keep_vars": true,
+  "d1_databases": [{ "binding": "DB", "database_name": "agente", "database_id": "7369be6e-7722-4a69-a09c-7fe5bc41847d" }],
+  "kv_namespaces": [{ "binding": "ESTADO", "id": "033ca89186904328a23d7535b4b87aa5" }],
+  "ai": { "binding": "AI" },
+  "triggers": { "crons": ["*/1 * * * *"] },
+  "observability": { "enabled": true, "head_sampling_rate": 1, "logs": { "enabled": true, "invocation_logs": true } }
+}

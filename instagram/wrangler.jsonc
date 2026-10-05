@@ -1,0 +1,10 @@
+// Worker que responde comentarios de Instagram. Las claves (IG_TOKEN, GEMINI_KEY, VERIFY_TOKEN) viven en Cloudflare, NO acá.
+{
+  "name": "instagram",
+  "main": "src/instagram.js",
+  "compatibility_date": "2026-10-04",
+  "keep_vars": true,
+  "d1_databases": [{ "binding": "DB", "database_name": "agente", "database_id": "7369be6e-7722-4a69-a09c-7fe5bc41847d" }],
+  "triggers": { "crons": ["*/30 * * * *"] },
+  "observability": { "enabled": true }
+}
