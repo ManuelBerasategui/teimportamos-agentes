@@ -1,3 +1,5 @@
+import { rutaLector, apiLector, cronLector } from "./lector.js";
+import { PANEL_805 } from "./lector-panel.js";
 /**
  * Agente de WhatsApp · Te Importamos (v14.9)
  * Cloudflare Workers + Gemini (gratis) con respaldo de Cloudflare AI.
@@ -2911,7 +2913,7 @@ button{font:inherit;cursor:pointer}
 @media (max-width:760px){.lista{width:100%}.conv{display:none}.chats.abierto .conv{display:flex}.chats.abierto .lista{display:none}.volver{display:inline}.msgs{padding:12px}.m{max-width:86%}.marca{display:none}.user span{display:none}}
 </style></head><body>
 <div class="top"><div class="marca">Te Importamos</div>
-<div class="tabs"><button class="tab on" data-v="dash">Dashboard</button><button class="tab" data-v="pend">Pendientes<span class="badge" id="nPend"></span></button><button class="tab" data-v="chats">Chats</button><button class="tab" data-v="agentes">Agentes</button></div>
+<div class="tabs"><button class="tab on" data-v="dash">Dashboard</button><button class="tab" data-v="pend">Pendientes<span class="badge" id="nPend"></span></button><button class="tab" data-v="chats">Chats</button><button class="tab" data-v="agentes">Agentes</button><a href="/panel/805" style="text-decoration:none;padding:8px 14px;border-radius:8px;font-weight:600;color:#64748b;align-self:center">805</a></div>
 <div class="user"><span id="usuario"></span> · <a href="/logout">Salir</a></div></div>
 
 <div class="vista on" id="v-dash"><div class="dash">
@@ -3253,12 +3255,15 @@ export default {
       if (m % 5 === 2) await supervisarChats(env, h % SALUD.supervisorCadaHoras === 0 && m === 22).catch((e) => console.log("Error supervisor:", e?.stack || e));
       if (m % 5 === 0) await correrSeguimientos(env).catch((e) => console.log("Error seguimientos:", e?.stack || e));
       await procesarBuffers(env).catch((e) => console.log("Error red:", e?.stack || e));
+      await cronLector(env, iaJSON, evento.scheduledTime || Date.now()).catch((e) => console.log("Error lector 805:", e?.stack || e));
     })());
   },
   async fetch(req, envBase, ctx) {
     const env = { ...envBase, ESTADO: await almacen(envBase) };
     const url = new URL(req.url);
     const clave = url.searchParams.get("clave");
+    // Lector 805: el puente de WhatsApp (solo lectura) postea acá
+    if (url.pathname.startsWith("/lector/")) return rutaLector(env, req, url, ctx);
     if (url.pathname === "/reset") {
       if (clave !== env.VERIFY_TOKEN) return new Response("Falta ?clave=", { status: 401 });
       const tel = (url.searchParams.get("tel") || "").replace(/\D/g, "");
@@ -3318,6 +3323,8 @@ export default {
         return new Response(img.body, { headers: { "Content-Type": meta.mime_type || "image/jpeg", "Cache-Control": "private, max-age=86400" } });
       } catch { return new Response("No se pudo cargar la foto", { status: 502 }); }
     }
+    if (url.pathname.startsWith("/panel/api/805/")) return apiLector(env, req, url, iaJSON);
+    if (url.pathname === "/panel/805") return new Response(PANEL_805, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
     if (url.pathname.startsWith("/panel/api/")) return panelAPI(env, req, url, url.searchParams.get("quien"));
     if (url.pathname === "/panel/reporte.pdf") return descargarReporte(env, url);
     if (url.pathname === "/panel/accion" || url.pathname === "/panel/enviar") {

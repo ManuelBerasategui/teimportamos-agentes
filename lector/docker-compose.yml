@@ -1,0 +1,12 @@
+services:
+  lector:
+    build: .
+    restart: always
+    environment:
+      DATABASE_URL: file:/data/whatsmeow.db        # la sesión vive en este archivo
+      OPENBSP_URL: https://cotizador.berasateguimanuel07.workers.dev/lector
+      BRIDGE_TOKEN: ${LECTOR_TOKEN}                 # mismo valor que LECTOR_TOKEN en Cloudflare
+      LISTEN_ADDR: 127.0.0.1:8081                   # solo accesible desde el propio servidor
+      LINK_EVENTS: "true"
+    volumes: ["./datos:/data"]
+    network_mode: host
