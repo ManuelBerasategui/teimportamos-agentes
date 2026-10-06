@@ -61,8 +61,13 @@ function autorizado(env, req) {
 }
 
 export async function rutaLector(env, req, url, ctx) {
-  const p = url.pathname.replace(/^\/lector/, "");
-  if (!autorizado(env, req)) return new Response("no autorizado", { status: 401 });
+  // Dos formas de autenticarse: header "Bearer LECTOR_TOKEN" (puente propio) o la clave en la
+  // dirección /lector/<LECTOR_TOKEN>/... (puente hospedado por OpenBSP, que manda su propio token)
+  let p = url.pathname.replace(/^\/lector/, "");
+  const enRuta = p.split("/")[1] || "";
+  let ok = autorizado(env, req);
+  if (!ok && env.LECTOR_TOKEN && enRuta === env.LECTOR_TOKEN) { ok = true; p = p.slice(enRuta.length + 1); }
+  if (!ok) return new Response("no autorizado", { status: 401 });
   await prepararLector(env);
   // Las fotos/audios NO se guardan (no hace falta para analizar y D1 no es para archivos):
   // el puente marca el mensaje como "media" y sigue.

@@ -51,3 +51,6 @@ const rep=await api2("reporte",{tipo:"805_diario"}); console.log("reporte:", rep
 console.log("chats grupos:", (await api2("chats?f=grupos")).map(c=>c.nombre));
 const ch=await api2("chat?conv=5491111111111"); console.log("chat:", ch.mensajes.length, ch.hitos.map(h=>h.tipo));
 const pg=await W.fetch(new Request("https://x/panel/805",{headers:{cookie}}),env,ctx); console.log("pagina:", pg.status, (await pg.text()).length);
+const r2=await W.fetch(new Request("https://x/lector/tok/whatsapp-web-webhook",{method:"POST",headers:{Authorization:"Bearer otro"},body:JSON.stringify({messages:[{external_id:"z1",conversation_address:"5494444444444",sender_address:"5494444444444",content:{type:"text",kind:"text",text:"hola"},timestamp:new Date().toISOString()}]})}),env,ctx);
+console.log("clave en ruta:", r2.status, await r2.text());
+const r3=await W.fetch(new Request("https://x/lector/mal/whatsapp-web-webhook",{method:"POST",body:"{}"}),env,ctx); console.log("clave mala:", r3.status);
