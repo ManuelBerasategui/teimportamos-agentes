@@ -10,8 +10,10 @@ DIR="$HOME/lector"
 URL_PANEL="https://cotizador.berasateguimanuel07.workers.dev/lector"
 
 echo "== 1/5 Instalando herramientas (tarda unos minutos)"
-yes | pkg update >/dev/null 2>&1 || true
-pkg install -y git golang curl termux-api >/dev/null 2>&1 || pkg install -y git golang curl
+# Actualiza TODO el sistema primero (si se actualiza a medias, git/curl dejan de funcionar)
+pkg update -y -o Dpkg::Options::="--force-confnew" || true
+pkg upgrade -y -o Dpkg::Options::="--force-confnew"
+pkg install -y -o Dpkg::Options::="--force-confnew" git golang curl openssl termux-api
 mkdir -p "$DIR/datos"
 
 echo "== 2/5 Clave del lector"
