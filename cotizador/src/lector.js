@@ -72,6 +72,12 @@ export async function rutaLector(env, req, url, ctx) {
   // Las fotos/audios NO se guardan (no hace falta para analizar y D1 no es para archivos):
   // el puente marca el mensaje como "media" y sigue.
   if (p === "/whatsapp-web-webhook/media") return new Response("no guardamos archivos", { status: 402 });
+  // QR de vinculación: Termux lo sube y el panel lo muestra (para escanearlo con el celular del 805)
+  if (p === "/qr" && req.method === "POST") {
+    const b = await req.json().catch(() => ({}));
+    await kvPut(env, "lector_qr", JSON.stringify({ qr: String(b.qr || "").slice(0, 2000), estado: String(b.estado || ""), ts: Date.now() }));
+    return Response.json({ ok: true });
+  }
   if (p === "/whatsapp-web-management/sessions/events") {
     const ev = await req.json().catch(() => ({}));
     await kvPut(env, "lector_estado", JSON.stringify({ evento: ev.event, numero: ev.address, cuando: Date.now() }));
@@ -397,6 +403,7 @@ export async function apiLector(env, req, url, iaJSON) {
     return json(filas.map((f) => ({ ...f, datos: JSON.parse(f.datos || "{}") })));
   }
   if (r === "telegram" && req.method === "POST") return json(await vincularTelegram(env));
+  if (r === "qr") { const q = JSON.parse((await kvGet(env, "lector_qr")) || "null"); return json(q && Date.now() - q.ts < 90e3 ? q : { qr: "", estado: q?.estado === "paired" ? "paired" : "" }); }
   if (r === "probar-alertas" && req.method === "POST") return json({ ok: true, alertas: await alertasRapidas(env) });
   return new Response("no existe", { status: 404 });
 }

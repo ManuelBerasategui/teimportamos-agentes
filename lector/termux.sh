@@ -58,7 +58,9 @@ echo "== 5/5 Vincular el 805"
 if [ -s "$DIR/datos/whatsmeow.db" ] && curl -s http://127.0.0.1:8081/sessions/5493418051515 -H "Authorization: Bearer $LECTOR_TOKEN" | grep -q '"logged_in":true'; then
   echo "El 805 ya estaba vinculado. Listo ✅"; exit 0
 fi
-R=$(curl -s -X POST http://127.0.0.1:8081/sessions -H "Authorization: Bearer $LECTOR_TOKEN" -H 'Content-Type: application/json' -d '{"organization_id":"teimportamos","phone_number":"5493418051515"}')
+termux-wake-lock 2>/dev/null || true
+if [ "${QR:-}" = "1" ]; then BODY='{"organization_id":"teimportamos"}'; echo "Modo QR: abrí el panel en la COMPU > WhatsApp > Conexión y escaneá el QR con el celular del 805."; else BODY='{"organization_id":"teimportamos","phone_number":"5493418051515"}'; fi
+R=$(curl -s -X POST http://127.0.0.1:8081/sessions -H "Authorization: Bearer $LECTOR_TOKEN" -H 'Content-Type: application/json' -d "$BODY")
 ID=$(echo "$R" | sed -n 's/.*"session_id":"\([^"]*\)".*/\1/p')
 [ -n "$ID" ] || { echo "Error al pedir el código: $R"; exit 1; }
 ULT=""
@@ -66,6 +68,12 @@ for i in $(seq 1 100); do
   S=$(curl -s "http://127.0.0.1:8081/sessions/pending/$ID" -H "Authorization: Bearer $LECTOR_TOKEN")
   ST=$(echo "$S" | sed -n 's/.*"status":"\([^"]*\)".*/\1/p')
   COD=$(echo "$S" | sed -n 's/.*"pairing_code":"\([^"]*\)".*/\1/p')
+  QRC=$(echo "$S" | sed -n 's/.*"qr_code":"\([^"]*\)".*/\1/p')
+  if [ -n "$QRC" ] && [ "$QRC" != "$ULT" ]; then
+    curl -s -X POST "$URL_PANEL/qr" -H "Authorization: Bearer $LECTOR_TOKEN" -H 'Content-Type: application/json' -d "{\"qr\":\"$QRC\"}" >/dev/null && echo "QR nuevo enviado al panel ($(date +%H:%M:%S))"
+    ULT=$QRC
+  fi
+  [ "$ST" = "paired" ] && curl -s -X POST "$URL_PANEL/qr" -H "Authorization: Bearer $LECTOR_TOKEN" -H 'Content-Type: application/json' -d '{"qr":"","estado":"paired"}' >/dev/null
   [ "$ST" = "paired" ] && { echo; echo "✅ VINCULADO. El lector ya está leyendo el 805. Podés cerrar Termux (queda corriendo)."; exit 0; }
   [ "$ST" = "error" ] && { echo "Error: $S"; exit 1; }
   if [ -n "$COD" ] && [ "$COD" != "$ULT" ]; then

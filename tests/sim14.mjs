@@ -54,3 +54,5 @@ const pg=await W.fetch(new Request("https://x/panel/805",{headers:{cookie}}),env
 const r2=await W.fetch(new Request("https://x/lector/tok/whatsapp-web-webhook",{method:"POST",headers:{Authorization:"Bearer otro"},body:JSON.stringify({messages:[{external_id:"z1",conversation_address:"5494444444444",sender_address:"5494444444444",content:{type:"text",kind:"text",text:"hola"},timestamp:new Date().toISOString()}]})}),env,ctx);
 console.log("clave en ruta:", r2.status, await r2.text());
 const r3=await W.fetch(new Request("https://x/lector/mal/whatsapp-web-webhook",{method:"POST",body:"{}"}),env,ctx); console.log("clave mala:", r3.status);
+console.log("qr post:", (await post("/qr",{qr:"2@abc+/=,def,ghi"})).status, "panel:", (await api2("qr")).qr);
+await post("/qr",{qr:"",estado:"paired"}); console.log("qr vinculado:", (await api2("qr")).estado);

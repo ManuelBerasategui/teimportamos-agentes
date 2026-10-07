@@ -24,7 +24,7 @@ input,select{padding:8px 10px;border:1px solid var(--borde);border-radius:8px;fo
 .estado{font-size:13px;color:var(--gris)}.ok{color:var(--verde)}.mal{color:var(--rojo)}
 .barras{display:flex;align-items:flex-end;gap:4px;height:90px;margin-top:6px}.barras div{flex:1;background:#8EDBA8;border-radius:4px 4px 0 0;position:relative}.barras span{position:absolute;top:-16px;left:0;right:0;text-align:center;font-size:11px;color:var(--gris)}
 @media(max-width:900px){.kpis{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}.chats{grid-template-columns:1fr;height:auto}.lista{max-height:45vh}.conv{min-height:60vh}main{padding:10px}}
-</style></head><body>
+</style><script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script></head><body>
 <header><b>WhatsApp</b><div class="tabs"><button class="tab on" data-v="res">Resumen</button><button class="tab" data-v="chats">Chats</button><button class="tab" data-v="reps">Reportes</button><button class="tab" data-v="conf">Conexión</button></div><a href="/panel" style="margin-left:auto">← Panel del agente</a></header>
 <main>
 <section id="v-res">
@@ -49,6 +49,10 @@ input,select{padding:8px 10px;border:1px solid var(--borde);border-radius:8px;fo
 <section id="v-conf" hidden>
   <div class="card" style="max-width:720px">
     <h3>Estado del lector</h3><div id="confEstado" class="estado"></div>
+    <h3 style="margin-top:16px">Vincular con QR</h3>
+    <div class="estado">En el celular del 805, en Termux, corré el instalador con <b>QR=1</b> adelante (ver abajo). El QR aparece acá: escanealo desde WhatsApp Business → Dispositivos vinculados → Vincular un dispositivo.</div>
+    <code style="display:block;background:#0B0B0B;color:#25D366;padding:8px;border-radius:8px;margin:8px 0;font-size:12px;word-break:break-all">QR=1 bash -c "$(curl -sL https://raw.githubusercontent.com/ManuelBerasategui/teimportamos-agentes/main/lector/termux.sh)"</code>
+    <div id="qrBox" style="background:#fff;display:inline-block;padding:10px;border-radius:12px;border:1px solid var(--borde);min-width:120px;min-height:40px" class="estado">Esperando QR…</div>
     <h3 style="margin-top:16px">Alertas por Telegram (gratis)</h3>
     <ol class="estado" style="line-height:1.6"><li>En Telegram abrí <b>@BotFather</b> → /newbot → poné un nombre. Te da un token.</li><li>En Cloudflare → cotizador → Settings → Variables, agregá <b>TELEGRAM_TOKEN</b> (tipo Secret) con ese token.</li><li>Abrí tu bot en Telegram y escribile <b>/start</b>.</li><li>Tocá este botón:</li></ol>
     <button class="btn p" id="bTg">Conectar Telegram</button> <button class="btn" id="bProbar">Probar alertas</button> <span id="tgRes" class="estado"></span>
@@ -95,5 +99,7 @@ $('#bDiario').onclick=async e=>{e.target.disabled=true;await api('reporte',{tipo
 $('#bSemanal').onclick=async e=>{e.target.disabled=true;await api('reporte',{tipo:'805_semanal'});e.target.disabled=false;reportes()};
 $('#bTg').onclick=async()=>{const r=await api('telegram',{});$('#tgRes').textContent=r.ok?'Conectado '+(r.nombre||''):r.error;cargar()};
 $('#bProbar').onclick=async()=>{const r=await api('probar-alertas',{});$('#tgRes').textContent='Alertas enviadas: '+r.alertas};
+let qrUlt='';async function qrPoll(){if($('#v-conf').hidden)return;const q=await api('qr');const box=$('#qrBox');if(q.estado==='paired'){box.innerHTML='<b style="color:#16a34a">✅ Vinculado</b>';return}if(!q.qr){box.textContent='Esperando QR… (corré el comando en Termux)';qrUlt='';return}if(q.qr===qrUlt)return;qrUlt=q.qr;box.innerHTML='';if(typeof QRCode==='undefined'){box.textContent='No cargó el dibujador de QR: recargá la página (Ctrl+F5)';qrUlt='';return}new QRCode(box,{text:q.qr,width:260,height:260,correctLevel:QRCode.CorrectLevel.L})}
+setInterval(qrPoll,3000);
 cargar();setInterval(cargar,60000);if(location.hash)abrir(decodeURIComponent(location.hash.slice(1)));
 </script></body></html>`;
