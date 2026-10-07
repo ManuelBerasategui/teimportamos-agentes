@@ -2811,7 +2811,7 @@ const PANEL_APP = String.raw`<!doctype html><html lang="es"><head><meta charset=
 <title>Panel · Te Importamos</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 <style>
-:root{--azul:#1D4ED8;--azul2:#DBEAFE;--azul3:#EFF6FF;--rojo:#DC2626;--rojo2:#FEE2E2;--borde:#E5E7EB;--gris:#6B7280;--texto:#111827;--fondo:#F3F4F6}
+:root{--azul:#EA5B0C;--azul2:#FDE3D3;--azul3:#FFF4EC;--rojo:#DC2626;--rojo2:#FEE2E2;--borde:#E5E7EB;--gris:#6B7280;--texto:#111827;--fondo:#F3F4F6}
 *{box-sizing:border-box}html,body{margin:0;height:100%;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:var(--texto);background:var(--fondo)}
 button{font:inherit;cursor:pointer}
 .top{height:56px;background:#fff;border-bottom:1px solid var(--borde);display:flex;align-items:center;gap:16px;padding:0 16px;position:sticky;top:0;z-index:5}
@@ -2860,7 +2860,7 @@ button{font:inherit;cursor:pointer}
 .comp .ico{background:#fff;color:var(--azul);border:1px solid var(--borde);padding:0 12px;font-size:18px}.comp .ico.rec{background:var(--rojo);color:#fff;border-color:var(--rojo)}
 .oferta{background:#ECFDF5;border:1px solid #A7F3D0;color:#065F46;border-radius:10px;padding:8px 12px;font-size:13px;margin:8px 0}
 .ag{display:grid;grid-template-columns:240px 1fr;height:calc(100vh - 58px)}.ag .lista{border-right:1px solid var(--borde);background:#fff;padding:10px}
-.ag .lista button{display:block;width:100%;text-align:left;border:0;background:none;padding:12px;border-radius:10px;font:inherit;font-weight:600}.ag .lista button.on{background:#EFF6FF;color:var(--azul)}
+.ag .lista button{display:block;width:100%;text-align:left;border:0;background:none;padding:12px;border-radius:10px;font:inherit;font-weight:600}.ag .lista button.on{background:#FFF4EC;color:var(--azul)}
 .ag .cuerpo{display:flex;flex-direction:column;min-height:0}.ag .hilo{flex:1;overflow:auto;padding:16px;background:var(--fondo)}
 .ag .burb{max-width:720px;padding:10px 12px;border-radius:12px;margin:8px 0;white-space:pre-wrap;line-height:1.4;font-size:14.5px}.ag .burb.u{background:var(--azul);color:#fff;margin-left:auto}.ag .burb.a{background:#fff;border:1px solid var(--borde)}
 .ag .prop{margin-top:8px;padding:8px;border:1px dashed var(--borde);border-radius:8px;background:var(--fondo);display:flex;gap:8px;align-items:center;flex-wrap:wrap}.ag .prop span{flex:1;min-width:180px}
@@ -2914,7 +2914,7 @@ button{font:inherit;cursor:pointer}
 @media (max-width:760px){.lista{width:100%}.conv{display:none}.chats.abierto .conv{display:flex}.chats.abierto .lista{display:none}.volver{display:inline}.msgs{padding:12px}.m{max-width:86%}.marca{display:none}.user span{display:none}}
 </style></head><body>
 <div class="top"><div class="marca">Te Importamos</div>
-<div class="tabs"><button class="tab on" data-v="dash">Dashboard</button><button class="tab" data-v="pend">Pendientes<span class="badge" id="nPend"></span></button><button class="tab" data-v="chats">Chats</button><button class="tab" data-v="agentes">Agentes</button><a href="/panel/busquedas" style="text-decoration:none;padding:8px 14px;border-radius:8px;font-weight:600;color:#64748b;align-self:center">Búsquedas</a><a href="/panel/805" style="text-decoration:none;padding:8px 14px;border-radius:8px;font-weight:600;color:#64748b;align-self:center">805</a></div>
+<div class="tabs"><button class="tab on" data-v="dash">Dashboard</button><button class="tab" data-v="pend">Pendientes<span class="badge" id="nPend"></span></button><button class="tab" data-v="chats">Chats</button><button class="tab" data-v="agentes">Agentes</button><a href="/panel/busquedas" style="text-decoration:none;padding:8px 14px;border-radius:8px;font-weight:600;color:#6B7280;align-self:center">Búsquedas</a><a href="/panel/805" style="text-decoration:none;padding:8px 14px;border-radius:8px;font-weight:600;color:#6B7280;align-self:center">WhatsApp</a></div>
 <div class="user"><span id="usuario"></span> · <a href="/logout">Salir</a></div></div>
 
 <div class="vista on" id="v-dash"><div class="dash">
@@ -2970,15 +2970,15 @@ function cargarDash() {
   api("dashboard?p=" + P).then(function (d) {
     $("#kpis").innerHTML = ["nuevo", "cotizacion", "venta", "derivado"].map(function (k) { return '<div class="kpi"><div class="n" style="color:' + (k === "venta" ? "var(--rojo)" : k === "derivado" ? "var(--texto)" : "var(--azul)") + '">' + (d.kpis[k] || 0) + '</div><div class="l">' + NOMBRES[k] + "</div>" + delta(d.kpis[k] || 0, d.previo[k] || 0) + "</div>"; }).join("");
     var base = { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "bottom", labels: { boxWidth: 12, font: { size: 12 } } } } };
-    grafico("g-act", { type: "bar", data: { labels: d.etiquetas, datasets: [{ label: "Clientes nuevos", data: d.serie.nuevo, backgroundColor: "#93C5FD", borderRadius: 4 }, { label: "Cotizaciones", data: d.serie.cotizacion, backgroundColor: "#1D4ED8", borderRadius: 4 }, { label: "Ventas", data: d.serie.venta, backgroundColor: "#DC2626", borderRadius: 4 }] }, options: Object.assign({}, base, { scales: { x: { grid: { display: false } }, y: { beginAtZero: true, ticks: { precision: 0 } } } }) });
+    grafico("g-act", { type: "bar", data: { labels: d.etiquetas, datasets: [{ label: "Clientes nuevos", data: d.serie.nuevo, backgroundColor: "#F6A675", borderRadius: 4 }, { label: "Cotizaciones", data: d.serie.cotizacion, backgroundColor: "#EA5B0C", borderRadius: 4 }, { label: "Ventas", data: d.serie.venta, backgroundColor: "#DC2626", borderRadius: 4 }] }, options: Object.assign({}, base, { scales: { x: { grid: { display: false } }, y: { beginAtZero: true, ticks: { precision: 0 } } } }) });
     var tm = { caliente: 0, tibio: 0, frio: 0 }; d.temps.forEach(function (t) { if (t.temp === "caliente" || t.temp === "tibio") tm[t.temp] += t.n; else tm.frio += t.n; });
     var tot = tm.caliente + tm.tibio + tm.frio;
-    grafico("g-temp", { type: "doughnut", data: { labels: ["Caliente", "Tibio", "Frío / sin dato"], datasets: [{ data: [tm.caliente, tm.tibio, tm.frio], backgroundColor: ["#DC2626", "#1D4ED8", "#FFFFFF"], borderColor: ["#DC2626", "#1D4ED8", "#CBD5E1"], borderWidth: 1.5 }] }, options: Object.assign({}, base, { cutout: "62%", plugins: { legend: base.plugins.legend, tooltip: { callbacks: { label: function (c) { return c.label + ": " + c.raw + (tot ? " (" + Math.round(c.raw / tot * 100) + "%)" : ""); } } } } }) });
+    grafico("g-temp", { type: "doughnut", data: { labels: ["Caliente", "Tibio", "Frío / sin dato"], datasets: [{ data: [tm.caliente, tm.tibio, tm.frio], backgroundColor: ["#DC2626", "#EA5B0C", "#FFFFFF"], borderColor: ["#DC2626", "#EA5B0C", "#CBD5E1"], borderWidth: 1.5 }] }, options: Object.assign({}, base, { cutout: "62%", plugins: { legend: base.plugins.legend, tooltip: { callbacks: { label: function (c) { return c.label + ": " + c.raw + (tot ? " (" + Math.round(c.raw / tot * 100) + "%)" : ""); } } } } }) });
     var n = d.kpis.nuevo || 0, c = d.kpis.cotizacion || 0, v = d.kpis.venta || 0, ch = d.activos || 0;
     var fila = function (et, val, de) { var p = de ? Math.round(val / de * 100) : 0; return '<div class="fila"><div class="et"><span>' + et + "</span><b>" + val + (de ? " · " + p + "%" : "") + '</b></div><div class="barra"><i style="width:' + (de ? Math.min(100, p) : val ? 100 : 0) + '%"></i></div></div>'; };
     $("#embudo").innerHTML = fila("Chats activos", ch, 0) + fila("Clientes nuevos", n, 0) + fila("Recibieron cotización", c, Math.max(n, ch)) + fila("Compraron", v, c || n || ch) + '<div class="et" style="margin-top:14px;font-size:12px;color:var(--gris)">El % de cada paso se calcula sobre el anterior.</div>';
-    grafico("g-prod", { type: "bar", data: { labels: d.productos.map(function (p) { return p.producto.length > 22 ? p.producto.slice(0, 21) + "…" : p.producto; }), datasets: [{ data: d.productos.map(function (p) { return p.n; }), backgroundColor: "#1D4ED8", borderRadius: 4 }] }, options: Object.assign({}, base, { indexAxis: "y", plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { precision: 0 } }, y: { grid: { display: false } } } }) });
-    grafico("g-der", { type: "doughnut", data: { labels: d.motivos.map(function (m) { return m.motivo.replace(/_/g, " "); }), datasets: [{ data: d.motivos.map(function (m) { return m.n; }), backgroundColor: ["#DC2626", "#1D4ED8", "#93C5FD", "#FCA5A5", "#1E3A8A", "#E5E7EB"] }] }, options: Object.assign({}, base, { cutout: "55%" }) });
+    grafico("g-prod", { type: "bar", data: { labels: d.productos.map(function (p) { return p.producto.length > 22 ? p.producto.slice(0, 21) + "…" : p.producto; }), datasets: [{ data: d.productos.map(function (p) { return p.n; }), backgroundColor: "#EA5B0C", borderRadius: 4 }] }, options: Object.assign({}, base, { indexAxis: "y", plugins: { legend: { display: false } }, scales: { x: { beginAtZero: true, ticks: { precision: 0 } }, y: { grid: { display: false } } } }) });
+    grafico("g-der", { type: "doughnut", data: { labels: d.motivos.map(function (m) { return m.motivo.replace(/_/g, " "); }), datasets: [{ data: d.motivos.map(function (m) { return m.n; }), backgroundColor: ["#DC2626", "#EA5B0C", "#F6A675", "#FCA5A5", "#1E3A8A", "#E5E7EB"] }] }, options: Object.assign({}, base, { cutout: "55%" }) });
   }).catch(function () {});
   cargarReportes();
 }

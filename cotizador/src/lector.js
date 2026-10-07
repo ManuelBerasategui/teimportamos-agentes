@@ -75,7 +75,7 @@ export async function rutaLector(env, req, url, ctx) {
   if (p === "/whatsapp-web-management/sessions/events") {
     const ev = await req.json().catch(() => ({}));
     await kvPut(env, "lector_estado", JSON.stringify({ evento: ev.event, numero: ev.address, cuando: Date.now() }));
-    if (ev.event === "logged_out") ctx?.waitUntil(telegram(env, "⚠️ El 805 se desvinculó del lector. Hay que volver a vincularlo."));
+    if (ev.event === "logged_out") ctx?.waitUntil(telegram(env, "⚠️ El WhatsApp 805 se desvinculó del lector. Hay que volver a vincularlo."));
     return Response.json({ ok: true });
   }
   if (p === "/whatsapp-web-webhook") {
@@ -313,7 +313,7 @@ Devolvé JSON: {"titular":"1 oración con lo más importante","claves":["3-6 hal
   await env.DB.prepare("INSERT INTO reportes (id,tipo,desde,hasta,creado,datos) VALUES (?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET hasta=excluded.hasta, creado=excluded.creado, datos=excluded.datos")
     .bind(id, tipo, desde, fin, Date.now(), JSON.stringify(datos)).run();
   const d = (a, b) => (b ? ` (${a >= b ? "+" : ""}${a - b})` : "");
-  await telegram(env, `📊 Reporte ${dias === 7 ? "semanal" : "diario"} 805 · ${diaAR(desde)}${dias === 7 ? " → " + diaAR(fin - 1) : ""}
+  await telegram(env, `📊 Reporte ${dias === 7 ? "semanal" : "diario"} WhatsApp · ${diaAR(desde)}${dias === 7 ? " → " + diaAR(fin - 1) : ""}
 ${ia?.titular || ""}
 
 Chats nuevos: ${m.nuevos}${d(m.nuevos, prev.nuevos)}
