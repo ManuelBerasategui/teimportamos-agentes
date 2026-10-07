@@ -16,7 +16,7 @@ let ok = 0; const bien = (m) => { ok++; console.log("  ✓ " + m); };
 
 // ---------- Internet simulado ----------
 const llamadas = [], tgs = [];
-let estadoRun = "RUNNING", apifyArranca = true, geminiCae = false;
+let estadoRun = "RUNNING", apifyArranca = true, geminiCae = false, tavilyCae = false; const tavs = [];
 const items1688 = [
   { offerId: "1", url: "https://detail.1688.com/offer/1.html", title: "AJ4复刻篮球鞋", titleEn: "AJ4 retro basketball sneakers men", currency: "CNY", priceTiers: [{ minQuantity: 2, price: 65 }, { minQuantity: 100, price: 60 }], minimumOrderQuantity: 2, companyName: "莆田鞋业", supplierUrl: "https://shop1.1688.com", city: "莆田市", province: "福建省", merchantSigns: { factory: true, powerfulMerchant: true }, goodRate: 98, soldCount: 5200, images: ["https://img/1.jpg"] },
   { offerId: "2", url: "https://detail.1688.com/offer/2.html", title: "AJ4鞋带", titleEn: "AJ4 replacement shoelaces", currency: "CNY", priceTiers: [{ minQuantity: 10, price: 3 }], minimumOrderQuantity: 10, companyName: "鞋带厂", images: [] },
@@ -37,9 +37,25 @@ globalThis.fetch = async (u, o = {}) => {
   if (u.includes("generateContent")) {
     if (geminiCae) return R({ error: { message: "cuota" } }, 429);
     const p = JSON.parse(o.body).contents[0].parts[0].text;
-    const r = p.includes('"zh"') ? { zh: "AJ4 复刻 篮球鞋", en: "AJ4 retro sneakers", peso_kg: 1.2, peso_motivo: "zapatilla con caja", nota: "" }
+    const r = p.includes('"zh"') ? { zh: "AJ4 复刻 篮球鞋", en: "AJ4 retro sneakers", peso_kg: 1.2, peso_motivo: "zapatilla con caja", nota: "", ...(p.includes('"web"') ? { web: { ar: ["zapatillas Jordan 4 por mayor", "mayorista zapatillas whatsapp"], py: ["zapatillas por mayor Ciudad del Este"], br: ["tênis Jordan 4 atacado"] } } : {}) }
+      : p.includes('"tipo"') ? { p: [...p.matchAll(/^(\d+)\. \[(\w+)\] (.*)$/gm)].map((m) => ({ i: +m[1], tipo: /blog/i.test(m[3]) ? "nada" : "mayorista", calidad: /réplica/.test(m[3]) ? "réplica" : "no se sabe", parecido: 8, nombre: m[3].split(" | ")[0].slice(0, 30), minimo: /Mínimo 6/.test(m[3]) ? 6 : /mínimo 10/.test(m[3]) ? 10 : null, precio: /Gs/.test(m[3]) ? "Gs. 180.000 el par" : "" })) }
       : { p: [...p.matchAll(/^(\d+)\. (.*)$/gm)].map((m) => ({ i: +m[1], s: /laces|shoelace/i.test(m[2]) ? 1 : 9 })) };
     return R({ candidates: [{ content: { parts: [{ text: JSON.stringify(r) }] } }] });
+  }
+  if (u.includes("api.tavily.com")) {
+    const b = JSON.parse(o.body); tavs.push(b);
+    assert.equal(o.headers.Authorization, "Bearer tvly-x"); assert.equal(b.include_raw_content, "markdown");
+    if (tavilyCae) return R({ detail: { error: "Usage limit exceeded" } }, 432);
+    const pais = b.country;
+    const W = {
+      paraguay: [{ title: "Zapatillas por mayor CDE - Mega Shoes", url: "https://megashoes.com.py/mayorista", content: "Venta por mayor de zapatillas importadas, réplicas AAA. Mínimo 6 pares. Gs. 180.000", raw_content: "Escribinos [WhatsApp](https://wa.me/595981123456) o en [Instagram](https://instagram.com/megashoes.cde) ventas@megashoes.com.py" },
+        { title: "Cómo importar desde Paraguay (blog)", url: "https://blog.ejemplo.com/importar", content: "Guía para importar", raw_content: "artículo" }],
+      argentina: [{ title: "Mayorista zapatillas Flores", url: "https://floresmayorista.com.ar", content: "Zapatillas por mayor, Jordan, Nike. Envíos a todo el país", raw_content: "Whatsapp: +54 9 11 5555-1234 · Tel: 011 4444-5555" },
+        { title: "Vapes por mayor", url: "https://vapes.com.ar", content: "vapes desechables por mayor", raw_content: "wa.me/5491100000000" },
+        { title: "Mega Shoes", url: "https://megashoes.com.py/mayorista?ref=ar", content: "duplicado", raw_content: "" }],
+      brazil: [{ title: "Tênis atacado fornecedor", url: "https://tenisatacado.com.br", content: "Atacado de tênis, pedido mínimo 10 pares", raw_content: "Fale no WhatsApp https://api.whatsapp.com/send?phone=5511999998888" }],
+    };
+    return R({ results: W[pais] || [] });
   }
   if (u.includes("api.apify.com")) {
     assert.match(o.headers?.Authorization || "", /^Bearer tok-apify$/);
@@ -58,14 +74,14 @@ globalThis.fetch = async (u, o = {}) => {
   return R({});
 };
 
-const env = { DB, ESTADO: null, VERIFY_TOKEN: "k", PANEL_USUARIOS: "manuel:a, socio:b", APIFY_TOKEN: "tok-apify", GEMINI_KEY: "g", TELEGRAM_TOKEN: "tg", GEMINI_MODEL: "gemini-2.5-flash" };
+const env = { DB, ESTADO: null, TAVILY_KEY: "tvly-x", VERIFY_TOKEN: "k", PANEL_USUARIOS: "manuel:a, socio:b", APIFY_TOKEN: "tok-apify", GEMINI_KEY: "g", TELEGRAM_TOKEN: "tg", GEMINI_MODEL: "gemini-2.5-flash" };
 const ctx = { waitUntil() {} };
 const sesion = async (u, p) => (await W.fetch(new Request("https://x/login", { method: "POST", body: new URLSearchParams({ u, p }) }), env, ctx)).headers.get("set-cookie").split(";")[0];
 const cM = await sesion("manuel", "a"), cS = await sesion("socio", "b");
 const api = async (cookie, r, body) => (await W.fetch(new Request("https://x/panel/api/busquedas/" + r, { method: body ? "POST" : "GET", headers: { cookie, "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined }), env, ctx)).json();
 
 console.log("1) Esquema y panel");
-assert.deepEqual(P.ESQUEMA, B.ESQUEMA); bien("el esquema del panel y el del buscador son idénticos");
+assert.deepEqual(P.ESQUEMA, B.ESQUEMA); assert.deepEqual(P.MIGRACIONES, B.MIGRACIONES); bien("el esquema y las migraciones del panel y del buscador son idénticos");
 const pg = await W.fetch(new Request("https://x/panel/busquedas", { headers: { cookie: cM } }), env, ctx);
 assert.equal(pg.status, 200); assert.match(await pg.text(), /Nueva búsqueda/); bien("la página /panel/busquedas carga con login");
 assert.equal((await W.fetch(new Request("https://x/panel/api/busquedas/lista"), env, ctx)).status, 401); bien("sin login, la API responde 401");
@@ -77,9 +93,9 @@ let r = await api(cM, "nueva", { producto: "vapes elf bar 6000", cantidad: 10 })
 r = await api(cM, "nueva", { producto: "zz", cantidad: 10 }); assert.equal(r.ok, false); bien("producto vacío rechazado");
 db.prepare("INSERT INTO tareas (id,ts,tipo,tel,nombre,titulo,detalle,datos,ref,estado) VALUES ('t1',1,'proveedor','5493410000000','Juan','Buscar proveedor que venda 50 u de Jordan 4 retro (el actual pide mínimo 100)','El cliente quiere 50 unidades.','{}','','abierta')").run();
 const pre = await api(cM, "tarea?id=t1"); assert.equal(pre.producto, "Jordan 4 retro"); assert.equal(pre.cantidad, 50); bien(`desde la tarea se completa: "${pre.producto}" x${pre.cantidad}, cliente ${pre.cliente}`);
-const r1 = await api(cM, "nueva", { producto: "Jordan 4 retro", cantidad: 50, calidad: "replica", tarea: "t1" });
-const r2 = await api(cS, "nueva", { producto: "licuadora portatil", cantidad: 20 });
-const r3 = await api(cM, "nueva", { producto: "tarjetas NFC NTAG215", cantidad: 50 });
+const r1 = await api(cM, "nueva", { producto: "Jordan 4 retro", cantidad: 50, calidad: "replica", tarea: "t1", fuentes: ["1688", "alibaba"] });
+const r2 = await api(cS, "nueva", { producto: "licuadora portatil", cantidad: 20, fuentes: ["1688", "alibaba"] });
+const r3 = await api(cM, "nueva", { producto: "tarjetas NFC NTAG215", cantidad: 50, fuentes: ["1688", "alibaba"] });
 assert.deepEqual([r1.asignado, r2.asignado, r3.asignado], ["manuel", "socio", "manuel"]); bien("reparto: 1ª manuel, 2ª socio, 3ª manuel");
 const rd = await api(cM, "nueva", { producto: "Jordan 4 retro", cantidad: 50 }); assert.equal(rd.id, r1.id); bien("la misma búsqueda repetida no se duplica");
 let lm = await api(cM, "lista?f=mias"), ls = await api(cS, "lista?f=mias");
@@ -123,7 +139,7 @@ assert.equal(pAli.total, Math.round(((15 * 50 + 950 + 30) * 1.3 + 80) * 100) / 1
 assert.ok(pv[0].puntaje >= pv[1].puntaje); bien("ordenados por puntaje");
 assert.equal(b1.costo, 0.102); bien("guardó el costo real que informa Apify: USD " + b1.costo);
 const tl = db.prepare("SELECT * FROM tareas WHERE tipo='busqueda_lista' AND ref=?").get("busq:" + r1.id);
-assert.ok(tl); assert.match(tl.titulo, /2 proveedores/); bien("dejó la tarea en Pendientes: " + tl.titulo);
+assert.ok(tl); assert.match(tl.titulo, /2 en China con precio/); bien("dejó la tarea en Pendientes: " + tl.titulo);
 assert.equal(db.prepare("SELECT estado FROM tareas WHERE id='t1'").get().estado, "hecha"); bien("cerró la tarea 'Buscar proveedor' de origen");
 const msgM = tgs.find((t) => t.chat_id === "777");
 assert.ok(msgM && /Jordan 4 retro x50/.test(msgM.text)); bien("Telegram a Manuel: " + msgM.text.split("\n")[0]);
@@ -142,23 +158,58 @@ assert.equal((await api(cS, "lista?f=mias")).busquedas.length, 2); bien("ahora e
 
 console.log("7) Fallas");
 db.prepare("UPDATE busquedas SET lanzada_ts = 0").run();   // simula día nuevo
-const r4 = await api(cS, "nueva", { producto: "caja de luz LED slim 50x70", cantidad: 20 });
+const r4 = await api(cS, "nueva", { producto: "caja de luz LED slim 50x70", cantidad: 20, fuentes: ["1688", "alibaba"] });
 apifyArranca = false; geminiCae = true;
 log = await B.vuelta(env);
 const b3e = db.prepare("SELECT * FROM busquedas WHERE id=?").get(r4.id);
 assert.equal(b3e.estado, "error"); assert.match(b3e.nota, /no arrancó/); bien("Apify sin crédito → error claro: " + b3e.nota);
 assert.match(JSON.parse(b3e.consultas).peso_motivo, /por defecto/); bien("si Gemini no responde, usa la palabra tal cual y 0,5 kg marcado como 'por defecto'");
-apifyArranca = true; geminiCae = false; estadoRun = "RUNNING";
+apifyArranca = true; geminiCae = false; estadoRun = "RUNNING"; db.prepare("DELETE FROM kv WHERE k LIKE 'buscador:agotado:%'").run();
 r = await api(cM, "busqueda", { id: r4.id, accion: "reintentar" }); assert.equal(r.ok, true);
 await B.vuelta(env);
 db.prepare("UPDATE busquedas SET runs = replace(runs, '\"desde\":', '\"desde\":0,\"x\":') WHERE id=?").run(r4.id);   // simula 30 min corriendo
 log = await B.vuelta(env);
 assert.ok(llamadas.some(([m, u]) => u.includes("/abort"))); bien("si Apify tarda más de 20 min, la corta y guarda lo que haya");
 env.MAX_USD_MES = "0.2"; db.prepare("UPDATE busquedas SET lanzada_ts = 0 WHERE id<>?").run(r4.id); db.prepare("UPDATE busquedas SET lanzada_ts = ?, costo = 0.15 WHERE id=?").run(Date.now(), r4.id);
-await api(cM, "nueva", { producto: "pistola masajeadora", cantidad: 20 });
+await api(cM, "nueva", { producto: "pistola masajeadora", cantidad: 20, fuentes: ["1688", "alibaba"] });
 log = await B.vuelta(env); assert.ok(log.some((l) => l.includes("tope mensual"))); bien("tope mensual de Apify respetado");
 delete env.MAX_USD_MES;
 r = await api(cM, "busqueda", { id: r2.id, accion: "archivar" }); assert.equal(db.prepare("SELECT estado FROM tareas WHERE ref=?").get("busq:" + r2.id).estado, "hecha"); bien("archivar cierra su pendiente");
+
+console.log("7b) Búsqueda web multipaís (Tavily)");
+assert.equal((await api(cM, "nueva", { producto: "Jordan 4", cantidad: 10, fuentes: ["web"], paises: [] })).ok, false); bien("web sin países: pide elegir al menos uno");
+const rw = await api(cM, "nueva", { producto: "zapatillas Jordan 4", cantidad: 10, calidad: "replica", fuentes: ["web"], paises: ["ar", "py", "br"], asignar: "manuel" });
+assert.equal(rw.ok, true);
+tavs.length = 0; let vueltas = 0, bw;
+do { await B.vuelta(env); bw = db.prepare("SELECT * FROM busquedas WHERE id=?").get(rw.id); vueltas++; } while (bw.estado !== "lista" && vueltas < 6);
+assert.equal(bw.estado, "lista"); bien(`terminó en ${vueltas} vueltas (${tavs.length} búsquedas en Tavily, ${JSON.parse(bw.web).creditos} créditos)`);
+assert.deepEqual([...new Set(tavs.map((t) => t.country))].sort(), ["argentina", "brazil", "paraguay"]); bien("buscó en cada país con su filtro de país");
+assert.equal(bw.costo, 0); bien("la búsqueda solo web no gasta Apify");
+const pw = db.prepare("SELECT * FROM proveedores WHERE busqueda=? ORDER BY puntaje DESC").all(rw.id);
+console.table(pw.map((p) => ({ pais: p.pais, proveedor: p.proveedor, tipo: p.tipo, calidad: p.calidad, minimo: p.minimo, contactos: p.contactos, puntaje: p.puntaje })));
+assert.ok(!pw.some((p) => /vape/i.test(p.titulo + p.link))); bien("descartó el vaper");
+assert.ok(!pw.some((p) => /blog/.test(p.link))); bien("descartó el blog (no vende)");
+assert.equal(pw.filter((p) => /megashoes/.test(p.link)).length, 1); bien("sin duplicados entre países");
+const py = JSON.parse(pw.find((p) => p.pais === "py").contactos);
+assert.deepEqual(py.wa, ["595981123456"]); assert.deepEqual(py.ig, ["megashoes.cde"]); assert.deepEqual(py.mail, ["ventas@megashoes.com.py"]); bien("Paraguay: sacó WhatsApp, Instagram y mail de la página");
+const ar = JSON.parse(pw.find((p) => p.pais === "ar").contactos);
+assert.deepEqual(ar.wa, ["5491155551234"]); assert.deepEqual(ar.tel, ["01144445555"]); bien("Argentina: WhatsApp escrito en texto y teléfono");
+assert.deepEqual(JSON.parse(pw.find((p) => p.pais === "br").contactos).wa, ["5511999998888"]); bien("Brasil: link api.whatsapp.com");
+assert.equal(pw.find((p) => p.pais === "br").minimo_ok, 1); assert.equal(pw.find((p) => p.pais === "py").calidad, "réplica"); bien("clasificó calidad y mínimo");
+const tw = db.prepare("SELECT titulo FROM tareas WHERE ref=?").get("busq:" + rw.id).titulo; assert.match(tw, /3 en la web, 3 con WhatsApp/); bien("tarea: " + tw);
+assert.ok(tgs.some((t) => /zapatillas Jordan 4 x10/.test(t.text) && /🇵🇾 Paraguay: 1/.test(t.text))); bien("Telegram con el resumen por país");
+const lw = (await api(cM, "lista?f=mias")).busquedas.find((b) => b.id === rw.id);
+assert.equal(lw.proveedores.find((p) => p.pais === "py").contactos.wa[0], "595981123456"); assert.equal(lw.web, undefined); bien("el panel recibe los contactos listos para los botones");
+// mixta + Tavily caído
+tavilyCae = true; estadoRun = "SUCCEEDED";
+const rx = await api(cM, "nueva", { producto: "pistola masajeadora mini", cantidad: 20, fuentes: ["web", "1688"], paises: ["ar"] });
+for (let i = 0; i < 4; i++) await B.vuelta(env);
+const bx = db.prepare("SELECT * FROM busquedas WHERE id=?").get(rx.id);
+assert.equal(bx.estado, "lista"); assert.match(bx.nota, /web con errores/); assert.ok(db.prepare("SELECT COUNT(*) n FROM proveedores WHERE busqueda=? AND fuente='1688'").get(rx.id).n > 0);
+bien("si Tavily falla, igual entrega lo de 1688 y lo avisa: " + bx.nota.slice(0, 80));
+tavilyCae = false;
+const pwb = await (await B.default.fetch(new Request("https://b/probar-web?clave=k&pais=paraguay&q=x"), env)).json();
+assert.equal(pwb.ok, true); bien("/probar-web con Tavily: " + pwb.resultados.length + " resultados, " + pwb.usadas_este_mes + " usadas este mes");
 
 console.log("8) Rutas del worker buscador");
 const BW = B.default;

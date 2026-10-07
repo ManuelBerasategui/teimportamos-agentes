@@ -1,5 +1,5 @@
 /**
- * Buscador de proveedores · Te Importamos (v1.0, Fase 1)
+ * Buscador de proveedores · Te Importamos (v1.1: + búsqueda web multipaís con Tavily)
  *
  * Cómo funciona (todo asincrónico, para no pasar los ~30 s ni los 50 subpedidos de Cloudflare gratis):
  *   1. El panel (worker "cotizador") guarda una fila en la tabla "busquedas" con estado "nueva".
@@ -10,8 +10,8 @@
  *   4. Deja una tarea "busqueda_lista" en Pendientes y avisa por Telegram a quien le tocó.
  *
  * Variables (Cloudflare > buscador > Settings > Variables and Secrets):
- *   Secret: APIFY_TOKEN, GEMINI_KEY (de un proyecto de Google APARTE del cotizador), VERIFY_TOKEN, TELEGRAM_TOKEN
- *   Texto (opcionales): MAX_BUSQUEDAS_DIA, MAX_USD_MES, MAX_RESULTADOS_FUENTE, RECARGO_1688, ACTOR_1688, ACTOR_ALIBABA, TELEGRAM_CHAT
+ *   Secret: TAVILY_KEY (búsqueda web, 1.000 gratis por mes), APIFY_TOKEN, GEMINI_KEY (de un proyecto de Google APARTE del cotizador), VERIFY_TOKEN, TELEGRAM_TOKEN
+ *   Texto (opcionales): MAX_TAVILY_MES, MAX_BUSQUEDAS_DIA, MAX_USD_MES, MAX_RESULTADOS_FUENTE, RECARGO_1688, ACTOR_1688, ACTOR_ALIBABA, TELEGRAM_CHAT
  * Binding: DB (D1 "agente", la misma del cotizador)
  */
 
@@ -30,7 +30,17 @@ const ACTORES = {
   alibaba: { id: "automation-lab~alibaba-products-scraper", usdPorItem: 0.003 },
 };
 const PROHIBIDO = /\b(vapes?|vapers?|vapeador|elf ?bar|lost ?mary|pods? desechables?|puffs?|cigarrillos?|tabaco|nicotina|medicamentos?|f[aá]rmacos?|drogas?|marihuana|cannabis|thc|cbd)\b/i;
-const VERSION = "buscador v1.0";
+// Búsqueda web (Tavily): países, idioma de las búsquedas y cuántas búsquedas por país
+const PAISES = {
+  ar: { nombre: "Argentina", tavily: "argentina", idioma: "español rioplatense", bandera: "🇦🇷" },
+  py: { nombre: "Paraguay", tavily: "paraguay", idioma: "español (Paraguay, Ciudad del Este)", bandera: "🇵🇾" },
+  br: { nombre: "Brasil", tavily: "brazil", idioma: "portugués de Brasil", bandera: "🇧🇷" },
+  cl: { nombre: "Chile", tavily: "chile", idioma: "español de Chile", bandera: "🇨🇱" },
+  us: { nombre: "EE. UU.", tavily: "united states", idioma: "inglés de EE. UU.", bandera: "🇺🇸" },
+  cn: { nombre: "China", tavily: "china", idioma: "inglés (fábricas chinas que exportan)", bandera: "🇨🇳" },
+};
+const WEB = { consultasPorPais: 2, resultadosPorConsulta: 8, consultasPorVuelta: 5, guardarPorPais: 5, tavilyPorMes: 950 };
+const VERSION = "buscador v1.1";
 // =====================================================================
 
 const AR = 3 * 3600e3;   // Argentina = UTC-3
@@ -57,10 +67,20 @@ export const ESQUEMA = [
   "CREATE TABLE IF NOT EXISTS tareas (id TEXT PRIMARY KEY, ts INTEGER, tipo TEXT, tel TEXT, nombre TEXT, titulo TEXT, detalle TEXT, datos TEXT, ref TEXT, estado TEXT)",
   "CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT, exp INTEGER)",
 ];
+// Columnas agregadas después (si ya existen, el error se ignora). Copia idéntica en el panel.
+export const MIGRACIONES = [
+  "ALTER TABLE busquedas ADD COLUMN paises TEXT",
+  "ALTER TABLE busquedas ADD COLUMN web TEXT",
+  "ALTER TABLE proveedores ADD COLUMN pais TEXT",
+  "ALTER TABLE proveedores ADD COLUMN calidad TEXT",
+  "ALTER TABLE proveedores ADD COLUMN contactos TEXT",
+  "ALTER TABLE proveedores ADD COLUMN resumen TEXT",
+];
 let tablasListas = false;
 async function prepararTablas(env) {
   if (tablasListas) return;
   await env.DB.batch(ESQUEMA.map((s) => env.DB.prepare(s)));
+  for (const m of MIGRACIONES) await env.DB.prepare(m).run().catch(() => {});
   tablasListas = true;
 }
 const kvGet = async (env, k) => {
@@ -206,11 +226,21 @@ async function gastoMes(env) {
   return n((await env.DB.prepare("SELECT SUM(costo) c FROM busquedas WHERE lanzada_ts >= ?").bind(inicioMesAR()).first())?.c);
 }
 async function lanzadasHoy(env) {
-  return n((await env.DB.prepare("SELECT COUNT(*) c FROM busquedas WHERE lanzada_ts >= ?").bind(inicioDiaAR()).first())?.c);
+  return n((await env.DB.prepare("SELECT COUNT(*) c FROM busquedas WHERE lanzada_ts >= ? AND runs LIKE '%\"id\":%'").bind(inicioDiaAR()).first())?.c);
 }
 
+const CALIDAD_TXT = { replica: "RÉPLICA (copia de marca, 1:1, AAA)", original: "ORIGINAL (de marca, nuevo)", reacondicionado: "REACONDICIONADO / refurbished (original usado o reparado)", indistinto: "cualquier calidad" };
+function consultasWebPorDefecto(b, paises) {
+  const p = b.producto, extra = { replica: "réplica", original: "original", reacondicionado: "reacondicionado" }[b.calidad] || "";
+  const base = { ar: [`${p} ${extra} por mayor mayorista`, `${p} mayorista whatsapp`], py: [`${p} ${extra} por mayor Ciudad del Este`, `${p} mayorista Paraguay`],
+    br: [`${p} atacado fornecedor`, `${p} atacado whatsapp`], cl: [`${p} ${extra} mayorista Chile`, `${p} por mayor Santiago`],
+    us: [`${p} wholesale distributor`, b.calidad === "reacondicionado" ? `${p} refurbished wholesale` : `${p} bulk supplier`], cn: [`${p} factory manufacturer`, `${p} wholesale supplier China`] };
+  return Object.fromEntries(paises.map((k) => [k, base[k].map((x) => x.replace(/\s+/g, " ").trim())]));
+}
 async function prepararConsultas(env, b) {
-  const r = await iaJSON(env, `Sos comprador de una importadora argentina. Un cliente pide este producto para traer desde China:
+  const paises = JSON.parse(b.paises || "[]").filter((k) => PAISES[k]);
+  const web = JSON.parse(b.fuentes || "[]").includes("web") && paises.length;
+  const r = await iaJSON(env, `Sos comprador de una importadora argentina. Un cliente pide este producto:
 PRODUCTO: "${b.producto}"
 CANTIDAD: ${b.cantidad} unidades · CALIDAD: ${b.calidad || "indistinto"}${b.presupuesto ? ` · PRESUPUESTO: ${b.presupuesto}` : ""}
 
@@ -219,13 +249,17 @@ Devolvé SOLO este JSON:
  "en": "search keywords for Alibaba.com in English, short (2 to 6 words), wholesale style",
  "peso_kg": peso bruto estimado de UNA unidad con su caja, en kg (número),
  "peso_motivo": "una frase corta de por qué ese peso",
- "nota": "una advertencia corta si aplica (por ejemplo: si piden ORIGINAL, en 1688/Alibaba casi todo es genérico o réplica; si el producto es muy pesado o frágil), o vacío"}
+ "nota": "una advertencia corta si aplica (por ejemplo: si piden ORIGINAL, en 1688/Alibaba casi todo es genérico o réplica; si el producto es muy pesado o frágil), o vacío"${web ? `,
+ "web": {${paises.map((k) => `"${k}": ["búsqueda 1", "búsqueda 2"]`).join(", ")}}` : ""}}
+${web ? `Para "web": ${WEB.consultasPorPais} búsquedas de Google por país para encontrar PROVEEDORES (fábricas, mayoristas, distribuidores, importadores que venden por mayor) de este producto, en el idioma y la jerga de cada país: ${paises.map((k) => `${k} = ${PAISES[k].nombre}, en ${PAISES[k].idioma}`).join("; ")}. Calidad buscada: ${CALIDAD_TXT[b.calidad] || CALIDAD_TXT.indistinto}. Usá palabras como "por mayor", "mayorista", "atacado", "wholesale", "distributor", "factory" según el país; podés sumar "whatsapp" o "catálogo" para encontrar contactos.` : ""}
 Reglas: no traduzcas marcas registradas como si fueran genéricas si piden réplica; usá el nombre del modelo (por ejemplo "AJ4" para Jordan 4). Nada de texto fuera del JSON.`);
   const peso = n(r?.peso_kg);
   return {
     zh: String(r?.zh || b.producto).slice(0, 80), en: String(r?.en || b.producto).slice(0, 80),
     peso_kg: peso > 0 && peso < 2000 ? peso : 0.5, peso_motivo: r ? String(r.peso_motivo || "").slice(0, 160) : "Gemini no respondió: se usa 0,5 kg por defecto",
     nota: String(r?.nota || "").slice(0, 300), ia: !!r,
+    web: web ? Object.fromEntries(Object.entries({ ...consultasWebPorDefecto(b, paises), ...(r?.web || {}) }).filter(([k, v]) => paises.includes(k) && Array.isArray(v))
+      .map(([k, v]) => [k, v.map((x) => String(x).slice(0, 120)).filter(Boolean).slice(0, WEB.consultasPorPais)])) : null,
   };
 }
 
@@ -235,6 +269,9 @@ function entradaActor(fuente, b, c, max) {
   return { queries: [c.en], maxItems: max, maxPagesPerQuery: 2, ...(filtroMinimo ? { maxMinimumOrder: b.cantidad } : {}) };
 }
 
+async function tavilyUsadosMes(env) { return n(await kvGet(env, `buscador:tavily:${new Date(Date.now() - AR).toISOString().slice(0, 7)}`)); }
+async function sumarTavily(env, k) { const c = `buscador:tavily:${new Date(Date.now() - AR).toISOString().slice(0, 7)}`; await kvPut(env, c, (await tavilyUsadosMes(env)) + k, 40 * 86400); }
+
 export async function lanzarNuevas(env, log = []) {
   const nuevas = (await env.DB.prepare("SELECT * FROM busquedas WHERE estado='nueva' AND archivada=0 ORDER BY ts LIMIT ?").bind(TOPES.porVuelta).all()).results || [];
   const tp = topes(env);
@@ -243,14 +280,35 @@ export async function lanzarNuevas(env, log = []) {
       await env.DB.prepare("UPDATE busquedas SET estado='error', nota=? WHERE id=?").bind("Producto que no trabajamos (vapers, tabaco, fármacos o drogas): no se busca.", b.id).run();
       log.push(`${b.id}: prohibido`); continue;
     }
-    if (!env.APIFY_TOKEN) { await env.DB.prepare("UPDATE busquedas SET nota=? WHERE id=?").bind("Falta cargar APIFY_TOKEN en el worker buscador.", b.id).run(); log.push(`${b.id}: sin token`); continue; }
-    const fuentes = JSON.parse(b.fuentes || '["1688","alibaba"]').filter((f) => ACTORES[f]);
-    const estimado = fuentes.reduce((s, f) => s + ACTORES[f].usdPorItem * tp.resultadosPorFuente, 0);
-    const [hoy, mes] = await Promise.all([lanzadasHoy(env), gastoMes(env)]);
-    if (hoy >= tp.busquedasPorDia) { await env.DB.prepare("UPDATE busquedas SET nota=? WHERE id=?").bind(`En espera: ya se hicieron ${hoy} búsquedas hoy (tope ${tp.busquedasPorDia}). Sale sola mañana.`, b.id).run(); log.push(`${b.id}: tope diario`); continue; }
-    if (mes + estimado > tp.usdPorMes) { await env.DB.prepare("UPDATE busquedas SET nota=? WHERE id=?").bind(`En espera: este mes ya se gastaron USD ${red(mes)} de USD ${tp.usdPorMes} en Apify. Sale sola el mes que viene (o subí MAX_USD_MES).`, b.id).run(); log.push(`${b.id}: tope mensual`); continue; }
+    const todas = JSON.parse(b.fuentes || '["1688","alibaba"]');
+    let fuentes = todas.filter((f) => ACTORES[f]);
+    const notas = [];
+    // Apify (1688 / Alibaba): con topes de costo
+    if (fuentes.length) {
+      const estimado = fuentes.reduce((s, f) => s + ACTORES[f].usdPorItem * tp.resultadosPorFuente, 0);
+      const [hoy, mes] = await Promise.all([lanzadasHoy(env), gastoMes(env)]);
+      let motivo = "";
+      if (!env.APIFY_TOKEN) motivo = "Falta cargar APIFY_TOKEN en el worker buscador.";
+      else if (hoy >= tp.busquedasPorDia) motivo = `ya se hicieron ${hoy} búsquedas en 1688/Alibaba hoy (tope ${tp.busquedasPorDia})`;
+      else if (mes + estimado > tp.usdPorMes) motivo = `este mes ya se gastaron USD ${red(mes)} de USD ${tp.usdPorMes} en Apify`;
+      if (motivo) {
+        if (!todas.includes("web")) {   // sin web, espera a que haya cupo
+          await env.DB.prepare("UPDATE busquedas SET nota=? WHERE id=?").bind(`En espera: ${motivo}. Sale sola cuando haya cupo.`, b.id).run();
+          log.push(`${b.id}: ${/hoy/.test(motivo) ? "tope diario" : /mes/.test(motivo) ? "tope mensual" : "sin token"}`); continue;
+        }
+        notas.push(`1688/Alibaba salteado: ${motivo}`); fuentes = [];
+      }
+    }
+    // Web (Tavily): gratis hasta 1.000 por mes
+    let usarWeb = todas.includes("web") && JSON.parse(b.paises || "[]").length > 0;
+    if (usarWeb && !env.TAVILY_KEY) { notas.push("Web salteada: falta cargar TAVILY_KEY en el worker buscador."); usarWeb = false; }
+    if (usarWeb && (await tavilyUsadosMes(env)) >= n(env.MAX_TAVILY_MES, WEB.tavilyPorMes)) { notas.push("Web salteada: se terminaron las búsquedas gratis de Tavily de este mes."); usarWeb = false; }
+    if (!fuentes.length && !usarWeb) {
+      await env.DB.prepare("UPDATE busquedas SET estado='error', nota=? WHERE id=?").bind(notas.join(" · ") || "No hay fuentes para buscar.", b.id).run();
+      log.push(`${b.id}: error (sin fuentes)`); continue;
+    }
 
-    const c = await prepararConsultas(env, b);
+    const c = await prepararConsultas(env, { ...b, fuentes: JSON.stringify(usarWeb ? ["web"] : []) });
     const runs = [];
     for (const f of fuentes) {
       const q = new URLSearchParams({ maxItems: String(tp.resultadosPorFuente), maxTotalChargeUsd: String(TOPES.usdPorRun), timeout: "600" });
@@ -259,11 +317,12 @@ export async function lanzarNuevas(env, log = []) {
       if (r.ok && r.j?.data?.id) runs.push({ fuente: f, id: r.j.data.id, ds: r.j.data.defaultDatasetId, estado: "RUNNING", desde: Date.now() });
       else runs.push({ fuente: f, estado: "NO_ARRANCO", error: `${r.status} ${r.err}`.trim().slice(0, 200) });
     }
-    const arrancaron = runs.some((r) => r.id);
-    const nota = [c.nota, ...runs.filter((r) => !r.id).map((r) => `${r.fuente}: no arrancó (${r.error})`)].filter(Boolean).join(" · ");
-    await env.DB.prepare("UPDATE busquedas SET estado=?, consultas=?, peso_kg=?, runs=?, lanzada_ts=?, nota=? WHERE id=?")
-      .bind(arrancaron ? "buscando" : "error", JSON.stringify(c), c.peso_kg, JSON.stringify(runs), Date.now(), nota, b.id).run();
-    log.push(`${b.id}: ${arrancaron ? "lanzada" : "error"} (${runs.map((r) => r.fuente + ":" + r.estado).join(", ")})`);
+    const web = usarWeb && c.web ? { pend: Object.entries(c.web).flatMap(([pais, qs]) => qs.map((q) => ({ pais, q }))), cands: [], creditos: 0, errores: [] } : null;
+    const arrancaron = runs.some((r) => r.id) || !!web?.pend.length;
+    const nota = [c.nota, ...notas, ...runs.filter((r) => !r.id).map((r) => `${r.fuente}: no arrancó (${r.error})`)].filter(Boolean).join(" · ");
+    await env.DB.prepare("UPDATE busquedas SET estado=?, consultas=?, peso_kg=?, runs=?, web=?, lanzada_ts=?, nota=? WHERE id=?")
+      .bind(arrancaron ? "buscando" : "error", JSON.stringify(c), c.peso_kg, JSON.stringify(runs), web ? JSON.stringify(web) : null, Date.now(), nota, b.id).run();
+    log.push(`${b.id}: ${arrancaron ? "lanzada" : "error"} (${[...runs.map((r) => r.fuente + ":" + r.estado), web ? `web:${web.pend.length} búsquedas` : ""].filter(Boolean).join(", ")})`);
   }
   return log;
 }
@@ -308,35 +367,134 @@ export async function procesarResultados(env, b, items) {
   return lista;
 }
 
-async function guardar(env, b, lista, runs) {
+async function guardar(env, b, lista, runs, listaWeb = [], web = null) {
   const ahora = Date.now();
   const costo = red(runs.reduce((s, r) => s + n(r.costo), 0), 4);
   const mejor = lista.length ? Math.min(...lista.map((p) => p.puesto_u).filter((v) => v > 0)) : null;
+  const todos = [...lista.map((p) => ({ ...p, pais: "cn", calidad: null, contactos: null, resumen: "" })), ...listaWeb];
   const ops = [env.DB.prepare("DELETE FROM proveedores WHERE busqueda=?").bind(b.id)];
-  for (const p of lista) {
-    ops.push(env.DB.prepare(`INSERT INTO proveedores (id,busqueda,ts,fuente,titulo,titulo_orig,link,foto,proveedor,prov_link,ubicacion,tipo,verificado,anios,ventas,calif,minimo,tramos,moneda,precio_u,precio_usd,puesto_u,total,minimo_ok,parecido,puntaje,contacto,estado,notas)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'nuevo','')`).bind(
+  for (const p of todos) {
+    ops.push(env.DB.prepare(`INSERT INTO proveedores (id,busqueda,ts,fuente,titulo,titulo_orig,link,foto,proveedor,prov_link,ubicacion,tipo,verificado,anios,ventas,calif,minimo,tramos,moneda,precio_u,precio_usd,puesto_u,total,minimo_ok,parecido,puntaje,contacto,estado,notas,pais,calidad,contactos,resumen)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'nuevo','',?,?,?,?)`).bind(
       id6(), b.id, ahora, p.fuente, String(p.titulo).slice(0, 300), String(p.titulo_orig).slice(0, 300), p.link, p.foto, String(p.proveedor).slice(0, 160), p.prov_link,
-      p.ubicacion, p.tipo, p.verificado, p.anios, p.ventas, p.calif, p.minimo, JSON.stringify(p.tramos.slice(0, 6)), p.moneda, p.precio_u, p.precio_usd, p.puesto_u, p.total,
-      p.minimo_ok, p.parecido, p.puntaje, p.contacto));
+      p.ubicacion, p.tipo, p.verificado, p.anios, p.ventas, p.calif, p.minimo, JSON.stringify((p.tramos || []).slice(0, 6)), p.moneda, p.precio_u, p.precio_usd, p.puesto_u, p.total,
+      p.minimo_ok, p.parecido, p.puntaje, p.contacto, p.pais, p.calidad, p.contactos ? JSON.stringify(p.contactos) : null, p.resumen || ""));
   }
   const fallas = runs.filter((r) => r.estado !== "SUCCEEDED").map((r) => `${r.fuente}: ${r.estado.toLowerCase()}`);
-  const notaPrev = String(b.nota || "").split(" · ").filter((x) => x && !/^(1688|alibaba):/.test(x));
-  const nota = [...notaPrev, ...fallas, lista.length ? "" : "No apareció nada que coincida. Probá con otras palabras o sacá el filtro de mínimo."].filter(Boolean).join(" · ");
-  ops.push(env.DB.prepare("UPDATE busquedas SET estado='lista', runs=?, costo=?, lista_ts=?, n_prov=?, mejor_u=?, nota=? WHERE id=?")
-    .bind(JSON.stringify(runs), costo, ahora, lista.length, mejor, nota, b.id));
+  if (web?.errores?.length) fallas.push(`web con errores (${uniq(web.errores).slice(0, 2).join("; ")})`);
+  const notaPrev = String(b.nota || "").split(" · ").filter((x) => x && !/^(1688|alibaba):|^web con errores/.test(x));
+  const nota = [...notaPrev, ...fallas, todos.length ? "" : "No apareció nada que coincida. Probá con otras palabras o sacá el filtro de mínimo."].filter(Boolean).join(" · ");
+  ops.push(env.DB.prepare("UPDATE busquedas SET estado='lista', runs=?, web=?, costo=?, lista_ts=?, n_prov=?, mejor_u=?, nota=? WHERE id=?")
+    .bind(JSON.stringify(runs), web ? JSON.stringify(web) : null, costo, ahora, todos.length, mejor, nota, b.id));
   // Pendientes: una tarea para quien le tocó
-  const titulo = lista.length ? `Búsqueda lista: ${b.producto} x${b.cantidad} · ${lista.length} proveedores · mejor USD ${mejor.toFixed(2)}/u puesto` : `Búsqueda sin resultados: ${b.producto} x${b.cantidad}`;
-  const detalle = `Asignada a: ${b.asignado || "-"}${b.cliente ? `\nCliente: ${b.cliente}` : ""}\n` + lista.slice(0, 3).map((p, i) => `${i + 1}. ${p.fuente} · USD ${p.puesto_u}/u puesto · mín ${p.minimo || "?"} · ${String(p.titulo).slice(0, 70)}`).join("\n");
+  const conWa = listaWeb.filter((p) => p.contactos?.wa?.length).length;
+  const partes = [lista.length ? `${lista.length} en China con precio (mejor USD ${mejor.toFixed(2)}/u puesto)` : "", listaWeb.length ? `${listaWeb.length} en la web${conWa ? `, ${conWa} con WhatsApp` : ""}` : ""].filter(Boolean);
+  const titulo = todos.length ? `Búsqueda lista: ${b.producto} x${b.cantidad} · ${partes.join(" · ")}` : `Búsqueda sin resultados: ${b.producto} x${b.cantidad}`;
+  const porPais = uniq(listaWeb.map((p) => p.pais)).map((k) => `${PAISES[k]?.bandera || ""} ${PAISES[k]?.nombre || k}: ${listaWeb.filter((p) => p.pais === k).length}`).join(" · ");
+  const detalle = `Asignada a: ${b.asignado || "-"}${b.cliente ? `\nCliente: ${b.cliente}` : ""}\n` + lista.slice(0, 3).map((p, i) => `${i + 1}. ${p.fuente} · USD ${p.puesto_u}/u puesto · mín ${p.minimo || "?"} · ${String(p.titulo).slice(0, 70)}`).join("\n") + (porPais ? `\nWeb: ${porPais}` : "");
   ops.push(env.DB.prepare("INSERT INTO tareas (id, ts, tipo, tel, nombre, titulo, detalle, datos, ref, estado) VALUES (?,?,?,?,?,?,?,?,?,'abierta')")
     .bind(id6(), ahora, "busqueda_lista", b.tel || "", b.asignado ? `Para ${b.asignado}` : "", titulo, detalle, JSON.stringify({ busqueda: b.id, asignado: b.asignado }), `busq:${b.id}`));
   if (b.tarea) ops.push(env.DB.prepare("UPDATE tareas SET estado='hecha' WHERE id=? AND tipo='proveedor'").bind(b.tarea));
   await env.DB.batch(ops);
   const url = `${env.PANEL_URL || "https://cotizador.berasateguimanuel07.workers.dev"}/panel/busquedas#${b.id}`;
-  await telegram(env, b.asignado, lista.length
-    ? `🔎 Te dejé una búsqueda nueva: ${b.producto} x${b.cantidad}\n${lista.length} proveedores · mejor precio puesto USD ${mejor.toFixed(2)}/u\n${url}`
+  await telegram(env, b.asignado, todos.length
+    ? `🔎 Te dejé una búsqueda nueva: ${b.producto} x${b.cantidad}\n${partes.join("\n")}${porPais ? `\n${porPais}` : ""}\n${url}`
     : `🔎 La búsqueda "${b.producto}" no encontró nada que coincida.\n${url}`);
-  return { costo, n: lista.length, mejor };
+  return { costo, n: todos.length, mejor };
+}
+
+// ---------------------------------------------------------------------------
+// Búsqueda web (Tavily): busca, saca contactos de cada página y la IA clasifica
+// ---------------------------------------------------------------------------
+const uniq = (a) => [...new Set(a.filter(Boolean))];
+export function sacarContactos(texto, url = "") {
+  const t = `${texto || ""} ${url}`;
+  const dig = (x) => String(x).replace(/\D/g, "");
+  const wa = uniq([
+    ...[...t.matchAll(/(?:wa\.me\/|wa\.link\/|whatsapp\.com\/send\/?\?phone=|whatsapp\.com\/send\?phone=)\+?(\d{8,15})/gi)].map((m) => m[1]),
+    ...[...t.matchAll(/whats?\s?app[^0-9+\n]{0,25}(\+?\d[\d\s().-]{7,18}\d)/gi)].map((m) => dig(m[1])),
+  ].filter((x) => x.length >= 8 && x.length <= 15));
+  const ig = uniq([...t.matchAll(/instagram\.com\/([A-Za-z0-9_.]{2,30})/gi)].map((m) => m[1].replace(/\.$/, "")).filter((x) => !/^(p|reel|reels|explore|accounts|stories|tv|direct|share)$/i.test(x)));
+  const mail = uniq([...t.matchAll(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g)].map((m) => m[0].toLowerCase()).filter((x) => !/\.(png|jpe?g|gif|webp|svg)$|example\.|sentry|wixpress|@2x/.test(x)));
+  const tel = uniq([...t.matchAll(/(?:tel:|tel[eé]fono:?|phone:?|cel(?:ular)?:?)\s*(\+?\d[\d\s().-]{7,18}\d)/gi)].map((m) => dig(m[1])).filter((x) => x.length >= 8 && x.length <= 15 && !wa.includes(x)));
+  const wechat = uniq([...t.matchAll(/we\s?chat(?:\s?id)?[:：\s]+([A-Za-z][A-Za-z0-9_-]{4,19})/gi)].map((m) => m[1]));
+  return { wa: wa.slice(0, 3), ig: ig.slice(0, 2), mail: mail.slice(0, 2), tel: tel.slice(0, 2), wechat: wechat.slice(0, 2) };
+}
+const paisDeDominio = (u) => { try { const h = new URL(u).hostname; return h.endsWith(".py") ? "py" : h.endsWith(".ar") ? "ar" : h.endsWith(".br") ? "br" : h.endsWith(".cl") ? "cl" : h.endsWith(".cn") ? "cn" : ""; } catch { return ""; } };
+const hayContacto = (c) => !!(c && (c.wa.length || c.ig.length || c.mail.length || c.tel.length || c.wechat.length));
+
+async function tavily(env, q, pais) {
+  const r = await fetch("https://api.tavily.com/search", {
+    method: "POST", headers: { Authorization: `Bearer ${env.TAVILY_KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ query: q, search_depth: "basic", max_results: WEB.resultadosPorConsulta, include_raw_content: "markdown", topic: "general", ...(PAISES[pais]?.tavily ? { country: PAISES[pais].tavily } : {}) }),
+  }).catch((e) => ({ ok: false, status: 0, json: async () => ({ detail: String(e) }) }));
+  const j = await r.json().catch(() => ({}));
+  return { ok: !!r.ok, status: r.status, resultados: j.results || [], error: r.ok ? "" : String(j.detail?.error || j.detail || j.error || r.status).slice(0, 160) };
+}
+
+// Hace hasta WEB.consultasPorVuelta búsquedas (en paralelo) y guarda los candidatos con sus contactos
+export async function pasoWeb(env, web) {
+  const tanda = web.pend.splice(0, WEB.consultasPorVuelta);
+  const res = await Promise.all(tanda.map((x) => tavily(env, x.q, x.pais)));
+  const clave = (u) => String(u).replace(/[?#].*$/, "").replace(/\/$/, "");
+  const porClave = new Map(web.cands.map((c) => [clave(c.url), c]));
+  let usados = 0;
+  res.forEach((r, i) => {
+    if (!r.ok) { web.errores.push(`${tanda[i].pais}: ${r.error}`); return; }
+    usados++;
+    for (const it of r.resultados) {
+      const url = String(it.url || "");
+      if (!url) continue;
+      const texto = String(it.raw_content || "").slice(0, 40000);
+      const precios = uniq([...`${it.content} ${texto}`.matchAll(/(?:US?\$|R\$|\$|USD|U\$S|Gs\.?|₲|¥|RMB)\s?\d[\d.,]{0,9}/g)].map((m) => m[0])).slice(0, 4);
+      const nuevo = { pais: paisDeDominio(url) || tanda[i].pais, url: url.replace(/[?#].*$/, ""), titulo: String(it.title || "").slice(0, 160), resumen: String(it.content || "").slice(0, 350), contactos: sacarContactos(texto + " " + (it.content || ""), url), precios };
+      const ya = porClave.get(clave(url));
+      if (!ya) { porClave.set(clave(url), nuevo); web.cands.push(nuevo); continue; }
+      // La misma página salió dos veces: se juntan los contactos y se queda el texto más completo
+      for (const k of Object.keys(ya.contactos)) ya.contactos[k] = uniq([...ya.contactos[k], ...nuevo.contactos[k]]).slice(0, 3);
+      ya.precios = uniq([...ya.precios, ...nuevo.precios]).slice(0, 4);
+      if (nuevo.resumen.length > ya.resumen.length) { ya.resumen = nuevo.resumen; ya.titulo = nuevo.titulo; }
+    }
+  });
+  web.creditos += usados;
+  if (usados) await sumarTavily(env, usados);
+  web.cands = web.cands.slice(0, 120);
+  return web;
+}
+
+const PESO_TIPO = { "fábrica": 10, mayorista: 9, distribuidor: 9, importador: 8, comercio: 5, marketplace: 4 };
+export async function clasificarWeb(env, b, cands) {
+  if (!cands.length) return [];
+  const lote = cands.filter((c) => !PROHIBIDO.test(c.titulo + " " + c.resumen)).slice(0, 60);
+  const r = await iaJSON(env, `Pedido del cliente: "${b.producto}" x${b.cantidad} · calidad buscada: ${CALIDAD_TXT[b.calidad] || CALIDAD_TXT.indistinto}.
+Estas son páginas que salieron en Google. Para cada una decidí si es un PROVEEDOR que vende ese producto (o productos de ese rubro) y cómo es.
+${lote.map((c, i) => `${i}. [${c.pais}] ${c.titulo} | ${c.url} | ${c.resumen.slice(0, 220).replace(/\s+/g, " ")}${c.precios.length ? " | precios: " + c.precios.join(", ") : ""}`).join("\n")}
+Devolvé SOLO: {"p":[{"i":0,"tipo":"fábrica|mayorista|distribuidor|importador|comercio|marketplace|nada","calidad":"réplica|original|reacondicionado|genérico|no se sabe","parecido":0-10,"nombre":"nombre del negocio","minimo":número o null,"precio":"precio por unidad o por mayor si se ve, o vacío"}]}
+"nada" = notas de prensa, blogs, foros, tutoriales, páginas que no venden. "parecido" = cuánto coincide con lo pedido (10 = vende exactamente eso).`);
+  const m = new Map((r?.p || []).map((x) => [n(x.i, -1), x]));
+  const out = [];
+  lote.forEach((c, i) => {
+    const x = m.get(i);
+    if (r && (!x || x.tipo === "nada" || n(x.parecido) < 4)) return;
+    if (!r && !hayContacto(c.contactos)) return;   // sin IA: solo los que tienen algún contacto
+    const tipo = x?.tipo || "no se sabe", calidad = x?.calidad || "no se sabe", parecido = x ? Math.round(n(x.parecido, 6)) : null;
+    const k = c.contactos;
+    const contacto = k.wa.length ? 10 : k.ig.length || k.tel.length || k.wechat.length ? 7 : k.mail.length ? 5 : 2;
+    const coincideCalidad = !b.calidad || b.calidad === "indistinto" || calidad.startsWith(b.calidad.slice(0, 5)) ? 10 : calidad === "no se sabe" ? 6 : 2;
+    const puntaje = red(Math.max(1, Math.min(10, (parecido ?? 6) * 0.35 + (PESO_TIPO[tipo] ?? 5) * 0.25 + contacto * 0.25 + coincideCalidad * 0.1 + (x?.precio || c.precios.length ? 10 : 0) * 0.05)), 1);
+    let host = ""; try { host = new URL(c.url).hostname.replace(/^www\./, ""); } catch {}
+    out.push({
+      fuente: "web", pais: c.pais, titulo: c.titulo, titulo_orig: c.titulo, link: c.url, foto: "", proveedor: String(x?.nombre || host).slice(0, 120), prov_link: "",
+      ubicacion: PAISES[c.pais]?.nombre || c.pais, tipo, calidad, verificado: 0, anios: null, ventas: null, calif: null, minimo: n(x?.minimo) || null, tramos: [], moneda: "",
+      precio_u: null, precio_usd: null, puesto_u: null, total: null, minimo_ok: !n(x?.minimo) || n(x?.minimo) <= b.cantidad ? 1 : 0, parecido, puntaje,
+      contacto: [k.wa.length ? "WhatsApp" : "", k.ig.length ? "Instagram" : "", k.mail.length ? "mail" : "", k.tel.length ? "teléfono" : "", k.wechat.length ? "WeChat" : ""].filter(Boolean).join(", "),
+      contactos: k, resumen: [String(x?.precio || c.precios.join(" · ")).slice(0, 120), c.resumen.slice(0, 260)].filter(Boolean).join(" — "),
+    });
+  });
+  // Los mejores por país
+  const porPais = {};
+  for (const p of out.sort((a, z) => z.puntaje - a.puntaje)) (porPais[p.pais] = porPais[p.pais] || []).push(p);
+  return Object.values(porPais).flatMap((l) => l.slice(0, WEB.guardarPorPais));
 }
 
 export async function recogerResultados(env, log = []) {
@@ -354,9 +512,11 @@ export async function recogerResultados(env, log = []) {
         r.estado = "VENCIDO";
       }
     }
-    if (!runs.every((r) => TERMINADO.has(r.estado))) {
-      await env.DB.prepare("UPDATE busquedas SET runs=? WHERE id=?").bind(JSON.stringify(runs), b.id).run();
-      log.push(`${b.id}: sigue buscando`); continue;
+    let web = b.web ? JSON.parse(b.web) : null;
+    if (web?.pend.length) web = await pasoWeb(env, web);
+    if (!runs.every((r) => TERMINADO.has(r.estado)) || web?.pend.length) {
+      await env.DB.prepare("UPDATE busquedas SET runs=?, web=? WHERE id=?").bind(JSON.stringify(runs), web ? JSON.stringify(web) : null, b.id).run();
+      log.push(`${b.id}: sigue buscando${web ? ` (web: faltan ${web.pend.length})` : ""}`); continue;
     }
     // Todos terminaron: traer lo que haya (también de los que se cortaron, Apify guarda lo parcial)
     const items = [];
@@ -364,9 +524,11 @@ export async function recogerResultados(env, log = []) {
       const d = await apify(env, `/datasets/${r.ds}/items?clean=true&limit=60`);
       if (d.ok && Array.isArray(d.j)) { r.items = d.j.length; for (const it of d.j) items.push({ fuente: r.fuente, item: it }); }
     }
-    const lista = await procesarResultados(env, b, items);
-    const res = await guardar(env, b, lista, runs);
-    log.push(`${b.id}: lista con ${res.n} proveedores, costo USD ${res.costo}`);
+    const lista = items.length ? await procesarResultados(env, b, items) : [];
+    const listaWeb = web ? await clasificarWeb(env, b, web.cands) : [];
+    if (web) { web.cands = []; }   // no hace falta guardar los crudos
+    const res = await guardar(env, b, lista, runs, listaWeb, web);
+    log.push(`${b.id}: lista con ${res.n} proveedores (${lista.length} China con precio, ${listaWeb.length} web), costo USD ${res.costo}`);
   }
   return log;
 }
@@ -398,7 +560,7 @@ export default {
       const tp = topes(env);
       return Response.json({
         version: VERSION, hoy: await lanzadasHoy(env), gasto_mes_usd: red(await gastoMes(env), 3), topes: tp,
-        claves: { apify: !!env.APIFY_TOKEN, gemini: !!env.GEMINI_KEY, telegram: !!env.TELEGRAM_TOKEN },
+        claves: { apify: !!env.APIFY_TOKEN, tavily: !!env.TAVILY_KEY, gemini: !!env.GEMINI_KEY, telegram: !!env.TELEGRAM_TOKEN }, tavily_usadas_mes: await tavilyUsadosMes(env),
         cola: (await env.DB.prepare("SELECT estado, COUNT(*) n FROM busquedas GROUP BY estado").all()).results,
       });
     }
@@ -420,23 +582,14 @@ export default {
       }
       return Response.json(res);
     }
-    // Prueba de búsqueda web con Gemini + Google (para la búsqueda multipaís): ?q=texto
+    // Prueba de búsqueda web con Tavily: ?q=texto&pais=py
     if (url.pathname === "/probar-web") {
-      const q = url.searchParams.get("q") || "mayorista zapatillas por mayor Argentina whatsapp";
-      const res = [];
-      for (const m of ["gemini-2.5-flash", "gemini-2.5-flash-lite", ...(await modelos(env))]) {
-        if (res.some((x) => x.ok)) break;
-        const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, {
-          method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_KEY },
-          body: JSON.stringify({ contents: [{ parts: [{ text: `Buscá en Google proveedores para: ${q}. Listá hasta 8 con nombre y sitio web.` }] }], tools: [{ google_search: {} }] }),
-        }).catch((e) => ({ ok: false, status: 0, json: async () => ({ error: { message: String(e) } }) }));
-        const j = await r.json().catch(() => ({}));
-        const meta = j.candidates?.[0]?.groundingMetadata || {};
-        res.push({ modelo: m, ok: r.ok && !!(meta.groundingChunks || []).length, status: r.status, error: j.error?.message || null,
-          busquedas: meta.webSearchQueries || [], links: (meta.groundingChunks || []).map((c) => ({ titulo: c.web?.title, url: c.web?.uri })).slice(0, 10),
-          texto: (j.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("").slice(0, 1500) });
-      }
-      return Response.json(res, { headers: { "Content-Type": "application/json; charset=utf-8" } });
+      if (!env.TAVILY_KEY) return Response.json({ ok: false, error: "Falta TAVILY_KEY" });
+      const pais = url.searchParams.get("pais") || "ar";
+      const r = await tavily(env, url.searchParams.get("q") || "zapatillas por mayor mayorista whatsapp", pais);
+      if (r.ok) await sumarTavily(env, 1);
+      return Response.json({ ok: r.ok, error: r.error || null, usadas_este_mes: await tavilyUsadosMes(env),
+        resultados: r.resultados.map((x) => ({ titulo: x.title, url: x.url, contactos: sacarContactos(`${x.raw_content || ""} ${x.content || ""}`, x.url) })) });
     }
     return new Response("No existe", { status: 404 });
   },
