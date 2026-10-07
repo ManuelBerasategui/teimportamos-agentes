@@ -141,5 +141,5 @@ $('#bTg').onclick=async()=>{const r=await api('telegram',{});$('#tgRes').textCon
 $('#bProbar').onclick=async()=>{const r=await api('probar-alertas',{});$('#tgRes').textContent='Alertas enviadas: '+r.alertas};
 let qrUlt='';async function qrPoll(){if($('#v-conf').hidden)return;const q=await api('qr');const box=$('#qrBox');if(q.estado==='paired'){box.innerHTML='<b style="color:#1FA855">Vinculado</b>';return}if(!q.qr){box.textContent='Esperando QR (corré el comando en Termux)';qrUlt='';return}if(q.qr===qrUlt)return;qrUlt=q.qr;box.innerHTML='';if(typeof QRCode==='undefined'){box.textContent='No cargó el dibujador de QR: recargá la página';qrUlt='';return}new QRCode(box,{text:q.qr,width:260,height:260,correctLevel:QRCode.CorrectLevel.L})}
 setInterval(qrPoll,3000);
-cargar();setInterval(cargar,60000);if(location.hash)abrir(decodeURIComponent(location.hash.slice(1)));
+cargar();setInterval(()=>{if(document.visibilityState==='visible'&&!$('#v-res').hidden)cargar()},300000);if(location.hash)abrir(decodeURIComponent(location.hash.slice(1)));
 </script></body></html>`;

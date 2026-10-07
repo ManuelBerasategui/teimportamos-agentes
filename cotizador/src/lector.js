@@ -46,6 +46,8 @@ export async function prepararLector(env) {
     env.DB.prepare("CREATE INDEX IF NOT EXISTS w_msg_ts ON w_msg(ts)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS w_conv (conv TEXT PRIMARY KEY, nombre TEXT, grupo INTEGER, primer_ts INTEGER, ult_ts INTEGER, ult_yo INTEGER, ult_cliente_ts INTEGER DEFAULT 0, ult_yo_ts INTEGER DEFAULT 0, ult_texto TEXT, n INTEGER DEFAULT 0, analizado_ts INTEGER DEFAULT 0, puntaje INTEGER, temp TEXT, producto TEXT, etapa TEXT, accion TEXT, resumen TEXT, cot_pend INTEGER DEFAULT 0, alerta_ts INTEGER DEFAULT 0, archivado INTEGER DEFAULT 0)"),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS w_conv_ult ON w_conv(ult_ts)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS w_conv_primer ON w_conv(primer_ts)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS w_conv_cli ON w_conv(ult_cliente_ts)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS w_hito (id TEXT PRIMARY KEY, conv TEXT, tipo TEXT, ts INTEGER, dato TEXT)"),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS w_hito_tipo ON w_hito(tipo, ts)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS reportes (id TEXT PRIMARY KEY, tipo TEXT, desde INTEGER, hasta INTEGER, creado INTEGER, datos TEXT)"),
@@ -130,6 +132,7 @@ async function guardarLote(env, lote) {
     const ts = Date.parse(m.timestamp) || Date.now();
     const conv = m.conversation_address;
     if (!conv || /status@broadcast|newsletter/.test(conv)) continue;
+    if (hist && (esGrupo(conv) || ts < Date.now() - 7 * 86400e3)) continue;   // ahorro: el historial de grupos y lo viejo no se guarda
     const yo = esPropio(env, m.sender_address, lote.organization_address) ? 1 : 0;
     const grupo = esGrupo(conv) ? 1 : 0;
     const tipo = m.content?.kind || m.content?.type || "text";
@@ -174,19 +177,19 @@ async function guardarLote(env, lote) {
 // 2) Métricas exactas
 // ---------------------------------------------------------------------------
 export async function metricas(env, desde, hasta = Date.now()) {
+  // Liviano: usa índices (w_conv por fechas, w_hito por tipo) y nunca recorre todos los mensajes
   const q = (sql, ...b) => env.DB.prepare(sql).bind(...b).first();
-  const [nuevos, cot, cotChats, ventas, recibidos, enviados, activos] = await Promise.all([
-    q("SELECT COUNT(*) n FROM w_conv WHERE grupo=0 AND primer_ts>=? AND primer_ts<?", desde, hasta),
+  const [nuevos, activos, cot, cotChats, ventas, sinResp] = await Promise.all([
+    q("SELECT COUNT(*) n FROM w_conv WHERE primer_ts>=? AND primer_ts<? AND grupo=0", desde, hasta),
+    q("SELECT COUNT(*) n FROM w_conv WHERE ult_ts>=? AND ult_ts<? AND grupo=0", desde, hasta),
     q("SELECT COUNT(*) n FROM w_hito WHERE tipo='cotizacion' AND ts>=? AND ts<?", desde, hasta),
     q("SELECT COUNT(DISTINCT conv) n FROM w_hito WHERE tipo='cotizacion' AND ts>=? AND ts<?", desde, hasta),
     q("SELECT COUNT(*) n FROM w_hito WHERE tipo='venta' AND ts>=? AND ts<?", desde, hasta),
-    q("SELECT COUNT(*) n FROM w_msg WHERE grupo=0 AND yo=0 AND hist=0 AND ts>=? AND ts<?", desde, hasta),
-    q("SELECT COUNT(*) n FROM w_msg WHERE grupo=0 AND yo=1 AND hist=0 AND ts>=? AND ts<?", desde, hasta),
-    q("SELECT COUNT(DISTINCT conv) n FROM w_msg WHERE grupo=0 AND yo=0 AND ts>=? AND ts<?", desde, hasta),
+    q("SELECT COUNT(*) n FROM w_conv WHERE ult_cliente_ts>=? AND grupo=0 AND archivado=0 AND ult_yo=0", Date.now() - 72 * 3600e3),
   ]);
-  const sinResp = await env.DB.prepare("SELECT COUNT(*) n FROM w_conv WHERE grupo=0 AND archivado=0 AND ult_yo=0 AND ult_cliente_ts>=?").bind(Date.now() - 72 * 3600e3).first();
-  // Tiempo de respuesta: mediana (min) entre el primer mensaje del cliente y nuestra respuesta, por chat activo
-  const filas = (await env.DB.prepare("SELECT conv, yo, ts FROM w_msg WHERE grupo=0 AND hist=0 AND ts>=? AND ts<? ORDER BY conv, ts").bind(desde, hasta).all()).results || [];
+  // Tiempo de respuesta: solo con los mensajes de las últimas 24 h del período (acotado)
+  const desdeResp = Math.max(desde, hasta - 86400e3);
+  const filas = (await env.DB.prepare("SELECT conv, yo, ts FROM w_msg WHERE ts>=? AND ts<? AND grupo=0 AND hist=0 ORDER BY conv, ts LIMIT 4000").bind(desdeResp, hasta).all()).results || [];
   const esperas = []; let conv = null, esperando = null;
   for (const f of filas) {
     if (f.conv !== conv) { conv = f.conv; esperando = null; }
@@ -194,11 +197,11 @@ export async function metricas(env, desde, hasta = Date.now()) {
     if (f.yo && esperando !== null) { esperas.push((f.ts - esperando) / 60000); esperando = null; }
   }
   esperas.sort((a, b) => a - b);
-  const mediana = esperas.length ? Math.round(esperas[Math.floor(esperas.length / 2)]) : null;
   return {
     nuevos: nuevos?.n || 0, activos: activos?.n || 0, cotizaciones: cot?.n || 0, chatsCotizados: cotChats?.n || 0,
-    ventas: ventas?.n || 0, recibidos: recibidos?.n || 0, enviados: enviados?.n || 0, sinResponder: sinResp?.n || 0,
-    respuestaMin: mediana, conversion: cotChats?.n ? Math.round(((ventas?.n || 0) / cotChats.n) * 100) : null,
+    ventas: ventas?.n || 0, sinResponder: sinResp?.n || 0,
+    respuestaMin: esperas.length ? Math.round(esperas[Math.floor(esperas.length / 2)]) : null,
+    conversion: cotChats?.n ? Math.round(((ventas?.n || 0) / cotChats.n) * 100) : null,
   };
 }
 
@@ -256,7 +259,7 @@ export async function listas(env) {
   const [sinResponder, escribiles, cotPend, ventasRec] = await Promise.all([
     q("SELECT * FROM w_conv WHERE grupo=0 AND archivado=0 AND ult_yo=0 AND ult_cliente_ts>=? ORDER BY COALESCE(puntaje,5) DESC, ult_cliente_ts ASC LIMIT 60", hace72),
     q("SELECT * FROM w_conv WHERE grupo=0 AND archivado=0 AND puntaje>=6 AND accion<>'' AND etapa NOT IN ('vendido','perdido','no_cliente') AND ult_ts>=? ORDER BY puntaje DESC, ult_ts DESC LIMIT 40", Date.now() - 10 * 86400e3),
-    q("SELECT * FROM w_conv WHERE grupo=0 AND archivado=0 AND cot_pend=1 ORDER BY ult_cliente_ts ASC LIMIT 40"),
+    q("SELECT * FROM w_conv WHERE ult_ts>=? AND grupo=0 AND archivado=0 AND cot_pend=1 ORDER BY ult_cliente_ts ASC LIMIT 40", Date.now() - 14 * 86400e3),
     q("SELECT h.ts, h.dato, c.conv, c.nombre, c.producto FROM w_hito h LEFT JOIN w_conv c ON c.conv=h.conv WHERE h.tipo='venta' ORDER BY h.ts DESC LIMIT 20"),
   ]);
   return { sinResponder, escribiles, cotPend, ventasRec };
@@ -428,11 +431,11 @@ export async function preguntarAsistente(env, iaJSON, pregunta, historial = []) 
   const productos = (await env.DB.prepare("SELECT producto, COUNT(*) n FROM w_conv WHERE grupo=0 AND producto<>'' AND ult_ts>=? GROUP BY lower(producto) ORDER BY n DESC LIMIT 15").bind(desde).all()).results || [];
   const chats = (await env.DB.prepare("SELECT conv, nombre, puntaje, temp, producto, etapa, accion, resumen, ult_yo, ult_ts, ult_texto, cot_pend FROM w_conv WHERE grupo=0 AND archivado=0 AND ult_ts>=? ORDER BY COALESCE(puntaje,0) DESC, ult_ts DESC LIMIT 160").bind(desde).all()).results || [];
   // Búsqueda por palabras de la pregunta en TODOS los mensajes (para "¿a quién le tenía que mandar X?")
-  const palabras = [...new Set(normalQ(q).split(/[^a-z0-9ñ]+/).filter((w) => w.length > 3 && !VACIAS_Q.has(w)))].slice(0, 5);
+  const palabras = [...new Set(normalQ(q).split(/[^a-z0-9ñ]+/).filter((w) => w.length > 3 && !VACIAS_Q.has(w)))].slice(0, 3);
   let hallados = [];
   for (const w of palabras) {
     const raiz = w.replace(/(es|s)$/, "");
-    const r = (await env.DB.prepare("SELECT m.conv, c.nombre, m.yo, m.texto, m.ts FROM w_msg m LEFT JOIN w_conv c ON c.conv=m.conv WHERE m.grupo=0 AND lower(m.texto) LIKE ? ORDER BY m.ts DESC LIMIT 40").bind(`%${raiz}%`).all()).results || [];
+    const r = (await env.DB.prepare("SELECT m.conv, c.nombre, m.yo, m.texto, m.ts FROM w_msg m LEFT JOIN w_conv c ON c.conv=m.conv WHERE m.ts>=? AND m.grupo=0 AND lower(m.texto) LIKE ? ORDER BY m.ts DESC LIMIT 40").bind(ahora - 10 * 86400e3, `%${raiz}%`).all()).results || [];
     hallados.push(...r);
   }
   const vistos = new Set(); hallados = hallados.filter((h) => { const k = h.conv + h.ts; if (vistos.has(k)) return false; vistos.add(k); return true; }).slice(0, 90);
@@ -466,6 +469,8 @@ export async function apiLector(env, req, url, iaJSON) {
   const r = url.pathname.replace("/panel/api/805/", "");
   const json = (x) => Response.json(x);
   if (r === "resumen") {
+    const cache = JSON.parse((await kvGet(env, "lector_resumen")) || "null");
+    if (cache && Date.now() - cache.ts < 5 * 60e3 && !url.searchParams.get("fresco")) return json(cache.d);
     const hoy = inicioDiaAR();
     const [dia, semana, mes, l] = await Promise.all([metricas(env, hoy), metricas(env, hoy - 6 * 86400e3), metricas(env, hoy - 29 * 86400e3), listas(env)]);
     const estado = JSON.parse((await kvGet(env, "lector_estado")) || "null");
@@ -473,7 +478,9 @@ export async function apiLector(env, req, url, iaJSON) {
     const serie = (await env.DB.prepare("SELECT primer_ts ts FROM w_conv WHERE grupo=0 AND primer_ts>=?").bind(hoy - 13 * 86400e3).all()).results || [];
     const porDia = {}; for (let i = 13; i >= 0; i--) porDia[diaAR(hoy - i * 86400e3 + 3600e3)] = 0;
     for (const s of serie) { const k = diaAR(s.ts); if (k in porDia) porDia[k]++; }
-    return json({ dia, semana, mes, ...l, estado, ultimo: +(await kvGet(env, "lector_ultimo")) || null, telegram: !!(env.TELEGRAM_TOKEN && (env.TELEGRAM_CHAT || (await kvGet(env, "telegram_chat")))), configurado: !!env.LECTOR_TOKEN, productos, nuevosPorDia: porDia });
+    const d = { dia, semana, mes, ...l, estado, ultimo: +(await kvGet(env, "lector_ultimo")) || null, telegram: !!(env.TELEGRAM_TOKEN && (env.TELEGRAM_CHAT || (await kvGet(env, "telegram_chat")))), configurado: !!env.LECTOR_TOKEN, productos, nuevosPorDia: porDia };
+    await kvPut(env, "lector_resumen", JSON.stringify({ ts: Date.now(), d }));
+    return json(d);
   }
   if (r === "chats") {
     const q = (url.searchParams.get("q") || "").trim(), f = url.searchParams.get("f") || "todos";
