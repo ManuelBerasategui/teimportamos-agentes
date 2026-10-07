@@ -138,11 +138,11 @@ h2{font-size:15px;margin:22px 0 10px;padding:6px 10px;background:var(--f);border
 .precio{text-align:right;display:flex;flex-direction:column;align-items:flex-end;justify-content:center;border-left:1px dashed var(--b);padding-left:12px}
 .precio b{font-size:21px;color:var(--n);line-height:1.1}.precio small{color:var(--g);font-size:11px}.precio span{font-size:12px;margin-top:4px}.precio em{font-style:normal;font-size:11px;color:var(--g);margin-top:4px}.precio.mini{border:0}.reservado{background:#fff3ec;color:#b2440a;border-radius:6px;padding:5px 8px;font-size:12px;font-weight:700;display:inline-block}.ico.num{display:flex;align-items:center;justify-content:center;background:var(--f);font-weight:800;font-size:11px;color:var(--g)}
 .aviso{background:#fffbeb;color:#92400e;border-radius:6px;padding:4px 7px;font-size:12px}
-.link a,.contactos a{color:#1d4ed8;text-decoration:none;word-break:break-all}.contactos{display:flex;gap:6px 12px;flex-wrap:wrap;font-weight:600}
+.link a,.contactos a{color:#EA5B0C;text-decoration:none;word-break:break-all}.contactos{display:flex;gap:6px 12px;flex-wrap:wrap;font-weight:600}
 .nota{margin-top:22px;padding:12px 14px;border:1px solid var(--b);border-radius:10px;color:var(--g);font-size:11.5px;background:var(--f)}
 footer{margin-top:18px;display:flex;justify-content:space-between;color:var(--g);font-size:11px;border-top:1px solid var(--b);padding-top:10px}
 @media(max-width:640px){.hoja{padding:18px 14px}.ficha{grid-template-columns:1fr 1fr}.card{grid-template-columns:70px 1fr}.card img,.sinfoto{width:70px;height:70px}.precio{grid-column:1/-1;align-items:flex-start;text-align:left;border:0;padding:0}}
-@media print{body{background:#fff}.barra{display:none}.hoja{padding:0;max-width:none}a{color:#1d4ed8}}
+@media print{body{background:#fff}.barra{display:none}.hoja{padding:0;max-width:none}a{color:#EA5B0C}}
 </style></head><body>
 <div class="barra"><button onclick="window.print()" class="on">Guardar como PDF / Imprimir</button>
 <a href="?id=${e(b.id)}&modo=interno"${cliente ? "" : ' class="on"'}>Interna</a><a href="?id=${e(b.id)}&modo=cliente"${modo === "cliente" ? ' class="on"' : ""}>Cliente con contactos</a><a href="?id=${e(b.id)}&modo=oculto"${oculto ? ' class="on"' : ""}>Cliente sin contactos</a>
@@ -283,7 +283,7 @@ export async function apiBusquedas(env, req, url, quien, usuarios = []) {
 export const PANEL_BUSQUEDAS = String.raw`<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Búsquedas · Te Importamos</title>
 <style>
-:root{--azul:#1d4ed8;--azul2:#e8efff;--fondo:#f5f7fb;--borde:#e3e8f0;--txt:#0f172a;--gris:#64748b;--rojo:#dc2626;--verde:#16a34a;--ambar:#d97706}
+:root{--azul:#EA5B0C;--azul2:#e8efff;--fondo:#f5f7fb;--borde:#e3e8f0;--txt:#0f172a;--gris:#64748b;--rojo:#dc2626;--verde:#16a34a;--ambar:#d97706}
 *{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--fondo);color:var(--txt)}
 header{display:flex;align-items:center;gap:14px;padding:12px 16px;background:#fff;border-bottom:1px solid var(--borde);position:sticky;top:0;z-index:5;flex-wrap:wrap}
 header b{color:var(--azul);font-size:18px}header a{color:var(--gris);text-decoration:none;font-weight:600}
