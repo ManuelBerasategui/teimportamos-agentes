@@ -51,8 +51,13 @@ chmod +x "$DIR/correr.sh"
 mkdir -p "$HOME/.termux/boot" && printf '#!/data/data/com.termux/files/usr/bin/bash\nnohup %s >/dev/null 2>&1 &\n' "$DIR/correr.sh" > "$HOME/.termux/boot/lector.sh" && chmod +x "$HOME/.termux/boot/lector.sh"
 pkill -f "$DIR/puente" 2>/dev/null || true; pkill -f "$DIR/correr.sh" 2>/dev/null || true
 nohup "$DIR/correr.sh" >/dev/null 2>&1 &
-sleep 4
-curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8081/sessions/x -H "Authorization: Bearer $LECTOR_TOKEN" | grep -qE "200|404" && echo "Puente funcionando ✅" || { echo "El puente no arrancó. Mirá $DIR/puente.log"; tail -20 "$DIR/puente.log"; exit 1; }
+OKP=""
+for i in $(seq 1 20); do
+  C=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8081/sessions/5493418051515 -H "Authorization: Bearer $LECTOR_TOKEN" || true)
+  if [ -n "$C" ] && [ "$C" != "000" ]; then OKP=1; break; fi
+  sleep 1
+done
+[ -n "$OKP" ] && echo "Puente funcionando ✅" || { echo "El puente no responde. Mirá $DIR/puente.log"; tail -20 "$DIR/puente.log"; exit 1; }
 
 echo "== 5/5 Vincular el 805"
 if [ -s "$DIR/datos/whatsmeow.db" ] && curl -s http://127.0.0.1:8081/sessions/5493418051515 -H "Authorization: Bearer $LECTOR_TOKEN" | grep -q '"logged_in":true'; then
