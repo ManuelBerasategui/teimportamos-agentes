@@ -50,6 +50,114 @@ async function siguienteTurno(env) {
   return +r.v;
 }
 
+
+// ---------------------------------------------------------------------------
+// Informe para imprimir / guardar como PDF (versión interna o para el cliente)
+// ---------------------------------------------------------------------------
+const e = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const usdF = (v) => (v == null ? "-" : "USD " + Number(v).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
+const NOMBRE_PAIS = { cn: "🇨🇳 China", ar: "🇦🇷 Argentina", py: "🇵🇾 Paraguay", br: "🇧🇷 Brasil", cl: "🇨🇱 Chile", us: "🇺🇸 Estados Unidos" };
+const CAL = { replica: "Réplica", original: "Original", reacondicionado: "Reacondicionado", indistinto: "Indistinto" };
+const corto = (u) => { try { const x = new URL(u); return (x.hostname.replace(/^www\./, "") + x.pathname).slice(0, 48) + (u.length > 60 ? "…" : ""); } catch { return u; } };
+export function htmlInforme(b, provs, modo) {
+  const cliente = modo === "cliente";
+  const lista = provs.filter((p) => p.estado !== "descartado");
+  const china = lista.filter((p) => p.fuente !== "web").sort((a, z) => (a.puesto_u ?? 1e9) - (z.puesto_u ?? 1e9));
+  const web = lista.filter((p) => p.fuente === "web");
+  const c = JSON.parse(b.consultas || "null") || {};
+  const fecha = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10).split("-").reverse().join("/");
+  const mejor = china.length ? Math.min(...china.map((p) => p.puesto_u).filter((v) => v > 0)) : null;
+  const paises = [...new Set(web.map((p) => p.pais))];
+  const tarjChina = (p, i) => {
+    const tr = (JSON.parse(p.tramos || "[]") || []).map((t) => `${t.desde}+ u: ${p.moneda === "CNY" ? "¥" : "US$"}${t.precio}`).join(" · ");
+    return `<article class="card">
+      ${p.foto ? `<img src="${e(p.foto)}" referrerpolicy="no-referrer" alt="" onerror="this.outerHTML='<div class=sinfoto>Sin foto</div>'">` : `<div class="sinfoto">Sin foto</div>`}
+      <div class="cuerpo">
+        <div class="eti"><span>#${i + 1}</span><span>${p.fuente === "1688" ? "1688 · mayorista chino" : "Alibaba · exportador"}</span>${p.verificado ? "<span>Verificado</span>" : ""}${p.tipo === "fábrica" ? "<span>Fábrica</span>" : ""}</div>
+        <h3>${e(p.titulo)}</h3>
+        <p class="gris">${e(p.proveedor || "Proveedor")} · ${e(p.ubicacion)}${p.anios ? ` · ${p.anios} años` : ""}${p.calif ? ` · ★ ${p.calif}` : ""}${p.ventas ? ` · ${Number(p.ventas).toLocaleString("es-AR")} vendidos` : ""}</p>
+        <p><b>Mínimo de compra:</b> ${e(p.minimo || "a confirmar")} u · <b>Precio en origen:</b> ${e(tr)}${cliente ? "" : ` (≈ ${usdF(p.precio_usd)}/u FOB)`}</p>
+        ${p.resumen ? `<p class="aviso">${e(p.resumen)}</p>` : ""}
+        <p class="link"><a href="${e(p.link)}">${e(corto(p.link))}</a></p>
+      </div>
+      <div class="precio"><small>Puesto en Argentina</small><b>${usdF(p.puesto_u)}</b><small>por unidad</small><span>Total x${b.cantidad}: ${usdF(p.total)}</span>${cliente ? "" : `<em>Puntaje ${p.puntaje}</em>`}</div>
+    </article>`;
+  };
+  const tarjWeb = (p) => {
+    const k = JSON.parse(p.contactos || "null") || {};
+    let host = ""; try { host = new URL(p.link).hostname; } catch {}
+    const cont = [
+      ...(k.wa || []).map((w) => `<a href="https://wa.me/${e(w)}">WhatsApp +${e(w)}</a>`),
+      ...(k.ig || []).map((u) => `<a href="https://instagram.com/${e(u)}">Instagram @${e(u)}</a>`),
+      ...(k.mail || []).map((m) => `<a href="mailto:${e(m)}">${e(m)}</a>`),
+      ...(k.tel || []).map((t) => `<span>Tel. +${e(t)}</span>`),
+      ...(k.wechat || []).map((w) => `<span>WeChat ${e(w)}</span>`),
+    ];
+    return `<article class="card web">
+      <img class="ico" src="https://www.google.com/s2/favicons?domain=${e(host)}&sz=64" alt="" onerror="this.style.visibility='hidden'">
+      <div class="cuerpo">
+        <div class="eti"><span>${e(p.tipo)}</span>${p.calidad && p.calidad !== "no se sabe" ? `<span>${e(p.calidad)}</span>` : ""}${p.minimo ? `<span>Mínimo ${e(p.minimo)}</span>` : ""}</div>
+        <h3>${e(p.proveedor || p.titulo)}</h3>
+        <p class="gris">${e(p.titulo)}</p>
+        ${p.resumen ? `<p>${e(p.resumen)}</p>` : ""}
+        <p class="contactos">${cont.join("") || "<span>Contacto: en su sitio web</span>"}</p>
+        <p class="link"><a href="${e(p.link)}">${e(corto(p.link))}</a></p>
+      </div>
+      ${cliente ? "" : `<div class="precio mini"><em>Puntaje ${p.puntaje}</em></div>`}
+    </article>`;
+  };
+  return `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Búsqueda de proveedores · ${e(b.producto)} · Te Importamos</title>
+<style>
+@page{size:A4;margin:14mm 12mm}
+:root{--n:#EA5B0C;--t:#1f2328;--g:#6b7280;--b:#e8e5e1;--f:#faf8f6}
+*{box-sizing:border-box}body{margin:0;font-family:-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;color:var(--t);background:#eceae7;font-size:13px;line-height:1.4}
+.hoja{max-width:820px;margin:0 auto;background:#fff;padding:32px 34px}
+.barra{position:sticky;top:0;background:#1f2328;color:#fff;display:flex;gap:10px;align-items:center;padding:10px 16px;flex-wrap:wrap;z-index:3}
+.barra a,.barra button{background:#fff;color:#1f2328;border:0;border-radius:8px;padding:8px 12px;font-weight:700;text-decoration:none;font-size:14px;cursor:pointer}.barra .on{background:var(--n);color:#fff}
+.barra span{opacity:.8;font-size:13px}
+header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid var(--n);padding-bottom:14px;margin-bottom:18px;gap:12px}
+.marca{font-size:24px;font-weight:800;letter-spacing:-.5px}.marca i{color:var(--n);font-style:normal}
+header small{color:var(--g);display:block;font-size:12px;margin-top:2px}
+.fecha{text-align:right;color:var(--g);font-size:12px}
+h1{font-size:22px;margin:0 0 6px;letter-spacing:-.3px}
+.ficha{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:12px 0 18px}
+.ficha div{background:var(--f);border:1px solid var(--b);border-radius:10px;padding:9px 11px}.ficha small{color:var(--g);display:block;font-size:11px;text-transform:uppercase;letter-spacing:.4px}.ficha b{font-size:15px}
+h2{font-size:15px;margin:22px 0 10px;padding:6px 10px;background:var(--f);border-left:4px solid var(--n);border-radius:4px;break-after:avoid}
+.card{display:grid;grid-template-columns:96px 1fr 150px;gap:14px;border:1px solid var(--b);border-radius:12px;padding:12px;margin-bottom:10px;break-inside:avoid}
+.card.web{grid-template-columns:40px 1fr auto}
+.card img{width:96px;height:96px;object-fit:cover;border-radius:8px;background:var(--f)}.card .ico{width:32px;height:32px;border-radius:6px}
+.sinfoto{width:96px;height:96px;border-radius:8px;background:var(--f);color:var(--g);display:flex;align-items:center;justify-content:center;font-size:11px}
+.card h3{margin:4px 0 3px;font-size:14px}.card p{margin:3px 0}.gris{color:var(--g);font-size:12px}
+.eti{display:flex;gap:5px;flex-wrap:wrap}.eti span{background:#fff3ec;color:#b2440a;border-radius:6px;padding:1px 7px;font-size:11px;font-weight:700;text-transform:capitalize}
+.precio{text-align:right;display:flex;flex-direction:column;align-items:flex-end;justify-content:center;border-left:1px dashed var(--b);padding-left:12px}
+.precio b{font-size:21px;color:var(--n);line-height:1.1}.precio small{color:var(--g);font-size:11px}.precio span{font-size:12px;margin-top:4px}.precio em{font-style:normal;font-size:11px;color:var(--g);margin-top:4px}.precio.mini{border:0}
+.aviso{background:#fffbeb;color:#92400e;border-radius:6px;padding:4px 7px;font-size:12px}
+.link a,.contactos a{color:#1d4ed8;text-decoration:none;word-break:break-all}.contactos{display:flex;gap:6px 12px;flex-wrap:wrap;font-weight:600}
+.nota{margin-top:22px;padding:12px 14px;border:1px solid var(--b);border-radius:10px;color:var(--g);font-size:11.5px;background:var(--f)}
+footer{margin-top:18px;display:flex;justify-content:space-between;color:var(--g);font-size:11px;border-top:1px solid var(--b);padding-top:10px}
+@media(max-width:640px){.hoja{padding:18px 14px}.ficha{grid-template-columns:1fr 1fr}.card{grid-template-columns:70px 1fr}.card img,.sinfoto{width:70px;height:70px}.precio{grid-column:1/-1;align-items:flex-start;text-align:left;border:0;padding:0}}
+@media print{body{background:#fff}.barra{display:none}.hoja{padding:0;max-width:none}a{color:#1d4ed8}}
+</style></head><body>
+<div class="barra"><button onclick="window.print()" class="on">Guardar como PDF / Imprimir</button>
+<a href="?id=${e(b.id)}&modo=interno"${cliente ? "" : ' class="on"'}>Interna</a><a href="?id=${e(b.id)}&modo=cliente"${cliente ? ' class="on"' : ""}>Para el cliente</a>
+<span>${cliente ? "Sin puntajes ni costos internos." : "Con puntajes y FOB (no mandar al cliente)."} En el celular: Compartir → Imprimir → Guardar PDF.</span></div>
+<div class="hoja">
+<header><div><div class="marca">Te <i>Importamos</i></div><small>Importación por encargo · Rosario, Argentina · teimportamosarg.com</small></div><div class="fecha">Informe de búsqueda de proveedores<br>${fecha}</div></header>
+<h1>${e(b.producto)}</h1>
+${b.cliente ? `<p class="gris">Preparado para: <b>${e(b.cliente)}</b></p>` : ""}
+<div class="ficha"><div><small>Cantidad</small><b>${b.cantidad} u</b></div><div><small>Calidad</small><b>${e(CAL[b.calidad] || b.calidad)}</b></div>
+<div><small>Proveedores</small><b>${lista.length}</b></div><div><small>${mejor ? "Mejor precio puesto" : "Países"}</small><b>${mejor ? usdF(mejor) + "/u" : e(paises.map((k) => NOMBRE_PAIS[k]).join(" "))}</b></div></div>
+${china.length ? `<h2>🇨🇳 China · con precio puesto en Argentina</h2>${china.map(tarjChina).join("")}` : ""}
+${["ar", "py", "br", "cl", "us", "cn"].map((k) => { const l = web.filter((p) => p.pais === k); return l.length ? `<h2>${NOMBRE_PAIS[k]} · proveedores y mayoristas</h2>${l.map(tarjWeb).join("")}` : ""; }).join("")}
+${lista.length ? "" : "<p>No se encontraron proveedores para este pedido.</p>"}
+<div class="nota"><b>Cómo leer este informe.</b> ${china.length ? `El <b>precio puesto en Argentina</b> incluye mercadería, flete internacional (${c.peso_kg ? `peso estimado ${String(c.peso_kg).replace(".", ",")} kg por unidad, ` : ""}avión hasta 250 kg), impuestos de importación, gestión y honorarios de Te Importamos, para la cantidad indicada. El peso y el precio final se confirman con el proveedor antes de comprar. ` : ""}${web.length ? "Los proveedores de cada país se encontraron en la web; precios y stock se consultan directamente por los contactos indicados. " : ""}Valores estimativos en dólares, sujetos a cambios del proveedor y del tipo de cambio.</div>
+<footer><span>Te Importamos · WhatsApp 341 805-1515</span><span>Búsqueda #${b.num}</span></footer>
+</div>
+<script>if(/[?&]imprimir=1/.test(location.search)){var im=[].slice.call(document.images);Promise.all(im.map(function(i){return i.complete?0:new Promise(function(r){i.onload=i.onerror=r})})).then(function(){setTimeout(function(){window.print()},300)})}</script>
+</body></html>`;
+}
+
 export async function apiBusquedas(env, req, url, quien, usuarios = []) {
   await preparar(env);
   const ruta = url.pathname.replace("/panel/api/busquedas/", "");
@@ -136,6 +244,12 @@ export async function apiBusquedas(env, req, url, quien, usuarios = []) {
     return json({ ok: true, res: "Guardado" });
   }
 
+  if (ruta === "informe") {
+    const b = await env.DB.prepare("SELECT * FROM busquedas WHERE id=?").bind(url.searchParams.get("id") || "").first();
+    if (!b) return new Response("No existe esa búsqueda", { status: 404 });
+    const provs = (await env.DB.prepare("SELECT * FROM proveedores WHERE busqueda=? ORDER BY puntaje DESC").bind(b.id).all()).results || [];
+    return new Response(htmlInforme(b, provs, url.searchParams.get("modo")), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
+  }
   if (ruta === "tarea") {
     const t = await env.DB.prepare("SELECT id, tel, nombre, titulo, detalle FROM tareas WHERE id=?").bind(url.searchParams.get("id") || "").first();
     if (!t) return json({ ok: false });
@@ -309,8 +423,8 @@ function bloques(b) {
   return h;
 }
 function descargar(b) {
-  var cols = ["pais", "fuente", "proveedor", "titulo", "link", "tipo", "calidad", "minimo", "puesto_u", "total", "puntaje", "whatsapp", "instagram", "mail", "telefono", "estado", "resumen"];
-  var filas = b.proveedores.map(function (p) { var k = p.contactos || {}; var o = Object.assign({}, p, { whatsapp: (k.wa || []).join(" "), instagram: (k.ig || []).join(" "), mail: (k.mail || []).join(" "), telefono: (k.tel || []).join(" ") }); return cols.map(function (c) { var v = o[c] == null ? "" : String(o[c]); return '"' + v.replace(/"/g, '""') + '"'; }).join(","); });
+  var cols = ["pais", "fuente", "proveedor", "titulo", "link", "foto", "ubicacion", "tipo", "calidad", "minimo", "precios_origen", "precio_usd", "puesto_u", "total", "puntaje", "whatsapp", "instagram", "mail", "telefono", "estado", "resumen"];
+  var filas = b.proveedores.map(function (p) { var k = p.contactos || {}; var o = Object.assign({}, p, { whatsapp: (k.wa || []).join(" "), instagram: (k.ig || []).join(" "), mail: (k.mail || []).join(" "), telefono: (k.tel || []).join(" "), precios_origen: (p.tramos || []).map(function (t) { return t.desde + "+: " + (p.moneda === "CNY" ? "¥" : "$") + t.precio; }).join(" | ") }); return cols.map(function (c) { var v = o[c] == null ? "" : String(o[c]); return '"' + v.replace(/"/g, '""') + '"'; }).join(","); });
   var a = document.createElement("a"); a.href = URL.createObjectURL(new Blob(["\ufeff" + cols.join(",") + "\n" + filas.join("\n")], { type: "text/csv" }));
   a.download = "proveedores-" + b.producto.replace(/[^a-z0-9]+/gi, "-").slice(0, 40) + ".csv"; a.click();
 }
@@ -342,7 +456,7 @@ function pintar(d) {
       '<div class="meta">#' + b.num + " · " + hace(b.ts) + " · para <b>" + esc(nombre(b.asignado)) + "</b>" + (b.cliente ? " · cliente: " + esc(b.cliente) : "") + " · calidad " + esc(b.calidad) + (b.presupuesto ? " · presupuesto " + esc(b.presupuesto) : "") + " · " + b.fuentes.join(" + ") + (b.paises && b.paises.length ? " (" + b.paises.join(", ").toUpperCase() + ")" : "") + (b.solo_minimo ? " · mínimo ≤ " + b.cantidad : "") + '</div>' +
       (c ? '<div class="meta">Buscado como: 「' + esc(c.zh) + '」 / "' + esc(c.en) + '" · peso estimado ' + c.peso_kg + " kg/u" + (c.peso_motivo ? " (" + esc(c.peso_motivo) + ")" : "") + (b.costo ? " · costó " + usd(b.costo) : "") + '</div>' : "") +
       '</div><div class="fila">' + otras.map(function (o) { return '<button class="btn" data-reasig="' + esc(o) + '">Pasar a ' + esc(nombre(o)) + '</button>'; }).join("") +
-      (b.estado === "error" || b.estado === "lista" ? '<button class="btn" data-reint="1">Buscar de nuevo</button>' : "") + (b.proveedores.length ? '<button class="btn" data-csv="1">Descargar</button>' : "") + '<button class="btn" data-arch="1">Archivar</button></div></div>' +
+      (b.estado === "error" || b.estado === "lista" ? '<button class="btn" data-reint="1">Buscar de nuevo</button>' : "") + (b.proveedores.length ? '<a class="btn" target="_blank" href="/panel/api/busquedas/informe?modo=cliente&id=' + b.id + '">Informe PDF</a><button class="btn" data-csv="1">Planilla</button>' : "") + '<button class="btn" data-arch="1">Archivar</button></div></div>' +
       (b.nota ? '<div class="nota">' + esc(b.nota) + '</div>' : "") +
       (b.estado === "lista" ? (b.proveedores.length ? '<div class="meta" style="margin-top:8px">' + activos + " proveedores. China: ordenados por precio puesto, confianza, mínimo y parecido (el peso es estimado, confirmalo antes de cotizar). Web: por parecido, tipo de negocio y si publica WhatsApp.</div>" + bloques(b) : "") : '<div class="vacio">' + (b.estado === "error" ? "" : "Buscando en " + b.fuentes.join(" + ") + (b.webInfo ? " (web: faltan " + b.webInfo.faltan + " búsquedas)" : "") + "... se actualiza sola.") + "</div>") +
       "</section>";

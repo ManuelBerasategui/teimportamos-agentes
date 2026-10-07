@@ -159,6 +159,10 @@ assert.equal((await api(cS, "lista?f=mias")).busquedas.length, 2); bien("ahora e
 console.log("6b) Precios por modelo y títulos en chino");
 { const pr = B.normalizar("1688", { url: "u", title: "跨境榨汁机", currency: "CNY", priceTiers: [{ minQuantity: 2, price: 9.5 }, { minQuantity: 2, price: 10.5 }] });
   assert.deepEqual(pr.tramos, [{ desde: 2, precio: 10.5 }]); assert.match(pr.resumen, /¥9.5 a ¥10.5/); bien("tramos con la misma cantidad = modelos: usa el más caro y lo avisa"); }
+{ const h = await (await W.fetch(new Request("https://x/panel/api/busquedas/informe?modo=cliente&id=" + r1.id, { headers: { cookie: cM } }), env, ctx)).text();
+  assert.match(h, /Puesto en Argentina/); assert.match(h, /Te <i>Importamos/); assert.doesNotMatch(h, /Puntaje \d/); assert.doesNotMatch(h, /cordones|laces/i);
+  const hi = await (await W.fetch(new Request("https://x/panel/api/busquedas/informe?modo=interno&id=" + r1.id, { headers: { cookie: cM } }), env, ctx)).text();
+  assert.match(hi, /Puntaje \d/); assert.match(hi, /FOB/); bien("informe PDF: versión cliente sin puntajes ni FOB, versión interna con todo; no incluye descartados"); }
 console.log("7) Fallas");
 db.prepare("UPDATE busquedas SET lanzada_ts = 0").run();   // simula día nuevo
 const r4 = await api(cS, "nueva", { producto: "caja de luz LED slim 50x70", cantidad: 20, fuentes: ["1688", "alibaba"] });
