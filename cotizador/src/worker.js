@@ -2814,10 +2814,10 @@ const PANEL_APP = String.raw`<!doctype html><html lang="es"><head><meta charset=
 :root{--azul:#EA5B0C;--azul2:#FDE3D3;--azul3:#FFF4EC;--rojo:#DC2626;--rojo2:#FEE2E2;--borde:#E5E7EB;--gris:#6B7280;--texto:#111827;--fondo:#F3F4F6}
 *{box-sizing:border-box}html,body{margin:0;height:100%;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:var(--texto);background:var(--fondo)}
 button{font:inherit;cursor:pointer}
-.top{height:56px;background:#fff;border-bottom:1px solid var(--borde);display:flex;align-items:center;gap:16px;padding:0 16px;position:sticky;top:0;z-index:5}
+.top{height:56px;background:#0B0B0B;border-bottom:3px solid var(--azul);display:flex;align-items:center;gap:16px;padding:0 16px;position:sticky;top:0;z-index:5}
 .marca{font-weight:700;color:var(--azul);white-space:nowrap}.tabs{display:flex;gap:4px;flex:1}
-.tab{border:0;background:none;padding:8px 14px;border-radius:8px;color:var(--gris);font-weight:600}.tab.on{background:var(--azul2);color:var(--azul)}
-.user{color:var(--gris);font-size:13px;white-space:nowrap}.user a{color:var(--gris)}
+.tab{border:0;background:none;padding:8px 14px;border-radius:8px;color:#D1D5DB;font-weight:600}.tab.on{background:var(--azul);color:#fff}
+.user{color:#9CA3AF;font-size:13px;white-space:nowrap}.user a{color:#D1D5DB}
 .vista{display:none}.vista.on{display:block}
 /* Dashboard */
 .dash{max-width:1200px;margin:0 auto;padding:16px}
@@ -2897,8 +2897,8 @@ button{font:inherit;cursor:pointer}
 .candado{position:absolute;right:62px;bottom:64px;background:#fff;border:1px solid var(--borde);border-radius:22px;padding:10px 8px;font-size:16px;box-shadow:0 4px 12px rgba(0,0,0,.08);z-index:4;text-align:center;line-height:1.2}
 .fallo{background:var(--rojo2);border:1px solid #FCA5A5;color:#991B1B;border-radius:10px;padding:8px 12px;font-size:13px;margin:8px 0}
 @media (max-width:760px){
-  .top{height:52px;padding:0 12px}.tabs{position:fixed;left:0;right:0;bottom:0;z-index:20;background:#fff;border-top:1px solid var(--borde);padding:6px 6px calc(6px + env(safe-area-inset-bottom));gap:2px}
-  .tab{flex:1;padding:10px 4px;font-size:13px;text-align:center;border-radius:10px}.tab .badge{margin-left:3px}
+  .top{height:52px;padding:0 12px}.tabs{position:fixed;left:0;right:0;bottom:0;z-index:20;background:#0B0B0B;border-top:3px solid var(--azul);padding:6px 6px calc(6px + env(safe-area-inset-bottom));gap:2px}
+  .tab{flex:1;padding:10px 1px;font-size:11px;text-align:center;border-radius:10px;min-width:0}.tab .badge{margin-left:3px}.tabs>a{flex:1;padding:10px 1px!important;font-size:11px;text-align:center;border-radius:10px!important;min-width:0}
   body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
   .chats,.ag{height:calc(100dvh - 52px - 64px - env(safe-area-inset-bottom))}
   .chead{padding:8px 10px;gap:6px}.chead .q{min-width:0}.chead .btn{padding:6px 9px;font-size:12px}.chead .estado{font-size:11px}
@@ -2914,7 +2914,7 @@ button{font:inherit;cursor:pointer}
 @media (max-width:760px){.lista{width:100%}.conv{display:none}.chats.abierto .conv{display:flex}.chats.abierto .lista{display:none}.volver{display:inline}.msgs{padding:12px}.m{max-width:86%}.marca{display:none}.user span{display:none}}
 </style></head><body>
 <div class="top"><div class="marca">Te Importamos</div>
-<div class="tabs"><button class="tab on" data-v="dash">Dashboard</button><button class="tab" data-v="pend">Pendientes<span class="badge" id="nPend"></span></button><button class="tab" data-v="chats">Chats</button><button class="tab" data-v="agentes">Agentes</button><a href="/panel/busquedas" style="text-decoration:none;padding:8px 14px;border-radius:8px;font-weight:600;color:#6B7280;align-self:center">Búsquedas</a><a href="/panel/805" style="text-decoration:none;padding:8px 14px;border-radius:8px;font-weight:600;color:#6B7280;align-self:center">WhatsApp</a></div>
+<div class="tabs"><button class="tab on" data-v="dash">Dashboard</button><button class="tab" data-v="pend">Pendientes<span class="badge" id="nPend"></span></button><button class="tab" data-v="chats">Chats</button><button class="tab" data-v="agentes">Agentes</button><a href="/panel/busquedas" style="text-decoration:none;padding:8px 14px;border-radius:8px;font-weight:600;color:#D1D5DB;align-self:center">Búsquedas</a><a href="/panel/805" style="text-decoration:none;padding:8px 14px;border-radius:8px;font-weight:600;color:#fff;background:#25D366;align-self:center">WhatsApp</a></div>
 <div class="user"><span id="usuario"></span> · <a href="/logout">Salir</a></div></div>
 
 <div class="vista on" id="v-dash"><div class="dash">

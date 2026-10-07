@@ -2,11 +2,11 @@
 export const PANEL_805 = `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>WhatsApp · Te Importamos</title>
 <style>
-:root{--azul:#EA5B0C;--fondo:#f5f7fb;--borde:#e3e8f0;--txt:#0f172a;--gris:#64748b;--rojo:#dc2626;--verde:#16a34a;--ambar:#d97706}
+:root{--azul:#1FA855;--fondo:#f5f7fb;--borde:#e3e8f0;--txt:#0f172a;--gris:#64748b;--rojo:#dc2626;--verde:#16a34a;--ambar:#d97706}
 *{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--fondo);color:var(--txt)}
-header{display:flex;align-items:center;gap:14px;padding:12px 18px;background:#fff;border-bottom:1px solid var(--borde);position:sticky;top:0;z-index:5;flex-wrap:wrap}
-header b{color:var(--azul);font-size:18px}header a{color:var(--gris);text-decoration:none;font-weight:600}
-.tabs{display:flex;gap:6px;flex-wrap:wrap}.tab{border:0;background:none;padding:8px 12px;border-radius:8px;font-weight:600;color:var(--gris);cursor:pointer;font-size:15px}.tab.on{background:#FDE3D3;color:var(--azul)}
+header{display:flex;align-items:center;gap:14px;padding:12px 18px;background:#0B0B0B;border-bottom:3px solid #EA5B0C;position:sticky;top:0;z-index:5;flex-wrap:wrap}
+header b{color:#25D366;font-size:18px}header a{color:#D1D5DB;text-decoration:none;font-weight:600}
+.tabs{display:flex;gap:6px;flex-wrap:wrap}.tab{border:0;background:none;padding:8px 12px;border-radius:8px;font-weight:600;color:#D1D5DB;cursor:pointer;font-size:15px}.tab.on{background:#25D366;color:#0B0B0B}
 main{padding:16px;max-width:1200px;margin:0 auto}
 .fila{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
 .btn{border:1px solid var(--borde);background:#fff;padding:8px 12px;border-radius:8px;cursor:pointer;font-weight:600}.btn.p{background:var(--azul);color:#fff;border-color:var(--azul)}
@@ -17,12 +17,12 @@ main{padding:16px;max-width:1200px;margin:0 auto}
 .vacio{color:var(--gris);font-size:14px;padding:8px 0}
 .chats{display:grid;grid-template-columns:340px 1fr;gap:12px;height:calc(100vh - 150px)}.lista{overflow:auto;background:#fff;border:1px solid var(--borde);border-radius:12px}
 .conv{background:#efeae2;border:1px solid var(--borde);border-radius:12px;overflow:auto;padding:12px;display:flex;flex-direction:column;gap:6px}
-.m{max-width:75%;padding:7px 10px;border-radius:10px;background:#fff;white-space:pre-wrap;word-wrap:break-word;font-size:14px}.m.yo{align-self:flex-end;background:#FDE3D3}.m small{display:block;color:var(--gris);font-size:11px;margin-top:3px;text-align:right}
+.m{max-width:75%;padding:7px 10px;border-radius:10px;background:#fff;white-space:pre-wrap;word-wrap:break-word;font-size:14px}.m.yo{align-self:flex-end;background:#DCF8C6}.m small{display:block;color:var(--gris);font-size:11px;margin-top:3px;text-align:right}
 .ficha{background:#fff;border-radius:10px;padding:10px;font-size:14px;margin-bottom:6px}
 input,select{padding:8px 10px;border:1px solid var(--borde);border-radius:8px;font-size:14px}
 .rep{background:#fff;border:1px solid var(--borde);border-radius:12px;padding:14px;margin-bottom:10px}.rep h3{margin:0 0 6px}.rep ul{margin:6px 0;padding-left:18px}
 .estado{font-size:13px;color:var(--gris)}.ok{color:var(--verde)}.mal{color:var(--rojo)}
-.barras{display:flex;align-items:flex-end;gap:4px;height:90px;margin-top:6px}.barras div{flex:1;background:#F6A675;border-radius:4px 4px 0 0;position:relative}.barras span{position:absolute;top:-16px;left:0;right:0;text-align:center;font-size:11px;color:var(--gris)}
+.barras{display:flex;align-items:flex-end;gap:4px;height:90px;margin-top:6px}.barras div{flex:1;background:#8EDBA8;border-radius:4px 4px 0 0;position:relative}.barras span{position:absolute;top:-16px;left:0;right:0;text-align:center;font-size:11px;color:var(--gris)}
 @media(max-width:900px){.kpis{grid-template-columns:repeat(2,1fr)}.grid{grid-template-columns:1fr}.chats{grid-template-columns:1fr;height:auto}.lista{max-height:45vh}.conv{min-height:60vh}main{padding:10px}}
 </style></head><body>
 <header><b>WhatsApp</b><div class="tabs"><button class="tab on" data-v="res">Resumen</button><button class="tab" data-v="chats">Chats</button><button class="tab" data-v="reps">Reportes</button><button class="tab" data-v="conf">Conexión</button></div><a href="/panel" style="margin-left:auto">← Panel del agente</a></header>
