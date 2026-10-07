@@ -203,6 +203,10 @@ const ar = JSON.parse(pw.find((p) => p.pais === "ar").contactos);
 assert.deepEqual(ar.wa, ["5491155551234"]); assert.deepEqual(ar.tel, ["01144445555"]); bien("Argentina: WhatsApp escrito en texto y teléfono");
 assert.deepEqual(JSON.parse(pw.find((p) => p.pais === "br").contactos).wa, ["5511999998888"]); bien("Brasil: link api.whatsapp.com");
 assert.equal(pw.find((p) => p.pais === "br").minimo_ok, 1); assert.equal(pw.find((p) => p.pais === "py").calidad, "réplica"); bien("clasificó calidad y mínimo");
+{ const ho = await (await W.fetch(new Request("https://x/panel/api/busquedas/informe?modo=oculto&id=" + rw.id, { headers: { cookie: cM } }), env, ctx)).text();
+  const cuerpo = ho.split('<div class="hoja">')[1];
+  assert.doesNotMatch(cuerpo, /wa\.me|instagram\.com|megashoes|floresmayorista|595981123456|@megashoes|ventas@/); assert.match(cuerpo, /Contacto disponible al contratar/); assert.match(cuerpo, /Gs\. 180\.000/);
+  bien("informe sin contactos: no aparece ningún link, nombre, WhatsApp ni mail del proveedor, pero sí el precio"); }
 const tw = db.prepare("SELECT titulo FROM tareas WHERE ref=?").get("busq:" + rw.id).titulo; assert.match(tw, /3 en la web, 3 con WhatsApp/); bien("tarea: " + tw);
 assert.ok(tgs.some((t) => /zapatillas Jordan 4 x10/.test(t.text) && /🇵🇾 Paraguay: 1/.test(t.text))); bien("Telegram con el resumen por país");
 const lw = (await api(cM, "lista?f=mias")).busquedas.find((b) => b.id === rw.id);

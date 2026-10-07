@@ -58,9 +58,14 @@ const e = (t) => String(t ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<"
 const usdF = (v) => (v == null ? "-" : "USD " + Number(v).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 const NOMBRE_PAIS = { cn: "🇨🇳 China", ar: "🇦🇷 Argentina", py: "🇵🇾 Paraguay", br: "🇧🇷 Brasil", cl: "🇨🇱 Chile", us: "🇺🇸 Estados Unidos" };
 const CAL = { replica: "Réplica", original: "Original", reacondicionado: "Reacondicionado", indistinto: "Indistinto" };
+const PAIS_CORTO = { ar: "AR", py: "PY", br: "BR", cl: "CL", us: "US", cn: "CN" };
+// Saca de un texto cualquier dato que permita llegar al proveedor sin nosotros
+const limpiar = (t) => String(t).replace(/https?:\/\/\S+|www\.\S+|\S+\.(com|net|org|ar|py|br|cl|cn)(\/\S*)?\b/gi, "").replace(/\S+@\S+\.\S+/g, "").replace(/@[A-Za-z0-9_.]{3,}/g, "").replace(/\+?\d[\d\s().-]{7,}\d/g, "").replace(/\s{2,}/g, " ").trim();
 const corto = (u) => { try { const x = new URL(u); return (x.hostname.replace(/^www\./, "") + x.pathname).slice(0, 48) + (u.length > 60 ? "…" : ""); } catch { return u; } };
 export function htmlInforme(b, provs, modo) {
-  const cliente = modo === "cliente";
+  const oculto = modo === "oculto";   // para el cliente, sin links ni contactos de proveedores
+  const cliente = modo === "cliente" || oculto;
+  const SIN = `<p class="reservado">🔒 Contacto disponible al contratar la gestión con Te Importamos</p>`;
   const lista = provs.filter((p) => p.estado !== "descartado");
   const china = lista.filter((p) => p.fuente !== "web").sort((a, z) => (a.puesto_u ?? 1e9) - (z.puesto_u ?? 1e9));
   const web = lista.filter((p) => p.fuente === "web");
@@ -75,10 +80,10 @@ export function htmlInforme(b, provs, modo) {
       <div class="cuerpo">
         <div class="eti"><span>#${i + 1}</span><span>${p.fuente === "1688" ? "1688 · mayorista chino" : "Alibaba · exportador"}</span>${p.verificado ? "<span>Verificado</span>" : ""}${p.tipo === "fábrica" ? "<span>Fábrica</span>" : ""}</div>
         <h3>${e(p.titulo)}</h3>
-        <p class="gris">${e(p.proveedor || "Proveedor")} · ${e(p.ubicacion)}${p.anios ? ` · ${p.anios} años` : ""}${p.calif ? ` · ★ ${p.calif}` : ""}${p.ventas ? ` · ${Number(p.ventas).toLocaleString("es-AR")} vendidos` : ""}</p>
+        <p class="gris">${oculto ? (p.tipo === "fábrica" ? "Fábrica" : "Proveedor") : e(p.proveedor || "Proveedor")} · ${e(p.ubicacion)}${p.anios ? ` · ${p.anios} años` : ""}${p.calif ? ` · ★ ${p.calif}` : ""}${p.ventas ? ` · ${Number(p.ventas).toLocaleString("es-AR")} vendidos` : ""}</p>
         <p><b>Mínimo de compra:</b> ${e(p.minimo || "a confirmar")} u · <b>Precio en origen:</b> ${e(tr)}${cliente ? "" : ` (≈ ${usdF(p.precio_usd)}/u FOB)`}</p>
         ${p.resumen ? `<p class="aviso">${e(p.resumen)}</p>` : ""}
-        <p class="link"><a href="${e(p.link)}">${e(corto(p.link))}</a></p>
+        ${oculto ? SIN : `<p class="link"><a href="${e(p.link)}">${e(corto(p.link))}</a></p>`}
       </div>
       <div class="precio"><small>Puesto en Argentina</small><b>${usdF(p.puesto_u)}</b><small>por unidad</small><span>Total x${b.cantidad}: ${usdF(p.total)}</span>${cliente ? "" : `<em>Puntaje ${p.puntaje}</em>`}</div>
     </article>`;
@@ -94,14 +99,14 @@ export function htmlInforme(b, provs, modo) {
       ...(k.wechat || []).map((w) => `<span>WeChat ${e(w)}</span>`),
     ];
     return `<article class="card web">
-      <img class="ico" src="https://www.google.com/s2/favicons?domain=${e(host)}&sz=64" alt="" onerror="this.style.visibility='hidden'">
+      ${oculto ? `<div class="ico num">${e(PAIS_CORTO[p.pais] || "")}</div>` : `<img class="ico" src="https://www.google.com/s2/favicons?domain=${e(host)}&sz=64" alt="" onerror="this.style.visibility='hidden'">`}
       <div class="cuerpo">
         <div class="eti"><span>${e(p.tipo)}</span>${p.calidad && p.calidad !== "no se sabe" ? `<span>${e(p.calidad)}</span>` : ""}${p.minimo ? `<span>Mínimo ${e(p.minimo)}</span>` : ""}</div>
-        <h3>${e(p.proveedor || p.titulo)}</h3>
-        <p class="gris">${e(p.titulo)}</p>
-        ${p.resumen ? `<p>${e(p.resumen)}</p>` : ""}
-        <p class="contactos">${cont.join("") || "<span>Contacto: en su sitio web</span>"}</p>
-        <p class="link"><a href="${e(p.link)}">${e(corto(p.link))}</a></p>
+        <h3>${oculto ? `${e(String(p.tipo).replace(/^./, (x) => x.toUpperCase()))} en ${e(p.ubicacion)}` : e(p.proveedor || p.titulo)}</h3>
+        ${oculto ? "" : `<p class="gris">${e(p.titulo)}</p>`}
+        ${p.resumen ? `<p>${e(oculto ? limpiar(p.resumen) : p.resumen)}</p>` : ""}
+        ${oculto ? SIN : `<p class="contactos">${cont.join("") || "<span>Contacto: en su sitio web</span>"}</p>
+        <p class="link"><a href="${e(p.link)}">${e(corto(p.link))}</a></p>`}
       </div>
       ${cliente ? "" : `<div class="precio mini"><em>Puntaje ${p.puntaje}</em></div>`}
     </article>`;
@@ -131,7 +136,7 @@ h2{font-size:15px;margin:22px 0 10px;padding:6px 10px;background:var(--f);border
 .card h3{margin:4px 0 3px;font-size:14px}.card p{margin:3px 0}.gris{color:var(--g);font-size:12px}
 .eti{display:flex;gap:5px;flex-wrap:wrap}.eti span{background:#fff3ec;color:#b2440a;border-radius:6px;padding:1px 7px;font-size:11px;font-weight:700;text-transform:capitalize}
 .precio{text-align:right;display:flex;flex-direction:column;align-items:flex-end;justify-content:center;border-left:1px dashed var(--b);padding-left:12px}
-.precio b{font-size:21px;color:var(--n);line-height:1.1}.precio small{color:var(--g);font-size:11px}.precio span{font-size:12px;margin-top:4px}.precio em{font-style:normal;font-size:11px;color:var(--g);margin-top:4px}.precio.mini{border:0}
+.precio b{font-size:21px;color:var(--n);line-height:1.1}.precio small{color:var(--g);font-size:11px}.precio span{font-size:12px;margin-top:4px}.precio em{font-style:normal;font-size:11px;color:var(--g);margin-top:4px}.precio.mini{border:0}.reservado{background:#fff3ec;color:#b2440a;border-radius:6px;padding:5px 8px;font-size:12px;font-weight:700;display:inline-block}.ico.num{display:flex;align-items:center;justify-content:center;background:var(--f);font-weight:800;font-size:11px;color:var(--g)}
 .aviso{background:#fffbeb;color:#92400e;border-radius:6px;padding:4px 7px;font-size:12px}
 .link a,.contactos a{color:#1d4ed8;text-decoration:none;word-break:break-all}.contactos{display:flex;gap:6px 12px;flex-wrap:wrap;font-weight:600}
 .nota{margin-top:22px;padding:12px 14px;border:1px solid var(--b);border-radius:10px;color:var(--g);font-size:11.5px;background:var(--f)}
@@ -140,8 +145,8 @@ footer{margin-top:18px;display:flex;justify-content:space-between;color:var(--g)
 @media print{body{background:#fff}.barra{display:none}.hoja{padding:0;max-width:none}a{color:#1d4ed8}}
 </style></head><body>
 <div class="barra"><button onclick="window.print()" class="on">Guardar como PDF / Imprimir</button>
-<a href="?id=${e(b.id)}&modo=interno"${cliente ? "" : ' class="on"'}>Interna</a><a href="?id=${e(b.id)}&modo=cliente"${cliente ? ' class="on"' : ""}>Para el cliente</a>
-<span>${cliente ? "Sin puntajes ni costos internos." : "Con puntajes y FOB (no mandar al cliente)."} En el celular: Compartir → Imprimir → Guardar PDF.</span></div>
+<a href="?id=${e(b.id)}&modo=interno"${cliente ? "" : ' class="on"'}>Interna</a><a href="?id=${e(b.id)}&modo=cliente"${modo === "cliente" ? ' class="on"' : ""}>Cliente con contactos</a><a href="?id=${e(b.id)}&modo=oculto"${oculto ? ' class="on"' : ""}>Cliente sin contactos</a>
+<span>${oculto ? "Sin nombres, links ni contactos de proveedores." : cliente ? "Sin puntajes ni costos internos, con contactos." : "Con puntajes y FOB (no mandar al cliente)."} En el celular: Compartir → Imprimir → Guardar PDF.</span></div>
 <div class="hoja">
 <header><div><div class="marca">Te <i>Importamos</i></div><small>Importación por encargo · Rosario, Argentina · teimportamosarg.com</small></div><div class="fecha">Informe de búsqueda de proveedores<br>${fecha}</div></header>
 <h1>${e(b.producto)}</h1>
@@ -151,7 +156,7 @@ ${b.cliente ? `<p class="gris">Preparado para: <b>${e(b.cliente)}</b></p>` : ""}
 ${china.length ? `<h2>🇨🇳 China · con precio puesto en Argentina</h2>${china.map(tarjChina).join("")}` : ""}
 ${["ar", "py", "br", "cl", "us", "cn"].map((k) => { const l = web.filter((p) => p.pais === k); return l.length ? `<h2>${NOMBRE_PAIS[k]} · proveedores y mayoristas</h2>${l.map(tarjWeb).join("")}` : ""; }).join("")}
 ${lista.length ? "" : "<p>No se encontraron proveedores para este pedido.</p>"}
-<div class="nota"><b>Cómo leer este informe.</b> ${china.length ? `El <b>precio puesto en Argentina</b> incluye mercadería, flete internacional (${c.peso_kg ? `peso estimado ${String(c.peso_kg).replace(".", ",")} kg por unidad, ` : ""}avión hasta 250 kg), impuestos de importación, gestión y honorarios de Te Importamos, para la cantidad indicada. El peso y el precio final se confirman con el proveedor antes de comprar. ` : ""}${web.length ? "Los proveedores de cada país se encontraron en la web; precios y stock se consultan directamente por los contactos indicados. " : ""}Valores estimativos en dólares, sujetos a cambios del proveedor y del tipo de cambio.</div>
+<div class="nota"><b>Cómo leer este informe.</b> ${oculto ? "Los datos de contacto de cada proveedor se entregan al contratar la gestión de compra con Te Importamos. " : ""} ${china.length ? `El <b>precio puesto en Argentina</b> incluye mercadería, flete internacional (${c.peso_kg ? `peso estimado ${String(c.peso_kg).replace(".", ",")} kg por unidad, ` : ""}avión hasta 250 kg), impuestos de importación, gestión y honorarios de Te Importamos, para la cantidad indicada. El peso y el precio final se confirman con el proveedor antes de comprar. ` : ""}${web.length ? (oculto ? "Los proveedores de cada país fueron relevados por Te Importamos; precios y stock se confirman al avanzar. " : "Los proveedores de cada país se encontraron en la web; precios y stock se consultan directamente por los contactos indicados. ") : ""}Valores estimativos en dólares, sujetos a cambios del proveedor y del tipo de cambio.</div>
 <footer><span>Te Importamos · WhatsApp 341 805-1515</span><span>Búsqueda #${b.num}</span></footer>
 </div>
 <script>if(/[?&]imprimir=1/.test(location.search)){var im=[].slice.call(document.images);Promise.all(im.map(function(i){return i.complete?0:new Promise(function(r){i.onload=i.onerror=r})})).then(function(){setTimeout(function(){window.print()},300)})}</script>
@@ -456,7 +461,7 @@ function pintar(d) {
       '<div class="meta">#' + b.num + " · " + hace(b.ts) + " · para <b>" + esc(nombre(b.asignado)) + "</b>" + (b.cliente ? " · cliente: " + esc(b.cliente) : "") + " · calidad " + esc(b.calidad) + (b.presupuesto ? " · presupuesto " + esc(b.presupuesto) : "") + " · " + b.fuentes.join(" + ") + (b.paises && b.paises.length ? " (" + b.paises.join(", ").toUpperCase() + ")" : "") + (b.solo_minimo ? " · mínimo ≤ " + b.cantidad : "") + '</div>' +
       (c ? '<div class="meta">Buscado como: 「' + esc(c.zh) + '」 / "' + esc(c.en) + '" · peso estimado ' + c.peso_kg + " kg/u" + (c.peso_motivo ? " (" + esc(c.peso_motivo) + ")" : "") + (b.costo ? " · costó " + usd(b.costo) : "") + '</div>' : "") +
       '</div><div class="fila">' + otras.map(function (o) { return '<button class="btn" data-reasig="' + esc(o) + '">Pasar a ' + esc(nombre(o)) + '</button>'; }).join("") +
-      (b.estado === "error" || b.estado === "lista" ? '<button class="btn" data-reint="1">Buscar de nuevo</button>' : "") + (b.proveedores.length ? '<a class="btn" target="_blank" href="/panel/api/busquedas/informe?modo=cliente&id=' + b.id + '">Informe PDF</a><button class="btn" data-csv="1">Planilla</button>' : "") + '<button class="btn" data-arch="1">Archivar</button></div></div>' +
+      (b.estado === "error" || b.estado === "lista" ? '<button class="btn" data-reint="1">Buscar de nuevo</button>' : "") + (b.proveedores.length ? '<a class="btn" target="_blank" href="/panel/api/busquedas/informe?modo=oculto&id=' + b.id + '">Informe PDF</a><button class="btn" data-csv="1">Planilla</button>' : "") + '<button class="btn" data-arch="1">Archivar</button></div></div>' +
       (b.nota ? '<div class="nota">' + esc(b.nota) + '</div>' : "") +
       (b.estado === "lista" ? (b.proveedores.length ? '<div class="meta" style="margin-top:8px">' + activos + " proveedores. China: ordenados por precio puesto, confianza, mínimo y parecido (el peso es estimado, confirmalo antes de cotizar). Web: por parecido, tipo de negocio y si publica WhatsApp.</div>" + bloques(b) : "") : '<div class="vacio">' + (b.estado === "error" ? "" : "Buscando en " + b.fuentes.join(" + ") + (b.webInfo ? " (web: faltan " + b.webInfo.faltan + " búsquedas)" : "") + "... se actualiza sola.") + "</div>") +
       "</section>";
