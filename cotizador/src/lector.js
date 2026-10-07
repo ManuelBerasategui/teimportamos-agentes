@@ -328,13 +328,14 @@ PERÍODO ANTERIOR: ${JSON.stringify(prev)}
 PRODUCTOS MÁS CONSULTADOS: ${JSON.stringify(productos)}
 CHATS DEL PERÍODO (resumen de la IA por chat): ${JSON.stringify(chatsDia).slice(0, 20000)}
 MENSAJES EN GRUPOS: ${JSON.stringify(grupos).slice(0, 12000)}
-Devolvé JSON: {"titular":"1 oración con lo más importante","claves":["3-6 hallazgos concretos con números"],"oportunidades":["hasta 6: a quién escribir y por qué, con nombre"],"problemas":["hasta 4: qué se está haciendo mal (ej. demoras, cotizaciones sin mandar)"],"grupos":"2-3 oraciones de qué se pidió/habló en los grupos, o vacío","recomendacion":"1-2 acciones para mañana/la semana"}`);
+Devolvé JSON: {"titular":"1 oración con lo más importante","claves":["3-6 hallazgos concretos con números"],"oportunidades":["hasta 6: a quién escribir y por qué, con nombre"],"problemas":["hasta 4: qué se está haciendo mal (ej. demoras, cotizaciones sin mandar)"],"grupos":"2-3 oraciones de qué se pidió/habló en los grupos, o vacío","recomendacion":"1-2 acciones para mañana/la semana","difusion":[{"producto":"producto a empujar en los grupos de leads","por_que":"1 oración con datos: cuántos lo pidieron, tendencia","mensaje":"mensaje LISTO para pegar en el grupo: corto (3-6 líneas), tono Te Importamos (cercano, rioplatense), con gancho, beneficio (importación directa, mejor precio que Mercado Libre, cupos por cantidad) y llamado a la acción (escribime / reservá tu cupo). Sin emojis de más y sin inventar precios que no estén en los datos."}]}
+Para "difusion": 3 a 5 productos, priorizando los MÁS PEDIDOS del período y los que se repiten en grupos. Si hay pocos datos, igual proponé los más pedidos.`);
   const datos = { metricas: m, anterior: prev, productos, ia, pendientes: { sinResponder: l.sinResponder.length, cotPend: l.cotPend.length }, top: l.escribiles.slice(0, 10).map((c) => ({ nombre: c.nombre, conv: c.conv, puntaje: c.puntaje, accion: c.accion })) };
   const id = `${tipo}:${diaAR(desde)}`;
   await env.DB.prepare("INSERT INTO reportes (id,tipo,desde,hasta,creado,datos) VALUES (?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET hasta=excluded.hasta, creado=excluded.creado, datos=excluded.datos")
     .bind(id, tipo, desde, fin, Date.now(), JSON.stringify(datos)).run();
   const d = (a, b) => (b ? ` (${a >= b ? "+" : ""}${a - b})` : "");
-  await telegram(env, `📊 Reporte ${dias === 7 ? "semanal" : "diario"} WhatsApp · ${diaAR(desde)}${dias === 7 ? " → " + diaAR(fin - 1) : ""}
+  await telegram(env, `Reporte ${dias === 7 ? "semanal" : "diario"} WhatsApp · ${diaAR(desde)}${dias === 7 ? " → " + diaAR(fin - 1) : ""}
 ${ia?.titular || ""}
 
 Chats nuevos: ${m.nuevos}${d(m.nuevos, prev.nuevos)}
@@ -342,8 +343,8 @@ Cotizaciones enviadas: ${m.cotizaciones}${d(m.cotizaciones, prev.cotizaciones)}
 Ventas detectadas: ${m.ventas}${d(m.ventas, prev.ventas)}
 Sin responder ahora: ${m.sinResponder}
 Respuesta mediana: ${m.respuestaMin ?? "-"} min
-${(ia?.oportunidades || []).length ? "\n👉 Escribiles:\n- " + ia.oportunidades.slice(0, 6).join("\n- ") : ""}
-${ia?.recomendacion ? "\n💡 " + ia.recomendacion : ""}
+${(ia?.oportunidades || []).length ? "\nEscribiles:\n- " + ia.oportunidades.slice(0, 6).join("\n- ") : ""}
+${ia?.recomendacion ? "\nRecomendación: " + ia.recomendacion : ""}${(ia?.difusion || []).length ? "\n\nPara los grupos: " + ia.difusion.map((x) => x.producto).join(", ") : ""}
 ${(env.PUBLIC_URL || "https://cotizador.berasateguimanuel07.workers.dev") + "/panel/805"}`);
   return { id, datos };
 }
@@ -497,6 +498,11 @@ export async function apiLector(env, req, url, iaJSON) {
     const b = await req.json().catch(() => ({}));
     const rep = await generarReporte(env, iaJSON, b.tipo === "805_semanal" ? "805_semanal" : "805_diario");
     return json({ ok: true, ...rep });
+  }
+  if (r === "borrar-reporte" && req.method === "POST") {
+    const b = await req.json().catch(() => ({}));
+    await env.DB.prepare("DELETE FROM reportes WHERE id=? AND tipo LIKE '805_%'").bind(String(b.id || "")).run();
+    return json({ ok: true });
   }
   if (r === "reportes") {
     const filas = (await env.DB.prepare("SELECT id, tipo, desde, hasta, creado, datos FROM reportes WHERE tipo LIKE '805_%' ORDER BY desde DESC, tipo LIMIT 60").all()).results || [];

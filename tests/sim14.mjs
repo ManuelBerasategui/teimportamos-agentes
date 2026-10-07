@@ -65,3 +65,6 @@ db.prepare("UPDATE w_msg SET yo=0 WHERE id='p2'").run(); db.prepare("UPDATE w_co
 console.log("reparar:", await api2("reparar",{})); const cp2=await api2("chat?conv=5495555555555"); console.log("reparado:", cp2.mensajes.map(m=>m.yo).join(","), cp2.conv.nombre, cp2.conv.ult_yo);
 geminiResp={respuesta:"Se lo tenías que mandar a Tabo (+5492222222222): \"quiero 25 consolas r36 originales\"."};
 const pa=await api2("preguntar",{pregunta:"a quien le tenia que mandar las consolas?",historial:[]}); console.log("asistente:", pa.respuesta.slice(0,60), pa.fuentes);
+geminiResp={titular:"Día fuerte en camisetas",claves:["15 chats nuevos"],oportunidades:["Juan: cotizale"],problemas:[],grupos:"",recomendacion:"Cotizar camisetas",difusion:[{producto:"Camisetas versión jugador",por_que:"6 pedidos hoy",mensaje:"Abrimos cupo de camisetas versión jugador.\nTraemos directo, más barato que en Mercado Libre.\nEscribime y reservá tu lugar."}]};
+const rp=await api2("reporte",{tipo:"805_diario"}); console.log("difusion:", rp.datos.ia.difusion.length);
+console.log("borrar:", (await api2("borrar-reporte",{id:rp.id})).ok, "quedan:", (await api2("reportes")).length);
