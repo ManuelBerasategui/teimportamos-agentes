@@ -411,6 +411,53 @@ export async function cronLector(env, iaJSON, scheduledTime) {
 // ---------------------------------------------------------------------------
 // 7) API del panel (/panel/api/805/...)
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// 8) Asistente interno: preguntas en lenguaje natural sobre los chats del 805
+// ---------------------------------------------------------------------------
+const VACIAS_Q = new Set("que quien cual cuales como cuando donde cuanto cuantos cuantas para por con sin los las del una uno unos unas este esta esto ese esa eso hoy ayer semana mes dia dias tenia tengo tenes tiene tienen mandar mande mandarle decime deci acordas acuerdas producto productos pidieron pidio pedido mucho mucha muchos muchas algun alguna alguien hay habia fue era son mas menos todo todos todas cliente clientes chat chats whatsapp".split(" "));
+export async function preguntarAsistente(env, iaJSON, pregunta, historial = []) {
+  await prepararLector(env);
+  const q = String(pregunta || "").slice(0, 600);
+  const ahora = Date.now(), hoy = inicioDiaAR(ahora);
+  const dias = /semana|7 d[ií]as/i.test(q) ? 7 : /mes|30 d[ií]as/i.test(q) ? 30 : /ayer/i.test(q) ? 2 : 3;
+  const desde = /\bhoy\b/i.test(q) && !/ayer|semana|mes/i.test(q) ? hoy : hoy - (dias - 1) * 86400e3;
+  const [mHoy, mRango] = await Promise.all([metricas(env, hoy), metricas(env, desde)]);
+  const productos = (await env.DB.prepare("SELECT producto, COUNT(*) n FROM w_conv WHERE grupo=0 AND producto<>'' AND ult_ts>=? GROUP BY lower(producto) ORDER BY n DESC LIMIT 15").bind(desde).all()).results || [];
+  const chats = (await env.DB.prepare("SELECT conv, nombre, puntaje, temp, producto, etapa, accion, resumen, ult_yo, ult_ts, ult_texto, cot_pend FROM w_conv WHERE grupo=0 AND archivado=0 AND ult_ts>=? ORDER BY COALESCE(puntaje,0) DESC, ult_ts DESC LIMIT 160").bind(desde).all()).results || [];
+  // Búsqueda por palabras de la pregunta en TODOS los mensajes (para "¿a quién le tenía que mandar X?")
+  const palabras = [...new Set(normalQ(q).split(/[^a-z0-9ñ]+/).filter((w) => w.length > 3 && !VACIAS_Q.has(w)))].slice(0, 5);
+  let hallados = [];
+  for (const w of palabras) {
+    const raiz = w.replace(/(es|s)$/, "");
+    const r = (await env.DB.prepare("SELECT m.conv, c.nombre, m.yo, m.texto, m.ts FROM w_msg m LEFT JOIN w_conv c ON c.conv=m.conv WHERE m.grupo=0 AND lower(m.texto) LIKE ? ORDER BY m.ts DESC LIMIT 40").bind(`%${raiz}%`).all()).results || [];
+    hallados.push(...r);
+  }
+  const vistos = new Set(); hallados = hallados.filter((h) => { const k = h.conv + h.ts; if (vistos.has(k)) return false; vistos.add(k); return true; }).slice(0, 90);
+  const fmtChat = (c) => `- ${c.nombre || "sin nombre"} (+${c.conv}) · ${c.puntaje ?? "?"}/10 · ${c.producto || "-"} · etapa ${c.etapa || "-"}${c.cot_pend ? " · ESPERA COTIZACIÓN" : ""}${!c.ult_yo ? " · SIN RESPONDER" : ""} · último ${fechaHora(c.ult_ts)}: "${String(c.ult_texto || "").slice(0, 120)}"${c.resumen ? " · " + c.resumen : ""}${c.accion ? " · pendiente: " + String(c.accion).replace(/\|p\d$/, "") : ""}`;
+  const contexto = `MÉTRICAS DE HOY (exactas): ${JSON.stringify(mHoy)}
+MÉTRICAS DESDE ${fechaHora(desde)}: ${JSON.stringify(mRango)}
+PRODUCTOS MÁS CONSULTADOS (desde ${fechaHora(desde)}): ${productos.map((p) => `${p.producto} (${p.n})`).join(", ") || "sin datos"}
+CHATS ACTIVOS DESDE ${fechaHora(desde)} (ordenados por calidad):
+${chats.map(fmtChat).join("\n").slice(0, 45000)}
+MENSAJES QUE COINCIDEN CON LA PREGUNTA (${palabras.join(", ") || "ninguna palabra clave"}):
+${hallados.map((h) => `[${fechaHora(h.ts)}] ${h.nombre || "sin nombre"} (+${h.conv}) ${h.yo ? "NOSOTROS" : "CLIENTE"}: ${String(h.texto).slice(0, 300)}`).join("\n").slice(0, 30000) || "ninguno"}`;
+  const conv = (historial || []).slice(-6).map((h) => `${h.r === "u" ? "YO" : "ASISTENTE"}: ${String(h.t).slice(0, 800)}`).join("\n");
+  const r = await iaJSON(env, `Sos el asistente interno de "Te Importamos" (importaciones). Respondés preguntas del dueño sobre los chats del WhatsApp Business 805, usando SOLO los datos de abajo. Ahora es ${fechaHora(ahora)} (hora Argentina).
+Reglas:
+- No inventes nada. Si los datos no alcanzan, decilo y sugerí cómo averiguarlo.
+- Citá siempre nombre y número (formato +549...) de cada cliente que menciones, y cuando sirva, una frase textual corta entre comillas.
+- Sé breve y ordenado: primero la respuesta directa, después una lista corta si hace falta. Sin emojis. Español rioplatense.
+- Los conteos de chats nuevos, cotizaciones y ventas son exactos; los puntajes y productos los estimó la IA.
+${conv ? "CONVERSACIÓN PREVIA:\n" + conv + "\n" : ""}
+DATOS:
+${contexto}
+
+PREGUNTA: ${q}
+Respondé JSON: {"respuesta":"texto"}`);
+  return { respuesta: r?.respuesta || "No pude responder ahora (la IA no contestó). Probá de nuevo en un minuto.", fuentes: { chats: chats.length, mensajes: hallados.length } };
+}
+const normalQ = (t) => String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
 export async function apiLector(env, req, url, iaJSON) {
   await prepararLector(env);
   const r = url.pathname.replace("/panel/api/805/", "");
@@ -456,6 +503,7 @@ export async function apiLector(env, req, url, iaJSON) {
     return json(filas.map((f) => ({ ...f, datos: JSON.parse(f.datos || "{}") })));
   }
   if (r === "telegram" && req.method === "POST") return json(await vincularTelegram(env));
+  if (r === "preguntar" && req.method === "POST") { const b = await req.json().catch(() => ({})); return json(await preguntarAsistente(env, iaJSON, b.pregunta, b.historial)); }
   if (r === "reparar" && req.method === "POST") { const corregidos = await repararPropios(env); return json({ ok: true, corregidos, cotizaciones: await recalcularCotizaciones(env) }); }
   if (r === "qr") { const q = JSON.parse((await kvGet(env, "lector_qr")) || "null"); return json(q && Date.now() - q.ts < 90e3 ? q : { qr: "", estado: q?.estado === "paired" ? "paired" : "" }); }
   if (r === "probar-alertas" && req.method === "POST") return json({ ok: true, alertas: await alertasRapidas(env) });

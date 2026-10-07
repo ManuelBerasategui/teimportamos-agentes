@@ -63,3 +63,5 @@ const cp=await api2("chat?conv=5495555555555"); console.log("propio:", cp.mensaj
 // datos viejos mal marcados -> reparar
 db.prepare("UPDATE w_msg SET yo=0 WHERE id='p2'").run(); db.prepare("UPDATE w_conv SET ult_yo=0, nombre='Te importamos' WHERE conv='5495555555555'").run();
 console.log("reparar:", await api2("reparar",{})); const cp2=await api2("chat?conv=5495555555555"); console.log("reparado:", cp2.mensajes.map(m=>m.yo).join(","), cp2.conv.nombre, cp2.conv.ult_yo);
+geminiResp={respuesta:"Se lo tenías que mandar a Tabo (+5492222222222): \"quiero 25 consolas r36 originales\"."};
+const pa=await api2("preguntar",{pregunta:"a quien le tenia que mandar las consolas?",historial:[]}); console.log("asistente:", pa.respuesta.slice(0,60), pa.fuentes);
