@@ -406,6 +406,20 @@ export default {
       const r = await apify(env, "/users/me");
       return Response.json({ ok: r.ok, status: r.status, usuario: r.j?.data?.username || null, plan: r.j?.data?.plan?.id || null, error: r.err || null });
     }
+    // Prueba de IA simple (sin búsqueda): ¿la clave de Gemini tiene cupo gratis?
+    if (url.pathname === "/probar-ia") {
+      const res = [];
+      for (const m of await modelos(env)) {
+        const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, {
+          method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_KEY },
+          body: JSON.stringify({ contents: [{ parts: [{ text: "Traducí al chino: zapatillas de básquet" }] }] }),
+        }).catch(() => null);
+        const j = r ? await r.json().catch(() => ({})) : {};
+        res.push({ modelo: m, ok: !!r?.ok, status: r?.status, respuesta: (j.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("").slice(0, 120), error: (j.error?.message || "").slice(0, 200) || null });
+        if (r?.ok) break;
+      }
+      return Response.json(res);
+    }
     // Prueba de búsqueda web con Gemini + Google (para la búsqueda multipaís): ?q=texto
     if (url.pathname === "/probar-web") {
       const q = url.searchParams.get("q") || "mayorista zapatillas por mayor Argentina whatsapp";
