@@ -104,6 +104,16 @@ function textoDe(c = {}) {
   return k ? `(${k})` : "";
 }
 
+// El número propio (el 805): sus mensajes son "nosotros" aunque lleguen con remitente
+const soloDigitos = (x) => String(x || "").replace(/\D/g, "");
+const NUMERO_PROPIO = "5493418051515";
+function esPropio(env, remitente, org) {
+  const d = soloDigitos(String(remitente || "").split("@")[0].split(":")[0]);
+  if (!d) return true;
+  const propios = [NUMERO_PROPIO, soloDigitos(org), soloDigitos(env.LECTOR_NUMERO)].filter(Boolean);
+  return propios.some((p) => d === p || d.slice(-10) === p.slice(-10));
+}
+
 async function guardarLote(env, lote) {
   const hist = lote.history ? 1 : 0;
   const ops = [];
@@ -115,15 +125,15 @@ async function guardarLote(env, lote) {
     const ts = Date.parse(m.timestamp) || Date.now();
     const conv = m.conversation_address;
     if (!conv || /status@broadcast|newsletter/.test(conv)) continue;
-    const yo = m.sender_address ? 0 : 1;
+    const yo = esPropio(env, m.sender_address, lote.organization_address) ? 1 : 0;
     const grupo = esGrupo(conv) ? 1 : 0;
     const tipo = m.content?.kind || m.content?.type || "text";
     ops.push(env.DB.prepare("INSERT OR IGNORE INTO w_msg (id,conv,grupo,yo,autor,autor_nombre,tipo,texto,ts,hist) VALUES (?,?,?,?,?,?,?,?,?,?)")
       .bind(m.external_id, conv, grupo, yo, m.sender_address || null, m.sender_name || null, tipo, String(texto).slice(0, 4000), ts, hist));
     mensajes++;
     const c = convs.get(conv) || { conv, grupo, nombre: null, primer: ts, ult: 0, ultYo: 0, ultCli: 0, ultYoTs: 0, texto: "", n: 0 };
-    if (!grupo && !yo && m.sender_name) c.nombre = m.sender_name;
-    if (m.conversation_name) c.nombre = m.conversation_name;
+    if (!grupo && !yo && m.sender_name && !/^te importamos/i.test(m.sender_name)) c.nombre = m.sender_name;
+    if (m.conversation_name && (grupo || !/^te importamos/i.test(m.conversation_name))) c.nombre = m.conversation_name;
     c.primer = Math.min(c.primer, ts); c.n++;
     if (ts >= c.ult) { c.ult = ts; c.ultYo = yo; c.texto = String(texto).slice(0, 200); }
     if (yo) c.ultYoTs = Math.max(c.ultYoTs, ts); else c.ultCli = Math.max(c.ultCli, ts);
@@ -334,9 +344,37 @@ ${(env.PUBLIC_URL || "https://cotizador.berasateguimanuel07.workers.dev") + "/pa
 }
 
 // Cron: análisis cada 15 min, alertas cada 10, reportes 21:00 AR (y domingo el semanal)
+// Repara mensajes propios que entraron marcados como del cliente (una vez, idempotente)
+export async function repararPropios(env) {
+  await prepararLector(env);
+  const filas = (await env.DB.prepare("SELECT id, conv, autor, texto, ts FROM w_msg WHERE yo=0 AND autor IS NOT NULL").all()).results || [];
+  const ids = filas.filter((f) => esPropio(env, f.autor));
+  const ops = [];
+  for (const f of ids) {
+    ops.push(env.DB.prepare("UPDATE w_msg SET yo=1 WHERE id=?").bind(f.id));
+    if (!esGrupo(f.conv) && RE_COTIZ.test(f.texto || "")) ops.push(env.DB.prepare("INSERT OR IGNORE INTO w_hito (id,conv,tipo,ts,dato) VALUES (?,?,?,?,?)").bind("c:" + f.id, f.conv, "cotizacion", f.ts, String(f.texto).slice(0, 300)));
+    if (!esGrupo(f.conv) && RE_PAGO_NOSOTROS.test(f.texto || "")) ops.push(env.DB.prepare("INSERT OR IGNORE INTO w_hito (id,conv,tipo,ts,dato) VALUES (?,?,?,?,?)").bind(`v:${f.conv}:${diaAR(f.ts)}`, f.conv, "venta", f.ts, String(f.texto).slice(0, 300)));
+  }
+  // Borra "ventas" que vinieron de mensajes nuestros mal marcados como del cliente
+  for (let i = 0; i < ops.length; i += 80) await env.DB.batch(ops.slice(i, i + 80));
+  // Recalcula cada chat desde sus mensajes
+  await env.DB.batch([
+    env.DB.prepare(`UPDATE w_conv SET
+      ult_yo_ts = COALESCE((SELECT MAX(ts) FROM w_msg m WHERE m.conv=w_conv.conv AND m.yo=1),0),
+      ult_cliente_ts = COALESCE((SELECT MAX(ts) FROM w_msg m WHERE m.conv=w_conv.conv AND m.yo=0),0),
+      ult_yo = COALESCE((SELECT yo FROM w_msg m WHERE m.conv=w_conv.conv ORDER BY ts DESC LIMIT 1), ult_yo),
+      ult_texto = COALESCE((SELECT texto FROM w_msg m WHERE m.conv=w_conv.conv ORDER BY ts DESC LIMIT 1), ult_texto),
+      nombre = CASE WHEN grupo=1 THEN nombre ELSE COALESCE((SELECT autor_nombre FROM w_msg m WHERE m.conv=w_conv.conv AND m.yo=0 AND m.autor_nombre IS NOT NULL ORDER BY ts DESC LIMIT 1), CASE WHEN lower(nombre) LIKE 'te importamos%' THEN NULL ELSE nombre END) END,
+      analizado_ts = 0`),
+  ]);
+  await kvPut(env, "lector_reparado_v1", Date.now());
+  return ids.length;
+}
+
 export async function cronLector(env, iaJSON, scheduledTime) {
   if (!env.DB || !env.LECTOR_TOKEN) return;   // el lector no está configurado todavía
   await prepararLector(env);
+  if (!(await kvGet(env, "lector_reparado_v1"))) await repararPropios(env).catch((e) => console.log("lector reparar", e?.stack || e));
   const t = new Date(scheduledTime);
   const m = t.getUTCMinutes(), hAR = (t.getUTCHours() + 21) % 24;
   if (m % 15 === 7) await analizarChats(env, iaJSON).catch((e) => console.log("lector analizar", e?.stack || e));
@@ -382,7 +420,7 @@ export async function apiLector(env, req, url, iaJSON) {
   if (r === "chat") {
     const conv = url.searchParams.get("conv");
     const c = await env.DB.prepare("SELECT * FROM w_conv WHERE conv=?").bind(conv).first();
-    const ms = ((await env.DB.prepare("SELECT yo, autor_nombre, tipo, texto, ts FROM w_msg WHERE conv=? ORDER BY ts DESC LIMIT 300").bind(conv).all()).results || []).reverse();
+    const ms = ((await env.DB.prepare("SELECT yo, autor, autor_nombre, tipo, texto, ts FROM w_msg WHERE conv=? ORDER BY ts DESC LIMIT 300").bind(conv).all()).results || []).reverse();
     const hitos = (await env.DB.prepare("SELECT tipo, ts FROM w_hito WHERE conv=? ORDER BY ts").bind(conv).all()).results || [];
     return json({ conv: c, mensajes: ms, hitos });
   }
@@ -403,6 +441,7 @@ export async function apiLector(env, req, url, iaJSON) {
     return json(filas.map((f) => ({ ...f, datos: JSON.parse(f.datos || "{}") })));
   }
   if (r === "telegram" && req.method === "POST") return json(await vincularTelegram(env));
+  if (r === "reparar" && req.method === "POST") return json({ ok: true, corregidos: await repararPropios(env) });
   if (r === "qr") { const q = JSON.parse((await kvGet(env, "lector_qr")) || "null"); return json(q && Date.now() - q.ts < 90e3 ? q : { qr: "", estado: q?.estado === "paired" ? "paired" : "" }); }
   if (r === "probar-alertas" && req.method === "POST") return json({ ok: true, alertas: await alertasRapidas(env) });
   return new Response("no existe", { status: 404 });

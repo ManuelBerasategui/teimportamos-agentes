@@ -56,3 +56,10 @@ console.log("clave en ruta:", r2.status, await r2.text());
 const r3=await W.fetch(new Request("https://x/lector/mal/whatsapp-web-webhook",{method:"POST",body:"{}"}),env,ctx); console.log("clave mala:", r3.status);
 console.log("qr post:", (await post("/qr",{qr:"2@abc+/=,def,ghi"})).status, "panel:", (await api2("qr")).qr);
 await post("/qr",{qr:"",estado:"paired"}); console.log("qr vinculado:", (await api2("qr")).estado);
+await post("/whatsapp-web-webhook",{organization_address:"5493418051515",messages:[
+ {external_id:"p1",conversation_address:"5495555555555",sender_address:"5495555555555",sender_name:"Juan",content:{type:"text",kind:"text",text:"hola quiero precio"},timestamp:new Date(Date.now()-60000).toISOString()},
+ {external_id:"p2",conversation_address:"5495555555555",sender_address:"5493418051515",sender_name:"Te importamos",conversation_name:"Te importamos",content:{type:"text",kind:"text",text:"Bienvenido!! Te voy a derivar"},timestamp:new Date().toISOString()}]});
+const cp=await api2("chat?conv=5495555555555"); console.log("propio:", cp.mensajes.map(m=>m.yo).join(","), "nombre:", cp.conv.nombre, "ult_yo:", cp.conv.ult_yo);
+// datos viejos mal marcados -> reparar
+db.prepare("UPDATE w_msg SET yo=0 WHERE id='p2'").run(); db.prepare("UPDATE w_conv SET ult_yo=0, nombre='Te importamos' WHERE conv='5495555555555'").run();
+console.log("reparar:", await api2("reparar",{})); const cp2=await api2("chat?conv=5495555555555"); console.log("reparado:", cp2.mensajes.map(m=>m.yo).join(","), cp2.conv.nombre, cp2.conv.ult_yo);
