@@ -26,6 +26,11 @@ const RE_COTIZ = /cotizaci[oó]n|total puesto|puesto en (argentina|tu casa|rosar
 const RE_PAGO_CLIENTE = /comprobante|transfer[ií]|ya (te )?(transfer|pagu|deposit|mand[eé] (el|la) (pago|seña|plata))|pagu[eé]|abon[eé]|(ah[ií]|ya) (va|est[aá]) (la seña|el pago)|te (envi|mand)[eé] (la seña|el pago)/i;
 const RE_PAGO_NOSOTROS = /recib[ií](mos)? (el|tu|la) (pago|transferencia|comprobante|seña)|pago (confirmado|recibido|acreditado)|confirm(o|amos) (el|tu|la) (pago|seña|transferencia)|(ya )?qued[oó] (confirmado|se[ñn]ado|reservado) (el|tu) pedido|acredit[oó]/i;
 
+// Cotización = mensaje NUESTRO con un monto y palabras de precio final (no difusiones ni avisos de cupos)
+const RE_MONTO = /(usd|u\$s|us\$|\$|d[oó]lares)\s*\d|\d[\d.,]*\s*(usd|u\$s|d[oó]lares|pesos)\b/i;
+const RE_PALABRA_COT = /total|c\/u|por unidad|cada un[oa]|puesto en|precio final|te queda|sale en total|precio unitario|cotizaci[oó]n/i;
+const RE_NO_COT = /cupo|abrimos|promo|oferta del d[ií]a|seguimos atendiendo|manden sus productos|difusi[oó]n/i;
+const esCotizacion = (t) => { t = String(t || ""); return RE_MONTO.test(t) && RE_PALABRA_COT.test(t) && !RE_NO_COT.test(t); };
 const esGrupo = (conv) => /@|g\.us|-/.test(String(conv));
 const diaAR = (ts) => new Date(ts - AR).toISOString().slice(0, 10);
 const inicioDiaAR = (ts = Date.now()) => Date.parse(diaAR(ts) + "T00:00:00Z") + AR;
@@ -140,7 +145,7 @@ async function guardarLote(env, lote) {
     convs.set(conv, c);
     // Hitos exactos (solo chats individuales)
     if (!grupo) {
-      if (yo && RE_COTIZ.test(texto)) ops.push(env.DB.prepare("INSERT OR IGNORE INTO w_hito (id,conv,tipo,ts,dato) VALUES (?,?,?,?,?)").bind("c:" + m.external_id, conv, "cotizacion", ts, String(texto).slice(0, 300)));
+      if (yo && esCotizacion(texto)) ops.push(env.DB.prepare("INSERT OR IGNORE INTO w_hito (id,conv,tipo,ts,dato) VALUES (?,?,?,?,?)").bind("c:" + m.external_id, conv, "cotizacion", ts, String(texto).slice(0, 300)));
       const pago = (!yo && (/^\((image|document)\)/.test(texto) || tipo === "image" || tipo === "document") && RE_PAGO_CLIENTE.test(texto)) || (!yo && RE_PAGO_CLIENTE.test(texto) && /comprobante/i.test(texto)) || (yo && RE_PAGO_NOSOTROS.test(texto));
       if (pago) ops.push(env.DB.prepare("INSERT OR IGNORE INTO w_hito (id,conv,tipo,ts,dato) VALUES (?,?,?,?,?)").bind(`v:${conv}:${diaAR(ts)}`, conv, "venta", ts, String(texto).slice(0, 300)));
       if (!yo && !hist) clienteNuevo = true;
@@ -352,7 +357,7 @@ export async function repararPropios(env) {
   const ops = [];
   for (const f of ids) {
     ops.push(env.DB.prepare("UPDATE w_msg SET yo=1 WHERE id=?").bind(f.id));
-    if (!esGrupo(f.conv) && RE_COTIZ.test(f.texto || "")) ops.push(env.DB.prepare("INSERT OR IGNORE INTO w_hito (id,conv,tipo,ts,dato) VALUES (?,?,?,?,?)").bind("c:" + f.id, f.conv, "cotizacion", f.ts, String(f.texto).slice(0, 300)));
+    if (!esGrupo(f.conv) && esCotizacion(f.texto)) ops.push(env.DB.prepare("INSERT OR IGNORE INTO w_hito (id,conv,tipo,ts,dato) VALUES (?,?,?,?,?)").bind("c:" + f.id, f.conv, "cotizacion", f.ts, String(f.texto).slice(0, 300)));
     if (!esGrupo(f.conv) && RE_PAGO_NOSOTROS.test(f.texto || "")) ops.push(env.DB.prepare("INSERT OR IGNORE INTO w_hito (id,conv,tipo,ts,dato) VALUES (?,?,?,?,?)").bind(`v:${f.conv}:${diaAR(f.ts)}`, f.conv, "venta", f.ts, String(f.texto).slice(0, 300)));
   }
   // Borra "ventas" que vinieron de mensajes nuestros mal marcados como del cliente
@@ -371,10 +376,20 @@ export async function repararPropios(env) {
   return ids.length;
 }
 
+export async function recalcularCotizaciones(env) {
+  await env.DB.prepare("DELETE FROM w_hito WHERE tipo='cotizacion'").run();
+  const filas = (await env.DB.prepare("SELECT id, conv, texto, ts FROM w_msg WHERE yo=1 AND grupo=0").all()).results || [];
+  const ops = filas.filter((f) => esCotizacion(f.texto)).map((f) => env.DB.prepare("INSERT OR IGNORE INTO w_hito (id,conv,tipo,ts,dato) VALUES (?,?,?,?,?)").bind("c:" + f.id, f.conv, "cotizacion", f.ts, String(f.texto).slice(0, 300)));
+  for (let i = 0; i < ops.length; i += 80) await env.DB.batch(ops.slice(i, i + 80));
+  await kvPut(env, "lector_cotiz_v2", Date.now());
+  return ops.length;
+}
+
 export async function cronLector(env, iaJSON, scheduledTime) {
   if (!env.DB || !env.LECTOR_TOKEN) return;   // el lector no está configurado todavía
   await prepararLector(env);
   if (!(await kvGet(env, "lector_reparado_v1"))) await repararPropios(env).catch((e) => console.log("lector reparar", e?.stack || e));
+  if (!(await kvGet(env, "lector_cotiz_v2"))) await recalcularCotizaciones(env).catch((e) => console.log("lector cotiz", e?.stack || e));
   const t = new Date(scheduledTime);
   const m = t.getUTCMinutes(), hAR = (t.getUTCHours() + 21) % 24;
   if (m % 15 === 7) await analizarChats(env, iaJSON).catch((e) => console.log("lector analizar", e?.stack || e));
@@ -441,7 +456,7 @@ export async function apiLector(env, req, url, iaJSON) {
     return json(filas.map((f) => ({ ...f, datos: JSON.parse(f.datos || "{}") })));
   }
   if (r === "telegram" && req.method === "POST") return json(await vincularTelegram(env));
-  if (r === "reparar" && req.method === "POST") return json({ ok: true, corregidos: await repararPropios(env) });
+  if (r === "reparar" && req.method === "POST") { const corregidos = await repararPropios(env); return json({ ok: true, corregidos, cotizaciones: await recalcularCotizaciones(env) }); }
   if (r === "qr") { const q = JSON.parse((await kvGet(env, "lector_qr")) || "null"); return json(q && Date.now() - q.ts < 90e3 ? q : { qr: "", estado: q?.estado === "paired" ? "paired" : "" }); }
   if (r === "probar-alertas" && req.method === "POST") return json({ ok: true, alertas: await alertasRapidas(env) });
   return new Response("no existe", { status: 404 });
