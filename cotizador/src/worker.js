@@ -1,7 +1,8 @@
 import { rutaLector, apiLector, cronLector } from "./lector.js";
 import { PANEL_805 } from "./lector-panel.js";
+import { apiBusquedas, PANEL_BUSQUEDAS } from "./busquedas.js";
 /**
- * Agente de WhatsApp · Te Importamos (v14.9)
+ * Agente de WhatsApp · Te Importamos (v15.0: + pestaña Búsquedas de proveedores)
  * Cloudflare Workers + Gemini (gratis) con respaldo de Cloudflare AI.
  *
  * Variables: WA_TOKEN, WA_PHONE_ID, VERIFY_TOKEN, GEMINI_KEY, ADMIN_PHONE (varios separados por coma)
@@ -2913,7 +2914,7 @@ button{font:inherit;cursor:pointer}
 @media (max-width:760px){.lista{width:100%}.conv{display:none}.chats.abierto .conv{display:flex}.chats.abierto .lista{display:none}.volver{display:inline}.msgs{padding:12px}.m{max-width:86%}.marca{display:none}.user span{display:none}}
 </style></head><body>
 <div class="top"><div class="marca">Te Importamos</div>
-<div class="tabs"><button class="tab on" data-v="dash">Dashboard</button><button class="tab" data-v="pend">Pendientes<span class="badge" id="nPend"></span></button><button class="tab" data-v="chats">Chats</button><button class="tab" data-v="agentes">Agentes</button><a href="/panel/805" style="text-decoration:none;padding:8px 14px;border-radius:8px;font-weight:600;color:#64748b;align-self:center">805</a></div>
+<div class="tabs"><button class="tab on" data-v="dash">Dashboard</button><button class="tab" data-v="pend">Pendientes<span class="badge" id="nPend"></span></button><button class="tab" data-v="chats">Chats</button><button class="tab" data-v="agentes">Agentes</button><a href="/panel/busquedas" style="text-decoration:none;padding:8px 14px;border-radius:8px;font-weight:600;color:#64748b;align-self:center">Búsquedas</a><a href="/panel/805" style="text-decoration:none;padding:8px 14px;border-radius:8px;font-weight:600;color:#64748b;align-self:center">805</a></div>
 <div class="user"><span id="usuario"></span> · <a href="/logout">Salir</a></div></div>
 
 <div class="vista on" id="v-dash"><div class="dash">
@@ -3191,8 +3192,8 @@ $("#agEnviar").onclick = function () {
 };
 
 // ---------- Pendientes ----------
-var TIPOS = { ig_revisar: "Instagram: comentario para vos", cierre: "Quiere comprar", proveedor: "Buscar proveedor", cotizacion: "Cotización para aprobar", comprobante: "Comprobante de pago", derivado: "Chat derivado: respondele vos", promesa: "El agente prometió algo", riesgo: "Chat en riesgo", recontactar: "Seguimiento para mandar vos" };
-var ORDEN = { cierre: 0, cotizacion: 0, comprobante: 1, proveedor: 2, derivado: 2, promesa: 3, riesgo: 4, recontactar: 5 }, firmaT = "";
+var TIPOS = { ig_revisar: "Instagram: comentario para vos", cierre: "Quiere comprar", proveedor: "Buscar proveedor", cotizacion: "Cotización para aprobar", comprobante: "Comprobante de pago", derivado: "Chat derivado: respondele vos", promesa: "El agente prometió algo", riesgo: "Chat en riesgo", recontactar: "Seguimiento para mandar vos", busqueda_lista: "Búsqueda de proveedores lista" };
+var ORDEN = { cierre: 0, cotizacion: 0, comprobante: 1, proveedor: 2, busqueda_lista: 2, derivado: 2, promesa: 3, riesgo: 4, recontactar: 5 }, firmaT = "";
 function hace(ms) { var m = Math.round((Date.now() - ms) / 60000); return m < 60 ? "hace " + m + " min" : m < 1440 ? "hace " + Math.round(m / 60) + " h" : "hace " + Math.round(m / 1440) + " d"; }
 function contarPend() { api("tareas").then(function (ts) { $("#nPend").textContent = ts.length || ""; if ($("#v-pend").classList.contains("on")) pintarTareas(ts); }).catch(function () {}); }
 function cargarTareas() { firmaT = ""; contarPend(); }
@@ -3204,8 +3205,10 @@ function pintarTareas(ts) {
     if (t.tipo === "cotizacion") b = ['<button class="btn lleno" data-a="ok">Enviar al cliente</button>', '<button class="btn rojo" data-a="no">Descartar</button>'];
     else if (t.tipo === "comprobante") b = ['<button class="btn lleno" data-a="ok">Entró la plata</button>', '<button class="btn rojo" data-a="no">No entró</button>'];
     else if (t.tipo === "recontactar") b = ['<a class="btn lleno" target="_blank" data-wa="1" href="https://wa.me/' + t.tel + '?text=' + encodeURIComponent(t.datos.mensaje || "") + '">Abrir en mi WhatsApp</a>', '<button class="btn" data-a="hecho">Ya lo mandé</button>'];
+    else if (t.tipo === "busqueda_lista") b = ['<a class="btn lleno" href="/panel/busquedas#' + esc(t.datos.busqueda || "") + '">Ver proveedores</a>', '<button class="btn" data-a="hecho">Listo, resuelto</button>'];
+    else if (t.tipo === "proveedor") b = ['<a class="btn lleno" href="/panel/busquedas?tarea=' + encodeURIComponent(t.id) + '">Buscar proveedor ahora</a>', '<button class="btn" data-a="hecho">Listo, resuelto</button>'];
     else b = ['<button class="btn" data-a="hecho">Listo, resuelto</button>'];
-    if (String(t.tel).indexOf("ig:") === 0) b.unshift('<a class="btn lleno" target="_blank" href="' + esc(t.datos.link || "https://instagram.com") + '">Abrir publicación</a>'); else b.push('<button class="btn" data-ver="' + t.tel + '">Ver chat</button>');
+    if (String(t.tel).indexOf("ig:") === 0) b.unshift('<a class="btn lleno" target="_blank" href="' + esc(t.datos.link || "https://instagram.com") + '">Abrir publicación</a>'); else if (t.tel) b.push('<button class="btn" data-ver="' + t.tel + '">Ver chat</button>');
     return '<div class="tk ' + t.tipo + '" data-id="' + t.id + '"><div class="cab2"><span class="tipo">' + (TIPOS[t.tipo] || t.tipo) + '</span><b>' + esc(t.nombre || "+" + t.tel) + '</b><span class="cuando">' + hace(t.ts) + '</span></div>' +
       '<div class="tit">' + esc(t.titulo) + '</div>' + (t.tipo === "recontactar" ? '<textarea>' + esc(t.datos.mensaje || "") + '</textarea>' : (t.detalle ? "<pre>" + esc(t.detalle) + "</pre>" : "")) +
       (t.datos.foto ? '<a target="_blank" href="/panel/media?id=' + encodeURIComponent(t.datos.foto) + '"><img loading="lazy" src="/panel/media?id=' + encodeURIComponent(t.datos.foto) + '"></a>' : "") + '<div class="acc">' + b.join("") + "</div></div>";
@@ -3324,6 +3327,8 @@ export default {
       } catch { return new Response("No se pudo cargar la foto", { status: 502 }); }
     }
     if (url.pathname.startsWith("/panel/api/805/")) return apiLector(env, req, url, iaJSON);
+    if (url.pathname.startsWith("/panel/api/busquedas/")) return apiBusquedas(env, req, url, url.searchParams.get("quien"), Object.keys(usuariosPanel(env)));
+    if (url.pathname === "/panel/busquedas") return new Response(PANEL_BUSQUEDAS, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
     if (url.pathname === "/panel/805") return new Response(PANEL_805, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
     if (url.pathname.startsWith("/panel/api/")) return panelAPI(env, req, url, url.searchParams.get("quien"));
     if (url.pathname === "/panel/reporte.pdf") return descargarReporte(env, url);

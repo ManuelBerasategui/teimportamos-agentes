@@ -1,0 +1,12 @@
+// Worker "buscador": busca proveedores (1688 + Alibaba vía Apify) y deja los resultados en la D1 "agente".
+// Lo publica Cloudflare solo al subir cambios a GitHub (Root directory: /buscador).
+// Las claves (APIFY_TOKEN, GEMINI_KEY, VERIFY_TOKEN, TELEGRAM_TOKEN) viven en Cloudflare como Secret, NO acá.
+{
+  "name": "buscador",
+  "main": "src/buscador.js",
+  "compatibility_date": "2026-10-01",
+  "keep_vars": true,
+  "d1_databases": [{ "binding": "DB", "database_name": "agente", "database_id": "7369be6e-7722-4a69-a09c-7fe5bc41847d" }],
+  "triggers": { "crons": ["*/2 * * * *"] },
+  "observability": { "enabled": true, "logs": { "enabled": true, "invocation_logs": true } }
+}
