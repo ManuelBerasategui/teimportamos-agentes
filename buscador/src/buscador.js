@@ -406,6 +406,24 @@ export default {
       const r = await apify(env, "/users/me");
       return Response.json({ ok: r.ok, status: r.status, usuario: r.j?.data?.username || null, plan: r.j?.data?.plan?.id || null, error: r.err || null });
     }
+    // Prueba de búsqueda web con Gemini + Google (para la búsqueda multipaís): ?q=texto
+    if (url.pathname === "/probar-web") {
+      const q = url.searchParams.get("q") || "mayorista zapatillas por mayor Argentina whatsapp";
+      const res = [];
+      for (const m of ["gemini-2.5-flash", "gemini-2.5-flash-lite", ...(await modelos(env))]) {
+        if (res.some((x) => x.ok)) break;
+        const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, {
+          method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_KEY },
+          body: JSON.stringify({ contents: [{ parts: [{ text: `Buscá en Google proveedores para: ${q}. Listá hasta 8 con nombre y sitio web.` }] }], tools: [{ google_search: {} }] }),
+        }).catch((e) => ({ ok: false, status: 0, json: async () => ({ error: { message: String(e) } }) }));
+        const j = await r.json().catch(() => ({}));
+        const meta = j.candidates?.[0]?.groundingMetadata || {};
+        res.push({ modelo: m, ok: r.ok && !!(meta.groundingChunks || []).length, status: r.status, error: j.error?.message || null,
+          busquedas: meta.webSearchQueries || [], links: (meta.groundingChunks || []).map((c) => ({ titulo: c.web?.title, url: c.web?.uri })).slice(0, 10),
+          texto: (j.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("").slice(0, 1500) });
+      }
+      return Response.json(res, { headers: { "Content-Type": "application/json; charset=utf-8" } });
+    }
     return new Response("No existe", { status: 404 });
   },
 };
