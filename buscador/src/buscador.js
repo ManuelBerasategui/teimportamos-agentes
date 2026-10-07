@@ -139,14 +139,23 @@ export function normalizar(fuente, it) {
   if (fuente === "1688") {
     const s = it.merchantSigns || {}, tags = (it.merchantTags || []).join(" ");
     let tramos = (it.priceTiers || []).map((t) => ({ desde: n(t.minQuantity, 1), precio: n(t.price) })).filter((t) => t.precio > 0);
-    if (!tramos.length && n(it.priceMin)) tramos = [{ desde: n(it.minimumOrderQuantity, 1), precio: n(it.priceMin) }];
+    if (!tramos.length && n(it.priceMin)) tramos = [{ desde: n(it.minimumOrderQuantity, 1), precio: n(it.priceMax || it.priceMin) }];
+    // Si varios "tramos" tienen la misma cantidad, en realidad son modelos/colores con distinto precio: se usa el más caro
+    let variantes = "";
+    const porCant = new Map();
+    for (const t of tramos) porCant.set(t.desde, [...(porCant.get(t.desde) || []), t.precio]);
+    if ([...porCant.values()].some((v) => v.length > 1)) {
+      const todos = tramos.map((t) => t.precio);
+      variantes = `Precio según modelo/color: ¥${Math.min(...todos)} a ¥${Math.max(...todos)} (se tomó el más caro; elegí el modelo en la publicación)`;
+      tramos = [...porCant.entries()].map(([desde, v]) => ({ desde, precio: Math.max(...v) }));
+    }
     return {
       fuente, titulo: it.titleEn || it.title || "", titulo_orig: it.title || "", link: it.url || (it.offerId ? `https://detail.1688.com/offer/${it.offerId}.html` : ""),
       foto: (it.images || [])[0] || "", proveedor: it.companyName || it.sellerLoginId || "", prov_link: it.supplierUrl || "",
       ubicacion: [it.city, it.province].filter(Boolean).join(", ") || it.location || "China",
       tipo: s.factory || /工厂|源头/.test(tags) ? "fábrica" : "trading", verificado: s.powerfulMerchant || s.trustPass ? 1 : 0,
       anios: null, ventas: n(it.soldCount) || null, calif: n(it.goodRate) ? red(n(it.goodRate) / 20, 2) : null,   // 1688 da % de buenas reseñas: se pasa a escala 0-5
-      minimo: n(it.minimumOrderQuantity) || tramos[0]?.desde || null, tramos, moneda: it.currency || "CNY", contacto: "",
+      minimo: n(it.minimumOrderQuantity) || tramos[0]?.desde || null, tramos, moneda: it.currency || "CNY", contacto: "", resumen: variantes,
     };
   }
   // Alibaba
@@ -337,9 +346,13 @@ async function filtrarParecidos(env, b, lista) {
   const r = await iaJSON(env, `Pedido del cliente: "${b.producto}" (calidad: ${b.calidad || "indistinto"}, cantidad ${b.cantidad}).
 Puntuá de 0 a 10 cuánto coincide cada publicación con lo pedido (10 = es exactamente eso; 0 = otra cosa, un repuesto, un accesorio o una funda).
 ${lista.map((p, i) => `${i}. ${String(p.titulo).slice(0, 140)}`).join("\n")}
-Devolvé SOLO: {"p":[{"i":0,"s":8}, ...]} con todas las publicaciones.`);
-  const m = new Map((r?.p || []).map((x) => [n(x.i, -1), Math.max(0, Math.min(10, n(x.s, 6)))]));
-  for (let i = 0; i < lista.length; i++) lista[i].parecido = m.has(i) ? m.get(i) : null;
+Devolvé SOLO: {"p":[{"i":0,"s":8,"t":"título corto en español (máx. 12 palabras)"}, ...]} con todas las publicaciones.`);
+  const m = new Map((r?.p || []).map((x) => [n(x.i, -1), x]));
+  for (let i = 0; i < lista.length; i++) {
+    const x = m.get(i);
+    lista[i].parecido = x ? Math.max(0, Math.min(10, n(x.s, 6))) : null;
+    if (x?.t && /[\u4e00-\u9fff]/.test(lista[i].titulo)) lista[i].titulo = String(x.t).slice(0, 160);   // traducir títulos que quedaron en chino
+  }
   return lista.filter((p) => p.parecido === null || p.parecido >= 4);
 }
 
@@ -371,7 +384,7 @@ async function guardar(env, b, lista, runs, listaWeb = [], web = null) {
   const ahora = Date.now();
   const costo = red(runs.reduce((s, r) => s + n(r.costo), 0), 4);
   const mejor = lista.length ? Math.min(...lista.map((p) => p.puesto_u).filter((v) => v > 0)) : null;
-  const todos = [...lista.map((p) => ({ ...p, pais: "cn", calidad: null, contactos: null, resumen: "" })), ...listaWeb];
+  const todos = [...lista.map((p) => ({ ...p, pais: "cn", calidad: null, contactos: null, resumen: p.resumen || "" })), ...listaWeb];
   const ops = [env.DB.prepare("DELETE FROM proveedores WHERE busqueda=?").bind(b.id)];
   for (const p of todos) {
     ops.push(env.DB.prepare(`INSERT INTO proveedores (id,busqueda,ts,fuente,titulo,titulo_orig,link,foto,proveedor,prov_link,ubicacion,tipo,verificado,anios,ventas,calif,minimo,tramos,moneda,precio_u,precio_usd,puesto_u,total,minimo_ok,parecido,puntaje,contacto,estado,notas,pais,calidad,contactos,resumen)

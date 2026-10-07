@@ -156,6 +156,9 @@ r = await api(cM, "proveedor", { id: pv[0].id, estado: "contactado" }); bien("ca
 r = await api(cM, "reasignar", { id: r1.id, a: "socio" }); assert.equal(db.prepare("SELECT asignado FROM busquedas WHERE id=?").get(r1.id).asignado, "socio"); bien("reasignar al socio");
 assert.equal((await api(cS, "lista?f=mias")).busquedas.length, 2); bien("ahora el socio la ve en 'Mías'");
 
+console.log("6b) Precios por modelo y títulos en chino");
+{ const pr = B.normalizar("1688", { url: "u", title: "跨境榨汁机", currency: "CNY", priceTiers: [{ minQuantity: 2, price: 9.5 }, { minQuantity: 2, price: 10.5 }] });
+  assert.deepEqual(pr.tramos, [{ desde: 2, precio: 10.5 }]); assert.match(pr.resumen, /¥9.5 a ¥10.5/); bien("tramos con la misma cantidad = modelos: usa el más caro y lo avisa"); }
 console.log("7) Fallas");
 db.prepare("UPDATE busquedas SET lanzada_ts = 0").run();   // simula día nuevo
 const r4 = await api(cS, "nueva", { producto: "caja de luz LED slim 50x70", cantidad: 20, fuentes: ["1688", "alibaba"] });

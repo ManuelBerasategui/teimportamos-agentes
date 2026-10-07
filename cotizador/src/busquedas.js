@@ -323,7 +323,7 @@ function tarjetaProv(p, b) {
     (p.foto ? '<a href="' + esc(p.link) + '" target="_blank" rel="noopener"><img loading="lazy" referrerpolicy="no-referrer" src="' + esc(p.foto) + '"></a>' : '<div style="width:56px"></div>') +
     '<div style="min-width:0"><div class="t">' + tags + esc(p.titulo) + '</div>' +
     '<div class="s">' + esc(p.proveedor || "Proveedor sin nombre") + " · " + esc(p.ubicacion) + (p.anios ? " · " + p.anios + " años" : "") + (p.calif ? " · ★ " + p.calif : "") + (p.ventas ? " · " + p.ventas + " vendidos" : "") + '</div>' +
-    '<div class="s">Mínimo: <b>' + esc(p.minimo || "?") + '</b> · Precios: ' + esc(tramos) + (p.contacto ? " · " + esc(p.contacto) : "") + '</div></div>' +
+    '<div class="s">Mínimo: <b>' + esc(p.minimo || "?") + '</b> · Precios: ' + esc(tramos) + (p.contacto ? " · " + esc(p.contacto) : "") + '</div>' + (p.resumen ? '<div class="resumen">⚠️ ' + esc(p.resumen) + "</div>" : "") + (p.titulo_orig && p.titulo_orig !== p.titulo ? '<div class="s">' + esc(p.titulo_orig) + "</div>" : "") + '</div>' +
     '<div class="precio"><span class="score ' + sc + '">' + p.puntaje + '</span><b>' + usd(p.puesto_u) + '</b><small>por unidad puesta en AR</small><small>Total x' + b.cantidad + ": " + usd(p.total) + '</small><small>FOB ' + usd(p.precio_usd) + '/u</small></div>' +
     '<div class="acc"><a class="btn p" target="_blank" rel="noopener" href="' + esc(p.link) + '">Abrir publicación</a>' +
     (p.prov_link ? '<a class="btn" target="_blank" rel="noopener" href="' + esc(p.prov_link) + '">Tienda</a>' : "") +
