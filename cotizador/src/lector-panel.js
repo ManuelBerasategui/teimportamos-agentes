@@ -42,9 +42,9 @@ code{display:block;background:var(--neg);color:#25D366;padding:8px;border-radius
 @media(max-width:640px){header{gap:1px;padding:0 8px;overflow-x:auto;white-space:nowrap}header a{font-size:0}header a:after{content:"\\2190";font-size:18px}.tab{padding:5px 6px;font-size:12px}header b{font-size:14px;margin-right:4px}.subtabs{overflow-x:auto}.subtabs button{white-space:nowrap}body{overflow-x:hidden}}
 @media(max-width:1000px){.kpis{grid-template-columns:repeat(3,1fr)}.grid{grid-template-columns:1fr}.asis{height:460px}.chats{grid-template-columns:1fr;height:auto}.lista{max-height:45vh}.conv{min-height:60vh}td.p{display:none}main{padding:10px}header{padding:0 10px}header b{margin-right:4px}.tab{padding:6px 8px;font-size:13px}}
 </style><script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script></head><body>
-<header><b>WhatsApp</b><button class="tab on" data-v="res">Resumen</button><button class="tab" data-v="chats">Chats</button><button class="tab" data-v="reps">Reportes</button><button class="tab" data-v="conf">Conexión</button><a href="/panel">Panel principal</a></header>
+<header><b>WhatsApp</b><button class="tab on" data-v="chats">Chats</button><button class="tab" data-v="conf">Conexión</button><a href="/panel">Panel principal</a></header>
 <main>
-<section id="v-res">
+<section id="v-res" hidden>
   <div class="barra"><span class="estado" id="estado"></span><span style="flex:1"></span><div class="seg" id="periodo"><button data-p="dia" class="on">Hoy</button><button data-p="semana">7 días</button><button data-p="mes">30 días</button></div><button class="btn" id="bAnalizar">Analizar ahora</button></div>
   <div class="kpis" id="kpis"></div>
   <div class="grid">
@@ -141,5 +141,5 @@ $('#bTg').onclick=async()=>{const r=await api('telegram',{});$('#tgRes').textCon
 $('#bProbar').onclick=async()=>{const r=await api('probar-alertas',{});$('#tgRes').textContent='Alertas enviadas: '+r.alertas};
 let qrUlt='';async function qrPoll(){if($('#v-conf').hidden)return;const q=await api('qr');const box=$('#qrBox');if(q.estado==='paired'){box.innerHTML='<b style="color:#1FA855">Vinculado</b>';return}if(!q.qr){box.textContent='Esperando QR (corré el comando en Termux)';qrUlt='';return}if(q.qr===qrUlt)return;qrUlt=q.qr;box.innerHTML='';if(typeof QRCode==='undefined'){box.textContent='No cargó el dibujador de QR: recargá la página';qrUlt='';return}new QRCode(box,{text:q.qr,width:260,height:260,correctLevel:QRCode.CorrectLevel.L})}
 setInterval(qrPoll,3000);
-cargar();setInterval(()=>{if(document.visibilityState==='visible'&&!$('#v-res').hidden)cargar()},300000);if(location.hash)abrir(decodeURIComponent(location.hash.slice(1)));
+cargar();if(!location.hash)vista('chats');if(location.hash)abrir(decodeURIComponent(location.hash.slice(1)));
 </script></body></html>`;

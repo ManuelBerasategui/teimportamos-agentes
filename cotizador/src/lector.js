@@ -475,10 +475,23 @@ export async function apiLector(env, req, url, iaJSON) {
     const [dia, semana, mes, l] = await Promise.all([metricas(env, hoy), metricas(env, hoy - 6 * 86400e3), metricas(env, hoy - 29 * 86400e3), listas(env)]);
     const estado = JSON.parse((await kvGet(env, "lector_estado")) || "null");
     const productos = (await env.DB.prepare("SELECT producto, COUNT(*) n FROM w_conv WHERE grupo=0 AND producto<>'' AND ult_ts>=? GROUP BY lower(producto) ORDER BY n DESC LIMIT 10").bind(hoy - 6 * 86400e3).all()).results || [];
-    const serie = (await env.DB.prepare("SELECT primer_ts ts FROM w_conv WHERE grupo=0 AND primer_ts>=?").bind(hoy - 13 * 86400e3).all()).results || [];
-    const porDia = {}; for (let i = 13; i >= 0; i--) porDia[diaAR(hoy - i * 86400e3 + 3600e3)] = 0;
+    const serie = (await env.DB.prepare("SELECT primer_ts ts FROM w_conv WHERE primer_ts>=? AND grupo=0").bind(hoy - 29 * 86400e3).all()).results || [];
+    const porDia = {}; for (let i = 29; i >= 0; i--) porDia[diaAR(hoy - i * 86400e3 + 3600e3)] = 0;
+    // Distribuciones para los gráficos (chats con actividad en el período; usa el índice de ult_ts)
+    const dist = {};
+    for (const [k, desde] of [["dia", hoy], ["semana", hoy - 6 * 86400e3], ["mes", hoy - 29 * 86400e3]]) {
+      const filas = (await env.DB.prepare("SELECT temp, etapa, puntaje FROM w_conv WHERE ult_ts>=? AND grupo=0 AND archivado=0").bind(desde).all()).results || [];
+      const t = { caliente: 0, tibio: 0, frio: 0, sin: 0 }, e = {}, pu = Array(10).fill(0);
+      for (const f of filas) {
+        if (t[f.temp] !== undefined && f.temp !== "sin") t[f.temp]++; else t.sin++;
+        if (f.etapa) e[f.etapa] = (e[f.etapa] || 0) + 1;
+        if (f.puntaje >= 1 && f.puntaje <= 10) pu[f.puntaje - 1]++;
+      }
+      const prods = (await env.DB.prepare("SELECT producto, COUNT(*) n FROM w_conv WHERE ult_ts>=? AND grupo=0 AND producto<>'' GROUP BY lower(producto) ORDER BY n DESC LIMIT 10").bind(desde).all()).results || [];
+      dist[k] = { temp: t, etapa: e, puntaje: pu, productos: prods };
+    }
     for (const s of serie) { const k = diaAR(s.ts); if (k in porDia) porDia[k]++; }
-    const d = { dia, semana, mes, ...l, estado, ultimo: +(await kvGet(env, "lector_ultimo")) || null, telegram: !!(env.TELEGRAM_TOKEN && (env.TELEGRAM_CHAT || (await kvGet(env, "telegram_chat")))), configurado: !!env.LECTOR_TOKEN, productos, nuevosPorDia: porDia };
+    const d = { dist, dia, semana, mes, ...l, estado, ultimo: +(await kvGet(env, "lector_ultimo")) || null, telegram: !!(env.TELEGRAM_TOKEN && (env.TELEGRAM_CHAT || (await kvGet(env, "telegram_chat")))), configurado: !!env.LECTOR_TOKEN, productos, nuevosPorDia: porDia };
     await kvPut(env, "lector_resumen", JSON.stringify({ ts: Date.now(), d }));
     return json(d);
   }
@@ -523,4 +536,33 @@ export async function apiLector(env, req, url, iaJSON) {
   if (r === "qr") { const q = JSON.parse((await kvGet(env, "lector_qr")) || "null"); return json(q && Date.now() - q.ts < 90e3 ? q : { qr: "", estado: q?.estado === "paired" ? "paired" : "" }); }
   if (r === "probar-alertas" && req.method === "POST") return json({ ok: true, alertas: await alertasRapidas(env) });
   return new Response("no existe", { status: 404 });
+}
+
+// ---------------------------------------------------------------------------
+// 9) Reporte en formato imprimible (el navegador lo guarda como PDF)
+// ---------------------------------------------------------------------------
+export async function paginaReporte(env, id) {
+  await prepararLector(env);
+  const r = await env.DB.prepare("SELECT * FROM reportes WHERE id=? AND tipo LIKE '805_%'").bind(id).first();
+  if (!r) return new Response("Reporte no encontrado", { status: 404 });
+  const d = JSON.parse(r.datos || "{}"), m = d.metricas || {}, ia = d.ia || {};
+  const e = (x) => String(x ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const lista = (t, xs) => (xs || []).length ? `<h3>${t}</h3><ul>${xs.map((x) => `<li>${e(x)}</li>`).join("")}</ul>` : "";
+  const fecha = (ts) => new Date(ts - AR).toISOString().slice(0, 10).split("-").reverse().join("/");
+  const titulo = `${r.tipo === "805_semanal" ? "Reporte semanal" : "Reporte diario"} · ${fecha(r.desde)}${r.tipo === "805_semanal" ? " al " + fecha(r.hasta - 1) : ""}`;
+  const html = `<!doctype html><html lang="es"><head><meta charset="utf-8"><title>${e(titulo)} · Te Importamos</title><style>
+body{font-family:Inter,system-ui,Arial,sans-serif;color:#111827;max-width:780px;margin:30px auto;padding:0 20px;font-size:14px;line-height:1.5}
+.top{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #EA5B0C;padding-bottom:10px}.top b{color:#EA5B0C;font-size:20px}.top span{color:#6B7280;font-size:12px}
+h2{margin:18px 0 4px}h3{margin:18px 0 6px;font-size:15px}.kv{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin:14px 0}.kv div{border:1px solid #E5E7EB;border-top:3px solid #1FA855;border-radius:8px;padding:8px}.kv small{color:#6B7280;display:block;font-size:11px}.kv b{font-size:20px}
+.dif{border:1px solid #E5E7EB;border-left:3px solid #1FA855;border-radius:8px;padding:8px 12px;margin:8px 0}.dif pre{white-space:pre-wrap;font-family:inherit;background:#F4F5F7;padding:8px;border-radius:6px;margin:6px 0 0}
+@media print{.np{display:none}body{margin:0}}</style></head><body>
+<div class="top"><b>Te Importamos</b><span>Generado ${e(new Date(r.creado - AR).toISOString().slice(0, 16).replace("T", " "))}</span></div>
+<h2>${e(titulo)}</h2>${ia.titular ? `<p><b>${e(ia.titular)}</b></p>` : ""}
+<div class="kv"><div><small>Chats nuevos</small><b>${m.nuevos ?? 0}</b></div><div><small>Cotizaciones</small><b>${m.cotizaciones ?? 0}</b></div><div><small>Ventas</small><b>${m.ventas ?? 0}</b></div><div><small>Sin responder</small><b>${m.sinResponder ?? 0}</b></div><div><small>Respuesta</small><b>${m.respuestaMin ?? "-"} min</b></div></div>
+${lista("Claves", ia.claves)}${lista("A quién escribir", ia.oportunidades)}${lista("A mejorar", ia.problemas)}
+${ia.grupos ? `<h3>Grupos</h3><p>${e(ia.grupos)}</p>` : ""}${ia.recomendacion ? `<h3>Recomendación</h3><p>${e(ia.recomendacion)}</p>` : ""}
+${(ia.difusion || []).length ? `<h3>Para mandar en los grupos</h3>${ia.difusion.map((x) => `<div class="dif"><b>${e(x.producto)}</b><div style="color:#6B7280">${e(x.por_que || "")}</div><pre>${e(x.mensaje || "")}</pre></div>`).join("")}` : ""}
+<p class="np" style="margin-top:24px"><button onclick="print()" style="background:#EA5B0C;color:#fff;border:0;border-radius:8px;padding:10px 16px;font-weight:700;cursor:pointer">Guardar como PDF</button></p>
+<script>setTimeout(()=>print(),400)</script></body></html>`;
+  return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
 }
