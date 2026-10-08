@@ -41,6 +41,7 @@ async function preparar(env) {
   await env.DB.batch(ESQUEMA.map((s) => env.DB.prepare(s)));
   for (const m of MIGRACIONES) await env.DB.prepare(m).run().catch(() => {});
   await env.DB.batch(ESQUEMA_INFORMES.map((s) => env.DB.prepare(s)));
+  await env.DB.prepare("ALTER TABLE informes ADD COLUMN contenido TEXT").run().catch(() => {});
   listas = true;
 }
 const kvGet = async (env, k) => (await env.DB.prepare("SELECT v FROM kv WHERE k=?").bind(k).first())?.v ?? null;
@@ -187,12 +188,29 @@ export async function rutaInformes(env, url) {
     const rs = (await env.DB.prepare("SELECT id, ts, producto, cantidad, calidad, paises, detalle, cliente FROM informes WHERE estado='pendiente' ORDER BY ts LIMIT 5").all()).results || [];
     return json({ ok: true, pendientes: rs.map((r) => ({ ...r, paises: JSON.parse(r.paises || "[]") })) });
   }
+  // Subida del informe en partes (WebFetch solo hace GET): base64url de un gzip con {html, datos}
+  if (ruta === "parte") {
+    const i = +url.searchParams.get("i"), n = +url.searchParams.get("n"), d = url.searchParams.get("d") || "";
+    if (!(n > 0 && n <= 60 && i >= 0 && i < n) || !d) return json({ ok: false, error: "parte inválida" }, 400);
+    await kvPut(env, `infp:${id}:${i}`, d);
+    const ps = (await env.DB.prepare("SELECT k, v FROM kv WHERE k LIKE ?").bind(`infp:${id}:%`).all()).results || [];
+    if (ps.length < n) return json({ ok: true, recibidas: ps.length, faltan: n - ps.length });
+    const b64 = ps.sort((a, z) => +a.k.split(":")[2] - +z.k.split(":")[2]).map((x) => x.v).join("").replace(/-/g, "+").replace(/_/g, "/");
+    try {
+      const bin = Uint8Array.from(atob(b64 + "===".slice((b64.length + 3) % 4)), (c) => c.charCodeAt(0));
+      const txt = await new Response(new Blob([bin]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+      JSON.parse(txt);
+      await env.DB.prepare("UPDATE informes SET contenido=? WHERE id=?").bind(txt, id).run();
+      await env.DB.prepare("DELETE FROM kv WHERE k LIKE ?").bind(`infp:${id}:%`).run();
+      return json({ ok: true, completo: true, bytes: txt.length });
+    } catch (e) { return json({ ok: false, error: "no se pudo armar: " + e.message }, 400); }
+  }
   if (ruta === "tomar") { await env.DB.prepare("UPDATE informes SET estado='en_proceso', tomado_ts=? WHERE id=? AND estado='pendiente'").bind(Date.now(), id).run(); return json({ ok: true }); }
   if (ruta === "listo") {
     await env.DB.prepare("UPDATE informes SET estado='listo', listo_ts=?, nota=? WHERE id=?").bind(Date.now(), String(url.searchParams.get("nota") || "").slice(0, 500), id).run();
     const inf = await env.DB.prepare("SELECT * FROM informes WHERE id=?").bind(id).first();
     if (inf) await env.DB.prepare("INSERT INTO tareas (id, ts, tipo, tel, nombre, titulo, detalle, datos, ref, estado) VALUES (?,?,?,?,?,?,?,?,?,'abierta')")
-      .bind("inf" + Date.now().toString(36), Date.now(), "informe_listo", inf.tel || "", inf.cliente || "", `Informe listo: ${inf.producto}`, `Lo armó Claude. Descargalo en la app de Claude (Tareas programadas > Informes de proveedores) y mandáselo al cliente.${inf.nota ? "\n" + inf.nota : ""}`, JSON.stringify({ informe: id }), `inf:${id}`).run();
+      .bind("inf" + Date.now().toString(36), Date.now(), "informe_listo", inf.tel || "", inf.cliente || "", `Informe listo: ${inf.producto}`, `Lo armó Claude. Abrilo en Búsquedas > Informes (Ver / PDF y Planilla) y mandáselo al cliente.${inf.nota ? "\n" + inf.nota : ""}`, JSON.stringify({ informe: id }), `inf:${id}`).run();
     return json({ ok: true });
   }
   if (ruta === "error") { await env.DB.prepare("UPDATE informes SET estado='pendiente', nota=? WHERE id=?").bind(String(url.searchParams.get("nota") || "").slice(0, 500), id).run(); return json({ ok: true }); }
@@ -292,7 +310,7 @@ export async function apiBusquedas(env, req, url, quien, usuarios = []) {
     return new Response(htmlInforme(b, provs, url.searchParams.get("modo")), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
   }
   if (ruta === "informes") {
-    const rs = (await env.DB.prepare("SELECT * FROM informes WHERE estado<>'cancelado' ORDER BY ts DESC LIMIT 30").all()).results || [];
+    const rs = (await env.DB.prepare("SELECT id, ts, producto, cantidad, calidad, cliente, estado, nota, tomado_ts, listo_ts, contenido IS NOT NULL AS hay FROM informes WHERE estado<>'cancelado' ORDER BY ts DESC LIMIT 30").all()).results || [];
     return json({ ok: true, clave: await claveInformes(env), informes: rs });
   }
   if (ruta === "informe-nuevo" && req.method === "POST") {
@@ -305,7 +323,22 @@ export async function apiBusquedas(env, req, url, quien, usuarios = []) {
     await env.DB.prepare("INSERT INTO informes (id, ts, producto, cantidad, calidad, paises, detalle, cliente, tel, pedido_por, estado, nota) VALUES (?,?,?,?,?,?,?,?,?,?,'pendiente','')")
       .bind(id, Date.now(), producto, String(cuerpo.cantidad || "").slice(0, 40), ["original", "reacondicionado", "indistinto"].includes(cuerpo.calidad) ? cuerpo.calidad : "original",
         JSON.stringify(paises), String(cuerpo.detalle || "").slice(0, 1000), String(cuerpo.cliente || "").slice(0, 120), String(cuerpo.tel || "").replace(/[^\d@.a-z-]/gi, "").slice(0, 60), quien).run();
-    return json({ ok: true, res: "Encargado: Claude lo arma en la próxima vuelta (dentro de 1 h, en horario comercial)." });
+    return json({ ok: true, res: "Encargado: Claude lo arma en la próxima vuelta (dentro de 1 h). Para que salga ya, pedíselo a Claude." });
+  }
+  if (ruta === "informe-ver" || ruta === "informe-planilla") {
+    const inf = await env.DB.prepare("SELECT * FROM informes WHERE id=?").bind(url.searchParams.get("id") || "").first();
+    if (!inf?.contenido) return new Response("Este informe todavía no está en el panel.", { status: 404, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+    const c = JSON.parse(inf.contenido);
+    if (ruta === "informe-ver") {
+      const barra = `<div class="ti-barra" style="position:sticky;top:0;z-index:9;background:#1f2328;padding:10px 14px;display:flex;gap:8px;flex-wrap:wrap;font-family:Arial,sans-serif"><button onclick="print()" style="background:#EA5B0C;color:#fff;border:0;border-radius:8px;padding:8px 12px;font-weight:700;cursor:pointer">Guardar como PDF / Imprimir</button><a href="/panel/api/busquedas/informe-planilla?id=${inf.id}" style="background:#fff;color:#1f2328;border-radius:8px;padding:8px 12px;font-weight:700;text-decoration:none">Descargar planilla</a><a href="/panel/busquedas" style="color:#fff;padding:8px 4px">← Volver</a></div><style>@media print{.ti-barra{display:none!important}}</style>`;
+      return new Response(String(c.html).replace(/<body[^>]*>/, (m) => m + barra), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
+    }
+    const cols = [["pais", "País"], ["nombre", "Proveedor"], ["lugar", "Ubicación"], ["tipo", "Tipo"], ["calidad", "Calidad"], ["marcas", "Marcas / productos"], ["minimo", "Mínimo"], ["precio", "Precios"], ["wa", "WhatsApp"], ["tel", "Teléfono"], ["mail", "Mail"], ["web", "Web"], ["desc", "Descripción"], ["nota", "Notas"]];
+    const q = (v) => '"' + String(v ?? "").replace(/"/g, '""') + '"';
+    const filas = (c.datos?.rubros || []).flatMap((r) => r.proveedores.map((p) => [q(r.titulo), ...cols.map(([k]) => q(p[k]))].join(",")));
+    const csv = "\ufeff" + [["Rubro", ...cols.map(([, t]) => t)].map(q).join(","), ...filas].join("\n");
+    const nombre = "Proveedores-" + String(inf.cliente || "cliente").replace(/[^a-z0-9]+/gi, "-") + ".csv";
+    return new Response(csv, { headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="${nombre}"` } });
   }
   if (ruta === "informe-cancelar" && req.method === "POST") {
     await env.DB.prepare("UPDATE informes SET estado='cancelado' WHERE id=? AND estado='pendiente'").bind(cuerpo.id || "").run();
@@ -579,10 +612,10 @@ $("#bBuscar").onclick = function () {
 // Si viene desde una tarea "Buscar proveedor" de Pendientes, se completa el formulario
 var tq = new URLSearchParams(location.search).get("tarea");
 if (tq) api("tarea?id=" + encodeURIComponent(tq)).then(function (t) { if (!t.ok) return; TAREA = t.id; $("#fProd").value = t.producto || ""; $("#fCant").value = t.cantidad || ""; $("#fCli").value = t.cliente || ""; aviso("Revisá el producto y la cantidad, y tocá Buscar"); });
-var EST_INF = { pendiente: "⏳ En cola", en_proceso: "🔎 Claude lo está armando", listo: "✅ Listo (descargalo en la app de Claude)" };
+var EST_INF = { pendiente: "⏳ En cola", en_proceso: "🔎 Claude lo está armando", listo: "✅ Listo" };
 var TEL_INF = "";
 function cargarInf() { api("informes").then(function (d) {
-  $("#listaInf").innerHTML = (d.informes.length ? d.informes.map(function (i) { return '<div class="fila" style="border-top:1px solid var(--borde);padding:6px 0;font-size:14px"><b>' + esc(i.producto) + '</b><span class="estado">' + esc(i.cliente || "") + " · " + hace(i.ts) + '</span><span class="pill ' + (i.estado === "listo" ? "lista" : "buscando") + '">' + (EST_INF[i.estado] || i.estado) + "</span>" + (i.estado === "pendiente" ? '<button class="btn" data-cinf="' + i.id + '">Cancelar</button>' : "") + (i.nota ? '<span class="estado">' + esc(i.nota) + "</span>" : "") + "</div>"; }).join("") : "") +
+  $("#listaInf").innerHTML = (d.informes.length ? d.informes.map(function (i) { return '<div class="fila" style="border-top:1px solid var(--borde);padding:6px 0;font-size:14px"><b>' + esc(i.producto) + '</b><span class="estado">' + esc(i.cliente || "") + " · " + hace(i.ts) + '</span><span class="pill ' + (i.estado === "listo" ? "lista" : "buscando") + '">' + (EST_INF[i.estado] || i.estado) + "</span>" + (i.estado === "pendiente" ? '<button class="btn" data-cinf="' + i.id + '">Cancelar</button>' : "") + (i.hay ? '<a class="btn p" target="_blank" href="/panel/api/busquedas/informe-ver?id=' + i.id + '">Ver / PDF</a><a class="btn" href="/panel/api/busquedas/informe-planilla?id=' + i.id + '">Planilla</a>' : "") + (i.nota ? '<span class="estado">' + esc(i.nota) + "</span>" : "") + "</div>"; }).join("") : "") +
     '<details style="margin-top:8px;font-size:12px;color:var(--gris)"><summary>Clave para la tarea de Claude</summary><code>' + esc(d.clave) + "</code></details>";
 }).catch(function () {}); }
 $("#listaInf").onclick = function (ev) { var b = ev.target.closest("[data-cinf]"); if (b) api("informe-cancelar", { id: b.dataset.cinf }).then(function (r) { aviso(r.res); cargarInf(); }); };

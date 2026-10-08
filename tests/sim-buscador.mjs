@@ -235,7 +235,15 @@ console.log("7c) Informes encargados a Claude");
   await pub(`listo?clave=${clave}&id=${id}&nota=18%20proveedores`);
   assert.equal((await inf("informes")).informes[0].estado, "listo");
   assert.ok(db.prepare("SELECT 1 FROM tareas WHERE tipo='informe_listo' AND ref=?").get("inf:" + id));
-  bien("encargar → cola (sin teléfono del cliente) → tomar → listo → tarea en Pendientes"); }
+  bien("encargar → cola (sin teléfono del cliente) → tomar → listo → tarea en Pendientes");
+  const urls = (await import("child_process")).execSync("d=$(mktemp -d) && cp ../informes/ejemplo.json $d/datos.json && python3 ../informes/generar.py $d/datos.json $d >/dev/null && python3 ../informes/subir.py $d IDX CLAVEX").toString().trim().split("\n").map((u) => u.replace("CLAVEX", clave).replace("IDX", id));
+  let ult; for (const u of urls) ult = (await pub(u.split("/informes/")[1]))[1];
+  assert.equal(ult.completo, true);
+  const ver = await W.fetch(new Request("https://x/panel/api/busquedas/informe-ver?id=" + id, { headers: { cookie: cM } }), env, ctx);
+  const vh = await ver.text(); assert.match(vh, /Guardar como PDF/); assert.match(vh, /Te <i>Importamos/);
+  const pl = await (await W.fetch(new Request("https://x/panel/api/busquedas/informe-planilla?id=" + id, { headers: { cookie: cM } }), env, ctx)).text();
+  assert.match(pl, /Vipertrade|DNC Wholesale/); assert.equal((await inf("informes")).informes[0].hay, 1);
+  bien(`subida en ${urls.length} partes → el panel muestra el informe (Ver / PDF) y baja la planilla`); }
 console.log("8) Rutas del worker buscador");
 const BW = B.default;
 assert.equal((await BW.fetch(new Request("https://b/estado"), env)).status, 401); bien("/estado pide clave");
