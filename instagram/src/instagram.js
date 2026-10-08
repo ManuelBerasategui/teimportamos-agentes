@@ -32,6 +32,8 @@ Podés usar como mucho 1 emoji, y solo a veces. Nunca uses dos veces seguidas la
 `;
 // =====================================================================
 
+import { rutasMetricas } from "./metricas.js";
+
 const G = "https://graph.instagram.com/v21.0";
 const dormir = (ms) => new Promise((ok) => setTimeout(ok, ms));
 const azar = (a, b) => a + Math.random() * (b - a);
@@ -56,7 +58,14 @@ const kvPut = (env, k, v) => env.DB.prepare("INSERT INTO kv (k, v, exp) VALUES (
 let tokenCache = null;
 async function token(env) {
   if (tokenCache) return tokenCache;
-  const guardado = await kvGet(env, "ig_token");
+  let guardado = await kvGet(env, "ig_token");
+  // Si cargaste un IG_TOKEN nuevo en Cloudflare (ej. con más permisos), se usa ese y no el renovado viejo.
+  const huella = env.IG_TOKEN ? env.IG_TOKEN.slice(-12) : "";
+  const origen = await kvGet(env, "ig_token_origen");
+  if (huella && origen !== huella) {
+    if (origen) { guardado = null; await kvPut(env, "ig_token", env.IG_TOKEN); await kvPut(env, "ig_token_renovado", Date.now()); }
+    await kvPut(env, "ig_token_origen", huella);
+  }
   const t = guardado || env.IG_TOKEN;
   if (!t) throw new Error("Falta la variable IG_TOKEN");
   const ultimo = +(await kvGet(env, "ig_token_renovado")) || 0;
@@ -221,9 +230,13 @@ export default {
         const r = await vuelta(env, { forzarPrueba: true });
         return texto(`MODO PRUEBA (no se publicó nada)\nComentarios leídos en esta vuelta: ${r.sinResponder} (responde de a ${CONFIG.porVuelta} cada 30 min)\n${r.error ? "\n❌ " + r.error + "\n" : ""}\n` + r.respuestas.map((x) => `${x.usuario}: "${x.comentario}"\n  → [${x.tipo}] ${x.respuesta}`).join("\n\n"));
       }
+      if (url.pathname.startsWith("/metricas")) {   // Fase 1: diagnóstico, solo lectura
+        try { const r = await rutasMetricas(env, url, (ruta, metodo, params) => ig(env, ruta, metodo, params)); if (r) return r; }
+        catch (e) { return new Response(JSON.stringify({ error: e?.message || String(e) }), { status: 500, headers: { "content-type": "application/json; charset=utf-8" } }); }
+      }
       if (url.pathname === "/correr") { const r = await vuelta(env); return texto(r); }
       if (url.pathname === "/pausa") { await kvPut(env, "ig_pausa", url.searchParams.get("si") === "no" ? "no" : "si"); return texto(url.searchParams.get("si") === "no" ? "▶️ Agente de Instagram reanudado" : "⏸️ Agente de Instagram pausado"); }
     } catch (e) { return texto("❌ " + (e?.message || e), 500); }
-    return texto("Rutas: /estado · /prueba · /correr · /pausa (&si=no para reanudar) — siempre con ?clave=");
+    return texto("Rutas: /estado · /prueba · /correr · /pausa (&si=no para reanudar) · /metricas — siempre con ?clave=");
   },
 };
