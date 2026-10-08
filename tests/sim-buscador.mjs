@@ -229,6 +229,7 @@ console.log("7c) Informes encargados a Claude");
   const rf = await inf("informe-nuevo", { producto: "medias de básquet", cliente: "Prueba", paises: ["us"], fotos: ["data:image/jpeg;base64,AAAA"] });
   assert.equal(rf.ok, true); assert.ok(rf.vista); bien("encargo con foto: Gemini la describe y se suma al detalle");
   db.prepare("UPDATE informes SET estado='cancelado' WHERE cliente='Prueba'").run();
+  const ft = await inf("foto-a-texto", { fotos: ["data:image/jpeg;base64,AAAA"] }); assert.equal(ft.ok, true); assert.ok(ft.producto.length > 2); bien("búsqueda rápida por foto: devuelve el nombre del producto (" + ft.producto.slice(0, 40) + ")");
   const { clave, informes } = await inf("informes"); assert.ok(clave.length >= 32); assert.equal(informes[0].estado, "pendiente");
   const pub = (r) => W.fetch(new Request("https://x/informes/" + r), env, ctx).then(async (x) => [x.status, await x.json()]);
   assert.equal((await pub("cola?clave=mala"))[0], 401); bien("la cola pública pide clave");

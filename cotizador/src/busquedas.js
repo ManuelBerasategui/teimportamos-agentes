@@ -172,9 +172,9 @@ ${lista.length ? "" : "<p>No se encontraron proveedores para este pedido.</p>"}
 }
 
 // Describe las fotos de referencia con Gemini (gratis) para que quien arme el informe sepa exactamente qué buscar
-async function describirFotos(env, fotos) {
+async function describirFotos(env, fotos, consigna) {
   if (!env.GEMINI_KEY || !fotos.length) return "";
-  const partes = [{ text: "Sos comprador de una importadora. Describí en español, en 2 a 4 frases, el producto de estas fotos para buscar proveedores: tipo de producto, marca y modelo si se ven (logos, etiquetas, nombres en el packaging), materiales, colores, presentación (packaging, cantidad por pack) y cualquier código visible. Si hay varios productos distintos, describí cada uno. Sin introducción." },
+  const partes = [{ text: consigna || "Sos comprador de una importadora. Describí en español, en 2 a 4 frases, el producto de estas fotos para buscar proveedores: tipo de producto, marca y modelo si se ven (logos, etiquetas, nombres en el packaging), materiales, colores, presentación (packaging, cantidad por pack) y cualquier código visible. Si hay varios productos distintos, describí cada uno. Sin introducción." },
     ...fotos.map((f) => ({ inline_data: { mime_type: "image/jpeg", data: f } }))];
   for (const m of ["gemini-flash-latest", "gemini-flash-lite-latest", "gemini-2.5-flash"]) {
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_KEY },
@@ -359,6 +359,14 @@ export async function apiBusquedas(env, req, url, quien, usuarios = []) {
     const nombre = "Proveedores-" + String(inf.cliente || "cliente").replace(/[^a-z0-9]+/gi, "-") + ".csv";
     return new Response(csv, { headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="${nombre}"` } });
   }
+  // Búsqueda rápida por foto: Gemini mira la foto y propone el nombre del producto para buscar
+  if (ruta === "foto-a-texto" && req.method === "POST") {
+    const fotos = (Array.isArray(cuerpo.fotos) ? cuerpo.fotos : []).filter((f) => typeof f === "string" && f.length < 700000).slice(0, 3).map((f) => f.replace(/^data:image\/\w+;base64,/, ""));
+    if (!fotos.length) return json({ ok: false, res: "Elegí una foto." });
+    const t = await describirFotos(env, fotos, "Mirá la foto y escribí SOLO el nombre del producto para buscarlo en mayoristas y fábricas, en español, de 3 a 10 palabras: tipo de producto, material o característica clave y medida si se nota. Si se ve una marca o modelo en logos o etiquetas, agregalo al final. Sin comillas, sin punto final, sin explicación.").catch(() => "");
+    const producto = String(t).split("\n")[0].replace(/^["'*\s]+|["'*.\s]+$/g, "").slice(0, 140);
+    return json(producto ? { ok: true, producto, res: "Listo: revisá el nombre y tocá Buscar" } : { ok: false, res: "No se pudo leer la foto. Escribí el producto a mano." });
+  }
   if (ruta === "informe-cancelar" && req.method === "POST") {
     await env.DB.prepare("UPDATE informes SET estado='cancelado' WHERE id=? AND estado='pendiente'").bind(cuerpo.id || "").run();
     return json({ ok: true, res: "Cancelado" });
@@ -461,7 +469,7 @@ dialog{border:1px solid var(--borde);border-radius:12px;padding:16px;max-width:5
 <section class="card">
   <h2>Búsqueda rápida <span class="estado" id="costoEst"></span></h2>
   <div class="form">
-    <label class="p2">Producto<input id="fProd" placeholder="Ej: licuadora portátil recargable"></label>
+    <label class="p2">Producto<span class="fila" style="flex-wrap:nowrap"><input id="fProd" placeholder="Ej: licuadora portátil recargable (o tocá 📷)"><label class="btn" title="Buscar por foto" style="flex:none;margin:0;cursor:pointer">📷<input id="fFoto" type="file" accept="image/*" style="display:none"></label></span></label>
     <label>Cantidad<input id="fCant" type="number" min="1" inputmode="numeric" placeholder="50"></label>
     <div class="fila" style="align-self:end"><button class="btn p" id="bBuscar">Buscar</button></div>
     <details class="ancho mas"><summary>Dónde buscar</summary>
@@ -635,6 +643,12 @@ $("#dlgCerrar").onclick = function () { $("#dlg").close(); };
 $("#filtros").onclick = function (ev) { var b = ev.target.closest("button"); if (!b) return; F = b.dataset.f; document.querySelectorAll("#filtros button").forEach(function (x) { x.classList.toggle("on", x === b); }); firma = ""; cargar(); };
 $("#fEst").onchange = function () { firma = ""; cargar(); };
 $("#bTg").onclick = function () { api("telegram", {}).then(function (r) { aviso(r.res); cargar(); }); };
+$("#fFoto").onchange = function () {
+  var f = this.files[0]; if (!f) return; var inp = $("#fProd"); inp.value = ""; inp.placeholder = "Leyendo la foto...";
+  var rd = new FileReader(); rd.onload = function () { var im = new Image(); im.onload = function () {
+    var k = Math.min(1, 900 / Math.max(im.width, im.height)), c = document.createElement("canvas"); c.width = im.width * k; c.height = im.height * k; c.getContext("2d").drawImage(im, 0, 0, c.width, c.height);
+    api("foto-a-texto", { fotos: [c.toDataURL("image/jpeg", 0.8)] }).then(function (r) { inp.placeholder = "Ej: licuadora portátil recargable (o tocá 📷)"; aviso(r.res); if (r.ok) { inp.value = r.producto; inp.focus(); } $("#fFoto").value = ""; }); }; im.src = rd.result; }; rd.readAsDataURL(f);
+};
 $("#bBuscar").onclick = function () {
   var fuentes = [].slice.call(document.querySelectorAll(".fFuente:checked")).map(function (x) { return x.value; });
   var paises = [].slice.call(document.querySelectorAll("#fPaises input:checked")).map(function (x) { return x.value; });
