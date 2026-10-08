@@ -2211,6 +2211,7 @@ async function prepararTablas(env) {
     env.DB.prepare("CREATE INDEX IF NOT EXISTS eventos_tipo_ts ON eventos(tipo, ts)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS tareas (id TEXT PRIMARY KEY, ts INTEGER, tipo TEXT, tel TEXT, nombre TEXT, titulo TEXT, detalle TEXT, datos TEXT, ref TEXT, estado TEXT)"),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS tareas_estado ON tareas(estado, ts)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS tareas_tel ON tareas(tel, estado)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS reportes (id TEXT PRIMARY KEY, tipo TEXT, desde INTEGER, hasta INTEGER, creado INTEGER, datos TEXT)"),
   ]);
   tablasPanel = true;
@@ -3226,10 +3227,11 @@ $("#tareas").onclick = function (ev) {
 function arrancar() {
   var q = new URLSearchParams(location.search);
   if (q.get("tel")) { verTab("chats"); abrir(q.get("tel").replace(/\D/g, "")); } else if (q.get("tab") === "chats") verTab("chats"); else cargarDash();
-  setInterval(function () { if (document.hidden) return; if ($("#v-chats").classList.contains("on")) { cargarLista(); cargarChat(false); } }, 3000);
+  setInterval(function () { if (document.hidden) return; if ($("#v-chats").classList.contains("on")) { cargarChat(false); if (++ciclosLista % 5 === 0) cargarLista(); } }, 3000);
+  var ciclosLista = 0;
   setInterval(function () { if (!document.hidden && $("#v-dash").classList.contains("on")) cargarDash(); }, 60000);
   api("importar-viejos").then(function (r) { if (r.n) { aviso("Pasé " + r.n + " pendiente(s) viejos al panel"); contarPend(); } }).catch(function () {});
-  contarPend(); setInterval(function () { if (!document.hidden) contarPend(); }, 8000);
+  contarPend(); setInterval(function () { if (!document.hidden) contarPend(); }, 30000);
   if (q.get("tab") === "pend") verTab("pend");
 }
 api("estado").then(function (s) {
