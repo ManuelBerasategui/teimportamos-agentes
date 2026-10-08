@@ -6,12 +6,13 @@ for (const f of ["instagram.js", "metricas.js"]) fs.copyFileSync(new URL("../ins
 let ok = 0, mal = 0; const chk = (n, c) => { c ? ok++ : (mal++, console.log("FALLA:", n)); };
 
 // ---- Instagram simulado ----
-function fakeIG({ permiso = true, malas = ["profile_activity"], total = 45 } = {}) {
+function fakeIG({ permiso = true, malas = ["profile_activity"], total = 45, rechazaCampo = false } = {}) {
   let llamadas = 0;
   const posts = Array.from({ length: total }, (_, i) => ({ id: "m" + i, caption: "post " + i, media_type: i % 3 ? "VIDEO" : "CAROUSEL_ALBUM", media_product_type: i % 3 ? "REELS" : "FEED", permalink: "https://ig/p/" + i, timestamp: "2026-09-01T12:00:00+0000", like_count: i, comments_count: 1 }));
   const ig = async (ruta, _m, p = {}) => {
     llamadas++;
     if (ruta === "/me") return { user_id: "1", username: "teimportamos", followers_count: 1500, media_count: total };
+    if (ruta === "/me/media" && rechazaCampo && p.fields.includes("is_shared_to_feed")) throw new Error("Instagram /me/media: (#100) Tried accessing nonexisting field (is_shared_to_feed)");
     if (ruta === "/me/media") { const desde = +(p.after || 0), n = +p.limit; const d = posts.slice(desde, desde + n); return { data: d, paging: desde + n < total ? { next: "x", cursors: { after: String(desde + n) } } : {} }; }
     if (ruta.endsWith("/insights")) {
       if (!permiso) throw new Error(`Instagram ${ruta}: (#10) Application does not have permission for this action`);
@@ -44,6 +45,10 @@ const feed = p1.items.find((x) => x.tipo === "FEED"), reel = p1.items.find((x) =
 chk("feed con base tras fallar profile_activity", feed.insights.reach === 50 && !feed.insights_error);
 chk("reel con tiempo de visualizacion", reel.insights.ig_reels_avg_watch_time !== undefined);
 const p3 = await posts(F.ig, "40"); chk("ultima pagina", p3.items.length === 5 && p3.siguiente === "");
+
+// 1b) Meta no acepta is_shared_to_feed: igual trae la lista
+F = fakeIG({ rechazaCampo: true }); const pr = await posts(F.ig); chk("sin campo en_feed: igual lista", pr.items.length === 20);
+chk("campo en_feed presente", "en_feed" in p1.items[0]);
 
 // 2) Sin permiso de insights
 F = fakeIG({ permiso: false });

@@ -88,13 +88,17 @@ const setFalla = { REELS: false, FEED: false };
 export async function posts(ig, after = "") {
   const p = { fields: "id,caption,media_type,media_product_type,permalink,timestamp,like_count,comments_count,thumbnail_url", limit: String(POR_PAGINA) };
   if (after) p.after = after;
-  const lista = await ig("/me/media", "GET", p);
+  // is_shared_to_feed = false suele indicar reel de prueba (solo a no seguidores). Si Meta no acepta el campo, se pide sin él.
+  let lista;
+  try { lista = await ig("/me/media", "GET", { ...p, fields: p.fields + ",is_shared_to_feed" }); }
+  catch (e) { if (esPermiso(e.message)) throw e; lista = await ig("/me/media", "GET", p); }
   const items = [];
   let sinPermiso = "";
   for (const m of lista.data || []) {
     const tipo = m.media_product_type === "REELS" ? "REELS" : m.media_product_type === "STORY" ? "STORY" : "FEED";
     const it = {
       id: m.id, fecha: m.timestamp, tipo, formato: m.media_type, link: m.permalink,
+      en_feed: m.is_shared_to_feed ?? null, portada: m.thumbnail_url || null,
       texto: (m.caption || "").slice(0, 600), likes: m.like_count ?? null, comentarios: m.comments_count ?? null, insights: {},
     };
     if (tipo !== "STORY" && !sinPermiso) {
