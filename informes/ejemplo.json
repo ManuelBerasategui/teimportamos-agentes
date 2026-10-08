@@ -1,0 +1,130 @@
+{
+ "cliente": "Ejemplo",
+ "titulo": "Indumentaria de marca y celulares",
+ "fecha": "07/10/2026",
+ "cantidad": "50 prendas",
+ "calidad": "Original",
+ "paises": "EE. UU., PY, AR, CL",
+ "claves": [
+  "Ropa de marca original: el canal real son los saldos y liquidaciones de EE. UU.",
+  "Celulares: mayoristas de Miami desde 20-30 unidades; Paraguay para pocas unidades."
+ ],
+ "rubros": [
+  {
+   "titulo": "👕 Indumentaria de marca original",
+   "proveedores": [
+    {
+     "pais": "🇺🇸 Estados Unidos",
+     "nombre": "DNC Wholesale",
+     "lugar": "Florida, EE. UU.",
+     "tipo": "Mayorista de stock original",
+     "calidad": "Original nuevo, con etiqueta",
+     "marcas": "Tommy Hilfiger, Calvin Klein, Lacoste, Ralph Lauren",
+     "minimo": "Desde 30 prendas por lote",
+     "precio": "Polos Tommy (lista USD 79,50) a USD 27-30 c/u · Remeras Tommy (lista USD 39,50) a USD 19-21 c/u",
+     "desc": "Sobrestock y saldos de tiendas departamentales de EE. UU., la mayoría con etiqueta original. Envían desde muestras hasta camiones.",
+     "wa": "",
+     "tel": "+1 954 300 1855",
+     "mail": "",
+     "web": "https://www.dncwholesale.com/products/tommy-hilfiger/",
+     "nota": ""
+    },
+    {
+     "pais": "🇺🇸 Estados Unidos",
+     "nombre": "Via Trading",
+     "lugar": "Los Ángeles (CA) y Tampa (FL)",
+     "tipo": "Liquidador / lotes",
+     "calidad": "Original (saldos y devoluciones)",
+     "marcas": "Lotes de ropa, calzado y accesorios de marca",
+     "minimo": "Sin mínimo de compra",
+     "precio": "Precios publicados por lote; de USD 0,20 a 34,50 por unidad según lote y estado",
+     "desc": "Venden lotes de liquidación de grandes tiendas de EE. UU. Envían a 129 países.",
+     "wa": "+1 323 947 3127",
+     "tel": "+1 877 202 3616",
+     "mail": "",
+     "web": "https://www.viatrading.com/",
+     "nota": ""
+    },
+    {
+     "pais": "🇺🇸 Estados Unidos",
+     "nombre": "Closo Wholesale",
+     "lugar": "Florida y Nueva Jersey (marketplace)",
+     "tipo": "Marketplace de lotes",
+     "calidad": "Original, nuevo o usado (lo indica cada lote)",
+     "marcas": "Tommy Hilfiger (85+ lotes en Florida), Lacoste",
+     "minimo": "Por lote: desde 12-24 prendas",
+     "precio": "Tommy: USD 8,67 a 98,50 por prenda (camisas ~USD 20; ropa casual USD 21-24). Lacoste: USD 7,70 a 54,45",
+     "desc": "Reúne liquidadores verificados de EE. UU. Pago en garantía (escrow) y 5 días para reclamar. Envía solo dentro de EE. UU.: se usa nuestro courier en Miami.",
+     "wa": "",
+     "tel": "",
+     "mail": "",
+     "web": "https://closo.co/tools/closo/brand/tommy-hilfiger/from/florida",
+     "nota": "Ideal para empezar con pocas unidades por marca."
+    }
+   ]
+  },
+  {
+   "titulo": "📱 Celulares",
+   "proveedores": [
+    {
+     "pais": "🇺🇸 Estados Unidos",
+     "nombre": "Vipertrade",
+     "lugar": "Doral, Miami (FL)",
+     "tipo": "Mayorista de celulares",
+     "calidad": "Nuevos y reacondicionados",
+     "marcas": "Apple (iPhone), Samsung, Xiaomi",
+     "minimo": "20 unidades o USD 2.500",
+     "precio": "Lista de precios por WhatsApp",
+     "desc": "Más de 25 años distribuyendo a Latinoamérica, con foco en Argentina. Despacho en el día. No exigen tener empresa.",
+     "wa": "+1 305 979 0365",
+     "tel": "+1 305 907 9100",
+     "mail": "sales@vipertrade.com",
+     "web": "https://www.vipertrade.com/index-en.html",
+     "nota": ""
+    },
+    {
+     "pais": "🇺🇸 Estados Unidos",
+     "nombre": "A1A Solutions",
+     "lugar": "Doral, Miami (FL)",
+     "tipo": "Mayorista B2B",
+     "calidad": "Nuevos y usados",
+     "marcas": "iPhone, Samsung y 40+ marcas",
+     "minimo": "30 unidades (se pueden mezclar modelos)",
+     "precio": "Lista de precios en el día, por WhatsApp",
+     "desc": "Entrega gratis en el courier de Miami. Pago por transferencia bancaria.",
+     "wa": "",
+     "tel": "+1 305 321 2591",
+     "mail": "angel@a1asolutions.com",
+     "web": "https://www.a1asolutions.com/contact-us",
+     "nota": ""
+    },
+    {
+     "pais": "🇺🇸 Estados Unidos",
+     "nombre": "Mercury Cellular",
+     "lugar": "Doral, Miami (FL)",
+     "tipo": "Exportador de celulares",
+     "calidad": "Nuevos y usados / reacondicionados",
+     "marcas": "iPhone, Samsung y otras",
+     "minimo": "A consultar",
+     "precio": "A consultar",
+     "desc": "Más de 13 años exportando a 15+ países de Latinoamérica. Aceptan transferencia y USDT.",
+     "wa": "+1 786 306 8016",
+     "tel": "+1 305 418 9335",
+     "mail": "info@mercurycellular.com",
+     "web": "https://mercurycellular.com/",
+     "nota": ""
+    }
+   ]
+  }
+ ],
+ "referencias": [
+  [
+   "iPhone 11 128 GB",
+   "USD 450"
+  ],
+  [
+   "iPhone 12 Pro 256 GB",
+   "USD 330"
+  ]
+ ]
+}

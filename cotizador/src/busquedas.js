@@ -29,11 +29,18 @@ const inicioDiaAR = (ts = Date.now()) => Math.floor((ts - AR) / 86400e3) * 86400
 const inicioMesAR = (ts = Date.now()) => { const d = new Date(ts - AR); return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1) + AR; };
 const json = (o, s = 200) => new Response(JSON.stringify(o), { status: s, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });
 
+// Informes encargados a Claude (los arma una tarea programada de Claude que lee esta cola)
+const ESQUEMA_INFORMES = [
+  "CREATE TABLE IF NOT EXISTS informes (id TEXT PRIMARY KEY, ts INTEGER, producto TEXT, cantidad TEXT, calidad TEXT, paises TEXT, detalle TEXT, cliente TEXT, tel TEXT, pedido_por TEXT, estado TEXT, nota TEXT, tomado_ts INTEGER, listo_ts INTEGER)",
+  "CREATE INDEX IF NOT EXISTS informes_estado ON informes(estado, ts)",
+];
+const PAISES_INF = ["ar", "py", "br", "cl", "us", "cn"];
 let listas = false;
 async function preparar(env) {
   if (listas) return;
   await env.DB.batch(ESQUEMA.map((s) => env.DB.prepare(s)));
   for (const m of MIGRACIONES) await env.DB.prepare(m).run().catch(() => {});
+  await env.DB.batch(ESQUEMA_INFORMES.map((s) => env.DB.prepare(s)));
   listas = true;
 }
 const kvGet = async (env, k) => (await env.DB.prepare("SELECT v FROM kv WHERE k=?").bind(k).first())?.v ?? null;
@@ -163,6 +170,35 @@ ${lista.length ? "" : "<p>No se encontraron proveedores para este pedido.</p>"}
 </body></html>`;
 }
 
+async function claveInformes(env) {
+  let k = await kvGet(env, "informes_clave");
+  if (!k) { k = [...crypto.getRandomValues(new Uint8Array(18))].map((b) => b.toString(16).padStart(2, "0")).join(""); await kvPut(env, "informes_clave", k); }
+  return k;
+}
+// Rutas SIN login, para la tarea programada de Claude (solo lectura de la cola y cambio de estado). Clave: ?clave=<informes_clave>
+export async function rutaInformes(env, url) {
+  await preparar(env);
+  if (!url.searchParams.get("clave") || url.searchParams.get("clave") !== (await claveInformes(env))) return json({ ok: false, error: "clave incorrecta" }, 401);
+  const ruta = url.pathname.replace("/informes/", "");
+  const id = url.searchParams.get("id") || "";
+  if (ruta === "cola") {
+    // Los "en_proceso" de hace más de 3 h se reintentan (la tarea se cortó)
+    await env.DB.prepare("UPDATE informes SET estado='pendiente' WHERE estado='en_proceso' AND tomado_ts < ?").bind(Date.now() - 3 * 3600e3).run();
+    const rs = (await env.DB.prepare("SELECT id, ts, producto, cantidad, calidad, paises, detalle, cliente FROM informes WHERE estado='pendiente' ORDER BY ts LIMIT 5").all()).results || [];
+    return json({ ok: true, pendientes: rs.map((r) => ({ ...r, paises: JSON.parse(r.paises || "[]") })) });
+  }
+  if (ruta === "tomar") { await env.DB.prepare("UPDATE informes SET estado='en_proceso', tomado_ts=? WHERE id=? AND estado='pendiente'").bind(Date.now(), id).run(); return json({ ok: true }); }
+  if (ruta === "listo") {
+    await env.DB.prepare("UPDATE informes SET estado='listo', listo_ts=?, nota=? WHERE id=?").bind(Date.now(), String(url.searchParams.get("nota") || "").slice(0, 500), id).run();
+    const inf = await env.DB.prepare("SELECT * FROM informes WHERE id=?").bind(id).first();
+    if (inf) await env.DB.prepare("INSERT INTO tareas (id, ts, tipo, tel, nombre, titulo, detalle, datos, ref, estado) VALUES (?,?,?,?,?,?,?,?,?,'abierta')")
+      .bind("inf" + Date.now().toString(36), Date.now(), "informe_listo", inf.tel || "", inf.cliente || "", `Informe listo: ${inf.producto}`, `Lo armó Claude. Descargalo en la app de Claude (Tareas programadas > Informes de proveedores) y mandáselo al cliente.${inf.nota ? "\n" + inf.nota : ""}`, JSON.stringify({ informe: id }), `inf:${id}`).run();
+    return json({ ok: true });
+  }
+  if (ruta === "error") { await env.DB.prepare("UPDATE informes SET estado='pendiente', nota=? WHERE id=?").bind(String(url.searchParams.get("nota") || "").slice(0, 500), id).run(); return json({ ok: true }); }
+  return json({ ok: false, error: "no existe" }, 404);
+}
+
 export async function apiBusquedas(env, req, url, quien, usuarios = []) {
   await preparar(env);
   const ruta = url.pathname.replace("/panel/api/busquedas/", "");
@@ -254,6 +290,26 @@ export async function apiBusquedas(env, req, url, quien, usuarios = []) {
     if (!b) return new Response("No existe esa búsqueda", { status: 404 });
     const provs = (await env.DB.prepare("SELECT * FROM proveedores WHERE busqueda=? ORDER BY puntaje DESC").bind(b.id).all()).results || [];
     return new Response(htmlInforme(b, provs, url.searchParams.get("modo")), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
+  }
+  if (ruta === "informes") {
+    const rs = (await env.DB.prepare("SELECT * FROM informes WHERE estado<>'cancelado' ORDER BY ts DESC LIMIT 30").all()).results || [];
+    return json({ ok: true, clave: await claveInformes(env), informes: rs });
+  }
+  if (ruta === "informe-nuevo" && req.method === "POST") {
+    const producto = String(cuerpo.producto || "").trim().slice(0, 400);
+    if (producto.length < 3) return json({ ok: false, res: "Escribí qué hay que buscar." });
+    if (PROHIBIDO.test(producto)) return json({ ok: false, res: "Ese producto no lo trabajamos (vapers, tabaco, fármacos o drogas)." });
+    const paises = (Array.isArray(cuerpo.paises) ? cuerpo.paises : PAISES_INF).filter((x) => PAISES_INF.includes(x));
+    if (!paises.length) return json({ ok: false, res: "Elegí al menos un país." });
+    const id = "i" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+    await env.DB.prepare("INSERT INTO informes (id, ts, producto, cantidad, calidad, paises, detalle, cliente, tel, pedido_por, estado, nota) VALUES (?,?,?,?,?,?,?,?,?,?,'pendiente','')")
+      .bind(id, Date.now(), producto, String(cuerpo.cantidad || "").slice(0, 40), ["original", "reacondicionado", "indistinto"].includes(cuerpo.calidad) ? cuerpo.calidad : "original",
+        JSON.stringify(paises), String(cuerpo.detalle || "").slice(0, 1000), String(cuerpo.cliente || "").slice(0, 120), String(cuerpo.tel || "").replace(/[^\d@.a-z-]/gi, "").slice(0, 60), quien).run();
+    return json({ ok: true, res: "Encargado: Claude lo arma en la próxima vuelta (dentro de 1 h, en horario comercial)." });
+  }
+  if (ruta === "informe-cancelar" && req.method === "POST") {
+    await env.DB.prepare("UPDATE informes SET estado='cancelado' WHERE id=? AND estado='pendiente'").bind(cuerpo.id || "").run();
+    return json({ ok: true, res: "Cancelado" });
   }
   if (ruta === "tarea") {
     const t = await env.DB.prepare("SELECT id, tel, nombre, titulo, detalle FROM tareas WHERE id=?").bind(url.searchParams.get("id") || "").first();
@@ -347,6 +403,21 @@ dialog{border:1px solid var(--borde);border-radius:12px;padding:16px;max-width:5
     </div>
     <div class="fila ancho"><button class="btn p" id="bBuscar">Buscar proveedores</button><span class="estado" id="costoEst"></span></div>
   </div>
+</section>
+<section class="card" id="secInforme">
+  <h2>📄 Encargar informe completo a Claude <span class="estado">(lo cobrás al cliente; sale en PDF y planilla)</span></h2>
+  <div class="form">
+    <label class="p2">Qué busca el cliente<input id="iProd" placeholder="Ej: ropa de marca original (Tommy, Lacoste) y celulares iPhone/Samsung"></label>
+    <label>Cantidad aprox.<input id="iCant" placeholder="Ej: 50 prendas"></label>
+    <label>Calidad<select id="iCal"><option value="original">Original</option><option value="reacondicionado">Reacondicionado</option><option value="indistinto">Original o reacondicionado</option></select></label>
+    <label>Cliente<input id="iCli" placeholder="Nombre"></label>
+    <label class="ancho">Detalle (opcional)<input id="iDet" placeholder="Para revender / uso personal, presupuesto, marcas, talles..."></label>
+    <div class="chk ancho" id="iPaises"><b style="font-size:13px;color:var(--gris)">Países:</b>
+      <label><input type="checkbox" value="ar" checked> 🇦🇷 Argentina</label><label><input type="checkbox" value="py" checked> 🇵🇾 Paraguay</label><label><input type="checkbox" value="br" checked> 🇧🇷 Brasil</label>
+      <label><input type="checkbox" value="cl" checked> 🇨🇱 Chile</label><label><input type="checkbox" value="us" checked> 🇺🇸 EE. UU.</label><label><input type="checkbox" value="cn" checked> 🇨🇳 China</label></div>
+    <div class="fila ancho"><button class="btn p" id="bInforme">Encargar informe</button><span class="estado">No gasta Apify ni Tavily. Te llega aviso cuando está listo.</span></div>
+  </div>
+  <div id="listaInf" style="margin-top:10px"></div>
 </section>
 <div class="fila" style="margin-bottom:12px">
   <div class="filtros" id="filtros"><button data-f="mias" class="on">Mías</button><button data-f="otros">Del otro</button><button data-f="todas">Todas</button></div>
@@ -508,6 +579,20 @@ $("#bBuscar").onclick = function () {
 // Si viene desde una tarea "Buscar proveedor" de Pendientes, se completa el formulario
 var tq = new URLSearchParams(location.search).get("tarea");
 if (tq) api("tarea?id=" + encodeURIComponent(tq)).then(function (t) { if (!t.ok) return; TAREA = t.id; $("#fProd").value = t.producto || ""; $("#fCant").value = t.cantidad || ""; $("#fCli").value = t.cliente || ""; aviso("Revisá el producto y la cantidad, y tocá Buscar"); });
+var EST_INF = { pendiente: "⏳ En cola", en_proceso: "🔎 Claude lo está armando", listo: "✅ Listo (descargalo en la app de Claude)" };
+var TEL_INF = "";
+function cargarInf() { api("informes").then(function (d) {
+  $("#listaInf").innerHTML = (d.informes.length ? d.informes.map(function (i) { return '<div class="fila" style="border-top:1px solid var(--borde);padding:6px 0;font-size:14px"><b>' + esc(i.producto) + '</b><span class="estado">' + esc(i.cliente || "") + " · " + hace(i.ts) + '</span><span class="pill ' + (i.estado === "listo" ? "lista" : "buscando") + '">' + (EST_INF[i.estado] || i.estado) + "</span>" + (i.estado === "pendiente" ? '<button class="btn" data-cinf="' + i.id + '">Cancelar</button>' : "") + (i.nota ? '<span class="estado">' + esc(i.nota) + "</span>" : "") + "</div>"; }).join("") : "") +
+    '<details style="margin-top:8px;font-size:12px;color:var(--gris)"><summary>Clave para la tarea de Claude</summary><code>' + esc(d.clave) + "</code></details>";
+}).catch(function () {}); }
+$("#listaInf").onclick = function (ev) { var b = ev.target.closest("[data-cinf]"); if (b) api("informe-cancelar", { id: b.dataset.cinf }).then(function (r) { aviso(r.res); cargarInf(); }); };
+$("#bInforme").onclick = function () {
+  var paises = [].slice.call(document.querySelectorAll("#iPaises input:checked")).map(function (x) { return x.value; });
+  api("informe-nuevo", { producto: $("#iProd").value, cantidad: $("#iCant").value, calidad: $("#iCal").value, cliente: $("#iCli").value, detalle: $("#iDet").value, paises: paises, tel: TEL_INF }).then(function (r) {
+    aviso(r.res); if (r.ok) { $("#iProd").value = ""; $("#iCant").value = ""; $("#iCli").value = ""; $("#iDet").value = ""; TEL_INF = ""; cargarInf(); } });
+};
+(function () { var q = new URLSearchParams(location.search); if (q.get("informe")) { $("#iProd").value = q.get("producto") || ""; $("#iCli").value = q.get("cliente") || ""; TEL_INF = q.get("tel") || ""; $("#secInforme").scrollIntoView(); aviso("Completá el pedido y tocá Encargar informe"); } })();
+cargarInf(); setInterval(cargarInf, 60000);
 document.querySelectorAll(".fFuente, #fPaises input").forEach(function (x) { x.onchange = costoEst; }); costoEst();
 cargar(); setInterval(cargar, 20000);
 </script></body></html>`;

@@ -222,6 +222,20 @@ tavilyCae = false;
 const pwb = await (await B.default.fetch(new Request("https://b/probar-web?clave=k&pais=paraguay&q=x"), env)).json();
 assert.equal(pwb.ok, true); bien("/probar-web con Tavily: " + pwb.resultados.length + " resultados, " + pwb.usadas_este_mes + " usadas este mes");
 
+console.log("7c) Informes encargados a Claude");
+{ const inf = (r, b) => W.fetch(new Request("https://x/panel/api/busquedas/" + r, { method: b ? "POST" : "GET", headers: { cookie: cM }, body: b ? JSON.stringify(b) : undefined }), env, ctx).then((x) => x.json());
+  assert.equal((await inf("informe-nuevo", { producto: "vapes", paises: ["ar"] })).ok, false);
+  assert.equal((await inf("informe-nuevo", { producto: "ropa de marca y iPhone", cliente: "Thomas", paises: ["us", "py"], tel: "5493410000000" })).ok, true);
+  const { clave, informes } = await inf("informes"); assert.ok(clave.length >= 32); assert.equal(informes[0].estado, "pendiente");
+  const pub = (r) => W.fetch(new Request("https://x/informes/" + r), env, ctx).then(async (x) => [x.status, await x.json()]);
+  assert.equal((await pub("cola?clave=mala"))[0], 401); bien("la cola pública pide clave");
+  const [, cola] = await pub("cola?clave=" + clave); assert.equal(cola.pendientes[0].cliente, "Thomas"); assert.deepEqual(cola.pendientes[0].paises, ["us", "py"]); assert.equal(cola.pendientes[0].tel, undefined);
+  const id = cola.pendientes[0].id;
+  await pub(`tomar?clave=${clave}&id=${id}`); assert.equal((await pub("cola?clave=" + clave))[1].pendientes.length, 0);
+  await pub(`listo?clave=${clave}&id=${id}&nota=18%20proveedores`);
+  assert.equal((await inf("informes")).informes[0].estado, "listo");
+  assert.ok(db.prepare("SELECT 1 FROM tareas WHERE tipo='informe_listo' AND ref=?").get("inf:" + id));
+  bien("encargar → cola (sin teléfono del cliente) → tomar → listo → tarea en Pendientes"); }
 console.log("8) Rutas del worker buscador");
 const BW = B.default;
 assert.equal((await BW.fetch(new Request("https://b/estado"), env)).status, 401); bien("/estado pide clave");

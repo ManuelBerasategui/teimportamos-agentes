@@ -1,6 +1,6 @@
 import { rutaLector, apiLector, cronLector } from "./lector.js";
 import { PANEL_805 } from "./lector-panel.js";
-import { apiBusquedas, PANEL_BUSQUEDAS } from "./busquedas.js";
+import { apiBusquedas, PANEL_BUSQUEDAS, rutaInformes } from "./busquedas.js";
 /**
  * Agente de WhatsApp · Te Importamos (v15.0: + pestaña Búsquedas de proveedores)
  * Cloudflare Workers + Gemini (gratis) con respaldo de Cloudflare AI.
@@ -3193,7 +3193,7 @@ $("#agEnviar").onclick = function () {
 };
 
 // ---------- Pendientes ----------
-var TIPOS = { ig_revisar: "Instagram: comentario para vos", cierre: "Quiere comprar", proveedor: "Buscar proveedor", cotizacion: "Cotización para aprobar", comprobante: "Comprobante de pago", derivado: "Chat derivado: respondele vos", promesa: "El agente prometió algo", riesgo: "Chat en riesgo", recontactar: "Seguimiento para mandar vos", busqueda_lista: "Búsqueda de proveedores lista" };
+var TIPOS = { ig_revisar: "Instagram: comentario para vos", cierre: "Quiere comprar", proveedor: "Buscar proveedor", cotizacion: "Cotización para aprobar", comprobante: "Comprobante de pago", derivado: "Chat derivado: respondele vos", promesa: "El agente prometió algo", riesgo: "Chat en riesgo", recontactar: "Seguimiento para mandar vos", busqueda_lista: "Búsqueda de proveedores lista", informe_listo: "Informe de proveedores listo" };
 var ORDEN = { cierre: 0, cotizacion: 0, comprobante: 1, proveedor: 2, busqueda_lista: 2, derivado: 2, promesa: 3, riesgo: 4, recontactar: 5 }, firmaT = "";
 function hace(ms) { var m = Math.round((Date.now() - ms) / 60000); return m < 60 ? "hace " + m + " min" : m < 1440 ? "hace " + Math.round(m / 60) + " h" : "hace " + Math.round(m / 1440) + " d"; }
 function contarPend() { api("tareas").then(function (ts) { $("#nPend").textContent = ts.length || ""; if ($("#v-pend").classList.contains("on")) pintarTareas(ts); }).catch(function () {}); }
@@ -3269,6 +3269,7 @@ export default {
     const clave = url.searchParams.get("clave");
     // Lector 805: el puente de WhatsApp (solo lectura) postea acá
     if (url.pathname.startsWith("/lector/")) return rutaLector(env, req, url, ctx);
+    if (url.pathname.startsWith("/informes/")) return rutaInformes(env, url);   // cola de informes para la tarea programada de Claude
     if (url.pathname === "/reset") {
       if (clave !== env.VERIFY_TOKEN) return new Response("Falta ?clave=", { status: 401 });
       const tel = (url.searchParams.get("tel") || "").replace(/\D/g, "");
