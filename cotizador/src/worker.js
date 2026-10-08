@@ -2975,9 +2975,9 @@ function waFila(c, extra, txt) {
 function pintarListaWA() {
   var d = WA; if (!d) return; var h = "";
   if (WA_LISTA === "sin") h = (d.sinResponder || []).map(function (c) { return waFila(c, hace(c.ult_cliente_ts) + '<button class="wlisto" data-visto="' + esc(c.conv) + '" title="Sacar de la lista hasta que vuelva a escribir">Listo</button>', String(c.accion || c.ult_texto || "").replace(/\|p\d$/, "")); }).join("");
-  if (WA_LISTA === "esc") h = (d.escribiles || []).map(function (c) { return waFila(c, hora(c.ult_ts)); }).join("");
-  if (WA_LISTA === "cot") h = (d.cotPend || []).map(function (c) { return waFila(c, hace(c.ult_cliente_ts || c.ult_ts)); }).join("");
-  if (WA_LISTA === "ven") h = (d.ventasRec || []).map(function (v) { return waFila({ conv: v.conv, nombre: v.nombre, producto: v.producto }, hora(v.ts), v.dato); }).join("");
+  if (WA_LISTA === "esc") h = (d.escribiles || []).map(function (c) { return waFila(c, hora(c.ult_ts) + '<button class="wlisto" data-visto="' + esc(c.conv) + '" data-lista="esc">Listo</button>'); }).join("");
+  if (WA_LISTA === "cot") h = (d.cotPend || []).map(function (c) { return waFila(c, hace(c.ult_cliente_ts || c.ult_ts) + '<button class="wlisto" data-visto="' + esc(c.conv) + '" data-lista="cot">Listo</button>'); }).join("");
+  if (WA_LISTA === "ven") h = (d.ventasRec || []).map(function (v) { return waFila({ conv: v.conv, nombre: v.nombre, producto: v.producto }, hora(v.ts) + '<button class="wlisto" data-visto="' + esc(v.id) + '" data-lista="ven">Listo</button>', v.dato); }).join("");
   $("#waTabla").innerHTML = h || '<tr><td class="vacio">Nada por acá</td></tr>';
 }
 function pintarWA(d) {
@@ -3007,7 +3007,7 @@ function pintarWA(d) {
 }
 document.addEventListener("click", function (ev) {
   var w = ev.target.closest("[data-wl]"); if (w) { WA_LISTA = w.dataset.wl; document.querySelectorAll("[data-wl]").forEach(function (x) { x.classList.toggle("on", x === w); }); pintarListaWA(); return; }
-  var vb = ev.target.closest("[data-visto]"); if (vb) { ev.stopPropagation(); vb.disabled = true; fetch("/panel/api/805/visto", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conv: vb.dataset.visto }) }).then(function () { var tr = vb.closest("tr"); if (tr) tr.remove(); if (WA) { WA.sinResponder = (WA.sinResponder || []).filter(function (c) { return c.conv !== vb.dataset.visto; }); } }); return; }
+  var vb = ev.target.closest("[data-visto]"); if (vb) { ev.stopPropagation(); vb.disabled = true; fetch("/panel/api/805/visto", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conv: vb.dataset.visto, id: vb.dataset.visto, lista: vb.dataset.lista || "sin" }) }).then(function () { var tr = vb.closest("tr"); if (tr) tr.remove(); var k = vb.dataset.visto, ls = vb.dataset.lista || "sin"; if (WA) { if (ls === "sin") WA.sinResponder = (WA.sinResponder || []).filter(function (c) { return c.conv !== k; }); if (ls === "esc") WA.escribiles = (WA.escribiles || []).filter(function (c) { return c.conv !== k; }); if (ls === "cot") WA.cotPend = (WA.cotPend || []).filter(function (c) { return c.conv !== k; }); if (ls === "ven") WA.ventasRec = (WA.ventasRec || []).filter(function (v) { return v.id !== k; }); } }); return; }
   var r = ev.target.closest("[data-wc]"); if (r) location.href = "/panel/805#" + encodeURIComponent(r.dataset.wc);
 });
 function cargarDash() {

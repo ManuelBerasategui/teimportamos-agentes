@@ -53,7 +53,8 @@ export async function prepararLector(env) {
     env.DB.prepare("CREATE TABLE IF NOT EXISTS reportes (id TEXT PRIMARY KEY, tipo TEXT, desde INTEGER, hasta INTEGER, creado INTEGER, datos TEXT)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT, exp INTEGER)"),
   ]);
-  for (const col of ["resp INTEGER", "visto_ts INTEGER DEFAULT 0"]) await env.DB.prepare(`ALTER TABLE w_conv ADD COLUMN ${col}`).run().catch(() => {});
+  for (const col of ["resp INTEGER", "visto_ts INTEGER DEFAULT 0", "prov INTEGER DEFAULT 0", "visto_esc INTEGER DEFAULT 0", "visto_cot INTEGER DEFAULT 0"]) await env.DB.prepare(`ALTER TABLE w_conv ADD COLUMN ${col}`).run().catch(() => {});
+  await env.DB.prepare("ALTER TABLE w_hito ADD COLUMN oculto INTEGER DEFAULT 0").run().catch(() => {});
   tablasLector = true;
 }
 
@@ -185,7 +186,7 @@ export async function metricas(env, desde, hasta = Date.now()) {
     q("SELECT COUNT(*) n FROM w_conv WHERE ult_ts>=? AND ult_ts<? AND grupo=0", desde, hasta),
     q("SELECT COUNT(*) n FROM w_hito WHERE tipo='cotizacion' AND ts>=? AND ts<?", desde, hasta),
     q("SELECT COUNT(DISTINCT conv) n FROM w_hito WHERE tipo='cotizacion' AND ts>=? AND ts<?", desde, hasta),
-    q("SELECT COUNT(*) n FROM w_hito WHERE tipo='venta' AND ts>=? AND ts<?", desde, hasta),
+    q("SELECT COUNT(*) n FROM w_hito h LEFT JOIN w_conv c ON c.conv=h.conv WHERE h.tipo='venta' AND h.ts>=? AND h.ts<? AND COALESCE(h.oculto,0)=0 AND COALESCE(c.prov,0)=0", desde, hasta),
     q("SELECT COUNT(*) n FROM w_conv WHERE ult_cliente_ts>=? AND grupo=0 AND archivado=0 AND ult_yo=0 AND COALESCE(resp,1)=1 AND ult_cliente_ts>COALESCE(visto_ts,0) AND COALESCE(etapa,'')<>'no_cliente'", Date.now() - 72 * 3600e3),
   ]);
   // Tiempo de respuesta: solo con los mensajes de las últimas 24 h del período (acotado)
@@ -233,6 +234,9 @@ Para cada chat devolvé:
 - accion: qué tenemos que hacer AHORA, concreto y corto (ej. "mandale la cotización de las 50 tarjetas NFC", "respondele si el envío llega a Tierra del Fuego", "escribile ofreciendo 10% off, quedó en pensarlo"). "" si no hace falta nada.
 - prioridad: 1 (urgente) a 3 (puede esperar)
 - necesita_respuesta: true si el ÚLTIMO mensaje del chat es del CLIENTE y espera algo de nosotros (una pregunta, un pedido, datos, una foto, una duda). false si el último mensaje del cliente es un cierre o acuse ("dale", "ok", "gracias", "perfecto", "lo pienso", "te aviso", "cuando tenga todo te hago el pedido", un sticker o emoji), o si el último mensaje es nuestro.
+- es_proveedor: true si el chat es con un PROVEEDOR, mayorista, fábrica o tienda a la que NOSOTROS le compramos (nosotros pedimos precios, nosotros pagamos/transferimos, ellos nos venden). false si es un cliente que nos compra a nosotros.
+- venta_real: true solo si en este chat un CLIENTE nos compró: nos pagó una seña o el total (mandó comprobante, confirmamos su pago). false si fuimos nosotros los que pagamos a un proveedor, o si todavía no pagó.
+- Si es_proveedor es true: etapa "no_cliente", puntaje 1, cot_pend false, venta_real false.
 - Consultas por vapers, vapes, pods o tabaco: etapa "no_cliente" (no los trabajamos; los atiende el socio por otro canal).
 - resumen: 1 oración con lo esencial (nombre, producto, cantidad, en qué quedó)
 Respondé JSON: {"chats":[{...}]}
@@ -243,8 +247,10 @@ ${bloques.join("\n\n")}`);
     for (const a of lista) {
       const c = tanda.find((x) => x.conv === String(a.conv));
       if (!c) continue;
-      ops.push(env.DB.prepare("UPDATE w_conv SET analizado_ts=?, puntaje=?, temp=?, producto=?, etapa=?, accion=?, resumen=?, cot_pend=?, resp=? WHERE conv=?")
-        .bind(Date.now(), Math.max(1, Math.min(10, parseInt(a.puntaje) || 1)), String(a.temp || ""), String(a.producto || "").slice(0, 80), String(a.etapa || ""), String(a.accion || "").slice(0, 300) + (a.prioridad ? `|p${a.prioridad}` : ""), String(a.resumen || "").slice(0, 400), a.cot_pend ? 1 : 0, a.necesita_respuesta === false ? 0 : 1, c.conv));
+      ops.push(env.DB.prepare("UPDATE w_conv SET analizado_ts=?, puntaje=?, temp=?, producto=?, etapa=?, accion=?, resumen=?, cot_pend=?, resp=?, prov=? WHERE conv=?")
+        .bind(Date.now(), Math.max(1, Math.min(10, parseInt(a.puntaje) || 1)), String(a.temp || ""), String(a.producto || "").slice(0, 80), String(a.etapa || ""), String(a.accion || "").slice(0, 300) + (a.prioridad ? `|p${a.prioridad}` : ""), String(a.resumen || "").slice(0, 400), a.cot_pend ? 1 : 0, a.necesita_respuesta === false ? 0 : 1, a.es_proveedor ? 1 : 0, c.conv));
+      if (a.es_proveedor) ops.push(env.DB.prepare("UPDATE w_hito SET oculto=1 WHERE conv=? AND tipo='venta'").bind(c.conv));
+      else if (a.venta_real) ops.push(env.DB.prepare("INSERT OR IGNORE INTO w_hito (id,conv,tipo,ts,dato) SELECT ?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM w_hito WHERE conv=? AND tipo='venta' AND ts>=?)").bind(`v:${c.conv}:${diaAR(c.ult_ts || Date.now())}`, c.conv, "venta", c.ult_ts || Date.now(), String(a.resumen || "venta").slice(0, 300), c.conv, Date.now() - 30 * 86400e3));
       hechos++;
     }
     // Los que la IA no devolvió quedan para la próxima vuelta (no se marcan como analizados)
@@ -261,9 +267,9 @@ export async function listas(env) {
   const hace72 = Date.now() - 72 * 3600e3;
   const [sinResponder, escribiles, cotPend, ventasRec] = await Promise.all([
     q("SELECT * FROM w_conv WHERE ult_cliente_ts>=? AND grupo=0 AND archivado=0 AND ult_yo=0 AND COALESCE(resp,1)=1 AND ult_cliente_ts>COALESCE(visto_ts,0) AND COALESCE(etapa,'')<>'no_cliente' ORDER BY COALESCE(puntaje,5) DESC, ult_cliente_ts ASC LIMIT 60", hace72),
-    q("SELECT * FROM w_conv WHERE grupo=0 AND archivado=0 AND puntaje>=6 AND accion<>'' AND etapa NOT IN ('vendido','perdido','no_cliente') AND ult_ts>=? ORDER BY puntaje DESC, ult_ts DESC LIMIT 40", Date.now() - 10 * 86400e3),
-    q("SELECT * FROM w_conv WHERE ult_ts>=? AND grupo=0 AND archivado=0 AND cot_pend=1 ORDER BY ult_cliente_ts ASC LIMIT 40", Date.now() - 14 * 86400e3),
-    q("SELECT h.ts, h.dato, c.conv, c.nombre, c.producto FROM w_hito h LEFT JOIN w_conv c ON c.conv=h.conv WHERE h.tipo='venta' ORDER BY h.ts DESC LIMIT 20"),
+    q("SELECT * FROM w_conv WHERE grupo=0 AND archivado=0 AND COALESCE(prov,0)=0 AND COALESCE(visto_esc,0)<ult_ts AND puntaje>=6 AND accion<>'' AND etapa NOT IN ('vendido','perdido','no_cliente') AND ult_ts>=? ORDER BY puntaje DESC, ult_ts DESC LIMIT 40", Date.now() - 10 * 86400e3),
+    q("SELECT * FROM w_conv WHERE ult_ts>=? AND grupo=0 AND archivado=0 AND cot_pend=1 AND COALESCE(prov,0)=0 AND COALESCE(visto_cot,0)<ult_ts ORDER BY ult_cliente_ts ASC LIMIT 40", Date.now() - 14 * 86400e3),
+    q("SELECT h.id, h.ts, h.dato, c.conv, c.nombre, c.producto FROM w_hito h LEFT JOIN w_conv c ON c.conv=h.conv WHERE h.tipo='venta' AND COALESCE(h.oculto,0)=0 AND COALESCE(c.prov,0)=0 ORDER BY h.ts DESC LIMIT 20"),
   ]);
   return { sinResponder, escribiles, cotPend, ventasRec };
 }
@@ -399,6 +405,7 @@ export async function cronLector(env, iaJSON, scheduledTime) {
   await prepararLector(env);
   if (!(await kvGet(env, "lector_reparado_v1"))) await repararPropios(env).catch((e) => console.log("lector reparar", e?.stack || e));
   if (!(await kvGet(env, "lector_resp_v1"))) { await env.DB.prepare("UPDATE w_conv SET analizado_ts=0 WHERE ult_yo=0 AND grupo=0 AND ult_cliente_ts>=?").bind(Date.now() - 72 * 3600e3).run(); await kvPut(env, "lector_resp_v1", Date.now()); }
+  if (!(await kvGet(env, "lector_ventas_v1"))) { await env.DB.prepare("UPDATE w_conv SET analizado_ts=0 WHERE conv IN (SELECT conv FROM w_hito WHERE tipo='venta') OR ult_ts>=?").bind(Date.now() - 3 * 86400e3).run(); await kvPut(env, "lector_ventas_v1", Date.now()); }
   if (!(await kvGet(env, "lector_cotiz_v2"))) await recalcularCotizaciones(env).catch((e) => console.log("lector cotiz", e?.stack || e));
   const t = new Date(scheduledTime);
   const m = t.getUTCMinutes(), hAR = (t.getUTCHours() + 21) % 24;
@@ -514,7 +521,9 @@ export async function apiLector(env, req, url, iaJSON) {
     return json({ conv: c, mensajes: ms, hitos });
   }
   if (r === "visto" && req.method === "POST") {
-    const b = await req.json(); await env.DB.prepare("UPDATE w_conv SET visto_ts=? WHERE conv=?").bind(Date.now(), String(b.conv || "")).run();
+    const b = await req.json(); const conv = String(b.conv || "");
+    if (b.lista === "ven") await env.DB.prepare("UPDATE w_hito SET oculto=1 WHERE id=? AND tipo='venta'").bind(String(b.id || "")).run();
+    else { const col = b.lista === "esc" ? "visto_esc" : b.lista === "cot" ? "visto_cot" : "visto_ts"; await env.DB.prepare(`UPDATE w_conv SET ${col}=? WHERE conv=?`).bind(Date.now(), conv).run(); }
     await env.DB.prepare("DELETE FROM kv WHERE k='lector_resumen'").run(); return json({ ok: true });
   }
   if (r === "archivar" && req.method === "POST") {
