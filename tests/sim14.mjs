@@ -68,3 +68,9 @@ const pa=await api2("preguntar",{pregunta:"a quien le tenia que mandar las conso
 geminiResp={titular:"Día fuerte en camisetas",claves:["15 chats nuevos"],oportunidades:["Juan: cotizale"],problemas:[],grupos:"",recomendacion:"Cotizar camisetas",difusion:[{producto:"Camisetas versión jugador",por_que:"6 pedidos hoy",mensaje:"Abrimos cupo de camisetas versión jugador.\nTraemos directo, más barato que en Mercado Libre.\nEscribime y reservá tu lugar."}]};
 const rp=await api2("reporte",{tipo:"805_diario"}); console.log("difusion:", rp.datos.ia.difusion.length);
 console.log("borrar:", (await api2("borrar-reporte",{id:rp.id})).ok, "quedan:", (await api2("reportes")).length);
+await post("/whatsapp-web-webhook",{organization_address:"5493418051515",messages:[{external_id:"v1",conversation_address:"5496666666666",sender_address:"5496666666666",sender_name:"Lola",content:{type:"text",kind:"text",text:"hola cuanto sale?"},timestamp:new Date().toISOString()}]});
+db.prepare("DELETE FROM kv WHERE k='lector_resumen'").run();
+let sr=(await api2("resumen")).sinResponder.map(c=>c.conv); console.log("Lola sin responder:", sr.includes("5496666666666"));
+await api2("visto",{conv:"5496666666666"}); sr=(await api2("resumen")).sinResponder.map(c=>c.conv); console.log("tras Listo:", sr.includes("5496666666666"));
+db.prepare("UPDATE w_conv SET visto_ts=0, resp=0 WHERE conv='5496666666666'").run(); db.prepare("DELETE FROM kv WHERE k='lector_resumen'").run();
+sr=(await api2("resumen")).sinResponder.map(c=>c.conv); console.log("cierre (resp=0):", sr.includes("5496666666666"));

@@ -53,6 +53,7 @@ export async function prepararLector(env) {
     env.DB.prepare("CREATE TABLE IF NOT EXISTS reportes (id TEXT PRIMARY KEY, tipo TEXT, desde INTEGER, hasta INTEGER, creado INTEGER, datos TEXT)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT, exp INTEGER)"),
   ]);
+  for (const col of ["resp INTEGER", "visto_ts INTEGER DEFAULT 0"]) await env.DB.prepare(`ALTER TABLE w_conv ADD COLUMN ${col}`).run().catch(() => {});
   tablasLector = true;
 }
 
@@ -185,7 +186,7 @@ export async function metricas(env, desde, hasta = Date.now()) {
     q("SELECT COUNT(*) n FROM w_hito WHERE tipo='cotizacion' AND ts>=? AND ts<?", desde, hasta),
     q("SELECT COUNT(DISTINCT conv) n FROM w_hito WHERE tipo='cotizacion' AND ts>=? AND ts<?", desde, hasta),
     q("SELECT COUNT(*) n FROM w_hito WHERE tipo='venta' AND ts>=? AND ts<?", desde, hasta),
-    q("SELECT COUNT(*) n FROM w_conv WHERE ult_cliente_ts>=? AND grupo=0 AND archivado=0 AND ult_yo=0", Date.now() - 72 * 3600e3),
+    q("SELECT COUNT(*) n FROM w_conv WHERE ult_cliente_ts>=? AND grupo=0 AND archivado=0 AND ult_yo=0 AND COALESCE(resp,1)=1 AND ult_cliente_ts>COALESCE(visto_ts,0) AND COALESCE(etapa,'')<>'no_cliente'", Date.now() - 72 * 3600e3),
   ]);
   // Tiempo de respuesta: solo con los mensajes de las últimas 24 h del período (acotado)
   const desdeResp = Math.max(desde, hasta - 86400e3);
@@ -231,6 +232,8 @@ Para cada chat devolvé:
 - cot_pend: true si el cliente espera que le mandemos una cotización/precio y todavía no se la mandamos
 - accion: qué tenemos que hacer AHORA, concreto y corto (ej. "mandale la cotización de las 50 tarjetas NFC", "respondele si el envío llega a Tierra del Fuego", "escribile ofreciendo 10% off, quedó en pensarlo"). "" si no hace falta nada.
 - prioridad: 1 (urgente) a 3 (puede esperar)
+- necesita_respuesta: true si el ÚLTIMO mensaje del chat es del CLIENTE y espera algo de nosotros (una pregunta, un pedido, datos, una foto, una duda). false si el último mensaje del cliente es un cierre o acuse ("dale", "ok", "gracias", "perfecto", "lo pienso", "te aviso", "cuando tenga todo te hago el pedido", un sticker o emoji), o si el último mensaje es nuestro.
+- Consultas por vapers, vapes, pods o tabaco: etapa "no_cliente" (no los trabajamos; los atiende el socio por otro canal).
 - resumen: 1 oración con lo esencial (nombre, producto, cantidad, en qué quedó)
 Respondé JSON: {"chats":[{...}]}
 
@@ -240,8 +243,8 @@ ${bloques.join("\n\n")}`);
     for (const a of lista) {
       const c = tanda.find((x) => x.conv === String(a.conv));
       if (!c) continue;
-      ops.push(env.DB.prepare("UPDATE w_conv SET analizado_ts=?, puntaje=?, temp=?, producto=?, etapa=?, accion=?, resumen=?, cot_pend=? WHERE conv=?")
-        .bind(Date.now(), Math.max(1, Math.min(10, parseInt(a.puntaje) || 1)), String(a.temp || ""), String(a.producto || "").slice(0, 80), String(a.etapa || ""), String(a.accion || "").slice(0, 300) + (a.prioridad ? `|p${a.prioridad}` : ""), String(a.resumen || "").slice(0, 400), a.cot_pend ? 1 : 0, c.conv));
+      ops.push(env.DB.prepare("UPDATE w_conv SET analizado_ts=?, puntaje=?, temp=?, producto=?, etapa=?, accion=?, resumen=?, cot_pend=?, resp=? WHERE conv=?")
+        .bind(Date.now(), Math.max(1, Math.min(10, parseInt(a.puntaje) || 1)), String(a.temp || ""), String(a.producto || "").slice(0, 80), String(a.etapa || ""), String(a.accion || "").slice(0, 300) + (a.prioridad ? `|p${a.prioridad}` : ""), String(a.resumen || "").slice(0, 400), a.cot_pend ? 1 : 0, a.necesita_respuesta === false ? 0 : 1, c.conv));
       hechos++;
     }
     // Los que la IA no devolvió quedan para la próxima vuelta (no se marcan como analizados)
@@ -257,7 +260,7 @@ export async function listas(env) {
   const q = async (sql, ...b) => (await env.DB.prepare(sql).bind(...b).all()).results || [];
   const hace72 = Date.now() - 72 * 3600e3;
   const [sinResponder, escribiles, cotPend, ventasRec] = await Promise.all([
-    q("SELECT * FROM w_conv WHERE grupo=0 AND archivado=0 AND ult_yo=0 AND ult_cliente_ts>=? ORDER BY COALESCE(puntaje,5) DESC, ult_cliente_ts ASC LIMIT 60", hace72),
+    q("SELECT * FROM w_conv WHERE ult_cliente_ts>=? AND grupo=0 AND archivado=0 AND ult_yo=0 AND COALESCE(resp,1)=1 AND ult_cliente_ts>COALESCE(visto_ts,0) AND COALESCE(etapa,'')<>'no_cliente' ORDER BY COALESCE(puntaje,5) DESC, ult_cliente_ts ASC LIMIT 60", hace72),
     q("SELECT * FROM w_conv WHERE grupo=0 AND archivado=0 AND puntaje>=6 AND accion<>'' AND etapa NOT IN ('vendido','perdido','no_cliente') AND ult_ts>=? ORDER BY puntaje DESC, ult_ts DESC LIMIT 40", Date.now() - 10 * 86400e3),
     q("SELECT * FROM w_conv WHERE ult_ts>=? AND grupo=0 AND archivado=0 AND cot_pend=1 ORDER BY ult_cliente_ts ASC LIMIT 40", Date.now() - 14 * 86400e3),
     q("SELECT h.ts, h.dato, c.conv, c.nombre, c.producto FROM w_hito h LEFT JOIN w_conv c ON c.conv=h.conv WHERE h.tipo='venta' ORDER BY h.ts DESC LIMIT 20"),
@@ -297,7 +300,7 @@ export async function alertasRapidas(env) {
   const h = horaAR();
   if (h < LECTOR.horario[0] || h >= LECTOR.horario[1]) return 0;
   const limite = Date.now() - LECTOR.alertaMin * 60e3;
-  const filas = (await env.DB.prepare(`SELECT * FROM w_conv WHERE grupo=0 AND archivado=0 AND ult_yo=0 AND ult_cliente_ts<=? AND ult_cliente_ts>=? AND alerta_ts<ult_cliente_ts
+  const filas = (await env.DB.prepare(`SELECT * FROM w_conv WHERE grupo=0 AND archivado=0 AND ult_yo=0 AND COALESCE(resp,1)=1 AND ult_cliente_ts>COALESCE(visto_ts,0) AND COALESCE(etapa,'')<>'no_cliente' AND ult_cliente_ts<=? AND ult_cliente_ts>=? AND alerta_ts<ult_cliente_ts
       AND (puntaje>=7 OR cot_pend=1 OR (puntaje IS NULL AND primer_ts>=?)) ORDER BY COALESCE(puntaje,6) DESC LIMIT ?`)
     .bind(limite, Date.now() - 24 * 3600e3, Date.now() - 24 * 3600e3, LECTOR.alertasPorVuelta).all()).results || [];
   for (const c of filas) {
@@ -395,6 +398,7 @@ export async function cronLector(env, iaJSON, scheduledTime) {
   if (!env.DB || !env.LECTOR_TOKEN) return;   // el lector no está configurado todavía
   await prepararLector(env);
   if (!(await kvGet(env, "lector_reparado_v1"))) await repararPropios(env).catch((e) => console.log("lector reparar", e?.stack || e));
+  if (!(await kvGet(env, "lector_resp_v1"))) { await env.DB.prepare("UPDATE w_conv SET analizado_ts=0 WHERE ult_yo=0 AND grupo=0 AND ult_cliente_ts>=?").bind(Date.now() - 72 * 3600e3).run(); await kvPut(env, "lector_resp_v1", Date.now()); }
   if (!(await kvGet(env, "lector_cotiz_v2"))) await recalcularCotizaciones(env).catch((e) => console.log("lector cotiz", e?.stack || e));
   const t = new Date(scheduledTime);
   const m = t.getUTCMinutes(), hAR = (t.getUTCHours() + 21) % 24;
@@ -508,6 +512,10 @@ export async function apiLector(env, req, url, iaJSON) {
     const ms = ((await env.DB.prepare("SELECT yo, autor, autor_nombre, tipo, texto, ts FROM w_msg WHERE conv=? ORDER BY ts DESC LIMIT 300").bind(conv).all()).results || []).reverse();
     const hitos = (await env.DB.prepare("SELECT tipo, ts FROM w_hito WHERE conv=? ORDER BY ts").bind(conv).all()).results || [];
     return json({ conv: c, mensajes: ms, hitos });
+  }
+  if (r === "visto" && req.method === "POST") {
+    const b = await req.json(); await env.DB.prepare("UPDATE w_conv SET visto_ts=? WHERE conv=?").bind(Date.now(), String(b.conv || "")).run();
+    await env.DB.prepare("DELETE FROM kv WHERE k='lector_resumen'").run(); return json({ ok: true });
   }
   if (r === "archivar" && req.method === "POST") {
     const b = await req.json(); await env.DB.prepare("UPDATE w_conv SET archivado=? WHERE conv=?").bind(b.si ? 1 : 0, b.conv).run(); return json({ ok: true });
