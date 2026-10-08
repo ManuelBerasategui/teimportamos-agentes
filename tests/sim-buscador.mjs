@@ -163,6 +163,12 @@ console.log("6b) Precios por modelo y títulos en chino");
   assert.match(h, /Puesto en Argentina/); assert.match(h, /Te <i>Importamos/); assert.doesNotMatch(h, /Puntaje \d/); assert.doesNotMatch(h, /cordones|laces/i);
   const hi = await (await W.fetch(new Request("https://x/panel/api/busquedas/informe?modo=interno&id=" + r1.id, { headers: { cookie: cM } }), env, ctx)).text();
   assert.match(hi, /Puntaje \d/); assert.match(hi, /FOB/); bien("informe PDF: versión cliente sin puntajes ni FOB, versión interna con todo; no incluye descartados"); }
+console.log("6c) Sin cantidad, con presupuesto");
+{ const bx = { cantidad: 0, presupuesto: "USD 250" }; const aUsd = (x) => x;
+  const sg = B.cantidadSugerida({ minimo: 2, tramos: [{ desde: 2, precio: 1 }] }, bx, aUsd, 0.2);
+  const t = (q) => B.puestoEnArgentina(1, q, 0.2).total; assert.ok(t(sg.q) <= 250 && t(sg.q + 1) > 250); bien(`con USD 250 entran ${sg.q} u (total USD ${t(sg.q).toFixed(2)})`);
+  assert.equal(B.cantidadSugerida({ minimo: 500, tramos: [{ desde: 500, precio: 5 }] }, bx, aUsd, 1).excede, true); bien("si el mínimo no entra en el presupuesto, lo avisa");
+  const r0 = await api(cM, "nueva", { producto: "zapatos de baile jazz", cantidad: "", presupuesto: "250", fuentes: ["1688"] }); assert.equal(r0.ok, true); bien("se puede buscar sin cantidad"); }
 console.log("7) Fallas");
 db.prepare("UPDATE busquedas SET lanzada_ts = 0").run();   // simula día nuevo
 const r4 = await api(cS, "nueva", { producto: "caja de luz LED slim 50x70", cantidad: 20, fuentes: ["1688", "alibaba"] });

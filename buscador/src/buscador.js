@@ -75,6 +75,7 @@ export const MIGRACIONES = [
   "ALTER TABLE proveedores ADD COLUMN calidad TEXT",
   "ALTER TABLE proveedores ADD COLUMN contactos TEXT",
   "ALTER TABLE proveedores ADD COLUMN resumen TEXT",
+  "ALTER TABLE proveedores ADD COLUMN cant INTEGER",
 ];
 let tablasListas = false;
 async function prepararTablas(env) {
@@ -119,12 +120,26 @@ function confiabilidad(p) {
   return Math.min(10, s);
 }
 // Puntaje 1 a 10: precio 40% · confiabilidad 25% · mínimo 15% · parecido 15% · datos completos 5%
+// Texto de cantidad para títulos y avisos ("x50" o "sin cantidad")
+const qtxt = (b) => (n(b.cantidad) > 0 ? `x${b.cantidad}` : "(sin cantidad" + (presupuestoUsd(b) ? `, presupuesto USD ${presupuestoUsd(b)}` : "") + ")");
+export const presupuestoUsd = (b) => { const m = String(b.presupuesto || "").replace(/\./g, "").replace(",", ".").match(/\d+(\.\d+)?/); return m ? +m[0] : 0; };
+// Sin cantidad: con presupuesto, la mayor cantidad (desde el mínimo) que entra en el presupuesto; sin presupuesto, el mínimo del proveedor
+export function cantidadSugerida(p, b, aUsd, peso) {
+  const q0 = Math.max(1, n(p.minimo, 1)), tope = presupuestoUsd(b);
+  if (!tope) return { q: q0, excede: false };
+  let mejor = 0;
+  for (let q = q0; q <= 20000; q += q < 200 ? 1 : q < 2000 ? 10 : 100) {
+    const t = puestoEnArgentina(aUsd(precioParaCantidad(p.tramos, q)), q, peso).total;
+    if (t <= tope) mejor = q;
+  }
+  return mejor ? { q: mejor, excede: false } : { q: q0, excede: true };
+}
 export function puntuar(lista, cantidad) {
   const conPrecio = lista.filter((p) => p.puesto_u > 0);
   const mejor = Math.min(...conPrecio.map((p) => p.puesto_u));
   for (const p of lista) {
     const precio = p.puesto_u > 0 ? 10 * (mejor / p.puesto_u) : 0;
-    const minimo = !p.minimo || p.minimo <= cantidad ? 10 : Math.max(0, 10 * (cantidad / p.minimo));
+    const minimo = !cantidad || !p.minimo || p.minimo <= cantidad ? 10 : Math.max(0, 10 * (cantidad / p.minimo));
     const parecido = p.parecido ?? 6;
     const datos = [p.puesto_u > 0, p.minimo, p.foto, p.prov_link || p.proveedor, p.tramos?.length > 1].filter(Boolean).length * 2;
     p.puntaje = red(Math.max(1, Math.min(10, precio * 0.4 + confiabilidad(p) * 0.25 + minimo * 0.15 + parecido * 0.15 + datos * 0.05)), 1);
@@ -251,7 +266,7 @@ async function prepararConsultas(env, b) {
   const web = JSON.parse(b.fuentes || "[]").includes("web") && paises.length;
   const r = await iaJSON(env, `Sos comprador de una importadora argentina. Un cliente pide este producto:
 PRODUCTO: "${b.producto}"
-CANTIDAD: ${b.cantidad} unidades · CALIDAD: ${b.calidad || "indistinto"}${b.presupuesto ? ` · PRESUPUESTO: ${b.presupuesto}` : ""}
+CANTIDAD: ${n(b.cantidad) > 0 ? b.cantidad + " unidades" : "todavía no definida"} · CALIDAD: ${b.calidad || "indistinto"}${b.presupuesto ? ` · PRESUPUESTO: ${b.presupuesto}` : ""}
 
 Devolvé SOLO este JSON:
 {"zh": "palabras de búsqueda para 1688.com en chino simplificado, cortas (2 a 6 palabras), como las escribe un comprador chino",
@@ -343,7 +358,7 @@ const TERMINADO = new Set(["SUCCEEDED", "FAILED", "TIMED-OUT", "ABORTED", "NO_AR
 
 async function filtrarParecidos(env, b, lista) {
   if (!lista.length) return lista;
-  const r = await iaJSON(env, `Pedido del cliente: "${b.producto}" (calidad: ${b.calidad || "indistinto"}, cantidad ${b.cantidad}).
+  const r = await iaJSON(env, `Pedido del cliente: "${b.producto}" (calidad: ${b.calidad || "indistinto"}, cantidad ${n(b.cantidad) > 0 ? b.cantidad : "a definir"}).
 Puntuá de 0 a 10 cuánto coincide cada publicación con lo pedido (10 = es exactamente eso; 0 = otra cosa, un repuesto, un accesorio o una funda).
 ${lista.map((p, i) => `${i}. ${String(p.titulo).slice(0, 140)}`).join("\n")}
 Devolvé SOLO: {"p":[{"i":0,"s":8,"t":"título corto en español (máx. 12 palabras)"}, ...]} con todas las publicaciones.`);
@@ -360,23 +375,32 @@ export async function procesarResultados(env, b, items) {
   const cny = await yuanesPorDolar(env);
   const recargo = n(env.RECARGO_1688, RECARGO_1688);
   const peso = n(b.peso_kg, 0.5);
-  const cant = Math.max(1, n(b.cantidad, 1));
+  const cantPedida = n(b.cantidad, 0);
   const vistos = new Set();
+  const aUsd = (pu) => (/CNY|RMB/i.test(lista0moneda) ? (pu / cny) * (1 + recargo) : pu);
+  let lista0moneda = "CNY";
   let lista = [];
   for (const { fuente, item } of items) {
     const p = normalizar(fuente, item);
     if (!p.link || vistos.has(p.link) || !p.tramos.length) continue;
     vistos.add(p.link);
     if (PROHIBIDO.test(p.titulo)) continue;
+    lista0moneda = p.moneda;
+    let cant = cantPedida, nota = "";
+    if (!cant) {
+      const sg = cantidadSugerida(p, b, aUsd, peso); cant = sg.q;
+      nota = sg.excede ? `Con USD ${presupuestoUsd(b)} no alcanza: el mínimo de ${cant} u sale más` : presupuestoUsd(b) ? `Con USD ${presupuestoUsd(b)} te alcanza para ${cant} u` : `Calculado para el mínimo del proveedor (${cant} u)`;
+    }
     const pu = precioParaCantidad(p.tramos, cant);
-    const enUsd = /CNY|RMB/i.test(p.moneda) ? (pu / cny) * (1 + recargo) : pu;
+    const enUsd = aUsd(pu);
     const c = puestoEnArgentina(enUsd, cant, peso);
-    Object.assign(p, { precio_u: pu, precio_usd: red(enUsd, 3), puesto_u: red(c.unidad), total: red(c.total), minimo_ok: !p.minimo || p.minimo <= cant ? 1 : 0 });
+    Object.assign(p, { cant, precio_u: pu, precio_usd: red(enUsd, 3), puesto_u: red(c.unidad), total: red(c.total), minimo_ok: !cantPedida || !p.minimo || p.minimo <= cantPedida ? 1 : 0,
+      resumen: [p.resumen, nota].filter(Boolean).join(" · ") });
     lista.push(p);
   }
-  if (b.solo_minimo) lista = lista.filter((p) => p.minimo_ok);
+  if (b.solo_minimo && cantPedida) lista = lista.filter((p) => p.minimo_ok);
   lista = await filtrarParecidos(env, b, lista.slice(0, 60));
-  lista = puntuar(lista, cant).slice(0, TOPES.guardarMejores);
+  lista = puntuar(lista, cantPedida).slice(0, TOPES.guardarMejores);
   return lista;
 }
 
@@ -387,11 +411,11 @@ async function guardar(env, b, lista, runs, listaWeb = [], web = null) {
   const todos = [...lista.map((p) => ({ ...p, pais: "cn", calidad: null, contactos: null, resumen: p.resumen || "" })), ...listaWeb];
   const ops = [env.DB.prepare("DELETE FROM proveedores WHERE busqueda=?").bind(b.id)];
   for (const p of todos) {
-    ops.push(env.DB.prepare(`INSERT INTO proveedores (id,busqueda,ts,fuente,titulo,titulo_orig,link,foto,proveedor,prov_link,ubicacion,tipo,verificado,anios,ventas,calif,minimo,tramos,moneda,precio_u,precio_usd,puesto_u,total,minimo_ok,parecido,puntaje,contacto,estado,notas,pais,calidad,contactos,resumen)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'nuevo','',?,?,?,?)`).bind(
+    ops.push(env.DB.prepare(`INSERT INTO proveedores (id,busqueda,ts,fuente,titulo,titulo_orig,link,foto,proveedor,prov_link,ubicacion,tipo,verificado,anios,ventas,calif,minimo,tramos,moneda,precio_u,precio_usd,puesto_u,total,minimo_ok,parecido,puntaje,contacto,estado,notas,pais,calidad,contactos,resumen,cant)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'nuevo','',?,?,?,?,?)`).bind(
       id6(), b.id, ahora, p.fuente, String(p.titulo).slice(0, 300), String(p.titulo_orig).slice(0, 300), p.link, p.foto, String(p.proveedor).slice(0, 160), p.prov_link,
       p.ubicacion, p.tipo, p.verificado, p.anios, p.ventas, p.calif, p.minimo, JSON.stringify((p.tramos || []).slice(0, 6)), p.moneda, p.precio_u, p.precio_usd, p.puesto_u, p.total,
-      p.minimo_ok, p.parecido, p.puntaje, p.contacto, p.pais, p.calidad, p.contactos ? JSON.stringify(p.contactos) : null, p.resumen || ""));
+      p.minimo_ok, p.parecido, p.puntaje, p.contacto, p.pais, p.calidad, p.contactos ? JSON.stringify(p.contactos) : null, p.resumen || "", p.cant || null));
   }
   const fallas = runs.filter((r) => r.estado !== "SUCCEEDED").map((r) => `${r.fuente}: ${r.estado.toLowerCase()}`);
   if (web?.errores?.length) fallas.push(`web con errores (${uniq(web.errores).slice(0, 2).join("; ")})`);
@@ -402,16 +426,16 @@ async function guardar(env, b, lista, runs, listaWeb = [], web = null) {
   // Pendientes: una tarea para quien le tocó
   const conWa = listaWeb.filter((p) => p.contactos?.wa?.length).length;
   const partes = [lista.length ? `${lista.length} en China con precio (mejor USD ${mejor.toFixed(2)}/u puesto)` : "", listaWeb.length ? `${listaWeb.length} en la web${conWa ? `, ${conWa} con WhatsApp` : ""}` : ""].filter(Boolean);
-  const titulo = todos.length ? `Búsqueda lista: ${b.producto} x${b.cantidad} · ${partes.join(" · ")}` : `Búsqueda sin resultados: ${b.producto} x${b.cantidad}`;
+  const titulo = todos.length ? `Búsqueda lista: ${b.producto} ${qtxt(b)} · ${partes.join(" · ")}` : `Búsqueda sin resultados: ${b.producto} ${qtxt(b)}`;
   const porPais = uniq(listaWeb.map((p) => p.pais)).map((k) => `${PAISES[k]?.bandera || ""} ${PAISES[k]?.nombre || k}: ${listaWeb.filter((p) => p.pais === k).length}`).join(" · ");
-  const detalle = `Asignada a: ${b.asignado || "-"}${b.cliente ? `\nCliente: ${b.cliente}` : ""}\n` + lista.slice(0, 3).map((p, i) => `${i + 1}. ${p.fuente} · USD ${p.puesto_u}/u puesto · mín ${p.minimo || "?"} · ${String(p.titulo).slice(0, 70)}`).join("\n") + (porPais ? `\nWeb: ${porPais}` : "");
+  const detalle = `Asignada a: ${b.asignado || "-"}${b.cliente ? `\nCliente: ${b.cliente}` : ""}\n` + lista.slice(0, 3).map((p, i) => `${i + 1}. ${p.fuente} · USD ${p.puesto_u}/u puesto${n(b.cantidad) ? "" : ` (x${p.cant})`} · mín ${p.minimo || "?"} · ${String(p.titulo).slice(0, 70)}`).join("\n") + (porPais ? `\nWeb: ${porPais}` : "");
   ops.push(env.DB.prepare("INSERT INTO tareas (id, ts, tipo, tel, nombre, titulo, detalle, datos, ref, estado) VALUES (?,?,?,?,?,?,?,?,?,'abierta')")
     .bind(id6(), ahora, "busqueda_lista", b.tel || "", b.asignado ? `Para ${b.asignado}` : "", titulo, detalle, JSON.stringify({ busqueda: b.id, asignado: b.asignado }), `busq:${b.id}`));
   if (b.tarea) ops.push(env.DB.prepare("UPDATE tareas SET estado='hecha' WHERE id=? AND tipo='proveedor'").bind(b.tarea));
   await env.DB.batch(ops);
   const url = `${env.PANEL_URL || "https://cotizador.berasateguimanuel07.workers.dev"}/panel/busquedas#${b.id}`;
   await telegram(env, b.asignado, todos.length
-    ? `🔎 Te dejé una búsqueda nueva: ${b.producto} x${b.cantidad}\n${partes.join("\n")}${porPais ? `\n${porPais}` : ""}\n${url}`
+    ? `🔎 Te dejé una búsqueda nueva: ${b.producto} ${qtxt(b)}\n${partes.join("\n")}${porPais ? `\n${porPais}` : ""}\n${url}`
     : `🔎 La búsqueda "${b.producto}" no encontró nada que coincida.\n${url}`);
   return { costo, n: todos.length, mejor };
 }
@@ -479,7 +503,7 @@ const PESO_TIPO = { "fábrica": 10, mayorista: 9, distribuidor: 9, importador: 8
 export async function clasificarWeb(env, b, cands) {
   if (!cands.length) return [];
   const lote = cands.filter((c) => !PROHIBIDO.test(c.titulo + " " + c.resumen)).slice(0, 60);
-  const r = await iaJSON(env, `Pedido del cliente: "${b.producto}" x${b.cantidad} · calidad buscada: ${CALIDAD_TXT[b.calidad] || CALIDAD_TXT.indistinto}.
+  const r = await iaJSON(env, `Pedido del cliente: "${b.producto}" ${qtxt(b)} · calidad buscada: ${CALIDAD_TXT[b.calidad] || CALIDAD_TXT.indistinto}.
 Estas son páginas que salieron en Google. Para cada una decidí si es un PROVEEDOR que vende ese producto (o productos de ese rubro) y cómo es.
 ${lote.map((c, i) => `${i}. [${c.pais}] ${c.titulo} | ${c.url} | ${c.resumen.slice(0, 220).replace(/\s+/g, " ")}${c.precios.length ? " | precios: " + c.precios.join(", ") : ""}`).join("\n")}
 Devolvé SOLO: {"p":[{"i":0,"tipo":"fábrica|mayorista|distribuidor|importador|comercio|marketplace|nada","calidad":"réplica|original|reacondicionado|genérico|no se sabe","parecido":0-10,"nombre":"nombre del negocio","minimo":número o null,"precio":"precio por unidad o por mayor si se ve, o vacío"}]}
@@ -499,7 +523,7 @@ Devolvé SOLO: {"p":[{"i":0,"tipo":"fábrica|mayorista|distribuidor|importador|c
     out.push({
       fuente: "web", pais: c.pais, titulo: c.titulo, titulo_orig: c.titulo, link: c.url, foto: "", proveedor: String(x?.nombre || host).slice(0, 120), prov_link: "",
       ubicacion: PAISES[c.pais]?.nombre || c.pais, tipo, calidad, verificado: 0, anios: null, ventas: null, calif: null, minimo: n(x?.minimo) || null, tramos: [], moneda: "",
-      precio_u: null, precio_usd: null, puesto_u: null, total: null, minimo_ok: !n(x?.minimo) || n(x?.minimo) <= b.cantidad ? 1 : 0, parecido, puntaje,
+      precio_u: null, precio_usd: null, puesto_u: null, total: null, minimo_ok: !n(b.cantidad) || !n(x?.minimo) || n(x?.minimo) <= b.cantidad ? 1 : 0, parecido, puntaje,
       contacto: [k.wa.length ? "WhatsApp" : "", k.ig.length ? "Instagram" : "", k.mail.length ? "mail" : "", k.tel.length ? "teléfono" : "", k.wechat.length ? "WeChat" : ""].filter(Boolean).join(", "),
       contactos: k, resumen: [String(x?.precio || c.precios.join(" · ")).slice(0, 120), c.resumen.slice(0, 260)].filter(Boolean).join(" — "),
     });

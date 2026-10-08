@@ -19,6 +19,7 @@ export const MIGRACIONES = [
   "ALTER TABLE proveedores ADD COLUMN calidad TEXT",
   "ALTER TABLE proveedores ADD COLUMN contactos TEXT",
   "ALTER TABLE proveedores ADD COLUMN resumen TEXT",
+  "ALTER TABLE proveedores ADD COLUMN cant INTEGER",
 ];
 const PROHIBIDO = /\b(vapes?|vapers?|vapeador|elf ?bar|lost ?mary|pods? desechables?|puffs?|cigarrillos?|tabaco|nicotina|medicamentos?|f[aá]rmacos?|drogas?|marihuana|cannabis|thc|cbd)\b/i;
 const FUENTES = ["1688", "alibaba", "web"];
@@ -265,7 +266,7 @@ export async function apiBusquedas(env, req, url, quien, usuarios = []) {
     const producto = String(cuerpo.producto || "").trim().slice(0, 300);
     const cantidad = Math.round(+cuerpo.cantidad || 0);
     if (producto.length < 3) return json({ ok: false, res: "Escribí qué producto buscar." });
-    if (!(cantidad >= 1 && cantidad <= 1000000)) return json({ ok: false, res: "Poné una cantidad válida." });
+    if (!(cantidad >= 0 && cantidad <= 1000000)) return json({ ok: false, res: "Poné una cantidad válida (o dejala vacía)." });
     if (PROHIBIDO.test(producto)) return json({ ok: false, res: "Ese producto no lo trabajamos (vapers, tabaco, fármacos o drogas). No se busca." });
     const fuentes = (Array.isArray(cuerpo.fuentes) ? cuerpo.fuentes : ["1688", "web"]).filter((x) => FUENTES.includes(x));
     if (!fuentes.length) return json({ ok: false, res: "Elegí al menos una fuente." });
@@ -469,9 +470,10 @@ dialog{border:1px solid var(--borde);border-radius:12px;padding:16px;max-width:5
 <section class="card">
   <h2>Búsqueda rápida <span class="estado" id="costoEst"></span></h2>
   <div class="form">
-    <label class="p2">Producto<span class="fila" style="flex-wrap:nowrap"><input id="fProd" placeholder="Ej: licuadora portátil recargable (o tocá 📷)"><label class="btn" title="Buscar por foto" style="flex:none;margin:0;cursor:pointer">📷<input id="fFoto" type="file" accept="image/*" style="display:none"></label></span></label>
-    <label>Cantidad<input id="fCant" type="number" min="1" inputmode="numeric" placeholder="50"></label>
-    <div class="fila" style="align-self:end"><button class="btn p" id="bBuscar">Buscar</button></div>
+    <label class="p2">Producto<span class="fila" style="flex-wrap:nowrap"><input id="fProd" placeholder="Ej: licuadora portátil recargable (o buscá con imagen)"><label class="btn" title="Buscar por foto" style="flex:none;margin:0;cursor:pointer;white-space:nowrap">Buscar con imagen<input id="fFoto" type="file" accept="image/*" style="display:none"></label></span></label>
+    <label>Cantidad (opcional)<input id="fCant" type="number" min="1" inputmode="numeric" placeholder="Vacío = a definir"></label>
+    <label>Presupuesto USD (opcional)<input id="fPres" inputmode="decimal" placeholder="Ej: 250"></label>
+    <div class="fila ancho"><button class="btn p" id="bBuscar">Buscar</button><span class="estado">Sin cantidad: te muestra precio por unidad, peso y precio puesto para el mínimo de cada proveedor (o lo que entra en tu presupuesto).</span></div>
     <details class="ancho mas"><summary>Dónde buscar</summary>
       <div class="chk" style="margin-top:8px">
         <label><input type="checkbox" class="fFuente" value="web" checked> Web por país (gratis, Tavily)</label>
@@ -484,7 +486,6 @@ dialog{border:1px solid var(--borde);border-radius:12px;padding:16px;max-width:5
     </details>
     <details class="ancho mas"><summary>Más filtros</summary><div class="form" style="margin-top:8px">
       <label>Calidad<select id="fCal"><option value="indistinto">Indistinto</option><option value="replica">Réplica</option><option value="original">Original</option><option value="reacondicionado">Reacondicionado</option></select></label>
-      <label>Presupuesto<input id="fPres" placeholder="USD 1000"></label>
       <label>Cliente<input id="fCli" placeholder="Nombre o teléfono"></label>
       <label>Asignar a<select id="fAsig"><option value="auto">Automático (alterna)</option></select></label>
       <div class="chk ancho"><label><input type="checkbox" id="fMin" checked> Solo proveedores con mínimo ≤ cantidad</label></div>
@@ -547,7 +548,7 @@ function cargar() {
 
 function tarjetaWeb(p, b) {
   var k = p.contactos || { wa: [], ig: [], mail: [], tel: [], wechat: [] }, sc = p.puntaje >= 7 ? "alto" : p.puntaje >= 5 ? "medio" : "";
-  var texto = msgTexto(LENGUA[p.pais] || "es", p, b.cantidad, b.producto), bt = [];
+  var texto = msgTexto(LENGUA[p.pais] || "es", p, p.cant || b.cantidad || "a definir", b.producto), bt = [];
   (k.wa || []).forEach(function (w, i) { bt.push('<a class="btn wa" target="_blank" rel="noopener" href="https://wa.me/' + esc(w) + "?text=" + encodeURIComponent(texto) + '">WhatsApp' + (i ? " " + (i + 1) : "") + "</a>"); });
   (k.ig || []).forEach(function (u) { bt.push('<a class="btn" target="_blank" rel="noopener" href="https://instagram.com/' + esc(u) + '">@' + esc(u) + "</a>"); });
   (k.mail || []).forEach(function (m) { bt.push('<a class="btn" href="mailto:' + esc(m) + "?subject=" + encodeURIComponent("Consulta por mayor: " + b.producto) + "&body=" + encodeURIComponent(texto) + '">Mail</a>'); });
@@ -587,7 +588,7 @@ function tarjetaProv(p, b) {
     '<div style="min-width:0"><div class="t">' + tags + esc(p.titulo) + '</div>' +
     '<div class="s">' + esc(p.proveedor || "Proveedor sin nombre") + " · " + esc(p.ubicacion) + (p.anios ? " · " + p.anios + " años" : "") + (p.calif ? " · ★ " + p.calif : "") + (p.ventas ? " · " + p.ventas + " vendidos" : "") + '</div>' +
     '<div class="s">Mínimo: <b>' + esc(p.minimo || "?") + '</b> · Precios: ' + esc(tramos) + (p.contacto ? " · " + esc(p.contacto) : "") + '</div>' + (p.resumen ? '<div class="resumen">⚠️ ' + esc(p.resumen) + "</div>" : "") + (p.titulo_orig && p.titulo_orig !== p.titulo ? '<div class="s">' + esc(p.titulo_orig) + "</div>" : "") + '</div>' +
-    '<div class="precio"><span class="score ' + sc + '">' + p.puntaje + '</span><b>' + usd(p.puesto_u) + '</b><small>por unidad puesta en AR</small><small>Total x' + b.cantidad + ": " + usd(p.total) + '</small><small>FOB ' + usd(p.precio_usd) + '/u</small></div>' +
+    '<div class="precio"><span class="score ' + sc + '">' + p.puntaje + '</span><b>' + usd(p.puesto_u) + '</b><small>por unidad puesta en AR</small><small>Total x' + (p.cant || b.cantidad) + ": " + usd(p.total) + '</small><small>FOB ' + usd(p.precio_usd) + '/u' + (b.consultas && b.consultas.peso_kg ? " · ≈" + String(b.consultas.peso_kg).replace(".", ",") + " kg/u" : "") + '</small></div>' +
     '<div class="acc"><a class="btn p" target="_blank" rel="noopener" href="' + esc(p.link) + '">Abrir publicación</a>' +
     (p.prov_link ? '<a class="btn" target="_blank" rel="noopener" href="' + esc(p.prov_link) + '">Tienda</a>' : "") +
     '<button class="btn" data-msg="1">Copiar mensaje</button><select data-est="1">' + opts + '</select>' +
@@ -603,7 +604,7 @@ function pintar(d) {
     var c = b.consultas;
     var abierta = ABIERTAS[b.id], conPrecio = b.proveedores.filter(function (p) { return p.puesto_u > 0; }).map(function (p) { return p.puesto_u; });
     var resumen = b.estado === "lista" ? activos + " proveedores" + (conPrecio.length ? " · mejor " + usd(Math.min.apply(null, conPrecio)) + "/u puesto" : "") : "";
-    return '<section class="card bq' + (abierta ? " abierta" : "") + '" id="b-' + b.id + '" data-b="' + b.id + '"><div class="tit-bq" data-tog="1"><span class="flecha">' + (abierta ? "▾" : "▸") + '</span><h3>' + esc(b.producto) + " x" + b.cantidad + ' <span class="pill ' + b.estado + '">' + (ESTADOS[b.estado] || b.estado) + '</span></h3><span class="estado">' + resumen + " · " + hace(b.ts) + '</span></div><div class="cuerpo-bq"><div class="cab"><div>' +
+    return '<section class="card bq' + (abierta ? " abierta" : "") + '" id="b-' + b.id + '" data-b="' + b.id + '"><div class="tit-bq" data-tog="1"><span class="flecha">' + (abierta ? "▾" : "▸") + '</span><h3>' + esc(b.producto) + (b.cantidad > 0 ? " x" + b.cantidad : " · sin cantidad" + (b.presupuesto ? " · USD " + esc(b.presupuesto) : "")) + ' <span class="pill ' + b.estado + '">' + (ESTADOS[b.estado] || b.estado) + '</span></h3><span class="estado">' + resumen + " · " + hace(b.ts) + '</span></div><div class="cuerpo-bq"><div class="cab"><div>' +
       '<div class="meta">#' + b.num + " · " + hace(b.ts) + " · para <b>" + esc(nombre(b.asignado)) + "</b>" + (b.cliente ? " · cliente: " + esc(b.cliente) : "") + " · calidad " + esc(b.calidad) + (b.presupuesto ? " · presupuesto " + esc(b.presupuesto) : "") + " · " + b.fuentes.join(" + ") + (b.paises && b.paises.length ? " (" + b.paises.join(", ").toUpperCase() + ")" : "") + (b.solo_minimo ? " · mínimo ≤ " + b.cantidad : "") + '</div>' +
       (c ? '<div class="meta">Buscado como: 「' + esc(c.zh) + '」 / "' + esc(c.en) + '" · peso estimado ' + c.peso_kg + " kg/u" + (c.peso_motivo ? " (" + esc(c.peso_motivo) + ")" : "") + (b.costo ? " · costó " + usd(b.costo) : "") + '</div>' : "") +
       '</div><div class="fila">' + otras.map(function (o) { return '<button class="btn" data-reasig="' + esc(o) + '">Pasar a ' + esc(nombre(o)) + '</button>'; }).join("") +
@@ -631,7 +632,7 @@ $("#lista").addEventListener("change", function (ev) { var s = ev.target; if (s.
 var MSG = {};
 function abrirMensaje(bid, pid) {
   var b = DATOS.busquedas.find(function (x) { return x.id === bid; }), p = b.proveedores.find(function (x) { return x.id === pid; });
-  ["es", "pt", "en", "zh"].forEach(function (l) { MSG[l] = msgTexto(l, p, b.cantidad, b.producto); });
+  ["es", "pt", "en", "zh"].forEach(function (l) { MSG[l] = msgTexto(l, p, p.cant || b.cantidad || 100, b.producto); });
   MSG.l = p.fuente === "1688" ? "zh" : p.fuente === "alibaba" ? "en" : LENGUA[p.pais] || "es";
   pintarMsg(); $("#dlg").showModal();
 }
@@ -647,7 +648,7 @@ $("#fFoto").onchange = function () {
   var f = this.files[0]; if (!f) return; var inp = $("#fProd"); inp.value = ""; inp.placeholder = "Leyendo la foto...";
   var rd = new FileReader(); rd.onload = function () { var im = new Image(); im.onload = function () {
     var k = Math.min(1, 900 / Math.max(im.width, im.height)), c = document.createElement("canvas"); c.width = im.width * k; c.height = im.height * k; c.getContext("2d").drawImage(im, 0, 0, c.width, c.height);
-    api("foto-a-texto", { fotos: [c.toDataURL("image/jpeg", 0.8)] }).then(function (r) { inp.placeholder = "Ej: licuadora portátil recargable (o tocá 📷)"; aviso(r.res); if (r.ok) { inp.value = r.producto; inp.focus(); } $("#fFoto").value = ""; }); }; im.src = rd.result; }; rd.readAsDataURL(f);
+    api("foto-a-texto", { fotos: [c.toDataURL("image/jpeg", 0.8)] }).then(function (r) { inp.placeholder = "Ej: licuadora portátil recargable (o buscá con imagen)"; aviso(r.res); if (r.ok) { inp.value = r.producto; inp.focus(); } $("#fFoto").value = ""; }); }; im.src = rd.result; }; rd.readAsDataURL(f);
 };
 $("#bBuscar").onclick = function () {
   var fuentes = [].slice.call(document.querySelectorAll(".fFuente:checked")).map(function (x) { return x.value; });
