@@ -418,6 +418,8 @@ input,select,textarea{padding:9px 10px;border:1px solid var(--borde);border-radi
 .pv{display:grid;grid-template-columns:72px 1fr auto;gap:10px;border:1px solid var(--borde);border-radius:10px;padding:10px;align-items:start}
 .modos{display:flex;gap:6px;margin-bottom:12px}.modos button{flex:1;border:1px solid var(--borde);background:#fff;padding:11px;border-radius:10px;font-weight:700;font-size:15px;color:var(--gris);cursor:pointer}.modos button.on{background:var(--azul);color:#fff;border-color:var(--azul)}
 details.mas{border:1px solid var(--borde);border-radius:8px;padding:8px 10px;background:#fafbfd}details.mas summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--gris)}
+.tit-bq{display:flex;align-items:center;gap:10px;cursor:pointer;flex-wrap:wrap}.tit-bq h3{margin:0;font-size:16px}.flecha{font-size:14px;color:var(--gris);width:12px}
+.bq .cuerpo-bq{display:none;margin-top:10px}.bq.abierta .cuerpo-bq{display:block}
 .pv.descartado{opacity:.45}.pv.web{grid-template-columns:1fr auto}.sec{font-weight:700;font-size:14px;margin:14px 0 2px;color:var(--txt)}.btn.wa{background:#16a34a;color:#fff;border-color:#16a34a}.resumen{font-size:13px;color:#334155;margin-top:4px;line-height:1.35}
 .pv img{width:72px;height:72px;object-fit:cover;border-radius:8px;background:#eef2f7}
 .pv .t{font-weight:600;font-size:14px;line-height:1.3}.pv .s{font-size:12px;color:var(--gris);margin-top:3px}
@@ -531,7 +533,7 @@ function cargar() {
     $("#bTg").textContent = d.telegram ? "Telegram conectado ✓" : "Conectar mi Telegram";
     var f = JSON.stringify(d.busquedas.map(function (b) { return [b.id, b.estado, b.asignado, b.nota, b.proveedores.map(function (p) { return p.estado; }).join()]; }));
     if (f !== firma) { firma = f; pintar(d); }
-    if (location.hash) { var el = document.getElementById("b-" + location.hash.slice(1)); if (el && !el._visto) { el._visto = 1; el.classList.add("marcada"); el.scrollIntoView(); } }
+    if (location.hash) { var el = document.getElementById("b-" + location.hash.slice(1)); if (el && !el._visto) { el._visto = 1; ABIERTAS[location.hash.slice(1)] = true; el.classList.add("marcada", "abierta"); el.scrollIntoView(); } }
   }).catch(function () {});
 }
 
@@ -584,25 +586,29 @@ function tarjetaProv(p, b) {
     (p.estado !== "descartado" ? '<button class="btn r" data-desc="1">Descartar</button>' : "") + '</div></div>';
 }
 
+var ABIERTAS = {};
 function pintar(d) {
   if (!d.busquedas.length) { $("#lista").innerHTML = '<div class="vacio">' + (F === "mias" ? "No tenés búsquedas asignadas." : "No hay búsquedas.") + " Cargá una arriba.</div>"; return; }
   $("#lista").innerHTML = d.busquedas.map(function (b) {
     var otras = d.personas.filter(function (p) { return p !== b.asignado; });
     var activos = b.proveedores.filter(function (p) { return p.estado !== "descartado"; }).length;
     var c = b.consultas;
-    return '<section class="card bq" id="b-' + b.id + '" data-b="' + b.id + '"><div class="cab"><div>' +
-      '<h3>' + esc(b.producto) + " x" + b.cantidad + ' <span class="pill ' + b.estado + '">' + (ESTADOS[b.estado] || b.estado) + '</span></h3>' +
+    var abierta = ABIERTAS[b.id], conPrecio = b.proveedores.filter(function (p) { return p.puesto_u > 0; }).map(function (p) { return p.puesto_u; });
+    var resumen = b.estado === "lista" ? activos + " proveedores" + (conPrecio.length ? " · mejor " + usd(Math.min.apply(null, conPrecio)) + "/u puesto" : "") : "";
+    return '<section class="card bq' + (abierta ? " abierta" : "") + '" id="b-' + b.id + '" data-b="' + b.id + '"><div class="tit-bq" data-tog="1"><span class="flecha">' + (abierta ? "▾" : "▸") + '</span><h3>' + esc(b.producto) + " x" + b.cantidad + ' <span class="pill ' + b.estado + '">' + (ESTADOS[b.estado] || b.estado) + '</span></h3><span class="estado">' + resumen + " · " + hace(b.ts) + '</span></div><div class="cuerpo-bq"><div class="cab"><div>' +
       '<div class="meta">#' + b.num + " · " + hace(b.ts) + " · para <b>" + esc(nombre(b.asignado)) + "</b>" + (b.cliente ? " · cliente: " + esc(b.cliente) : "") + " · calidad " + esc(b.calidad) + (b.presupuesto ? " · presupuesto " + esc(b.presupuesto) : "") + " · " + b.fuentes.join(" + ") + (b.paises && b.paises.length ? " (" + b.paises.join(", ").toUpperCase() + ")" : "") + (b.solo_minimo ? " · mínimo ≤ " + b.cantidad : "") + '</div>' +
       (c ? '<div class="meta">Buscado como: 「' + esc(c.zh) + '」 / "' + esc(c.en) + '" · peso estimado ' + c.peso_kg + " kg/u" + (c.peso_motivo ? " (" + esc(c.peso_motivo) + ")" : "") + (b.costo ? " · costó " + usd(b.costo) : "") + '</div>' : "") +
       '</div><div class="fila">' + otras.map(function (o) { return '<button class="btn" data-reasig="' + esc(o) + '">Pasar a ' + esc(nombre(o)) + '</button>'; }).join("") +
       (b.estado === "error" || b.estado === "lista" ? '<button class="btn" data-reint="1">Buscar de nuevo</button>' : "") + (b.proveedores.length ? '<a class="btn" target="_blank" href="/panel/api/busquedas/informe?modo=oculto&id=' + b.id + '">Informe PDF</a><button class="btn" data-csv="1">Planilla</button>' : "") + '<button class="btn" data-arch="1">Archivar</button></div></div>' +
       (b.nota ? '<div class="nota">' + esc(b.nota) + '</div>' : "") +
       (b.estado === "lista" ? (b.proveedores.length ? '<div class="meta" style="margin-top:8px">' + activos + " proveedores. China: ordenados por precio puesto, confianza, mínimo y parecido (el peso es estimado, confirmalo antes de cotizar). Web: por parecido, tipo de negocio y si publica WhatsApp.</div>" + bloques(b) : "") : '<div class="vacio">' + (b.estado === "error" ? "" : "Buscando en " + b.fuentes.join(" + ") + (b.webInfo ? " (web: faltan " + b.webInfo.faltan + " búsquedas)" : "") + "... se actualiza sola.") + "</div>") +
-      "</section>";
+      "</div></section>";
   }).join("");
 }
 
 $("#lista").addEventListener("click", function (ev) {
+  var t = ev.target.closest("[data-tog]");
+  if (t) { var sec = t.closest("[data-b]"), id0 = sec.dataset.b; ABIERTAS[id0] = !ABIERTAS[id0]; sec.classList.toggle("abierta", !!ABIERTAS[id0]); t.querySelector(".flecha").textContent = ABIERTAS[id0] ? "▾" : "▸"; return; }
   var el = ev.target.closest("button"); if (!el) return;
   var bq = el.closest("[data-b]"), pv = el.closest("[data-p]"), id = bq && bq.dataset.b;
   if (el.dataset.reasig) api("reasignar", { id: id, a: el.dataset.reasig }).then(function (r) { aviso(r.res); cargar(); });
