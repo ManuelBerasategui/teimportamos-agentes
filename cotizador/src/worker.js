@@ -1,5 +1,6 @@
 import { rutaLector, apiLector, cronLector, paginaReporte } from "./lector.js";
 import { PANEL_805 } from "./lector-panel.js";
+import { apiCotizar, paginaCotizacion, PANEL_COTIZAR } from "./cotizar.js";
 import { apiBusquedas, PANEL_BUSQUEDAS, rutaInformes } from "./busquedas.js";
 /**
  * Agente de WhatsApp · Te Importamos (v15.0: + pestaña Búsquedas de proveedores)
@@ -2915,7 +2916,7 @@ button{font:inherit;cursor:pointer}
 @media (max-width:760px){.lista{width:100%}.conv{display:none}.chats.abierto .conv{display:flex}.chats.abierto .lista{display:none}.volver{display:inline}.msgs{padding:12px}.m{max-width:86%}.marca{display:none}.user span{display:none}}
 </style></head><body>
 <div class="top"><div class="marca">Te Importamos</div>
-<div class="tabs"><button class="tab on" data-v="dash">Dashboard</button><button class="tab" data-v="pend">Pendientes<span class="badge" id="nPend"></span></button><button class="tab" data-v="agentes">Agentes</button><a href="/panel/busquedas" style="text-decoration:none;padding:8px 14px;border-radius:8px;font-weight:600;color:#D1D5DB;align-self:center">Búsquedas</a><a href="/panel/805" style="text-decoration:none;padding:8px 14px;border-radius:8px;font-weight:600;color:#fff;background:#25D366;align-self:center">WhatsApp</a></div>
+<div class="tabs"><button class="tab on" data-v="dash">Dashboard</button><button class="tab" data-v="pend">Pendientes<span class="badge" id="nPend"></span></button><button class="tab" data-v="agentes">Agentes</button><a href="/panel/cotizar" style="text-decoration:none;padding:8px 14px;border-radius:8px;font-weight:600;color:#D1D5DB;align-self:center">Cotizar</a><a href="/panel/busquedas" style="text-decoration:none;padding:8px 14px;border-radius:8px;font-weight:600;color:#D1D5DB;align-self:center">Búsquedas</a><a href="/panel/805" style="text-decoration:none;padding:8px 14px;border-radius:8px;font-weight:600;color:#fff;background:#25D366;align-self:center">WhatsApp</a></div>
 <div class="user"><span id="usuario"></span> · <a href="/logout">Salir</a></div></div>
 
 <div class="vista on" id="v-dash"><div class="dash">
@@ -3404,6 +3405,9 @@ export default {
       } catch { return new Response("No se pudo cargar la foto", { status: 502 }); }
     }
     if (url.pathname.startsWith("/panel/api/805/")) return apiLector(env, req, url, iaJSON);
+    if (url.pathname.startsWith("/panel/api/cotizar/")) return apiCotizar(env, req, url, url.searchParams.get("quien"), { T, leerPagina, iaJSON, iaConImagenes });
+    if (url.pathname === "/panel/cotizar/pdf") return paginaCotizacion(env, url.searchParams.get("id") || "", T);
+    if (url.pathname === "/panel/cotizar") return new Response(PANEL_COTIZAR, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
     if (url.pathname.startsWith("/panel/api/busquedas/")) return apiBusquedas(env, req, url, url.searchParams.get("quien"), Object.keys(usuariosPanel(env)));
     if (url.pathname === "/panel/busquedas") return new Response(PANEL_BUSQUEDAS, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
     if (url.pathname === "/panel/805/reporte") return paginaReporte(env, url.searchParams.get("id") || "");
