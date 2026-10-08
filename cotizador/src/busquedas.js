@@ -182,6 +182,7 @@ export async function rutaInformes(env, url) {
   if (!url.searchParams.get("clave") || url.searchParams.get("clave") !== (await claveInformes(env))) return json({ ok: false, error: "clave incorrecta" }, 401);
   const ruta = url.pathname.replace("/informes/", "");
   const id = url.searchParams.get("id") || "";
+  await kvPut(env, "informes_ultima_vuelta", JSON.stringify({ ts: Date.now(), ruta, id }));
   if (ruta === "cola") {
     // Los "en_proceso" de hace más de 3 h se reintentan (la tarea se cortó)
     await env.DB.prepare("UPDATE informes SET estado='pendiente' WHERE estado='en_proceso' AND tomado_ts < ?").bind(Date.now() - 3 * 3600e3).run();
@@ -311,7 +312,7 @@ export async function apiBusquedas(env, req, url, quien, usuarios = []) {
   }
   if (ruta === "informes") {
     const rs = (await env.DB.prepare("SELECT id, ts, producto, cantidad, calidad, cliente, estado, nota, tomado_ts, listo_ts, contenido IS NOT NULL AS hay FROM informes WHERE estado<>'cancelado' ORDER BY ts DESC LIMIT 30").all()).results || [];
-    return json({ ok: true, clave: await claveInformes(env), informes: rs });
+    return json({ ok: true, clave: await claveInformes(env), informes: rs, ultima: JSON.parse((await kvGet(env, "informes_ultima_vuelta")) || "null") });
   }
   if (ruta === "informe-nuevo" && req.method === "POST") {
     const producto = String(cuerpo.producto || "").trim().slice(0, 400);
@@ -616,7 +617,7 @@ var EST_INF = { pendiente: "⏳ En cola", en_proceso: "🔎 Claude lo está arma
 var TEL_INF = "";
 function cargarInf() { api("informes").then(function (d) {
   $("#listaInf").innerHTML = (d.informes.length ? d.informes.map(function (i) { return '<div class="fila" style="border-top:1px solid var(--borde);padding:6px 0;font-size:14px"><b>' + esc(i.producto) + '</b><span class="estado">' + esc(i.cliente || "") + " · " + hace(i.ts) + '</span><span class="pill ' + (i.estado === "listo" ? "lista" : "buscando") + '">' + (EST_INF[i.estado] || i.estado) + "</span>" + (i.estado === "pendiente" ? '<button class="btn" data-cinf="' + i.id + '">Cancelar</button>' : "") + (i.hay ? '<a class="btn p" target="_blank" href="/panel/api/busquedas/informe-ver?id=' + i.id + '">Ver / PDF</a><a class="btn" href="/panel/api/busquedas/informe-planilla?id=' + i.id + '">Planilla</a>' : "") + (i.nota ? '<span class="estado">' + esc(i.nota) + "</span>" : "") + "</div>"; }).join("") : "") +
-    '<details style="margin-top:8px;font-size:12px;color:var(--gris)"><summary>Clave para la tarea de Claude</summary><code>' + esc(d.clave) + "</code></details>";
+    '<div class="estado" style="margin-top:6px">' + (d.ultima ? "Claude miró la cola por última vez " + hace(d.ultima.ts) : "Claude todavía no miró la cola") + '</div><details style="margin-top:8px;font-size:12px;color:var(--gris)"><summary>Clave para la tarea de Claude</summary><code>' + esc(d.clave) + "</code></details>";
 }).catch(function () {}); }
 $("#listaInf").onclick = function (ev) { var b = ev.target.closest("[data-cinf]"); if (b) api("informe-cancelar", { id: b.dataset.cinf }).then(function (r) { aviso(r.res); cargarInf(); }); };
 $("#bInforme").onclick = function () {
