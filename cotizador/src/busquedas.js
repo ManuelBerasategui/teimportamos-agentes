@@ -416,6 +416,8 @@ input,select,textarea{padding:9px 10px;border:1px solid var(--borde);border-radi
 .nota{background:#fffbeb;border:1px solid #fde68a;color:#92400e;border-radius:8px;padding:8px 10px;font-size:13px;margin-top:8px}
 .provs{display:flex;flex-direction:column;gap:8px;margin-top:10px}
 .pv{display:grid;grid-template-columns:72px 1fr auto;gap:10px;border:1px solid var(--borde);border-radius:10px;padding:10px;align-items:start}
+.modos{display:flex;gap:6px;margin-bottom:12px}.modos button{flex:1;border:1px solid var(--borde);background:#fff;padding:11px;border-radius:10px;font-weight:700;font-size:15px;color:var(--gris);cursor:pointer}.modos button.on{background:var(--azul);color:#fff;border-color:var(--azul)}
+details.mas{border:1px solid var(--borde);border-radius:8px;padding:8px 10px;background:#fafbfd}details.mas summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--gris)}
 .pv.descartado{opacity:.45}.pv.web{grid-template-columns:1fr auto}.sec{font-weight:700;font-size:14px;margin:14px 0 2px;color:var(--txt)}.btn.wa{background:#16a34a;color:#fff;border-color:#16a34a}.resumen{font-size:13px;color:#334155;margin-top:4px;line-height:1.35}
 .pv img{width:72px;height:72px;object-fit:cover;border-radius:8px;background:#eef2f7}
 .pv .t{font-weight:600;font-size:14px;line-height:1.3}.pv .s{font-size:12px;color:var(--gris);margin-top:3px}
@@ -431,47 +433,53 @@ dialog{border:1px solid var(--borde);border-radius:12px;padding:16px;max-width:5
 </style></head><body>
 <header><b>Búsquedas de proveedores</b><span class="estado" id="gasto"></span><a href="/panel" style="margin-left:auto">← Panel</a></header>
 <main>
-<section class="card">
-  <h2>Nueva búsqueda</h2>
-  <div class="form">
-    <label class="p2">Producto<input id="fProd" placeholder="Ej: zapatillas Jordan 4 retro réplica 1:1"></label>
-    <label>Cantidad<input id="fCant" type="number" min="1" inputmode="numeric" placeholder="50"></label>
-    <label>Calidad<select id="fCal"><option value="indistinto">Indistinto</option><option value="replica">Réplica</option><option value="original">Original</option><option value="reacondicionado">Reacondicionado</option></select></label>
-    <label>Presupuesto (opcional)<input id="fPres" placeholder="USD 1000"></label>
-    <label class="p2">Cliente (opcional)<input id="fCli" placeholder="Nombre o teléfono"></label>
-    <label>Asignar a<select id="fAsig"><option value="auto">Automático (alterna)</option></select></label>
-    <div class="chk ancho">
-      <b style="font-size:13px;color:var(--gris)">Buscar en:</b>
-      <label><input type="checkbox" class="fFuente" value="web" checked> Web por país (gratis)</label>
-      <label><input type="checkbox" class="fFuente" value="1688" checked> 1688 con precio (Apify)</label>
-      <label><input type="checkbox" class="fFuente" value="alibaba"> Alibaba (Apify)</label>
-      <label><input type="checkbox" id="fMin" checked> Solo mínimo ≤ cantidad</label>
-    </div>
-    <div class="chk ancho" id="fPaises">
-      <b style="font-size:13px;color:var(--gris)">Países (web):</b>
-      <label><input type="checkbox" value="ar" checked> 🇦🇷 Argentina</label><label><input type="checkbox" value="py" checked> 🇵🇾 Paraguay</label>
-      <label><input type="checkbox" value="br" checked> 🇧🇷 Brasil</label><label><input type="checkbox" value="cl" checked> 🇨🇱 Chile</label>
-      <label><input type="checkbox" value="us" checked> 🇺🇸 EE. UU.</label><label><input type="checkbox" value="cn" checked> 🇨🇳 China (fábricas)</label>
-    </div>
-    <div class="fila ancho"><button class="btn p" id="bBuscar">Buscar proveedores</button><span class="estado" id="costoEst"></span></div>
-  </div>
-</section>
+<div class="modos" id="modos"><button data-m="inf" class="on">📄 Informes</button><button data-m="rap">🔎 Búsqueda rápida</button></div>
+<div id="m-inf">
 <section class="card" id="secInforme">
-  <h2>📄 Encargar informe completo a Claude <span class="estado">(lo cobrás al cliente; sale en PDF y planilla)</span></h2>
+  <h2>Encargar informe <span class="estado">PDF y planilla para cobrarle al cliente. No gasta Apify ni Tavily.</span></h2>
   <div class="form">
-    <label class="p2">Qué busca el cliente<input id="iProd" placeholder="Ej: ropa de marca original (Tommy, Lacoste) y celulares iPhone/Samsung"></label>
-    <label>Cantidad aprox.<input id="iCant" placeholder="Ej: 50 prendas"></label>
-    <label>Calidad<select id="iCal"><option value="original">Original</option><option value="reacondicionado">Reacondicionado</option><option value="indistinto">Original o reacondicionado</option></select></label>
+    <label class="p2">Qué busca el cliente<input id="iProd" placeholder="Ej: cancha de fútbol inflable, medias Nike Elite..."></label>
+    <label>Cantidad aprox.<input id="iCant" placeholder="Ej: 50 unidades"></label>
     <label>Cliente<input id="iCli" placeholder="Nombre"></label>
-    <label class="ancho">Detalle (opcional)<input id="iDet" placeholder="Para revender / uso personal, presupuesto, marcas, talles..."></label>
     <label class="ancho">Fotos de referencia (opcional, hasta 4)<input id="iFotos" type="file" accept="image/*" multiple></label>
     <div class="ancho fila" id="iMini"></div>
-    <div class="chk ancho" id="iPaises"><b style="font-size:13px;color:var(--gris)">Países:</b>
-      <label><input type="checkbox" value="ar" checked> 🇦🇷 Argentina</label><label><input type="checkbox" value="py" checked> 🇵🇾 Paraguay</label><label><input type="checkbox" value="br" checked> 🇧🇷 Brasil</label>
-      <label><input type="checkbox" value="cl" checked> 🇨🇱 Chile</label><label><input type="checkbox" value="us" checked> 🇺🇸 EE. UU.</label><label><input type="checkbox" value="cn" checked> 🇨🇳 China</label></div>
-    <div class="fila ancho"><button class="btn p" id="bInforme">Encargar informe</button><span class="estado">No gasta Apify ni Tavily. Te llega aviso cuando está listo.</span></div>
+    <details class="ancho mas"><summary>Más opciones (calidad, detalle, países)</summary><div class="form" style="margin-top:8px">
+      <label>Calidad<select id="iCal"><option value="original">Original</option><option value="reacondicionado">Reacondicionado</option><option value="indistinto">Original o reacondicionado</option></select></label>
+      <label class="p2" style="grid-column:span 3">Detalle<input id="iDet" placeholder="Para revender / uso personal, presupuesto, marcas, talles, 'completo'..."></label>
+      <div class="chk ancho" id="iPaises"><b style="font-size:13px;color:var(--gris)">Países:</b>
+        <label><input type="checkbox" value="ar" checked> 🇦🇷 Argentina</label><label><input type="checkbox" value="py" checked> 🇵🇾 Paraguay</label><label><input type="checkbox" value="br" checked> 🇧🇷 Brasil</label>
+        <label><input type="checkbox" value="cl" checked> 🇨🇱 Chile</label><label><input type="checkbox" value="us" checked> 🇺🇸 EE. UU.</label><label><input type="checkbox" value="cn" checked> 🇨🇳 China</label></div>
+    </div></details>
+    <div class="fila ancho"><button class="btn p" id="bInforme">Encargar informe</button></div>
   </div>
-  <div id="listaInf" style="margin-top:10px"></div>
+</section>
+<section class="card"><h2>Informes hechos</h2><div id="listaInf"></div></section>
+</div>
+<div id="m-rap" style="display:none">
+<section class="card">
+  <h2>Búsqueda rápida <span class="estado" id="costoEst"></span></h2>
+  <div class="form">
+    <label class="p2">Producto<input id="fProd" placeholder="Ej: licuadora portátil recargable"></label>
+    <label>Cantidad<input id="fCant" type="number" min="1" inputmode="numeric" placeholder="50"></label>
+    <div class="fila" style="align-self:end"><button class="btn p" id="bBuscar">Buscar</button></div>
+    <details class="ancho mas"><summary>Dónde buscar</summary>
+      <div class="chk" style="margin-top:8px">
+        <label><input type="checkbox" class="fFuente" value="web" checked> Web por país (gratis, Tavily)</label>
+        <label><input type="checkbox" class="fFuente" value="1688" checked> 1688 con precio (Apify)</label>
+        <label><input type="checkbox" class="fFuente" value="alibaba"> Alibaba (Apify)</label>
+      </div>
+      <div class="chk" id="fPaises" style="margin-top:6px"><b style="font-size:13px;color:var(--gris)">Países (web):</b>
+        <label><input type="checkbox" value="ar" checked> 🇦🇷 AR</label><label><input type="checkbox" value="py" checked> 🇵🇾 PY</label><label><input type="checkbox" value="br" checked> 🇧🇷 BR</label>
+        <label><input type="checkbox" value="cl" checked> 🇨🇱 CL</label><label><input type="checkbox" value="us" checked> 🇺🇸 EE. UU.</label><label><input type="checkbox" value="cn" checked> 🇨🇳 China</label></div>
+    </details>
+    <details class="ancho mas"><summary>Más filtros</summary><div class="form" style="margin-top:8px">
+      <label>Calidad<select id="fCal"><option value="indistinto">Indistinto</option><option value="replica">Réplica</option><option value="original">Original</option><option value="reacondicionado">Reacondicionado</option></select></label>
+      <label>Presupuesto<input id="fPres" placeholder="USD 1000"></label>
+      <label>Cliente<input id="fCli" placeholder="Nombre o teléfono"></label>
+      <label>Asignar a<select id="fAsig"><option value="auto">Automático (alterna)</option></select></label>
+      <div class="chk ancho"><label><input type="checkbox" id="fMin" checked> Solo proveedores con mínimo ≤ cantidad</label></div>
+    </div></details>
+  </div>
 </section>
 <div class="fila" style="margin-bottom:12px">
   <div class="filtros" id="filtros"><button data-f="mias" class="on">Mías</button><button data-f="otros">Del otro</button><button data-f="todas">Todas</button></div>
@@ -479,6 +487,7 @@ dialog{border:1px solid var(--borde);border-radius:12px;padding:16px;max-width:5
   <span style="flex:1"></span><button class="btn" id="bTg">Conectar mi Telegram</button>
 </div>
 <div id="lista"><div class="vacio">Cargando...</div></div>
+</div>
 </main>
 <dialog id="dlg"><b id="dlgT">Mensaje para el proveedor</b>
   <div class="fila" style="margin-top:8px"><button class="btn" data-l="es">Español</button><button class="btn" data-l="pt">Portugués</button><button class="btn" data-l="en">Inglés</button><button class="btn" data-l="zh">Chino</button></div>
@@ -636,7 +645,7 @@ if (tq) api("tarea?id=" + encodeURIComponent(tq)).then(function (t) { if (!t.ok)
 var EST_INF = { pendiente: "⏳ En cola", en_proceso: "🔎 Claude lo está armando", listo: "✅ Listo" };
 var TEL_INF = "";
 function cargarInf() { api("informes").then(function (d) {
-  $("#listaInf").innerHTML = (d.informes.length ? d.informes.map(function (i) { return '<div class="fila" style="border-top:1px solid var(--borde);padding:6px 0;font-size:14px"><b>' + esc(i.producto) + '</b><span class="estado">' + esc(i.cliente || "") + " · " + hace(i.ts) + '</span><span class="pill ' + (i.estado === "listo" ? "lista" : "buscando") + '">' + (EST_INF[i.estado] || i.estado) + "</span>" + (i.estado === "pendiente" ? '<button class="btn" data-cinf="' + i.id + '">Cancelar</button>' : "") + (i.hay ? '<a class="btn p" target="_blank" href="/panel/api/busquedas/informe-ver?id=' + i.id + '">Ver / PDF</a><a class="btn" href="/panel/api/busquedas/informe-planilla?id=' + i.id + '">Planilla</a>' : "") + (i.nota ? '<span class="estado">' + esc(i.nota) + "</span>" : "") + "</div>"; }).join("") : "") +
+  $("#listaInf").innerHTML = (d.informes.length ? "" : '<div class="vacio">Todavía no hay informes.</div>') + (d.informes.length ? d.informes.map(function (i) { return '<div class="fila" style="border-top:1px solid var(--borde);padding:6px 0;font-size:14px"><b>' + esc(i.producto) + '</b><span class="estado">' + esc(i.cliente || "") + " · " + hace(i.ts) + '</span><span class="pill ' + (i.estado === "listo" ? "lista" : "buscando") + '">' + (EST_INF[i.estado] || i.estado) + "</span>" + (i.estado === "pendiente" ? '<button class="btn" data-cinf="' + i.id + '">Cancelar</button>' : "") + (i.hay ? '<a class="btn p" target="_blank" href="/panel/api/busquedas/informe-ver?id=' + i.id + '">Ver / PDF</a><a class="btn" href="/panel/api/busquedas/informe-planilla?id=' + i.id + '">Planilla</a>' : "") + (i.nota ? '<span class="estado">' + esc(i.nota) + "</span>" : "") + "</div>"; }).join("") : "") +
     '<div class="estado" style="margin-top:6px">' + (d.ultima ? "Claude miró la cola por última vez " + hace(d.ultima.ts) : "Claude todavía no miró la cola") + '</div><details style="margin-top:8px;font-size:12px;color:var(--gris)"><summary>Clave para la tarea de Claude</summary><code>' + esc(d.clave) + "</code></details>";
 }).catch(function () {}); }
 $("#listaInf").onclick = function (ev) { var b = ev.target.closest("[data-cinf]"); if (b) api("informe-cancelar", { id: b.dataset.cinf }).then(function (r) { aviso(r.res); cargarInf(); }); };
@@ -656,8 +665,11 @@ $("#bInforme").onclick = function () {
   api("informe-nuevo", { producto: $("#iProd").value, cantidad: $("#iCant").value, calidad: $("#iCal").value, cliente: $("#iCli").value, detalle: $("#iDet").value, paises: paises, tel: TEL_INF, fotos: FOTOS }).then(function (r) {
     aviso(r.res); if (r.ok) { FOTOS = []; $("#iFotos").value = ""; $("#iMini").innerHTML = ""; $("#iProd").value = ""; $("#iCant").value = ""; $("#iCli").value = ""; $("#iDet").value = ""; TEL_INF = ""; cargarInf(); } });
 };
-(function () { var q = new URLSearchParams(location.search); if (q.get("informe")) { $("#iProd").value = q.get("producto") || ""; $("#iCli").value = q.get("cliente") || ""; TEL_INF = q.get("tel") || ""; $("#secInforme").scrollIntoView(); aviso("Completá el pedido y tocá Encargar informe"); } })();
+(function () { var q = new URLSearchParams(location.search); if (q.get("informe")) { $("#iProd").value = q.get("producto") || ""; $("#iCli").value = q.get("cliente") || ""; TEL_INF = q.get("tel") || ""; aviso("Completá el pedido y tocá Encargar informe"); } })();
 cargarInf(); setInterval(cargarInf, 60000);
+function modo(m) { try { localStorage.setItem("busq_modo", m); } catch (e) {} document.querySelectorAll("#modos button").forEach(function (b) { b.classList.toggle("on", b.dataset.m === m); }); $("#m-inf").style.display = m === "inf" ? "" : "none"; $("#m-rap").style.display = m === "rap" ? "" : "none"; }
+$("#modos").onclick = function (ev) { var b = ev.target.closest("button"); if (b) modo(b.dataset.m); };
+(function () { var m = "inf"; try { m = localStorage.getItem("busq_modo") || "inf"; } catch (e) {} if (location.hash || new URLSearchParams(location.search).get("tarea")) m = "rap"; if (new URLSearchParams(location.search).get("informe")) m = "inf"; modo(m); })();
 document.querySelectorAll(".fFuente, #fPaises input").forEach(function (x) { x.onchange = costoEst; }); costoEst();
 cargar(); setInterval(cargar, 20000);
 </script></body></html>`;

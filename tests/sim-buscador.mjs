@@ -83,7 +83,7 @@ const api = async (cookie, r, body) => (await W.fetch(new Request("https://x/pan
 console.log("1) Esquema y panel");
 assert.deepEqual(P.ESQUEMA, B.ESQUEMA); assert.deepEqual(P.MIGRACIONES, B.MIGRACIONES); bien("el esquema y las migraciones del panel y del buscador son idénticos");
 const pg = await W.fetch(new Request("https://x/panel/busquedas", { headers: { cookie: cM } }), env, ctx);
-assert.equal(pg.status, 200); assert.match(await pg.text(), /Nueva búsqueda/); bien("la página /panel/busquedas carga con login");
+assert.equal(pg.status, 200); assert.match(await pg.text(), /Encargar informe/); bien("la página /panel/busquedas carga con login");
 assert.equal((await W.fetch(new Request("https://x/panel/api/busquedas/lista"), env, ctx)).status, 401); bien("sin login, la API responde 401");
 const app = await (await W.fetch(new Request("https://x/panel", { headers: { cookie: cM } }), env, ctx)).text();
 assert.match(app, /href="\/panel\/busquedas"/); assert.match(app, /busqueda_lista: "Búsqueda de proveedores lista"/); bien("el panel tiene el link a Búsquedas y entiende las tareas busqueda_lista");
