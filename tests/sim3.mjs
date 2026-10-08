@@ -1,7 +1,7 @@
 import { DatabaseSync } from "node:sqlite";
 import fs from "fs";
 const src = fs.readFileSync("src/worker.js","utf8");
-fs.writeFileSync("/tmp/wk.mjs", src); fs.copyFileSync("src/lector.js","/tmp/lector.js"); fs.copyFileSync("src/lector-panel.js","/tmp/lector-panel.js"); fs.copyFileSync("src/busquedas.js","/tmp/busquedas.js"); fs.copyFileSync("src/cotizar.js","/tmp/cotizar.js"); 
+fs.writeFileSync("/tmp/wk.mjs", src); fs.copyFileSync("src/lector.js","/tmp/lector.js"); fs.copyFileSync("src/lector-panel.js","/tmp/lector-panel.js"); fs.copyFileSync("src/busquedas.js","/tmp/busquedas.js"); fs.copyFileSync("src/redes.js","/tmp/redes.js"); fs.copyFileSync("src/cotizar.js","/tmp/cotizar.js"); 
 const W = (await import("/tmp/wk.mjs")).default;
 const db = new DatabaseSync(":memory:");
 const stmt = (sql, b=[]) => ({ bind:(...x)=>stmt(sql,x), run: async()=>{db.prepare(sql).run(...b);return{}}, first: async()=>db.prepare(sql).get(...b)??null, all: async()=>({results:db.prepare(sql).all(...b)}) });

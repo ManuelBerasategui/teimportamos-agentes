@@ -2,7 +2,7 @@
 import { DatabaseSync } from "node:sqlite";
 import fs from "fs";
 const dir = fs.mkdtempSync("/tmp/igm-");
-for (const f of ["instagram.js", "metricas.js"]) fs.copyFileSync(new URL("../instagram/src/" + f, import.meta.url), `${dir}/${f}`);
+for (const f of ["instagram.js", "metricas.js", "sync.js", "formatos-iniciales.js"]) fs.copyFileSync(new URL("../instagram/src/" + f, import.meta.url), `${dir}/${f}`);
 let ok = 0, mal = 0; const chk = (n, c) => { c ? ok++ : (mal++, console.log("FALLA:", n)); };
 
 // ---- Instagram simulado ----

@@ -33,6 +33,10 @@ Podés usar como mucho 1 emoji, y solo a veces. Nunca uses dos veces seguidas la
 // =====================================================================
 
 import { rutasMetricas } from "./metricas.js";
+import { syncCompleto, syncDMs, prepararSync, conTope } from "./sync.js";
+import { FORMATOS_INICIALES } from "./formatos-iniciales.js";
+
+const CRON_SYNC = "17 */2 * * *";   // cada 2 horas: métricas, cuenta, DMs y formato de reels nuevos (solo lectura)
 
 const G = "https://graph.instagram.com/v21.0";
 const dormir = (ms) => new Promise((ok) => setTimeout(ok, ms));
@@ -116,6 +120,28 @@ async function iaJSON(env, prompt) {
   }
   return null;
 }
+
+// Gemini mirando una imagen (portada de un reel). Prueba como mucho 2 modelos para no pasar el tope de consultas.
+function aBase64(buf) {
+  const b = new Uint8Array(buf); let s = "";
+  for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+async function iaImagen(env, prompt, img) {
+  if (!env.GEMINI_KEY) return null;
+  for (const m of (await modelos(env)).slice(0, 2)) {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, {
+      method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_KEY },
+      body: JSON.stringify({ contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: img.tipo.split(";")[0], data: aBase64(img.datos) } }] }], generationConfig: { responseMimeType: "application/json", temperature: 0.2 } }),
+    }).catch(() => null);
+    const j = r ? await r.json().catch(() => ({})) : {};
+    if (!r?.ok || j.error) continue;
+    const t = (j.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("").match(/\{[\s\S]*\}/);
+    if (t) { try { return JSON.parse(t[0]); } catch {} }
+  }
+  return null;
+}
+const igApi = (env) => (ruta, metodo, params) => ig(env, ruta, metodo, params);
 
 // ---------- Junta comentarios sin responder ----------
 async function pendientesDeResponder(env) {
@@ -209,11 +235,19 @@ const texto = (t, s = 200) => new Response(typeof t === "string" ? t : JSON.stri
 export default {
   async scheduled(ev, env, ctx) {
     ctx.waitUntil((async () => {
+      if (ev.cron === CRON_SYNC) {   // la sincronización corre aunque el agente de comentarios esté pausado (no publica nada)
+        try { await tablas(env); console.log("Instagram sync:", JSON.stringify(await syncCompleto(env, igApi(env), iaImagen, FORMATOS_INICIALES))); }
+        catch (e) { console.log("Error sync Instagram:", e?.stack || e); }
+        return;
+      }
       try {
-        if ((await env.DB.prepare("SELECT v FROM kv WHERE k = 'ig_pausa'").first().catch(() => null))?.v === "si") return;
-        const r = await vuelta(env);
-        console.log(`Instagram (${r.modo}): ${r.respuestas.length} procesados, quedaban ${r.sinResponder}`);
+        if ((await env.DB.prepare("SELECT v FROM kv WHERE k = 'ig_pausa'").first().catch(() => null))?.v !== "si") {
+          const r = await vuelta(env);
+          console.log(`Instagram (${r.modo}): ${r.respuestas.length} procesados, quedaban ${r.sinResponder}`);
+        }
       } catch (e) { console.log("Error Instagram:", e?.stack || e); }
+      // DMs cada 30 min: una sola consulta, sin reintentos (para no pasar el tope junto con los comentarios)
+      try { await prepararSync(env); await syncDMs(env, conTope(igApi(env), 4), { reintentoUnoPorUno: false }); } catch (e) { console.log("Error DMs:", e?.message || e); }
     })());
   },
   async fetch(req, env) {
@@ -230,6 +264,8 @@ export default {
         const r = await vuelta(env, { forzarPrueba: true });
         return texto(`MODO PRUEBA (no se publicó nada)\nComentarios leídos en esta vuelta: ${r.sinResponder} (responde de a ${CONFIG.porVuelta} cada 30 min)\n${r.error ? "\n❌ " + r.error + "\n" : ""}\n` + r.respuestas.map((x) => `${x.usuario}: "${x.comentario}"\n  → [${x.tipo}] ${x.respuesta}`).join("\n\n"));
       }
+      if (url.pathname === "/sync") return new Response(JSON.stringify(await syncCompleto(env, igApi(env), iaImagen, FORMATOS_INICIALES)), { headers: { "content-type": "application/json; charset=utf-8" } });
+      if (url.pathname === "/sync-dms") { await prepararSync(env); return new Response(JSON.stringify(await syncDMs(env, conTope(igApi(env), 25))), { headers: { "content-type": "application/json; charset=utf-8" } }); }
       if (url.pathname.startsWith("/metricas")) {   // Fase 1: diagnóstico, solo lectura
         try { const r = await rutasMetricas(env, url, (ruta, metodo, params) => ig(env, ruta, metodo, params)); if (r) return r; }
         catch (e) { return new Response(JSON.stringify({ error: e?.message || String(e) }), { status: 500, headers: { "content-type": "application/json; charset=utf-8" } }); }
@@ -237,6 +273,6 @@ export default {
       if (url.pathname === "/correr") { const r = await vuelta(env); return texto(r); }
       if (url.pathname === "/pausa") { await kvPut(env, "ig_pausa", url.searchParams.get("si") === "no" ? "no" : "si"); return texto(url.searchParams.get("si") === "no" ? "▶️ Agente de Instagram reanudado" : "⏸️ Agente de Instagram pausado"); }
     } catch (e) { return texto("❌ " + (e?.message || e), 500); }
-    return texto("Rutas: /estado · /prueba · /correr · /pausa (&si=no para reanudar) · /metricas — siempre con ?clave=");
+    return texto("Rutas: /estado · /prueba · /correr · /pausa (&si=no para reanudar) · /metricas · /sync · /sync-dms — siempre con ?clave=");
   },
 };

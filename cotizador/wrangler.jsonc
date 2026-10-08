@@ -8,6 +8,7 @@
   "d1_databases": [{ "binding": "DB", "database_name": "agente", "database_id": "7369be6e-7722-4a69-a09c-7fe5bc41847d" }],
   "kv_namespaces": [{ "binding": "ESTADO", "id": "033ca89186904328a23d7535b4b87aa5" }],
   "ai": { "binding": "AI" },
+  "services": [{ "binding": "IG", "service": "instagram" }],
   "triggers": { "crons": ["*/1 * * * *"] },
   "observability": { "enabled": true, "head_sampling_rate": 1, "logs": { "enabled": true, "invocation_logs": true } }
 }

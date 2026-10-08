@@ -4,7 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import fs from "fs";
 import assert from "assert/strict";
 fs.writeFileSync("/tmp/wk.mjs", fs.readFileSync("src/worker.js", "utf8"));
-for (const f of ["lector.js", "lector-panel.js", "busquedas.js", "cotizar.js"]) fs.copyFileSync("src/" + f, "/tmp/" + f);
+for (const f of ["lector.js", "lector-panel.js", "busquedas.js", "cotizar.js", "redes.js"]) fs.copyFileSync("src/" + f, "/tmp/" + f);
 const W = (await import("/tmp/wk.mjs")).default;
 const P = await import("/tmp/busquedas.js");
 const B = await import("../buscador/src/buscador.js");
