@@ -171,6 +171,20 @@ ${lista.length ? "" : "<p>No se encontraron proveedores para este pedido.</p>"}
 </body></html>`;
 }
 
+// Describe las fotos de referencia con Gemini (gratis) para que quien arme el informe sepa exactamente qué buscar
+async function describirFotos(env, fotos) {
+  if (!env.GEMINI_KEY || !fotos.length) return "";
+  const partes = [{ text: "Sos comprador de una importadora. Describí en español, en 2 a 4 frases, el producto de estas fotos para buscar proveedores: tipo de producto, marca y modelo si se ven (logos, etiquetas, nombres en el packaging), materiales, colores, presentación (packaging, cantidad por pack) y cualquier código visible. Si hay varios productos distintos, describí cada uno. Sin introducción." },
+    ...fotos.map((f) => ({ inline_data: { mime_type: "image/jpeg", data: f } }))];
+  for (const m of ["gemini-flash-latest", "gemini-flash-lite-latest", "gemini-2.5-flash"]) {
+    const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_KEY },
+      body: JSON.stringify({ contents: [{ parts: partes }], generationConfig: { temperature: 0.2 } }) }).catch(() => null);
+    const j = r ? await r.json().catch(() => ({})) : {};
+    const t = (j.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join("").trim();
+    if (r?.ok && t) return t.slice(0, 900);
+  }
+  return "";
+}
 async function claveInformes(env) {
   let k = await kvGet(env, "informes_clave");
   if (!k) { k = [...crypto.getRandomValues(new Uint8Array(18))].map((b) => b.toString(16).padStart(2, "0")).join(""); await kvPut(env, "informes_clave", k); }
@@ -321,10 +335,14 @@ export async function apiBusquedas(env, req, url, quien, usuarios = []) {
     const paises = (Array.isArray(cuerpo.paises) ? cuerpo.paises : PAISES_INF).filter((x) => PAISES_INF.includes(x));
     if (!paises.length) return json({ ok: false, res: "Elegí al menos un país." });
     const id = "i" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+    const fotos = (Array.isArray(cuerpo.fotos) ? cuerpo.fotos : []).filter((f) => typeof f === "string" && f.length < 700000).slice(0, 4).map((f) => f.replace(/^data:image\/\w+;base64,/, ""));
+    const vista = await describirFotos(env, fotos).catch(() => "");
+    if (vista) cuerpo.detalle = `${cuerpo.detalle ? cuerpo.detalle + "\n" : ""}Según las fotos de referencia: ${vista}`;
+    if (fotos.length && !vista) cuerpo.detalle = `${cuerpo.detalle ? cuerpo.detalle + "\n" : ""}(Se mandaron ${fotos.length} fotos pero no se pudieron describir.)`;
     await env.DB.prepare("INSERT INTO informes (id, ts, producto, cantidad, calidad, paises, detalle, cliente, tel, pedido_por, estado, nota) VALUES (?,?,?,?,?,?,?,?,?,?,'pendiente','')")
       .bind(id, Date.now(), producto, String(cuerpo.cantidad || "").slice(0, 40), ["original", "reacondicionado", "indistinto"].includes(cuerpo.calidad) ? cuerpo.calidad : "original",
-        JSON.stringify(paises), String(cuerpo.detalle || "").slice(0, 1000), String(cuerpo.cliente || "").slice(0, 120), String(cuerpo.tel || "").replace(/[^\d@.a-z-]/gi, "").slice(0, 60), quien).run();
-    return json({ ok: true, res: "Encargado: Claude lo arma en la próxima vuelta (dentro de 1 h). Para que salga ya, pedíselo a Claude." });
+        JSON.stringify(paises), String(cuerpo.detalle || "").slice(0, 2000), String(cuerpo.cliente || "").slice(0, 120), String(cuerpo.tel || "").replace(/[^\d@.a-z-]/gi, "").slice(0, 60), quien).run();
+    return json({ ok: true, vista, res: (vista ? "Fotos leídas. " : "") + "Encargado: Claude lo arma en la próxima vuelta (dentro de 1 h). Para que salga ya, pedíselo a Claude." });
   }
   if (ruta === "informe-ver" || ruta === "informe-planilla") {
     const inf = await env.DB.prepare("SELECT * FROM informes WHERE id=?").bind(url.searchParams.get("id") || "").first();
@@ -446,6 +464,8 @@ dialog{border:1px solid var(--borde);border-radius:12px;padding:16px;max-width:5
     <label>Calidad<select id="iCal"><option value="original">Original</option><option value="reacondicionado">Reacondicionado</option><option value="indistinto">Original o reacondicionado</option></select></label>
     <label>Cliente<input id="iCli" placeholder="Nombre"></label>
     <label class="ancho">Detalle (opcional)<input id="iDet" placeholder="Para revender / uso personal, presupuesto, marcas, talles..."></label>
+    <label class="ancho">Fotos de referencia (opcional, hasta 4)<input id="iFotos" type="file" accept="image/*" multiple></label>
+    <div class="ancho fila" id="iMini"></div>
     <div class="chk ancho" id="iPaises"><b style="font-size:13px;color:var(--gris)">Países:</b>
       <label><input type="checkbox" value="ar" checked> 🇦🇷 Argentina</label><label><input type="checkbox" value="py" checked> 🇵🇾 Paraguay</label><label><input type="checkbox" value="br" checked> 🇧🇷 Brasil</label>
       <label><input type="checkbox" value="cl" checked> 🇨🇱 Chile</label><label><input type="checkbox" value="us" checked> 🇺🇸 EE. UU.</label><label><input type="checkbox" value="cn" checked> 🇨🇳 China</label></div>
@@ -620,10 +640,21 @@ function cargarInf() { api("informes").then(function (d) {
     '<div class="estado" style="margin-top:6px">' + (d.ultima ? "Claude miró la cola por última vez " + hace(d.ultima.ts) : "Claude todavía no miró la cola") + '</div><details style="margin-top:8px;font-size:12px;color:var(--gris)"><summary>Clave para la tarea de Claude</summary><code>' + esc(d.clave) + "</code></details>";
 }).catch(function () {}); }
 $("#listaInf").onclick = function (ev) { var b = ev.target.closest("[data-cinf]"); if (b) api("informe-cancelar", { id: b.dataset.cinf }).then(function (r) { aviso(r.res); cargarInf(); }); };
+var FOTOS = [];
+$("#iFotos").onchange = function () {
+  FOTOS = []; $("#iMini").innerHTML = "";
+  [].slice.call(this.files, 0, 4).forEach(function (f) {
+    var rd = new FileReader(); rd.onload = function () { var im = new Image(); im.onload = function () {
+      var k = Math.min(1, 900 / Math.max(im.width, im.height)), c = document.createElement("canvas"); c.width = im.width * k; c.height = im.height * k;
+      c.getContext("2d").drawImage(im, 0, 0, c.width, c.height); var d = c.toDataURL("image/jpeg", 0.8); FOTOS.push(d);
+      $("#iMini").insertAdjacentHTML("beforeend", '<img src="' + d + '" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--borde)">'); }; im.src = rd.result; }; rd.readAsDataURL(f);
+  });
+};
 $("#bInforme").onclick = function () {
+  var bt = $("#bInforme"); if (FOTOS.length) { bt.disabled = true; bt.textContent = "Leyendo fotos..."; setTimeout(function () { bt.disabled = false; bt.textContent = "Encargar informe"; }, 15000); }
   var paises = [].slice.call(document.querySelectorAll("#iPaises input:checked")).map(function (x) { return x.value; });
-  api("informe-nuevo", { producto: $("#iProd").value, cantidad: $("#iCant").value, calidad: $("#iCal").value, cliente: $("#iCli").value, detalle: $("#iDet").value, paises: paises, tel: TEL_INF }).then(function (r) {
-    aviso(r.res); if (r.ok) { $("#iProd").value = ""; $("#iCant").value = ""; $("#iCli").value = ""; $("#iDet").value = ""; TEL_INF = ""; cargarInf(); } });
+  api("informe-nuevo", { producto: $("#iProd").value, cantidad: $("#iCant").value, calidad: $("#iCal").value, cliente: $("#iCli").value, detalle: $("#iDet").value, paises: paises, tel: TEL_INF, fotos: FOTOS }).then(function (r) {
+    aviso(r.res); if (r.ok) { FOTOS = []; $("#iFotos").value = ""; $("#iMini").innerHTML = ""; $("#iProd").value = ""; $("#iCant").value = ""; $("#iCli").value = ""; $("#iDet").value = ""; TEL_INF = ""; cargarInf(); } });
 };
 (function () { var q = new URLSearchParams(location.search); if (q.get("informe")) { $("#iProd").value = q.get("producto") || ""; $("#iCli").value = q.get("cliente") || ""; TEL_INF = q.get("tel") || ""; $("#secInforme").scrollIntoView(); aviso("Completá el pedido y tocá Encargar informe"); } })();
 cargarInf(); setInterval(cargarInf, 60000);
