@@ -4,7 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import fs from "fs";
 const dir = fs.mkdtempSync("/tmp/igr-");
 fs.mkdirSync(dir + "/ig"); fs.mkdirSync(dir + "/co");
-for (const f of ["instagram.js", "metricas.js", "sync.js", "formatos-iniciales.js"]) fs.copyFileSync(new URL("../instagram/src/" + f, import.meta.url), `${dir}/ig/${f}`);
+for (const f of fs.readdirSync(new URL("../instagram/src/", import.meta.url))) fs.copyFileSync(new URL("../instagram/src/" + f, import.meta.url), `${dir}/ig/${f}`);
 for (const f of fs.readdirSync(new URL("../cotizador/src/", import.meta.url))) fs.copyFileSync(new URL("../cotizador/src/" + f, import.meta.url), `${dir}/co/${f}`);
 let ok = 0, mal = 0; const chk = (n, c) => { c ? ok++ : (mal++, console.log("FALLA:", n)); };
 

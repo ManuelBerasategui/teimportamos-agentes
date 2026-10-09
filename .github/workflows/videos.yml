@@ -1,0 +1,60 @@
+# Editor automático de reels (Redes > Videos del panel).
+# Cada 10 minutos pregunta al panel si hay clips subidos. Si hay, los edita (tools/editor/editar.py) y los devuelve
+# al panel para revisar. No publica nada: eso lo hace el worker de Instagram, solo con videos aprobados.
+# Necesita UN secret del repo: TI_CLAVE (la misma clave VERIFY_TOKEN del panel). Los videos nunca se guardan acá.
+name: Editor de videos
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch: {}
+
+concurrency:
+  group: editor-videos
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  editar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      TI_BASE: https://cotizador.berasateguimanuel07.workers.dev
+      TI_CLAVE: ${{ secrets.TI_CLAVE }}
+    steps:
+      - name: ¿Hay clips para editar?
+        id: hay
+        run: |
+          if [ -z "$TI_CLAVE" ]; then echo "Falta cargar el secret TI_CLAVE en GitHub."; echo "si=no" >> "$GITHUB_OUTPUT"; exit 0; fi
+          n=$(curl -sf -H "x-clave: $TI_CLAVE" "$TI_BASE/videos/hay" | python3 -c "import sys,json; print(json.load(sys.stdin).get('n',0))" || echo 0)
+          echo "Lotes en cola: $n"
+          if [ "$n" -gt 0 ]; then echo "si=si" >> "$GITHUB_OUTPUT"; else echo "si=no" >> "$GITHUB_OUTPUT"; fi
+
+      - uses: actions/checkout@v4
+        if: steps.hay.outputs.si == 'si'
+
+      - uses: actions/setup-python@v5
+        if: steps.hay.outputs.si == 'si'
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: tools/editor/requirements.txt
+
+      - name: Modelo de transcripción (queda guardado entre corridas)
+        if: steps.hay.outputs.si == 'si'
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: whisper-small-v1
+
+      - name: Instalar ffmpeg, letra Montserrat y Whisper
+        if: steps.hay.outputs.si == 'si'
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-montserrat > /dev/null
+          pip install -q -r tools/editor/requirements.txt
+
+      - name: Editar
+        if: steps.hay.outputs.si == 'si'
+        run: python tools/editor/editar.py

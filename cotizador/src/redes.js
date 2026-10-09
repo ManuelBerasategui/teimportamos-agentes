@@ -308,12 +308,18 @@ td{padding:8px;border-bottom:1px solid #f0f2f6;vertical-align:top}th.n,td.n{text
 .burb.u{align-self:flex-end;background:var(--nar);color:#fff}.burb.a{align-self:flex-start;background:#f1f5f9}
 .preg{display:flex;gap:8px;margin-top:10px}.preg input{flex:1;padding:10px;border:1px solid var(--borde);border-radius:8px;font-size:15px;font-family:inherit}
 select{padding:5px 6px;border:1px solid var(--borde);border-radius:6px;font-size:13px;background:#fff;color:var(--txt);max-width:170px}
+.vgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px}.vcard{border:1px solid var(--borde);border-radius:12px;padding:10px;background:#fff;display:flex;flex-direction:column;gap:8px}
+.vcard video{width:100%;aspect-ratio:9/16;background:#000;border-radius:8px;object-fit:contain}.vcard textarea{width:100%;min-height:90px;border:1px solid var(--borde);border-radius:8px;padding:8px;font:inherit;font-size:13px}
+.barra{height:8px;background:#eef2f7;border-radius:99px;overflow:hidden}.barra i{display:block;height:100%;background:var(--nar)}.barra.ok i{background:var(--verde)}
+.clip{display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid #f0f2f6;font-size:14px}.clip .nom{overflow-wrap:anywhere}
+.reglas{font-size:13px;color:#334155;line-height:1.5;background:#fafbfd;border:1px solid var(--borde);border-radius:10px;padding:10px 12px;margin-top:10px}
+.prog{font-size:13px;color:var(--gris)}
 .aviso{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#0f172a;color:#fff;padding:10px 16px;border-radius:10px;font-size:14px;display:none;z-index:20;max-width:90vw}
 @media(max-width:760px){main{padding:10px}.kpis{grid-template-columns:1fr 1fr}.kpi b{font-size:20px}}
 </style></head><body>
 <header><b>Te Importamos · <span>Redes</span></b><span class="estado" id="sync" style="color:#9CA3AF"></span><a href="/panel">← Panel</a></header>
 <main>
-<div class="modos" id="modos"><button data-m="resumen" class="on">Resumen</button><button data-m="ideas">Ideas para grabar<span class="bd" id="bIdeas" style="display:none"></span></button><button data-m="dms">DMs sin responder<span class="bd" id="bDms" style="display:none"></span></button><button data-m="reels">Reels</button><button data-m="agente">Preguntale al agente</button></div>
+<div class="modos" id="modos"><button data-m="resumen" class="on">Resumen</button><button data-m="ideas">Ideas para grabar<span class="bd" id="bIdeas" style="display:none"></span></button><button data-m="dms">DMs sin responder<span class="bd" id="bDms" style="display:none"></span></button><button data-m="videos">Videos<span class="bd" id="bVid" style="display:none"></span></button><button data-m="reels">Reels</button><button data-m="agente">Preguntale al agente</button></div>
 
 <div id="m-resumen">
   <div class="nota" id="sinDatos" style="display:none">Todavía no hay datos guardados. El agente de Instagram los trae solo cada 2 horas, o tocá <b>Traer datos ahora</b>.</div>
@@ -333,6 +339,19 @@ select{padding:5px 6px;border:1px solid var(--borde);border-radius:6px;font-size
   <div class="nota" id="dmErr" style="display:none"></div>
   <section class="card"><div class="fila" style="justify-content:space-between"><h2>DMs sin responder <span class="estado" id="dmTs"></span></h2><button class="btn" id="bDmAct">Actualizar ahora</button></div>
   <div id="dms"><div class="vacio">Cargando...</div></div></section>
+</div>
+
+<div id="m-videos" style="display:none">
+  <section class="card"><div class="fila" style="justify-content:space-between"><h2>Subir clips <span class="estado">se editan solos y te llegan acá para aprobar</span></h2><span class="estado" id="vEspacio"></span></div>
+    <div class="barra" id="vBarra" style="margin-bottom:10px"><i style="width:0"></i></div>
+    <input type="file" id="vArch" accept="video/*" multiple>
+    <div id="vSel"></div>
+    <div class="fila" style="margin-top:10px"><button class="btn p" id="bSubir" disabled>Subir y editar</button><span class="prog" id="vProg"></span></div>
+    <div class="reglas"><b>Cómo grabar para que salga bien:</b><br>• Marcá cada clip: <b>Gancho</b> (el arranque), <b>Cuerpo</b> (el resto, con el cierre adentro) o <b>Completo</b> (gancho y cuerpo juntos).<br>• Si subís varios ganchos y un cuerpo, sale un reel por cada gancho: así probamos cuál retiene más.<br>• Si te equivocás, hacé una pausa de 2 segundos y repetí la frase desde el principio: queda la última toma.<br>• Los silencios se cortan solos. Grabá vertical y con buena luz.</div>
+  </section>
+  <section class="card"><h2>En edición</h2><div id="vLotes"><div class="vacio">Nada en edición.</div></div></section>
+  <section class="card"><h2>Para revisar <span class="estado">al aprobar, sale el próximo día libre a las 19 h como reel de prueba</span></h2><div class="nota" id="vPermiso" style="display:none"></div><div class="vgrid" id="vRev"><div class="vacio">Cargando...</div></div></section>
+  <section class="card"><h2>Programados y publicados</h2><div id="vProx"></div></section>
 </div>
 
 <div id="m-reels" style="display:none">
@@ -362,9 +381,9 @@ function fecha(ts) { var d = new Date(ts); return d.toLocaleDateString("es-AR", 
 function cambio(v) { return v == null ? "" : '<i class="' + (v >= 0 ? "sube" : "baja") + '">' + (v >= 0 ? "+" : "") + v + "% vs semana anterior</i>"; }
 function modo(m) {
   document.querySelectorAll("#modos button").forEach(function (b) { b.classList.toggle("on", b.dataset.m === m); });
-  ["resumen", "ideas", "dms", "reels", "agente"].forEach(function (x) { $("#m-" + x).style.display = x === m ? "" : "none"; });
+  ["resumen", "ideas", "dms", "videos", "reels", "agente"].forEach(function (x) { $("#m-" + x).style.display = x === m ? "" : "none"; });
   if (location.hash.slice(1) !== m) history.replaceState(null, "", "#" + m);
-  if (m === "ideas") cargarIdeas(); if (m === "dms") cargarDms(); if (m === "reels") cargarReels(); if (m === "agente") pintarHilo();
+  if (m === "ideas") cargarIdeas(); if (m === "dms") cargarDms(); if (m === "reels") cargarReels(); if (m === "videos") cargarVideos(); if (m === "agente") pintarHilo();
 }
 document.querySelectorAll("#modos button").forEach(function (b) { b.onclick = function () { modo(b.dataset.m); }; });
 
@@ -446,9 +465,97 @@ function preguntar(q) {
 $("#fPreg").onsubmit = function (e) { e.preventDefault(); preguntar($("#pregunta").value); };
 $("#sug").onclick = function (ev) { var b = ev.target.closest("button"); if (b) preguntar(b.textContent); };
 
+// ---------- Videos ----------
+var VAPI = function (r, body, metodo, extra) { return fetch("/panel/api/videos/" + r, { method: metodo || (body ? "POST" : "GET"), headers: Object.assign(body && !(body instanceof Blob) ? { "Content-Type": "application/json" } : {}, extra || {}), body: body instanceof Blob ? body : body ? JSON.stringify(body) : undefined }).then(function (x) { if (x.status === 401) { location.href = "/login?volver=/panel/redes%23videos"; throw 0; } return x.json(); }); };
+var VSEL = [], VEST = null, vTimer = null, SUBIENDO = false;
+function gbs(b) { return (b / 1073741824).toFixed(2).replace(".", ",") + " GB"; }
+function cuando(ts) { var d = new Date(ts); return d.toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "numeric" }) + " " + d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) + " h"; }
+$("#vArch").onchange = function () {
+  VSEL = Array.prototype.slice.call(this.files).map(function (f, i, todos) { var n = f.name.toLowerCase(); return { f: f, tipo: /gancho|hook/.test(n) ? "gancho" : /cuerpo|body/.test(n) ? "cuerpo" : todos.length === 1 ? "completo" : i === 0 ? "gancho" : "cuerpo" }; });
+  pintarSel();
+};
+function pintarSel() {
+  var tot = VSEL.reduce(function (s, x) { return s + x.f.size; }, 0);
+  $("#vSel").innerHTML = VSEL.map(function (x, i) { return '<div class="clip"><span class="nom">' + esc(x.f.name) + ' <span class="estado">' + (x.f.size / 1048576).toFixed(0) + ' MB</span><span class="estado" id="vp' + i + '"></span></span><select data-i="' + i + '"><option value="gancho"' + (x.tipo === "gancho" ? " selected" : "") + '>Gancho</option><option value="cuerpo"' + (x.tipo === "cuerpo" ? " selected" : "") + '>Cuerpo</option><option value="completo"' + (x.tipo === "completo" ? " selected" : "") + ">Completo</option></select></div>"; }).join("") + (VSEL.length ? '<div class="estado" style="margin-top:6px">' + VSEL.length + " clips · " + gbs(tot) + "</div>" : "");
+  $("#bSubir").disabled = !VSEL.length || SUBIENDO;
+}
+$("#vSel").onchange = function (ev) { var s = ev.target; if (s.dataset.i != null) VSEL[+s.dataset.i].tipo = s.value; };
+function subirClip(lote, i, x, parteTam) {
+  var f = x.f, tipo = f.type || "video/mp4", base = "lote=" + lote + "&n=" + i, el = $("#vp" + i);
+  function marca(p) { if (el) el.textContent = " · " + p; }
+  if (f.size <= parteTam) { marca("subiendo..."); return VAPI("subir-simple?" + base, f, "PUT", { "x-tipo": tipo }).then(function (r) { if (!r.ok) throw new Error(r.error || "error"); marca("subido ✓"); }); }
+  return VAPI("subir-inicio?" + base, {}, "POST", { "x-tipo": tipo }).then(function (r) {
+    if (!r.uploadId) throw new Error(r.error || "no se pudo empezar");
+    var total = Math.ceil(f.size / parteTam), partes = [], k = 0;
+    function sig() {
+      if (k >= total) return VAPI("subir-fin?" + base, { partes: partes }).then(function (z) { if (!z.ok) throw new Error(z.error || "error al cerrar"); marca("subido ✓"); });
+      var n = k + 1, trozo = f.slice(k * parteTam, Math.min(f.size, (k + 1) * parteTam));
+      marca("subiendo " + Math.round((k / total) * 100) + "%");
+      return VAPI("subir-parte?" + base + "&parte=" + n, trozo, "PUT").then(function (p) { if (!p.etag) throw new Error(p.error || "parte fallida"); partes.push(p); k++; return sig(); });
+    }
+    return sig();
+  });
+}
+$("#bSubir").onclick = function () {
+  if (!VSEL.length || SUBIENDO) return; SUBIENDO = true; pintarSel(); $("#vProg").textContent = "Preparando...";
+  var lote;
+  VAPI("lote-nuevo", { clips: VSEL.map(function (x) { return { nombre: x.f.name, tipo: x.tipo, bytes: x.f.size }; }) }).then(function (r) {
+    if (!r.lote) throw new Error(r.error || "No se pudo crear el lote");
+    lote = r.lote; var parte = (VEST && VEST.parte) || 20971520, i = 0;
+    function sig() { if (i >= VSEL.length) return; var j = i++; $("#vProg").textContent = "Subiendo clip " + (j + 1) + " de " + VSEL.length + " (no cierres esta pantalla)"; return subirClip(lote, j, VSEL[j], parte).then(sig); }
+    return sig();
+  }).then(function () { return VAPI("lote-listo", { lote: lote }); }).then(function (r) {
+    if (!r.ok) throw new Error(r.error || "error");
+    SUBIENDO = false; VSEL = []; $("#vArch").value = ""; pintarSel(); $("#vProg").textContent = "Listo. Se editan en los próximos minutos y te aviso por Telegram."; cargarVideos();
+  }).catch(function (e) {
+    SUBIENDO = false; pintarSel(); $("#vProg").textContent = "No se pudo subir: " + (e && e.message ? e.message : "error");
+    if (lote) VAPI("lote-cancelar", { lote: lote }).catch(function () {});
+  });
+};
+var ESTL = { subiendo: "Subiendo", en_cola: "En cola para editar", procesando: "Editando...", error: "Error" };
+function cargarVideos() {
+  VAPI("estado").then(function (r) {
+    VEST = r; if (r.error) { $("#vRev").innerHTML = '<div class="vacio">' + esc(r.error) + "</div>"; return; }
+    var pc = Math.min(100, Math.round((r.usado / r.tope) * 100));
+    $("#vEspacio").textContent = "Espacio: " + gbs(r.usado) + " de " + gbs(r.tope);
+    $("#vBarra").className = "barra" + (pc < 70 ? " ok" : ""); $("#vBarra").firstChild.style.width = pc + "%";
+    $("#vLotes").innerHTML = r.lotes.length ? r.lotes.map(function (l) { return '<div class="clip"><span>' + l.clips.length + " clips (" + l.clips.map(function (c) { return c.tipo; }).join(", ") + ') <span class="estado">' + hace(l.ts) + "</span>" + (l.error ? '<div class="estado" style="color:var(--rojo)">' + esc(l.error) + "</div>" : "") + '</span><span class="fila"><span class="pill' + (l.estado === "error" ? "" : " n") + '">' + (ESTL[l.estado] || l.estado) + "</span>" + (l.estado !== "procesando" ? '<button class="btn ch" data-cancel="' + l.id + '">Cancelar</button>' : "") + "</span></div>"; }).join("") : '<div class="vacio">Nada en edición.</div>';
+    var rev = r.videos.filter(function (v) { return v.estado === "revision" || v.estado === "error"; });
+    badge("#bVid", rev.length);
+    var perm = r.videos.filter(function (v) { return v.estado === "error" && /instagram_business_content_publish/.test(v.error || ""); }).length;
+    $("#vPermiso").style.display = perm ? "" : "none";
+    $("#vPermiso").innerHTML = "<b>Para publicar falta un permiso.</b> developers.facebook.com → tu app → Casos de uso → Instagram → Personalizar → agregá <b>instagram_business_content_publish</b>. Generá un token nuevo y pegalo en Cloudflare → Workers → instagram → Settings → Variables and Secrets → IG_TOKEN. Después volvé a aprobar el video.";
+    $("#vRev").innerHTML = rev.length ? rev.map(function (v) {
+      return '<div class="vcard" data-id="' + v.id + '"><video controls playsinline preload="metadata" poster="/panel/api/videos/ver?q=portada&id=' + v.id + '" src="/panel/api/videos/ver?id=' + v.id + '"></video>' +
+        '<div class="fila" style="justify-content:space-between"><b>' + esc(v.texto || "") + '</b><span class="estado">' + Math.round(v.duracion || 0) + " s</span></div>" +
+        (v.estado === "error" ? '<div class="nota" style="margin:0">No se pudo publicar: ' + esc(v.error || "") + "</div>" : "") +
+        '<label class="estado">Texto del posteo</label><textarea data-cap="1">' + esc(v.caption || "") + "</textarea>" +
+        '<div class="fila"><button class="btn p ch" data-a="aprobar">Aprobar para las ' + r.hora + ' h</button><a class="btn ch" href="/panel/api/videos/bajar?id=' + v.id + '">Descargar (TikTok)</a><button class="btn ch" data-a="descartar">Descartar</button></div></div>';
+    }).join("") : '<div class="vacio">No hay videos esperando revisión.</div>';
+    var prox = r.videos.filter(function (v) { return ["aprobado", "publicando", "publicado"].indexOf(v.estado) >= 0; });
+    $("#vProx").innerHTML = prox.length ? prox.map(function (v) {
+      var est = v.estado === "aprobado" ? '<span class="pill n">Sale el ' + cuando(v.programado_ts) + "</span>" : v.estado === "publicando" ? '<span class="pill n">Publicando...</span>' : '<span class="pill pr">Publicado como reel de prueba</span>';
+      return '<div class="clip" data-id="' + v.id + '"><span><b>' + esc(v.texto || "Video") + "</b> " + est + "</span><span class=\"fila\">" + (v.link ? '<a class="btn ch" target="_blank" rel="noopener" href="' + esc(v.link) + '">Ver en Instagram</a>' : "") + (!v.borrado ? '<a class="btn ch" href="/panel/api/videos/bajar?id=' + v.id + '">Descargar</a>' : "") + (v.estado === "aprobado" ? '<button class="btn ch" data-a="desaprobar">Frenar</button>' : "") + "</span></div>";
+    }).join("") : '<div class="vacio">Nada programado todavía.</div>';
+    clearTimeout(vTimer);
+    if (r.lotes.some(function (l) { return l.estado === "en_cola" || l.estado === "procesando"; }) && $("#m-videos").style.display !== "none") vTimer = setTimeout(cargarVideos, 60000);
+  }).catch(function () {});
+}
+$("#m-videos").onclick = function (ev) {
+  var b = ev.target.closest("button"); if (!b) return;
+  if (b.dataset.cancel) { if (!confirm("¿Cancelar este lote? Se borran los clips.")) return; VAPI("lote-cancelar", { lote: b.dataset.cancel }).then(cargarVideos); return; }
+  var card = b.closest("[data-id]"); if (!card || !b.dataset.a) return;
+  var ta = card.querySelector("textarea"), a = b.dataset.a;
+  if (a === "descartar" && !confirm("¿Descartar este video? Se borra.")) return;
+  b.disabled = true;
+  VAPI(a, { id: card.dataset.id, caption: ta ? ta.value : undefined }).then(function (r) { if (!r.ok) { b.disabled = false; return aviso(r.error || "No se pudo"); } if (a === "aprobar") aviso("Programado: sale el " + cuando(r.programado_ts)); cargarVideos(); });
+};
+$("#m-videos").addEventListener("change", function (ev) { var t = ev.target; if (!t.dataset.cap) return; var card = t.closest("[data-id]"); VAPI("caption", { id: card.dataset.id, caption: t.value }).then(function (r) { if (r.ok) aviso("Texto guardado"); }); });
+VAPI("estado").then(function (r) { if (r.videos) badge("#bVid", r.videos.filter(function (v) { return v.estado === "revision" || v.estado === "error"; }).length); }).catch(function () {});
+
 cargarResumen();
 api("dms").then(function (r) { badge("#bDms", r.error ? 0 : r.dms.length); }).catch(function () {});
-function desdeHash() { var h = location.hash.slice(1); modo(["resumen", "ideas", "dms", "reels", "agente"].indexOf(h) >= 0 ? h : "resumen"); }
+function desdeHash() { var h = location.hash.slice(1); modo(["resumen", "ideas", "dms", "videos", "reels", "agente"].indexOf(h) >= 0 ? h : "resumen"); }
 window.addEventListener("hashchange", desdeHash);
 desdeHash();
 </script></body></html>`;

@@ -3,6 +3,7 @@ import { PANEL_805 } from "./lector-panel.js";
 import { apiCotizar, paginaCotizacion, PANEL_COTIZAR, cotizarAuto } from "./cotizar.js";
 import { apiBusquedas, PANEL_BUSQUEDAS, rutaInformes, rutaImagen } from "./busquedas.js";
 import { apiRedes, PANEL_REDES, cronRedes } from "./redes.js";
+import { apiVideos, rutaVideosEditor, cronVideos } from "./videos.js";
 /**
  * Agente de WhatsApp · Te Importamos (v15.0: + pestaña Búsquedas de proveedores)
  * Cloudflare Workers + Gemini (gratis) con respaldo de Cloudflare AI.
@@ -3339,6 +3340,7 @@ export default {
       await procesarBuffers(env).catch((e) => console.log("Error red:", e?.stack || e));
       await cronLector(env, iaJSON, evento.scheduledTime || Date.now()).catch((e) => console.log("Error lector 805:", e?.stack || e));
       if (m % 5 === 4 && env.LECTOR_TOKEN) await cotizarAuto(env, { T, leerPagina, iaJSON, iaConImagenes }).catch((e) => console.log("Error cotización automática:", e?.stack || e));
+      if (env.DB) await cronVideos(env, evento.scheduledTime || Date.now()).catch((e) => console.log("Error videos:", e?.stack || e));
       if (env.DB) await cronRedes(env, iaJSON, evento.scheduledTime || Date.now(), BASE_URL).catch((e) => console.log("Error redes:", e?.stack || e));
     })());
   },
@@ -3350,6 +3352,7 @@ export default {
     if (url.pathname.startsWith("/lector/")) return rutaLector(env, req, url, ctx);
     if (url.pathname.startsWith("/informes/")) return rutaInformes(env, url);
     if (url.pathname.startsWith("/img/")) return rutaImagen(env, url);   // foto de referencia para la búsqueda por imagen en 1688   // cola de informes para la tarea programada de Claude
+    if (url.pathname.startsWith("/videos/")) return rutaVideosEditor(env, req, url, iaJSON, BASE_URL);   // editor de videos (GitHub Actions)
     if (url.pathname === "/reset") {
       if (clave !== env.VERIFY_TOKEN) return new Response("Falta ?clave=", { status: 401 });
       const tel = (url.searchParams.get("tel") || "").replace(/\D/g, "");
@@ -3413,6 +3416,7 @@ export default {
     if (url.pathname.startsWith("/panel/api/cotizar/")) return apiCotizar(env, req, url, url.searchParams.get("quien"), { T, leerPagina, iaJSON, iaConImagenes });
     if (url.pathname === "/panel/cotizar/pdf") return paginaCotizacion(env, url.searchParams.get("id") || "", T);
     if (url.pathname === "/panel/cotizar") return new Response(PANEL_COTIZAR, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
+    if (url.pathname.startsWith("/panel/api/videos/")) return apiVideos(env, req, url, url.searchParams.get("quien"));
     if (url.pathname.startsWith("/panel/api/redes/")) return apiRedes(env, req, url, url.searchParams.get("quien"), iaJSON, BASE_URL);
     if (url.pathname === "/panel/redes") return new Response(PANEL_REDES, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
     if (url.pathname.startsWith("/panel/api/busquedas/")) return apiBusquedas(env, req, url, url.searchParams.get("quien"), Object.keys(usuariosPanel(env)));
