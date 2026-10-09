@@ -286,7 +286,7 @@ function pendienteOps(env, c, p) {
 // 3b) Auditoría de cotizaciones: la IA lee el día completo de cada chat y cuenta las cotizaciones que
 // mandamos (texto, capturas o PDF: los adjuntos llegan como "(archivo)", se deducen por el contexto)
 // ---------------------------------------------------------------------------
-export async function auditarCotizaciones(env, iaJSON, { limite = 30, dia = null, conv = null, debug = false } = {}) {
+export async function auditarCotizaciones(env, iaJSON, { limite = 30, dia = null, conv = null, debug = false, rehacer = false } = {}) {
   await prepararLector(env);
   const desde = dia ? Date.parse(dia + "T00:00:00Z") + AR : Math.max(Date.parse("2026-10-07T00:00:00Z") + AR, Date.now() - 4 * 86400e3);
   const hasta = dia ? desde + 86400e3 : Date.now();
@@ -296,7 +296,7 @@ export async function auditarCotizaciones(env, iaJSON, { limite = 30, dia = null
     if (conv && p.conv !== conv) continue;
     const d = diaAR(p.pri);
     const a = await env.DB.prepare("SELECT ts FROM w_audit WHERE conv=? AND dia=?").bind(p.conv, d).first();
-    if (debug || !a || a.ts < p.ult) pend.push({ conv: p.conv, dia: d });
+    if (debug || rehacer || !a || a.ts < p.ult) pend.push({ conv: p.conv, dia: d });
     if (pend.length >= limite) break;
   }
   let hechos = 0;
@@ -612,7 +612,7 @@ export async function apiLector(env, req, url, iaJSON) {
     const hitos = (await env.DB.prepare("SELECT tipo, ts FROM w_hito WHERE conv=? ORDER BY ts").bind(conv).all()).results || [];
     return json({ conv: c, mensajes: ms, hitos });
   }
-  if (r === "auditar" && req.method === "POST") { const b = await req.json().catch(() => ({})); return json(await auditarCotizaciones(env, iaJSON, { limite: Math.min(60, +b.limite || 30), dia: b.dia || null, conv: b.conv || null, debug: !!b.debug })); }
+  if (r === "auditar" && req.method === "POST") { const b = await req.json().catch(() => ({})); return json(await auditarCotizaciones(env, iaJSON, { limite: Math.min(60, +b.limite || 30), dia: b.dia || null, conv: b.conv || null, debug: !!b.debug, rehacer: !!b.rehacer })); }
   if (r === "visto" && req.method === "POST") {
     const b = await req.json(); const conv = String(b.conv || "");
     if (b.lista === "ven") await env.DB.prepare("UPDATE w_hito SET oculto=1 WHERE id=? AND tipo='venta'").bind(String(b.id || "")).run();
