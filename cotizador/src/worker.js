@@ -5,6 +5,7 @@ import { apiBusquedas, PANEL_BUSQUEDAS, rutaInformes, rutaImagen } from "./busqu
 import { apiRedes, PANEL_REDES, cronRedes } from "./redes.js";
 import { apiVideos, rutaVideosEditor, cronVideos } from "./videos.js";
 import { apiCarruseles, cronCarr } from "./carruseles.js";
+import { conApp, rutaApp } from "./app.js";
 /**
  * Agente de WhatsApp · Te Importamos (v15.0: + pestaña Búsquedas de proveedores)
  * Cloudflare Workers + Gemini (gratis) con respaldo de Cloudflare AI.
@@ -3360,6 +3361,7 @@ export default {
     const url = new URL(req.url);
     const clave = url.searchParams.get("clave");
     // Lector 805: el puente de WhatsApp (solo lectura) postea acá
+    { const a = rutaApp(url); if (a) return a; }   // app web (manifest e íconos, públicos)
     if (url.pathname.startsWith("/lector/")) return rutaLector(env, req, url, ctx);
     if (url.pathname.startsWith("/informes/")) return rutaInformes(env, url);
     if (url.pathname.startsWith("/img/")) return rutaImagen(env, url);   // foto de referencia para la búsqueda por imagen en 1688   // cola de informes para la tarea programada de Claude
@@ -3426,21 +3428,21 @@ export default {
     if (url.pathname.startsWith("/panel/api/805/")) return apiLector(env, req, url, iaJSON);
     if (url.pathname.startsWith("/panel/api/cotizar/")) return apiCotizar(env, req, url, url.searchParams.get("quien"), { T, leerPagina, iaJSON, iaConImagenes });
     if (url.pathname === "/panel/cotizar/pdf") return paginaCotizacion(env, url.searchParams.get("id") || "", T);
-    if (url.pathname === "/panel/cotizar") return new Response(PANEL_COTIZAR, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
+    if (url.pathname === "/panel/cotizar") return new Response(conApp(PANEL_COTIZAR), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
     if (url.pathname.startsWith("/panel/api/carruseles/")) return apiCarruseles(env, req, url, url.searchParams.get("quien"), iaJSON, T);
     if (url.pathname.startsWith("/panel/api/videos/")) return apiVideos(env, req, url, url.searchParams.get("quien"));
     if (url.pathname.startsWith("/panel/api/redes/")) return apiRedes(env, req, url, url.searchParams.get("quien"), iaJSON, BASE_URL, T);
-    if (url.pathname === "/panel/redes") return new Response(PANEL_REDES, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
+    if (url.pathname === "/panel/redes") return new Response(conApp(PANEL_REDES), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
     if (url.pathname.startsWith("/panel/api/busquedas/")) return apiBusquedas(env, req, url, url.searchParams.get("quien"), Object.keys(usuariosPanel(env)));
-    if (url.pathname === "/panel/busquedas") return new Response(PANEL_BUSQUEDAS, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
+    if (url.pathname === "/panel/busquedas") return new Response(conApp(PANEL_BUSQUEDAS), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
     if (url.pathname === "/panel/805/reporte") return paginaReporte(env, url.searchParams.get("id") || "");
-    if (url.pathname === "/panel/805") return new Response(PANEL_805, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
+    if (url.pathname === "/panel/805") return new Response(conApp(PANEL_805), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
     if (url.pathname.startsWith("/panel/api/")) return panelAPI(env, req, url, url.searchParams.get("quien"));
     if (url.pathname === "/panel/reporte.pdf") return descargarReporte(env, url);
     if (url.pathname === "/panel/accion" || url.pathname === "/panel/enviar") {
       return panelAccion(env, url, req);
     }
-    if (url.pathname === "/panel") return new Response(PANEL_APP, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
+    if (url.pathname === "/panel") return new Response(conApp(PANEL_APP), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
     if (url.pathname === "/numeros") {
       if (clave !== env.VERIFY_TOKEN) return new Response("Falta ?clave=", { status: 401 });
       return new Response(await listarNumeros(env, url.searchParams.get("negocio") || "1769208074411196"), { headers: { "Content-Type": "text/plain; charset=utf-8" } });
