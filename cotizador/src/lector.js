@@ -316,7 +316,7 @@ Una cotización es cuando le pasamos al cliente el precio de lo que pidió (prec
 Los adjuntos (fotos, capturas, PDF) aparecen como "(archivo)" o con su texto al pie: deducí por el contexto si eran la cotización (ej. "ahi te cotizo" + (archivo); "ahi esta por 50 unidades"; (archivo) y después el cliente pregunta "¿ese precio es puesto acá?", "le falta un 0 al flete?", "me quedaria en..."; "te armo por 80 y 100" + (archivo)).
 Varios archivos seguidos del mismo producto = UNA cotización. Una cotización nueva por otra cantidad u otro producto = otra cotización.
 NO cuentan: catálogos o listas generales de precios ("PRECIOS MAYORISTA DE ZAPATILLAS", PDF de catálogo), fotos de productos de ejemplo, datos de pago o envío, mensajes automáticos, chats con proveedores (cuando NOSOTROS le compramos a ellos) ni charlas internas del equipo.
-Devolvé JSON: {"chats":[{"chat":"id exacto","es_cliente":true|false,"cotizaciones":[{"msg":número del mensaje (#) donde se mandó,"producto":"2-5 palabras"}]}]}
+Devolvé JSON: {"chats":[{"chat":"id exacto","interno":true SOLO si es una charla entre socios del equipo o con un proveedor al que le compramos (si no, false),"cotizaciones":[{"msg":número del mensaje (#) donde se mandó,"producto":"2-5 palabras"}]}]}
 
 ${bloques.join("\n\n")}`);
     if (debug) return { r, prompt: bloques.join("\n\n").slice(0, 6000) };
@@ -325,7 +325,8 @@ ${bloques.join("\n\n")}`);
     for (const a of r.chats) {
       const t = mapa[String(a.chat)]; if (!t) continue;
       ops.push(env.DB.prepare("DELETE FROM w_hito WHERE conv=? AND tipo='cotizacion' AND ts>=? AND ts<?").bind(t.conv, t.ini, t.ini + 86400e3));
-      if (!t.prov && a.es_cliente !== false) for (const q of (a.cotizaciones || []).slice(0, 10)) {
+      if (!t.prov && a.interno !== true) for (const q of (a.cotizaciones || []).slice(0, 10)) {
+        if (/\bvap\w*|elf ?bar|ice king|ignite|\bpods?\b/i.test(String(q.producto || ""))) continue;
         const m = t.ms[parseInt(q.msg)];
         const ts = m && m.ts >= t.ini ? m.ts : t.ini + 12 * 3600e3;
         ops.push(env.DB.prepare("INSERT OR IGNORE INTO w_hito (id,conv,tipo,ts,dato) VALUES (?,?,?,?,?)").bind(`ci:${t.conv}:${ts}`, t.conv, "cotizacion", ts, String(q.producto || "").slice(0, 120)));
