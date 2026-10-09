@@ -32,6 +32,9 @@ export const CARR_HTML = `
   <section class="card"><h2>En armado</h2><div class="cgrid" id="cArmado"></div></section>
   <section class="card"><h2>Ideas</h2><div class="cgrid" id="cIdeas"></div></section>
   <section class="card"><h2>Programados y publicados</h2><div id="cProg"></div></section>
+  <section class="card"><h2>Virales de referencia <span class="estado">subí capturas de los slides de un carrusel que se viralizó (tuyo o de otra cuenta): el agente analiza la mecánica y la usa</span></h2>
+   <div class="fila"><label class="btn ch" style="cursor:pointer">Elegir capturas<input type="file" id="rArch" accept="image/*" multiple style="display:none"></label><input id="rNota" placeholder="Nota opcional (de qué cuenta es, cuánto pegó)" style="flex:1;min-width:180px;padding:8px;border:1px solid var(--borde);border-radius:8px;font:inherit"><button class="btn p ch" id="rAnalizar" disabled>Analizar</button></div>
+   <div class="estado" id="rSel" style="margin-top:6px"></div><div id="rLista" style="margin-top:8px"></div></section>
   <section class="card"><h2>Lo que aprendió <span class="estado">reglas que le enseñaste en los chats; tocá × para borrar una</span></h2><div class="reglasc" id="cReglas"></div></section>
  </div>
  <div id="c-ed" style="display:none">
@@ -138,7 +141,7 @@ function pintarCanvas() {
 }
 function cargarCarr() {
   CAPI("lista").then(function (r) {
-    CL = r; USUARIO = r.usuario || USUARIO; TIPOS_S = r.tipos || {};
+    CL = r; USUARIO = r.usuario || USUARIO; TIPOS_S = r.tipos || {}; pintarRefs(r.referencias);
     var tarjeta = function (c) { return '<div class="ccard" data-c="' + c.id + '"><span class="pill n" style="align-self:flex-start">' + (EST_C[c.estado] || c.estado) + "</span><h3>" + esc(c.titulo) + '</h3><div class="pq">' + esc(c.por_que || "") + "</div></div>"; };
     var arm = r.carruseles.filter(function (c) { return ["estructura", "slides", "error"].indexOf(c.estado) >= 0; }), ide = r.carruseles.filter(function (c) { return c.estado === "idea"; }), prog = r.carruseles.filter(function (c) { return ["aprobado", "publicando", "publicado"].indexOf(c.estado) >= 0; });
     $("#cArmado").innerHTML = arm.length ? arm.map(tarjeta).join("") : '<div class="vacio">Nada en armado.</div>';
@@ -147,7 +150,16 @@ function cargarCarr() {
     $("#cReglas").innerHTML = r.reglas.length ? r.reglas.map(function (x, i) { return "<span>" + esc(x) + '<button data-rb="' + i + '" aria-label="Borrar regla">×</button></span>'; }).join("") : '<span class="estado" style="background:none">Todavía nada. Cuando en un chat le digas "siempre..." o "nunca...", lo guarda acá.</span>';
   });
 }
+function pintarRefs(l) {
+  $("#rLista").innerHTML = (l || []).slice().reverse().map(function (x, k) { var i = l.length - 1 - k; return '<div class="idea" style="padding:10px"><div class="tit"><b>' + esc(x.gancho) + '</b><button class="mini btn ch" data-refb="' + i + '">Borrar</button></div><div class="pq">' + (x.cuenta ? "@" + esc(x.cuenta) + " · " : "") + esc(x.tema || "") + "</div><div class=\"pq\"><b>Estructura:</b> " + esc((x.estructura || []).join(" → ")) + '</div><div class="pq"><b>Por qué funciona:</b> ' + esc(x.por_que) + '</div><div class="pq"><b>Técnicas:</b> ' + esc((x.tecnicas || []).join(", ")) + "</div></div>"; }).join("") || '<div class="vacio">Todavía no analizaste ninguno.</div>';
+}
+var RFOTOS = [];
+function achicar(f) { return new Promise(function (ok) { var r = new FileReader(); r.onload = function () { var im = new Image(); im.onload = function () { var k = Math.min(1, 1080 / Math.max(im.width, im.height)), c = document.createElement("canvas"); c.width = im.width * k; c.height = im.height * k; c.getContext("2d").drawImage(im, 0, 0, c.width, c.height); ok(c.toDataURL("image/jpeg", 0.85)); }; im.onerror = function () { ok(null); }; im.src = r.result; }; r.readAsDataURL(f); }); }
+$("#rArch").addEventListener("change", function () { var fs = Array.prototype.slice.call(this.files || []).slice(0, 6); Promise.all(fs.map(achicar)).then(function (l) { RFOTOS = l.filter(Boolean); $("#rSel").textContent = RFOTOS.length ? RFOTOS.length + " capturas listas para analizar" : ""; $("#rAnalizar").disabled = !RFOTOS.length; }); });
+$("#rAnalizar").onclick = function () { var b = this; b.disabled = true; b.textContent = "Analizando..."; CAPI("referencia", { imagenes: RFOTOS, nota: $("#rNota").value }).then(function (r) { b.textContent = "Analizar"; if (!r.ok) { b.disabled = false; return aviso(r.error); } RFOTOS = []; $("#rSel").textContent = ""; $("#rNota").value = ""; pintarRefs(r.referencias); aviso("Analizado: lo voy a usar en los próximos carruseles"); }); };
+$("#rLista").onclick = function (ev) { var b = ev.target.closest("[data-refb]"); if (b) CAPI("referencia-borrar", { i: +b.dataset.refb }).then(function (r) { pintarRefs(r.referencias); }); };
 $("#c-lista").onclick = function (ev) {
+  if (ev.target.closest("#rLista") || ev.target.closest("#rArch") || ev.target.closest("#rAnalizar") || ev.target.closest("#rNota")) return;
   var rb = ev.target.closest("[data-rb]"); if (rb) { CAPI("regla-borrar", { i: +rb.dataset.rb }).then(cargarCarr); return; }
   var fr = ev.target.closest("[data-frenar]"); if (fr) { CAPI("frenar", { id: fr.dataset.frenar }).then(function (r) { if (!r.ok) return aviso(r.error); cargarCarr(); }); return; }
   if (ev.target.closest("a")) return;

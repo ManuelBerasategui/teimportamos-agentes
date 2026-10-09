@@ -3429,7 +3429,7 @@ export default {
     if (url.pathname.startsWith("/panel/api/cotizar/")) return apiCotizar(env, req, url, url.searchParams.get("quien"), { T, leerPagina, iaJSON, iaConImagenes });
     if (url.pathname === "/panel/cotizar/pdf") return paginaCotizacion(env, url.searchParams.get("id") || "", T);
     if (url.pathname === "/panel/cotizar") return new Response(conApp(PANEL_COTIZAR), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
-    if (url.pathname.startsWith("/panel/api/carruseles/")) return apiCarruseles(env, req, url, url.searchParams.get("quien"), iaJSON, T);
+    if (url.pathname.startsWith("/panel/api/carruseles/")) return apiCarruseles(env, req, url, url.searchParams.get("quien"), iaJSON, T, iaConImagenes);
     if (url.pathname.startsWith("/panel/api/videos/")) return apiVideos(env, req, url, url.searchParams.get("quien"));
     if (url.pathname.startsWith("/panel/api/redes/")) return apiRedes(env, req, url, url.searchParams.get("quien"), iaJSON, BASE_URL, T);
     if (url.pathname === "/panel/redes") return new Response(conApp(PANEL_REDES), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });

@@ -57,11 +57,16 @@ const idA = lista.carruseles.find((c) => c.producto === "ventilador de mano").id
 chk("lista con usuario y tipos", lista.usuario === "te.importamos.arg" && lista.tipos.barras.campos.includes("a_valor"));
 
 // Estructura
-resp = { slides: [{ tipo: "portada", titulo: "En MercadoLibre sale {precio_ml}.", subtitulo: "¿Cuánto cuesta traerlo?" }, { tipo: "barras", titulo: "La diferencia", a_label: "Importado", a_valor: "{costo}", b_label: "En ML", b_valor: "{precio_ml}", conclusion: "{diferencia} por unidad" }, { tipo: "multiplicacion", arriba: "Multiplicalo.", linea: "{cantidad} × {diferencia}", numero: "{total}", abajo: "en un lote" }, { tipo: "cta", texto: "¿Querés saber?", palabra: "costo", abajo: "te lo cotizo" }], caption: "Comentá COSTO #importaciones" };
+const BUENO = { slides: [{ tipo: "portada", titulo: "En MercadoLibre sale {precio_ml}.", subtitulo: "¿Cuánto cuesta traerlo?" }, { tipo: "barras", titulo: "La diferencia", a_label: "Importado", a_valor: "{costo}", b_label: "En ML", b_valor: "{precio_ml}", conclusion: "{diferencia} por unidad" }, { tipo: "multiplicacion", arriba: "Multiplicalo.", linea: "{cantidad} × {diferencia}", numero: "{total}", abajo: "en un lote" }, { tipo: "cta", texto: "¿Querés saber?", palabra: "costo", abajo: "te lo cotizo" }], caption: "Comentá COSTO #importaciones" };
+const GENERICO = { slides: [{ tipo: "portada", titulo: "Descubre el secreto de importar", subtitulo: "x" }, { tipo: "texto", titulo: "b" }, { tipo: "texto", titulo: "c" }], caption: "x" };
+let pasos = [];
+resp = (p) => { if (p.includes("Escribí 3 VERSIONES")) { pasos.push("v"); return { versiones: [GENERICO, BUENO] }; } if (p.includes("EDITOR más exigente")) { pasos.push("e"); return { elegida: 1, ...GENERICO }; } if (p.includes("tiene estos problemas")) { pasos.push("f"); return BUENO; } return null; };
 const e = await api("estructura", { id: idA });
 chk("estructura armada", e.ok && e.estado === "estructura" && e.slides.length === 4 && e.chat.length === 1);
-chk("estructura: el prompt trae el ejemplo ganador y prohíbe números", prompts.at(-1).includes("Traído de China, puesto en Argentina") && prompts.at(-1).includes("NUNCA escribas un precio con números"));
-resp = { slides: [{ tipo: "texto", titulo: "Ganá millonarios", parrafos: ["x"] }, { tipo: "texto", titulo: "b" }, { tipo: "texto", titulo: "c" }] };
+chk("estructura: 3 versiones, editor y corrección de lo genérico", pasos.join("") === "vef" && e.slides[0].titulo.startsWith("En MercadoLibre"));
+chk("estructura: el prompt trae el ganador, el manual y prohíbe números", prompts.some((p) => p.includes("Traído de China, puesto en Argentina") && p.includes("voseo") && p.includes("NUNCA escribas un precio con números")));
+chk("detecta texto genérico o de España", C.problemasTexto(GENERICO.slides).length >= 1 && C.problemasTexto(BUENO.slides).length === 0);
+resp = { versiones: [{ slides: [{ tipo: "texto", titulo: "Ganá millonarios", parrafos: ["x"] }, { tipo: "texto", titulo: "b" }, { tipo: "texto", titulo: "c" }] }] };
 const idB = lista.carruseles.find((c) => c.producto !== "ventilador de mano").id;
 chk("estructura con texto prohibido: rechazada", !(await api("estructura", { id: idB })).ok);
 
@@ -76,10 +81,22 @@ chk("chat: aplica el cambio", ch.ok && ch.slides[0].titulo.startsWith("Mirá cu�
 chk("chat: guarda la regla", JSON.parse(fila("SELECT v FROM kv WHERE k='ig_reglas_carrusel'").v).length === 1);
 chk("chat: el prompt ve los datos calculados", prompts.at(-1).includes('"diferencia":22317'));
 await api("estructura", { id: idB }).catch(() => {});
-resp = { slides: [{ tipo: "texto", titulo: "a" }, { tipo: "texto", titulo: "b" }, { tipo: "texto", titulo: "c" }], caption: "" };
+resp = (p) => p.includes("VERSIONES") ? { versiones: [{ slides: [{ tipo: "texto", titulo: "a" }, { tipo: "texto", titulo: "b" }, { tipo: "texto", titulo: "c" }], caption: "" }] } : null;
 const eB = await api("estructura", { id: idB });
 chk("las reglas aprendidas van a los próximos carruseles", eB.ok && prompts.at(-1).includes("Siempre poner el precio de ML en el título"));
 chk("borrar regla", (await api("regla-borrar", { i: 0 })).reglas.length === 0);
+
+// Virales de referencia
+const iaImg = async (_e, p, imgs) => (imgs.length ? { cuenta: "@otra.cuenta", tema: "precios de iphone", gancho: "Este iPhone sale $2.000.000 acá", estructura: ["precio local", "precio afuera", "diferencia"], por_que: "comparación que indigna", tecnicas: ["número en portada"] } : null);
+const apiImg = async (r, body) => (await C.apiCarruseles(env, new Request("https://x/panel/api/carruseles/" + r, { method: "POST", body: JSON.stringify(body) }), new URL("https://x/panel/api/carruseles/" + r), "m", ia, T, iaImg)).json();
+chk("referencia sin imágenes: error", !(await apiImg("referencia", { imagenes: [] })).ok);
+const rf = await apiImg("referencia", { imagenes: ["data:image/jpeg;base64,AAAA"], nota: "pegó 1M" });
+chk("referencia analizada y guardada", rf.ok && rf.referencia.cuenta === "otra.cuenta" && (await api("lista")).referencias.length === 1);
+resp = (p) => p.includes("VERSIONES") ? { versiones: [BUENO] } : p.includes("EDITOR") ? BUENO : null;
+db.prepare("UPDATE ig_carruseles SET estado='idea' WHERE id=?").run(idB);
+await api("estructura", { id: idB });
+chk("las referencias van al armado", prompts.some((p) => p.includes("Este iPhone sale $2.000.000 acá")));
+chk("borrar referencia", (await apiImg("referencia-borrar", { i: 0 })).referencias.length === 0);
 
 // Fase slides, fotos e imágenes
 chk("no aprueba en fase estructura", !!(await api("aprobar", { id: idA })).error);
