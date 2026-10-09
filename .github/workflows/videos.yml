@@ -27,8 +27,11 @@ jobs:
       - name: ¿Hay clips para editar?
         id: hay
         run: |
-          if [ -z "$TI_CLAVE" ]; then echo "Falta cargar el secret TI_CLAVE en GitHub."; echo "si=no" >> "$GITHUB_OUTPUT"; exit 0; fi
-          n=$(curl -sf -H "x-clave: $TI_CLAVE" "$TI_BASE/videos/hay" | python3 -c "import sys,json; print(json.load(sys.stdin).get('n',0))" || echo 0)
+          if [ -z "$TI_CLAVE" ]; then echo "::error::Falta cargar el secret TI_CLAVE en GitHub (Settings > Secrets and variables > Actions)."; exit 1; fi
+          cod=$(curl -s -o hay.json -w "%{http_code}" -H "x-clave: $TI_CLAVE" "$TI_BASE/videos/hay" || echo 000)
+          if [ "$cod" = "401" ]; then echo "::error::La clave TI_CLAVE de GitHub no coincide con VERIFY_TOKEN del panel."; exit 1; fi
+          if [ "$cod" != "200" ]; then echo "::error::El panel no respondió bien a /videos/hay (código $cod)."; exit 1; fi
+          n=$(python3 -c "import json; print(json.load(open('hay.json')).get('n',0))")
           echo "Lotes en cola: $n"
           if [ "$n" -gt 0 ]; then echo "si=si" >> "$GITHUB_OUTPUT"; else echo "si=no" >> "$GITHUB_OUTPUT"; fi
 
