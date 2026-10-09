@@ -142,12 +142,12 @@ function pintarCanvas() {
 function cargarCarr() {
   CAPI("lista").then(function (r) {
     CL = r; USUARIO = r.usuario || USUARIO; TIPOS_S = r.tipos || {}; pintarRefs(r.referencias);
-    var tarjeta = function (c) { return '<div class="ccard" data-c="' + c.id + '"><span class="pill n" style="align-self:flex-start">' + (EST_C[c.estado] || c.estado) + "</span><h3>" + esc(c.titulo) + '</h3><div class="pq">' + esc(c.por_que || "") + "</div></div>"; };
+    var tarjeta = function (c) { return '<div class="ccard" data-c="' + c.id + '"><span class="pill n" style="align-self:flex-start">' + (EST_C[c.estado] || c.estado) + "</span><h3>" + esc(c.titulo) + '</h3><div class="pq">' + esc(c.por_que || "") + '</div><div class="fila" style="margin-top:auto"><button class="btn ch" data-desc="' + c.id + '">Descartar</button></div><div class="dform" style="display:none"><textarea placeholder="¿Por qué la descartás? (opcional, cuanto mejor lo expliques, más aprende)" style="width:100%;min-height:70px;border:1px solid var(--borde);border-radius:8px;padding:8px;font:inherit;font-size:13px"></textarea><div class="fila" style="margin-top:6px"><button class="btn p ch" data-descok="' + c.id + '">Descartar</button><button class="btn ch" data-desccancel="1">Cancelar</button></div></div></div>'; };
     var arm = r.carruseles.filter(function (c) { return ["estructura", "slides", "error"].indexOf(c.estado) >= 0; }), ide = r.carruseles.filter(function (c) { return c.estado === "idea"; }), prog = r.carruseles.filter(function (c) { return ["aprobado", "publicando", "publicado"].indexOf(c.estado) >= 0; });
     $("#cArmado").innerHTML = arm.length ? arm.map(tarjeta).join("") : '<div class="vacio">Nada en armado.</div>';
     $("#cIdeas").innerHTML = ide.length ? ide.map(tarjeta).join("") : '<div class="vacio">No hay ideas. Tocá <b>Generar ideas de carruseles</b>.</div>';
     $("#cProg").innerHTML = prog.length ? prog.map(function (c) { return '<div class="clip" data-c="' + c.id + '"><span><b>' + esc(c.titulo) + "</b> " + (c.estado === "publicado" ? '<span class="pill pr">Publicado</span>' : '<span class="pill n">' + (c.estado === "aprobado" ? "Sale el " + cuando(c.programado_ts) : "Publicando...") + "</span>") + '</span><span class="fila">' + (c.link ? '<a class="btn ch" target="_blank" rel="noopener" href="' + esc(c.link) + '">Ver en Instagram</a>' : "") + (c.estado === "aprobado" ? '<button class="btn ch" data-frenar="' + c.id + '">Frenar</button>' : "") + "</span></div>"; }).join("") : '<div class="vacio">Nada programado.</div>';
-    $("#cReglas").innerHTML = r.reglas.length ? r.reglas.map(function (x, i) { return "<span>" + esc(x) + '<button data-rb="' + i + '" aria-label="Borrar regla">×</button></span>'; }).join("") : '<span class="estado" style="background:none">Todavía nada. Cuando en un chat le digas "siempre..." o "nunca...", lo guarda acá.</span>';
+    $("#cReglas").innerHTML = (r.descartes ? '<span class="estado" style="background:none">Aprendió de ' + r.descartes + ' idea' + (r.descartes === 1 ? "" : "s") + " descartada" + (r.descartes === 1 ? "" : "s") + ".</span>" : "") + (r.reglas.length ? r.reglas.map(function (x, i) { return "<span>" + esc(x) + '<button data-rb="' + i + '" aria-label="Borrar regla">×</button></span>'; }).join("") : '<span class="estado" style="background:none">Todavía nada. Cuando en un chat le digas "siempre..." o "nunca...", lo guarda acá.</span>');
   });
 }
 function pintarRefs(l) {
@@ -160,6 +160,10 @@ $("#rAnalizar").onclick = function () { var b = this; b.disabled = true; b.textC
 $("#rLista").onclick = function (ev) { var b = ev.target.closest("[data-refb]"); if (b) CAPI("referencia-borrar", { i: +b.dataset.refb }).then(function (r) { pintarRefs(r.referencias); }); };
 $("#c-lista").onclick = function (ev) {
   if (ev.target.closest("#rLista") || ev.target.closest("#rArch") || ev.target.closest("#rAnalizar") || ev.target.closest("#rNota")) return;
+  var dd = ev.target.closest("[data-desc]"); if (dd) { var cd = dd.closest(".ccard"); cd.querySelector(".dform").style.display = ""; dd.style.display = "none"; cd.querySelector("textarea").focus(); return; }
+  if (ev.target.closest("[data-desccancel]")) { var cc = ev.target.closest(".ccard"); cc.querySelector(".dform").style.display = "none"; cc.querySelector("[data-desc]").style.display = ""; return; }
+  var dk = ev.target.closest("[data-descok]"); if (dk) { dk.disabled = true; CAPI("descartar", { id: dk.dataset.descok, motivo: dk.closest(".ccard").querySelector("textarea").value }).then(function (r) { if (!r.ok) { dk.disabled = false; return aviso(r.error || "No se pudo"); } aviso("Descartada: lo tengo en cuenta para las próximas"); cargarCarr(); }); return; }
+  if (ev.target.closest(".dform")) return;
   var rb = ev.target.closest("[data-rb]"); if (rb) { CAPI("regla-borrar", { i: +rb.dataset.rb }).then(cargarCarr); return; }
   var fr = ev.target.closest("[data-frenar]"); if (fr) { CAPI("frenar", { id: fr.dataset.frenar }).then(function (r) { if (!r.ok) return aviso(r.error); cargarCarr(); }); return; }
   if (ev.target.closest("a")) return;
@@ -231,5 +235,5 @@ $("#cAprobar").onclick = function () {
     .catch(function (e) { b.disabled = false; $("#cProgTxt").textContent = "No se pudo: " + (e && e.message ? e.message : "error"); });
 };
 $("#cBajar").onclick = function () { pintarCanvas().then(function () { document.querySelectorAll("#cCanvas canvas").forEach(function (cv, i) { var a = document.createElement("a"); a.download = "slide-" + (i + 1) + ".jpg"; a.href = cv.toDataURL("image/jpeg", 0.92); a.click(); }); }); };
-$("#cDescartar").onclick = function () { if (!confirm("¿Descartar este carrusel?")) return; CAPI("descartar", { id: CC.id }).then(function () { $("#cVolver").onclick(); }); };
+$("#cDescartar").onclick = function () { var m = prompt("¿Por qué lo descartás? (opcional, así aprende)"); if (m === null) return; CAPI("descartar", { id: CC.id, motivo: m }).then(function () { $("#cVolver").onclick(); }); };
 `;

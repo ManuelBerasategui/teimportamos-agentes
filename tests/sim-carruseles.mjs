@@ -145,8 +145,12 @@ db.prepare("UPDATE ig_carruseles SET publicado_ts=? WHERE id=?").run(Date.now() 
 await C.limpiezaCarr(env);
 chk("borra las imágenes 3 días después de publicar", ![...objs.keys()].some((k) => k.startsWith(`carruseles/${idA}/`)) && fila("SELECT borrado FROM ig_carruseles WHERE id=?", idA).borrado === 1);
 await api(`foto?id=${idB}&n=0`, new Uint8Array([1]), "PUT", { "content-type": "image/jpeg", "content-length": "1" });
-await api("descartar", { id: idB });
+await api("descartar", { id: idB, motivo: "muy genérico, no nombra un producto concreto" });
 chk("descartar borra las imágenes", ![...objs.keys()].some((k) => k.startsWith(`carruseles/${idB}/`)));
+chk("descartar guarda el motivo", JSON.parse(fila("SELECT v FROM kv WHERE k='ig_descartes_carrusel'").v).at(-1).motivo.includes("muy genérico"));
+resp = { ideas: [{ titulo: "Otra idea", gancho: "Sale $X en ML", producto: "mate", angulo: "comparacion_ml", por_que: "x" }] };
+await api("generar-ideas", {});
+chk("las ideas nuevas aprenden de lo descartado", prompts.at(-1).includes("POR QUÉ NO: muy genérico") && (await api("lista")).descartes === 1);
 chk("cron de limpieza solo 4:12", (await C.cronCarr(env, Date.UTC(2026, 9, 10, 15, 0))) === false && (await C.cronCarr(env, Date.UTC(2026, 9, 10, 7, 12))) === true);
 
 // Pantalla y conexiones

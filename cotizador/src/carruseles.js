@@ -44,6 +44,8 @@ export function problemasTexto(slides, caption = "") {
   const mc = String(caption).match(MAL); if (mc) out.push(`texto del posteo: "${mc[0]}"`);
   return out;
 }
+const descartes = async (env) => JSON.parse((await kvGet(env, "ig_descartes_carrusel")) || "[]");
+const textoDescartes = (l) => l.length ? l.slice(-25).map((d) => `- "${d.titulo}"${d.gancho ? ` (portada: "${d.gancho}")` : ""}${d.motivo ? ` → POR QUÉ NO: ${d.motivo}` : " → sin motivo"}`).join("\n") : "ninguna";
 const referencias = async (env) => JSON.parse((await kvGet(env, "ig_refs_carrusel")) || "[]");
 const textoRefs = (refs) => refs.length ? refs.slice(-12).map((r, i) => `${i + 1}. ${r.cuenta ? "@" + r.cuenta + " · " : ""}gancho: "${r.gancho}" · estructura: ${(r.estructura || []).join(" → ")} · por qué funciona: ${r.por_que} · técnicas: ${(r.tecnicas || []).join(", ")}`).join("\n") : "todavía no hay";
 
@@ -141,6 +143,8 @@ ${NEGOCIO}
 ${MANUAL}
 VIRALES DE REFERENCIA QUE ANALIZAMOS (copiá la mecánica, no el contenido):
 ${textoRefs(await referencias(env))}
+IDEAS QUE EL DUEÑO DESCARTÓ (aprendé de esto: no propongas nada parecido, y donde dice por qué, corregí ese error en todas las ideas nuevas):
+${textoDescartes(await descartes(env))}
 Proponé ${cantidad} ideas de carrusel. La mayoría (al menos 3) con el estilo ganador: un producto concreto que la gente busca, comparando lo que sale en MercadoLibre contra lo que cuesta traerlo. Las otras pueden ser otros ángulos (errores al importar, cómo funciona un cupo, qué incluye el precio), siempre con números o pasos concretos.
 ${await rendimiento(env)}
 LO QUE PASA EN EL WHATSAPP (datos reales):
@@ -175,6 +179,7 @@ ${JSON.stringify(EJEMPLO)}
 VIRALES DE REFERENCIA ANALIZADOS:
 ${textoRefs(refs)}
 REGLAS QUE TE ENSEÑÓ EL DUEÑO (respetalas siempre): ${rg.map((x, i) => `${i + 1}. ${x}`).join(" ") || "ninguna"}
+LO QUE EL DUEÑO DESCARTÓ Y POR QUÉ (no repitas esos errores): ${textoDescartes(await descartes(env))}
 Cotizaciones reales recientes: ${w.cotizaciones.map((q) => q.items.map((i) => i.nombre).join(" + ")).join(" | ") || "ninguna"}.`;
   // 1) tres versiones distintas
   const r1 = await iaJSON(env, `${base}
@@ -304,7 +309,7 @@ export async function apiCarruseles(env, req, url, quien, iaJSON, T = null, iaIm
   if (r === "lista") {
     const l = (await env.DB.prepare("SELECT id, ts, estado, titulo, angulo, por_que, producto, n_slides, programado_ts, link, error, publicado_ts FROM ig_carruseles WHERE estado <> 'descartado' AND ts > ? ORDER BY ts DESC LIMIT 60").bind(Date.now() - 60 * 86400e3).all()).results || [];
     const yo = JSON.parse((await kvGet(env, "ig_yo")) || "{}");
-    return json({ carruseles: l, reglas: await reglas(env), referencias: await referencias(env), usuario: yo.username || "te.importamos.arg", tipos: TIPOS_SLIDE });
+    return json({ carruseles: l, reglas: await reglas(env), referencias: await referencias(env), descartes: (await descartes(env)).length, usuario: yo.username || "te.importamos.arg", tipos: TIPOS_SLIDE });
   }
   if (r === "logo") {
     let o = await env.VIDEOS.get("marca/perfil.jpg");
@@ -420,6 +425,10 @@ export async function apiCarruseles(env, req, url, quien, iaJSON, T = null, iaIm
     if (["publicando", "publicado"].includes(c.estado)) return json({ error: "Ya está publicado" }, 400);
     await borrarImagenes(env, c.id);
     await guardar(c, { estado: "descartado", borrado: 1 });
+    const motivo = String(body.motivo || "").trim().slice(0, 500);
+    const gancho = (String(c.por_que || "").match(/Portada: "([^"]+)"/) || [])[1] || c.slides?.[0]?.titulo || "";
+    const l = (await descartes(env)).concat({ ts: Date.now(), titulo: c.titulo, gancho, angulo: c.angulo, motivo }).slice(-60);
+    await kvPut(env, "ig_descartes_carrusel", JSON.stringify(l));
     return json({ ok: true });
   }
   return json({ error: "ruta desconocida" }, 404);
