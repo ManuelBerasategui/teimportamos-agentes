@@ -162,10 +162,52 @@ chk("cron: no corre otro día", (await R.cronRedes(env, iaJSON, lunes + DIA)) ==
 chk("cron: corre el lunes 9:05", (await R.cronRedes(env, iaJSON, lunes)) === true);
 chk("cron: no repite", (await R.cronRedes(env, iaJSON, lunes)) === false);
 
+// 7b) Historias: salen del WhatsApp (cotizaciones, consultas) y no se repiten
+db.exec("CREATE TABLE cotiz_manual (id TEXT PRIMARY KEY, ts INTEGER, num INTEGER, quien TEXT, cliente TEXT, datos TEXT)");
+db.exec("CREATE TABLE w_hito (id TEXT PRIMARY KEY, conv TEXT, tipo TEXT, ts INTEGER, dato TEXT, oculto INTEGER)");
+db.prepare("INSERT INTO cotiz_manual VALUES ('cA',?,12,'auto','Juan Pérez',?),('cB',?,13,'manuel','Ana',?)").run(ahora - 3600e3, JSON.stringify({ items: [{ nombre: "Auriculares A9 Pro", cantidad: 10, precio: 6, peso: 0.2 }] }), ahora - 7200e3, JSON.stringify({ items: [{ nombre: "Tarjetas NFC", cantidad: 100, precio: 0.4, peso: 0.01 }] }));
+db.prepare("INSERT INTO w_hito VALUES ('h1','1','cotizacion',?,'Te paso la cotización, llama al +5493415551234: total USD 180 puesto',0),('h2','2','cotizacion',?,'Cotización zapas USD 320',0),('h3','1','venta',?,'pagó',0)").run(ahora - 3600e3, ahora - 7200e3, ahora - 9000e3);
+const T = { fleteKg: 18, handling: 30, honorarios: 80, factor: 1.3, aereoFijo: 950, aereoDesde: 50, aereoHasta: 250, barcoFijo: 100 };
+const w = await R.datosWhatsApp(env, T);
+chk("WhatsApp: cotizaciones del panel con total", w.cotizaciones.length === 2 && w.cotizaciones.find((c) => c.id === "cA").total > 0 && !JSON.stringify(w.cotizaciones).includes("Juan"));
+chk("WhatsApp: cotizaciones del chat por producto, sin teléfonos", w.cotizaciones_chat === 2 && w.cotizados[0].producto.toLowerCase().includes("auriculares") && !w.muestras_chat.join().includes("5551234") && w.ventas === 1);
+let hResp = { historias: [
+  { tipo: "cotizaciones", titulo: "Cotizaciones de esta semana", mostrar: "captura del PDF tapando el nombre", texto: "esto cotizamos esta semana", por_que: "2 cotizaciones", cotizaciones: ["cA", "cB", "inventada"] },
+  { tipo: "encuesta", titulo: "¿Auriculares o NFC?", texto: "qué traemos", sticker: { tipo: "encuesta", pregunta: "¿Qué te interesa más?", opciones: ["Auriculares", "Tarjetas NFC"] }, por_que: "lo más consultado" },
+  { tipo: "producto", titulo: "Réplicas de zapatillas", texto: "réplicas", por_que: "x", producto: "réplicas" },
+  { tipo: "inventado", titulo: "x" },
+  { tipo: "encuesta", titulo: "Misma encuesta otra vez", sticker: { tipo: "encuesta", pregunta: "¿Qué te interesa más?", opciones: ["a", "b"] }, por_que: "x" },
+] };
+const iaH = async (_e, p) => { prompts.push(p); return hResp; };
+const h1 = await R.generarHistorias(env, iaH, { T });
+chk("historias: guarda 2 (filtra prohibidas, tipos raros y repetidas)", h1.ok && h1.cantidad === 2);
+const ph = prompts.at(-1);
+chk("historias: el prompt usa cotizaciones y consultas reales sin datos personales", ph.includes("[id cA]") && ph.includes("10 × Auriculares A9 Pro") && ph.includes("USD") && !ph.includes("Juan") && !ph.includes("5551234"));
+const hc = fila("SELECT refs, clave FROM ig_historias WHERE tipo='cotizaciones'");
+chk("historias: solo ids de cotizaciones reales", JSON.parse(hc.refs).join() === "cA,cB");
+const h2 = await R.generarHistorias(env, iaH, { T });
+chk("historias: la segunda vez no repite nada", !h2.ok && /ya se propuso/.test(h2.error) && fila("SELECT COUNT(*) n FROM ig_historias").n === 2);
+chk("historias: el prompt recuerda las anteriores y no ofrece cotizaciones ya usadas", prompts.at(-1).includes("Cotizaciones de esta semana") && !prompts.at(-1).includes("[id cA]"));
+const lh = await api("historias?estado=nueva");
+chk("historias: API con sticker y número de cotización", lh.length === 2 && lh.find((x) => x.tipo === "encuesta").sticker.opciones.length === 2 && lh.find((x) => x.tipo === "cotizaciones").refs[0].num === 12);
+await api("historia-estado", { id: lh[0].id, estado: "subida" });
+chk("historias: marcar subida", (await api("historias?estado=subida")).length === 1);
+chk("historias: estado inválido", !!(await api("historia-estado", { id: lh[0].id, estado: "x" })).error);
+chk("resumen cuenta historias nuevas", (await api("resumen")).historias_nuevas === 1);
+await api("preguntar", { pregunta: "¿qué subo a historias?" });
+chk("agente conoce cotizaciones e historias", prompts.at(-1).includes("COTIZACIONES ARMADAS") && prompts.at(-1).includes("HISTORIAS PROPUESTAS"));
+await api("generar-ideas", {});
+chk("ideas de reels también usan el WhatsApp", prompts.at(-1).includes("COTIZACIONES MANDADAS POR WHATSAPP"));
+const diario = Date.UTC(2026, 9, 13, 12, 10);   // martes 9:10 Argentina
+hResp = { historias: [{ tipo: "pregunta", titulo: "Caja de preguntas", sticker: { tipo: "pregunta", pregunta: "¿Qué querés traer?" }, por_que: "x" }] };
+tg.length = 0;
+chk("cron: historias todos los días 9:10", (await R.cronRedes(env, iaH, diario, "https://panel", T)) === true && tg.length === 1 && fila("SELECT COUNT(*) n FROM ig_historias WHERE tipo='pregunta'").n === 1);
+chk("cron: historias no se repiten el mismo día", (await R.cronRedes(env, iaH, diario, "https://panel", T)) === false);
+
 // 8) Pantalla
 const sc = R.PANEL_REDES.match(/<script>([\s\S]*)<\/script>/)[1];
 try { new Function(sc); chk("js de la pantalla compila", true); } catch (e) { chk("js: " + e.message, false); }
-chk("pantalla tiene las 5 secciones", ["m-resumen", "m-ideas", "m-dms", "m-reels", "m-agente"].every((x) => R.PANEL_REDES.includes('id="' + x + '"')));
+chk("pantalla tiene las secciones y las historias", ["m-resumen", "m-ideas", "m-dms", "m-reels", "m-agente", "i-hist", "historias"].every((x) => R.PANEL_REDES.includes('id="' + x + '"')));
 const wk = fs.readFileSync(`${dir}/co/worker.js`, "utf8");
 chk("panel principal tiene la pestaña Redes", wk.includes('href="/panel/redes"') && wk.includes('url.pathname === "/panel/redes"'));
 chk("binding IG en wrangler", fs.readFileSync(new URL("../cotizador/wrangler.jsonc", import.meta.url), "utf8").includes('"binding": "IG", "service": "instagram"'));

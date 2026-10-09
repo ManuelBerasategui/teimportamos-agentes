@@ -3341,7 +3341,7 @@ export default {
       await cronLector(env, iaJSON, evento.scheduledTime || Date.now()).catch((e) => console.log("Error lector 805:", e?.stack || e));
       if (m % 5 === 4 && env.LECTOR_TOKEN) await cotizarAuto(env, { T, leerPagina, iaJSON, iaConImagenes }).catch((e) => console.log("Error cotización automática:", e?.stack || e));
       if (env.DB) await cronVideos(env, evento.scheduledTime || Date.now()).catch((e) => console.log("Error videos:", e?.stack || e));
-      if (env.DB) await cronRedes(env, iaJSON, evento.scheduledTime || Date.now(), BASE_URL).catch((e) => console.log("Error redes:", e?.stack || e));
+      if (env.DB) await cronRedes(env, iaJSON, evento.scheduledTime || Date.now(), BASE_URL, T).catch((e) => console.log("Error redes:", e?.stack || e));
     })());
   },
   async fetch(req, envBase, ctx) {
@@ -3417,7 +3417,7 @@ export default {
     if (url.pathname === "/panel/cotizar/pdf") return paginaCotizacion(env, url.searchParams.get("id") || "", T);
     if (url.pathname === "/panel/cotizar") return new Response(PANEL_COTIZAR, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
     if (url.pathname.startsWith("/panel/api/videos/")) return apiVideos(env, req, url, url.searchParams.get("quien"));
-    if (url.pathname.startsWith("/panel/api/redes/")) return apiRedes(env, req, url, url.searchParams.get("quien"), iaJSON, BASE_URL);
+    if (url.pathname.startsWith("/panel/api/redes/")) return apiRedes(env, req, url, url.searchParams.get("quien"), iaJSON, BASE_URL, T);
     if (url.pathname === "/panel/redes") return new Response(PANEL_REDES, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
     if (url.pathname.startsWith("/panel/api/busquedas/")) return apiBusquedas(env, req, url, url.searchParams.get("quien"), Object.keys(usuariosPanel(env)));
     if (url.pathname === "/panel/busquedas") return new Response(PANEL_BUSQUEDAS, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
