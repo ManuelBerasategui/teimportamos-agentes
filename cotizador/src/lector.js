@@ -344,6 +344,7 @@ Devolvé JSON: {"titular":"1 oración con lo más importante","claves":["3-6 hal
 Para "difusion": 3 a 5 productos, priorizando los MÁS PEDIDOS del período y los que se repiten en grupos. Si hay pocos datos, igual proponé los más pedidos.
 PROHIBIDO en "difusion": vapers, vapes, pods, tabaco, fármacos, medicamentos, skincare/cosmética regulada, armas. Nunca digas "tenemos stock" ni prometas precios, plazos o descuentos que no estén en los datos: hablá de importación por encargo y cupos. Sin emojis.`);
   if (ia && Array.isArray(ia.difusion)) ia.difusion = ia.difusion.filter((x) => !/\bvap\w*|\bpods?\b|\btabac\w*|\bcigarr\w*|\bf[aá]rmac\w*|\bmedicament\w*|\bskincare\b|\barmas?\b/i.test(`${x.producto} ${x.mensaje}`)).map((x) => ({ ...x, mensaje: String(x.mensaje || "").replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, "").replace(/ {2,}/g, " ").trim() }));
+  if (!ia && Date.now() - fin < 6 * 3600e3) throw new Error("IA sin respuesta, se reintenta");
   const datos = { metricas: m, anterior: prev, productos, ia, pendientes: { sinResponder: l.sinResponder.length, cotPend: l.cotPend.length }, top: l.escribiles.slice(0, 10).map((c) => ({ nombre: c.nombre, conv: c.conv, puntaje: c.puntaje, accion: c.accion })) };
   const id = `${tipo}:${diaAR(desde)}`;
   await env.DB.prepare("INSERT INTO reportes (id,tipo,desde,hasta,creado,datos) VALUES (?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET hasta=excluded.hasta, creado=excluded.creado, datos=excluded.datos")
@@ -411,9 +412,19 @@ export async function cronLector(env, iaJSON, scheduledTime) {
   const m = t.getUTCMinutes(), hAR = (t.getUTCHours() + 21) % 24;
   if (m % 15 === 7) await analizarChats(env, iaJSON).catch((e) => console.log("lector analizar", e?.stack || e));
   if (m % 10 === 3) await alertasRapidas(env).catch((e) => console.log("lector alertas", e?.stack || e));
-  if (hAR === 21 && m === 0) {
-    await generarReporte(env, iaJSON, "805_diario", scheduledTime).catch((e) => console.log("lector diario", e?.stack || e));
-    if (new Date(scheduledTime - AR).getUTCDay() === 0) await generarReporte(env, iaJSON, "805_semanal", scheduledTime).catch((e) => console.log("lector semanal", e?.stack || e));
+  // Reporte diario: desde las 21 h; si falla o se saltea, reintenta cada 10 min y se recupera durante todo el día siguiente
+  {
+    const ref = hAR >= 21 ? scheduledTime : scheduledTime - 86400e3;
+    for (const [tipo, dias] of [["805_diario", 1], ["805_semanal", 7]]) {
+      if (tipo === "805_semanal" && new Date(ref - AR).getUTCDay() !== 0) continue;
+      const desde = inicioDiaAR(ref) + 86400e3 - dias * 86400e3, id = `${tipo}:${diaAR(desde)}`;
+      if (await env.DB.prepare("SELECT 1 FROM reportes WHERE id=?").bind(id).first()) continue;
+      const k = "lector_intento:" + id;
+      if (Date.now() - (+(await kvGet(env, k)) || 0) < 9 * 60e3) continue;
+      await kvPut(env, k, Date.now());
+      await generarReporte(env, iaJSON, tipo, ref).catch((e) => console.log("lector reporte", tipo, e?.stack || e));
+      break;   // uno por vuelta
+    }
   }
   // Aviso si el puente dejó de mandar datos hace mucho (posible desvinculación)
   if (m === 30) {
