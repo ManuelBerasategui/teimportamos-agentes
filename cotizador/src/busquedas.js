@@ -22,7 +22,7 @@ export const MIGRACIONES = [
   "ALTER TABLE proveedores ADD COLUMN cant INTEGER",
 ];
 const PROHIBIDO = /\b(vapes?|vapers?|vapeador|elf ?bar|lost ?mary|pods? desechables?|puffs?|cigarrillos?|tabaco|nicotina|medicamentos?|f[aá]rmacos?|drogas?|marihuana|cannabis|thc|cbd)\b/i;
-const FUENTES = ["1688", "alibaba", "web"];
+const FUENTES = ["1688", "alibaba", "web", "1688img"];
 const PAISES = ["ar", "py", "br", "cl", "us", "cn"];
 const ESTADOS_PROV = ["nuevo", "contactado", "pidió muestra", "cotizado al cliente", "descartado"];
 const AR = 3 * 3600e3;
@@ -43,6 +43,7 @@ async function preparar(env) {
   for (const m of MIGRACIONES) await env.DB.prepare(m).run().catch(() => {});
   await env.DB.batch(ESQUEMA_INFORMES.map((s) => env.DB.prepare(s)));
   await env.DB.prepare("ALTER TABLE informes ADD COLUMN contenido TEXT").run().catch(() => {});
+  await env.DB.prepare("ALTER TABLE informes ADD COLUMN busqueda TEXT").run().catch(() => {});
   listas = true;
 }
 const kvGet = async (env, k) => (await env.DB.prepare("SELECT v FROM kv WHERE k=?").bind(k).first())?.v ?? null;
@@ -191,6 +192,14 @@ async function claveInformes(env) {
   if (!k) { k = [...crypto.getRandomValues(new Uint8Array(18))].map((b) => b.toString(16).padStart(2, "0")).join(""); await kvPut(env, "informes_clave", k); }
   return k;
 }
+// Foto de referencia pública (la lee Apify para buscar por imagen en 1688). Id al azar, sin datos del cliente.
+export async function rutaImagen(env, url) {
+  await preparar(env);
+  const id = (url.pathname.match(/^\/img\/([a-z0-9]+)\.jpg$/) || [])[1];
+  const b64 = id ? await kvGet(env, `img:${id}`) : null;
+  if (!b64) return new Response("No existe", { status: 404 });
+  return new Response(Uint8Array.from(atob(b64), (c) => c.charCodeAt(0)), { headers: { "Content-Type": "image/jpeg", "Cache-Control": "public, max-age=86400" } });
+}
 // Rutas SIN login, para la tarea programada de Claude (solo lectura de la cola y cambio de estado). Clave: ?clave=<informes_clave>
 export async function rutaInformes(env, url) {
   await preparar(env);
@@ -282,6 +291,11 @@ export async function apiBusquedas(env, req, url, quien, usuarios = []) {
       if (t) { tarea = t.id; tel = t.tel || ""; cliente = cliente || t.nombre || (t.tel ? "+" + t.tel : ""); }
     }
     const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    if (fuentes.includes("1688img")) {
+      const f = String(cuerpo.foto || "").replace(/^data:image\/\w+;base64,/, "");
+      if (!f || f.length > 900000) return json({ ok: false, res: "Para buscar por imagen en 1688 elegí una foto (Buscar con imagen)." });
+      await kvPut(env, `img:${id}`, f);
+    }
     await env.DB.prepare(`INSERT INTO busquedas (id, ts, num, producto, cantidad, calidad, presupuesto, fuentes, paises, solo_minimo, asignado, creado_por, cliente, tel, tarea, estado, nota, costo, n_prov, archivada)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'nueva','',0,0,0)`).bind(id, Date.now(), num, producto, cantidad, ["replica", "original", "reacondicionado", "indistinto"].includes(cuerpo.calidad) ? cuerpo.calidad : "indistinto",
       String(cuerpo.presupuesto || "").slice(0, 80), JSON.stringify(fuentes), JSON.stringify(fuentes.includes("web") ? paises : []), cuerpo.soloMinimo === false ? 0 : 1, asignado, quien, cliente, tel, tarea).run();
@@ -336,19 +350,43 @@ export async function apiBusquedas(env, req, url, quien, usuarios = []) {
     const paises = (Array.isArray(cuerpo.paises) ? cuerpo.paises : PAISES_INF).filter((x) => PAISES_INF.includes(x));
     if (!paises.length) return json({ ok: false, res: "Elegí al menos un país." });
     const id = "i" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+    // Opcional: sección China con precio puesto (1688 / Alibaba vía Apify). Se lanza como búsqueda y se suma al PDF
+    let busqChina = null;
+    const china = (Array.isArray(cuerpo.china) ? cuerpo.china : []).filter((x) => ["1688", "alibaba"].includes(x));
+    if (china.length) {
+      const u2 = new URL(url); u2.pathname = "/panel/api/busquedas/nueva";
+      const r2 = await (await apiBusquedas(env, new Request(u2, { method: "POST", body: JSON.stringify({ producto, cantidad: Math.round(+String(cuerpo.cantidad || "").replace(/\D/g, "") || 0), calidad: "indistinto", cliente: cuerpo.cliente, fuentes: china, asignar: quien, soloMinimo: false }) }), u2, quien, usuarios)).json();
+      if (r2.ok) busqChina = r2.id;
+    }
     const fotos = (Array.isArray(cuerpo.fotos) ? cuerpo.fotos : []).filter((f) => typeof f === "string" && f.length < 700000).slice(0, 4).map((f) => f.replace(/^data:image\/\w+;base64,/, ""));
     const vista = await describirFotos(env, fotos).catch(() => "");
     if (vista) cuerpo.detalle = `${cuerpo.detalle ? cuerpo.detalle + "\n" : ""}Según las fotos de referencia: ${vista}`;
     if (fotos.length && !vista) cuerpo.detalle = `${cuerpo.detalle ? cuerpo.detalle + "\n" : ""}(Se mandaron ${fotos.length} fotos pero no se pudieron describir.)`;
-    await env.DB.prepare("INSERT INTO informes (id, ts, producto, cantidad, calidad, paises, detalle, cliente, tel, pedido_por, estado, nota) VALUES (?,?,?,?,?,?,?,?,?,?,'pendiente','')")
+    if (busqChina) cuerpo.detalle = `${cuerpo.detalle ? cuerpo.detalle + "\n" : ""}(La sección de 1688/Alibaba con precio puesto la agrega el panel sola: no hace falta buscar en 1688 ni Alibaba.)`;
+    await env.DB.prepare("INSERT INTO informes (id, ts, producto, cantidad, calidad, paises, detalle, cliente, tel, pedido_por, estado, nota, busqueda) VALUES (?,?,?,?,?,?,?,?,?,?,'pendiente','',?)")
       .bind(id, Date.now(), producto, String(cuerpo.cantidad || "").slice(0, 40), ["original", "reacondicionado", "indistinto"].includes(cuerpo.calidad) ? cuerpo.calidad : "original",
-        JSON.stringify(paises), String(cuerpo.detalle || "").slice(0, 2000), String(cuerpo.cliente || "").slice(0, 120), String(cuerpo.tel || "").replace(/[^\d@.a-z-]/gi, "").slice(0, 60), quien).run();
-    return json({ ok: true, vista, res: (vista ? "Fotos leídas. " : "") + "Encargado: Claude lo arma en la próxima vuelta (dentro de 1 h). Para que salga ya, pedíselo a Claude." });
+        JSON.stringify(paises), String(cuerpo.detalle || "").slice(0, 2000), String(cuerpo.cliente || "").slice(0, 120), String(cuerpo.tel || "").replace(/[^\d@.a-z-]/gi, "").slice(0, 60), quien, busqChina).run();
+    return json({ ok: true, vista, res: (vista ? "Fotos leídas. " : "") + (busqChina ? "Búsqueda en 1688/Alibaba lanzada. " : "") + "Encargado: Claude lo arma en la próxima vuelta (dentro de 1 h). Para que salga ya, pedíselo a Claude." });
   }
   if (ruta === "informe-ver" || ruta === "informe-planilla") {
     const inf = await env.DB.prepare("SELECT * FROM informes WHERE id=?").bind(url.searchParams.get("id") || "").first();
     if (!inf?.contenido) return new Response("Este informe todavía no está en el panel.", { status: 404, headers: { "Content-Type": "text/plain; charset=utf-8" } });
     const c = JSON.parse(inf.contenido);
+    const provChina = inf.busqueda ? ((await env.DB.prepare("SELECT * FROM proveedores WHERE busqueda=? AND fuente<>'web' AND estado<>'descartado' ORDER BY puesto_u").bind(inf.busqueda).all()).results || []) : [];
+    if (ruta === "informe-ver" && provChina.length) {
+      const bq = await env.DB.prepare("SELECT cantidad, consultas FROM busquedas WHERE id=?").bind(inf.busqueda).first();
+      const peso = (JSON.parse(bq?.consultas || "null") || {}).peso_kg;
+      const sec = `<h2>🇨🇳 China · 1688 / Alibaba con precio puesto en Argentina</h2>` + provChina.map((p, i) => {
+        const tr = JSON.parse(p.tramos || "[]").map((t) => `${t.desde}+ u: ${p.moneda === "CNY" ? "¥" : "US$"}${t.precio}`).join(" · ");
+        return `<article class="card"><div class="n">C${i + 1}</div><div><div class="eti"><span>${e(p.fuente === "alibaba" ? "Alibaba" : "1688")}</span>${p.tipo === "fábrica" ? "<span>Fábrica</span>" : ""}${p.verificado ? "<span>Verificado</span>" : ""}</div>
+<h3>${e(p.titulo)}</h3><p class="gris">${e(p.proveedor)} · ${e(p.ubicacion)}${p.calif ? " · ★ " + p.calif : ""}</p>
+${p.foto ? `<img src="${e(p.foto)}" referrerpolicy="no-referrer" style="width:90px;height:90px;object-fit:cover;border-radius:8px;float:right;margin-left:8px">` : ""}
+<div class="dat"><div><small>Mínimo</small>${e(p.minimo || "a confirmar")} u</div><div><small>Precio puesto en Argentina</small><b>${usdF(p.puesto_u)}</b> por unidad · total x${e(p.cant || bq?.cantidad || "")}: ${usdF(p.total)}</div></div>
+<p class="gris">Precio en origen: ${e(tr)}${peso ? ` · peso estimado ${String(peso).replace(".", ",")} kg/u` : ""}</p>${p.resumen ? `<p class="aviso">${e(p.resumen)}</p>` : ""}
+<p class="contactos"><a href="${e(p.link)}">Ver publicación</a></p></div></article>`;
+      }).join("");
+      c.html = String(c.html).includes('<div class="nota">') ? String(c.html).replace('<div class="nota">', sec + '<div class="nota">') : String(c.html).replace("</body>", sec + "</body>");
+    }
     if (ruta === "informe-ver") {
       const barra = `<div class="ti-barra" style="position:sticky;top:0;z-index:9;background:#1f2328;padding:10px 14px;display:flex;gap:8px;flex-wrap:wrap;font-family:Arial,sans-serif"><button onclick="print()" style="background:#EA5B0C;color:#fff;border:0;border-radius:8px;padding:8px 12px;font-weight:700;cursor:pointer">Guardar como PDF / Imprimir</button><a href="/panel/api/busquedas/informe-planilla?id=${inf.id}" style="background:#fff;color:#1f2328;border-radius:8px;padding:8px 12px;font-weight:700;text-decoration:none">Descargar planilla</a><a href="/panel/busquedas" style="color:#fff;padding:8px 4px">← Volver</a></div><style>@media print{.ti-barra{display:none!important}}</style>`;
       return new Response(String(c.html).replace(/<body[^>]*>/, (m) => m + barra), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
@@ -356,6 +394,7 @@ export async function apiBusquedas(env, req, url, quien, usuarios = []) {
     const cols = [["pais", "País"], ["nombre", "Proveedor"], ["lugar", "Ubicación"], ["tipo", "Tipo"], ["calidad", "Calidad"], ["marcas", "Marcas / productos"], ["minimo", "Mínimo"], ["precio", "Precios"], ["wa", "WhatsApp"], ["tel", "Teléfono"], ["mail", "Mail"], ["web", "Web"], ["desc", "Descripción"], ["nota", "Notas"]];
     const q = (v) => '"' + String(v ?? "").replace(/"/g, '""') + '"';
     const filas = (c.datos?.rubros || []).flatMap((r) => r.proveedores.map((p) => [q(r.titulo), ...cols.map(([k]) => q(p[k]))].join(",")));
+    for (const p of provChina) filas.push([q("China (1688/Alibaba)"), ...cols.map(([k]) => q(({ pais: "China", nombre: p.proveedor, lugar: p.ubicacion, tipo: p.tipo, calidad: "", marcas: p.titulo, minimo: p.minimo, precio: `USD ${p.puesto_u}/u puesto en AR (FOB USD ${p.precio_usd})`, wa: "", tel: "", mail: "", web: p.link, desc: p.resumen, nota: "" })[k]))].join(","));
     const csv = "\ufeff" + [["Rubro", ...cols.map(([, t]) => t)].map(q).join(","), ...filas].join("\n");
     const nombre = "Proveedores-" + String(inf.cliente || "cliente").replace(/[^a-z0-9]+/gi, "-") + ".csv";
     return new Response(csv, { headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="${nombre}"` } });
@@ -454,6 +493,8 @@ dialog{border:1px solid var(--borde);border-radius:12px;padding:16px;max-width:5
     <label>Cliente<input id="iCli" placeholder="Nombre"></label>
     <label class="ancho">Fotos de referencia (opcional, hasta 4)<input id="iFotos" type="file" accept="image/*" multiple></label>
     <div class="ancho fila" id="iMini"></div>
+    <div class="chk ancho"><b style="font-size:13px;color:var(--gris)">Sumar China con precio puesto (Apify):</b>
+      <label><input type="checkbox" class="iChina" value="1688"> 1688 (~USD 0,06)</label><label><input type="checkbox" class="iChina" value="alibaba"> Alibaba (~USD 0,06)</label></div>
     <details class="ancho mas"><summary>Más opciones (calidad, detalle, países)</summary><div class="form" style="margin-top:8px">
       <label>Calidad<select id="iCal"><option value="original">Original</option><option value="reacondicionado">Reacondicionado</option><option value="indistinto">Original o reacondicionado</option></select></label>
       <label class="p2" style="grid-column:span 3">Detalle<input id="iDet" placeholder="Para revender / uso personal, presupuesto, marcas, talles, 'completo'..."></label>
@@ -473,6 +514,7 @@ dialog{border:1px solid var(--borde);border-radius:12px;padding:16px;max-width:5
     <label class="p2">Producto<span class="fila" style="flex-wrap:nowrap"><input id="fProd" placeholder="Ej: licuadora portátil recargable (o buscá con imagen)"><label class="btn" title="Buscar por foto" style="flex:none;margin:0;cursor:pointer;white-space:nowrap">Buscar con imagen<input id="fFoto" type="file" accept="image/*" style="display:none"></label></span></label>
     <label>Cantidad (opcional)<input id="fCant" type="number" min="1" inputmode="numeric" placeholder="Vacío = a definir"></label>
     <label>Presupuesto USD (opcional)<input id="fPres" inputmode="decimal" placeholder="Ej: 250"></label>
+    <div class="fila ancho" id="fImgFila" style="display:none"><img id="fImgMini" style="width:48px;height:48px;object-fit:cover;border-radius:8px;border:1px solid var(--borde)"><label class="chk" style="flex-direction:row;align-items:center;gap:6px;color:var(--txt);font-weight:600"><input type="checkbox" id="fImg1688" checked style="width:auto"> Buscar esta misma foto en 1688 (Apify, ~USD 0,20)</label><button class="btn" id="fImgQuitar" type="button">Quitar foto</button></div>
     <div class="fila ancho"><button class="btn p" id="bBuscar">Buscar</button><span class="estado">Sin cantidad: te muestra precio por unidad, peso y precio puesto para el mínimo de cada proveedor (o lo que entra en tu presupuesto).</span></div>
     <details class="ancho mas"><summary>Dónde buscar</summary>
       <div class="chk" style="margin-top:8px">
@@ -581,7 +623,7 @@ function descargar(b) {
 function tarjetaProv(p, b) {
   var sc = p.puntaje >= 7 ? "alto" : p.puntaje >= 5 ? "medio" : "";
   var tramos = (p.tramos || []).map(function (t) { return t.desde + "+: " + (p.moneda === "CNY" ? "¥" : "$") + t.precio; }).join(" · ");
-  var tags = '<span class="tag">' + esc(p.fuente) + '</span>' + (p.verificado ? '<span class="tag">verificado</span>' : "") + (p.tipo === "fábrica" ? '<span class="tag">fábrica</span>' : "") + (p.minimo_ok ? "" : '<span class="tag no">mínimo ' + esc(p.minimo) + '</span>');
+  var tags = '<span class="tag">' + esc(p.fuente === "1688img" ? "1688 por imagen" : p.fuente) + '</span>' + (p.verificado ? '<span class="tag">verificado</span>' : "") + (p.tipo === "fábrica" ? '<span class="tag">fábrica</span>' : "") + (p.minimo_ok ? "" : '<span class="tag no">mínimo ' + esc(p.minimo) + '</span>');
   var opts = DATOS.estadosProv.map(function (e) { return '<option' + (e === p.estado ? " selected" : "") + ">" + e + "</option>"; }).join("");
   return '<div class="pv ' + (p.estado === "descartado" ? "descartado" : "") + '" data-p="' + p.id + '">' +
     (p.foto ? '<a href="' + esc(p.link) + '" target="_blank" rel="noopener"><img loading="lazy" referrerpolicy="no-referrer" src="' + esc(p.foto) + '"></a>' : '<div style="width:56px"></div>') +
@@ -644,20 +686,24 @@ $("#dlgCerrar").onclick = function () { $("#dlg").close(); };
 $("#filtros").onclick = function (ev) { var b = ev.target.closest("button"); if (!b) return; F = b.dataset.f; document.querySelectorAll("#filtros button").forEach(function (x) { x.classList.toggle("on", x === b); }); firma = ""; cargar(); };
 $("#fEst").onchange = function () { firma = ""; cargar(); };
 $("#bTg").onclick = function () { api("telegram", {}).then(function (r) { aviso(r.res); cargar(); }); };
+var FOTO_R = null;
+$("#fImgQuitar").onclick = function () { FOTO_R = null; $("#fImgFila").style.display = "none"; };
 $("#fFoto").onchange = function () {
   var f = this.files[0]; if (!f) return; var inp = $("#fProd"); inp.value = ""; inp.placeholder = "Leyendo la foto...";
   var rd = new FileReader(); rd.onload = function () { var im = new Image(); im.onload = function () {
     var k = Math.min(1, 900 / Math.max(im.width, im.height)), c = document.createElement("canvas"); c.width = im.width * k; c.height = im.height * k; c.getContext("2d").drawImage(im, 0, 0, c.width, c.height);
-    api("foto-a-texto", { fotos: [c.toDataURL("image/jpeg", 0.8)] }).then(function (r) { inp.placeholder = "Ej: licuadora portátil recargable (o buscá con imagen)"; aviso(r.res); if (r.ok) { inp.value = r.producto; inp.focus(); } $("#fFoto").value = ""; }); }; im.src = rd.result; }; rd.readAsDataURL(f);
+    FOTO_R = c.toDataURL("image/jpeg", 0.8); $("#fImgMini").src = FOTO_R; $("#fImgFila").style.display = "";
+    api("foto-a-texto", { fotos: [FOTO_R] }).then(function (r) { inp.placeholder = "Ej: licuadora portátil recargable (o buscá con imagen)"; aviso(r.res); if (r.ok) { inp.value = r.producto; inp.focus(); } $("#fFoto").value = ""; }); }; im.src = rd.result; }; rd.readAsDataURL(f);
 };
 $("#bBuscar").onclick = function () {
   var fuentes = [].slice.call(document.querySelectorAll(".fFuente:checked")).map(function (x) { return x.value; });
   var paises = [].slice.call(document.querySelectorAll("#fPaises input:checked")).map(function (x) { return x.value; });
   var body = { paises: paises, producto: $("#fProd").value, cantidad: $("#fCant").value, calidad: $("#fCal").value, presupuesto: $("#fPres").value, cliente: $("#fCli").value, asignar: $("#fAsig").value, fuentes: fuentes, soloMinimo: $("#fMin").checked, tarea: TAREA };
+  if (FOTO_R && $("#fImg1688").checked) { body.fuentes = fuentes.concat("1688img"); body.foto = FOTO_R; }
   var btn = $("#bBuscar"); btn.disabled = true;
   api("nueva", body).then(function (r) {
     btn.disabled = false; aviso(r.res);
-    if (r.ok) { $("#fProd").value = ""; $("#fCant").value = ""; $("#fPres").value = ""; $("#fCli").value = ""; TAREA = null; F = r.asignado && r.asignado !== DATOS.quien ? "todas" : F; document.querySelectorAll("#filtros button").forEach(function (x) { x.classList.toggle("on", x.dataset.f === F); }); firma = ""; cargar(); }
+    if (r.ok) { $("#fProd").value = ""; $("#fCant").value = ""; $("#fPres").value = ""; $("#fCli").value = ""; TAREA = null; FOTO_R = null; $("#fImgFila").style.display = "none"; F = r.asignado && r.asignado !== DATOS.quien ? "todas" : F; document.querySelectorAll("#filtros button").forEach(function (x) { x.classList.toggle("on", x.dataset.f === F); }); firma = ""; cargar(); }
   }).catch(function () { btn.disabled = false; });
 };
 // Si viene desde una tarea "Buscar proveedor" de Pendientes, se completa el formulario
@@ -683,7 +729,7 @@ $("#iFotos").onchange = function () {
 $("#bInforme").onclick = function () {
   var bt = $("#bInforme"); if (FOTOS.length) { bt.disabled = true; bt.textContent = "Leyendo fotos..."; setTimeout(function () { bt.disabled = false; bt.textContent = "Encargar informe"; }, 15000); }
   var paises = [].slice.call(document.querySelectorAll("#iPaises input:checked")).map(function (x) { return x.value; });
-  api("informe-nuevo", { producto: $("#iProd").value, cantidad: $("#iCant").value, calidad: $("#iCal").value, cliente: $("#iCli").value, detalle: $("#iDet").value, paises: paises, tel: TEL_INF, fotos: FOTOS }).then(function (r) {
+  api("informe-nuevo", { producto: $("#iProd").value, cantidad: $("#iCant").value, calidad: $("#iCal").value, cliente: $("#iCli").value, detalle: $("#iDet").value, paises: paises, tel: TEL_INF, fotos: FOTOS, china: [].slice.call(document.querySelectorAll(".iChina:checked")).map(function (x) { return x.value; }) }).then(function (r) {
     aviso(r.res); if (r.ok) { FOTOS = []; $("#iFotos").value = ""; $("#iMini").innerHTML = ""; $("#iProd").value = ""; $("#iCant").value = ""; $("#iCli").value = ""; $("#iDet").value = ""; TEL_INF = ""; cargarInf(); } });
 };
 (function () { var q = new URLSearchParams(location.search); if (q.get("informe")) { $("#iProd").value = q.get("producto") || ""; $("#iCli").value = q.get("cliente") || ""; TEL_INF = q.get("tel") || ""; aviso("Completá el pedido y tocá Encargar informe"); } })();

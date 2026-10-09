@@ -1,7 +1,7 @@
 import { rutaLector, apiLector, cronLector, paginaReporte } from "./lector.js";
 import { PANEL_805 } from "./lector-panel.js";
 import { apiCotizar, paginaCotizacion, PANEL_COTIZAR } from "./cotizar.js";
-import { apiBusquedas, PANEL_BUSQUEDAS, rutaInformes } from "./busquedas.js";
+import { apiBusquedas, PANEL_BUSQUEDAS, rutaInformes, rutaImagen } from "./busquedas.js";
 import { apiRedes, PANEL_REDES, cronRedes } from "./redes.js";
 /**
  * Agente de WhatsApp · Te Importamos (v15.0: + pestaña Búsquedas de proveedores)
@@ -3346,7 +3346,8 @@ export default {
     const clave = url.searchParams.get("clave");
     // Lector 805: el puente de WhatsApp (solo lectura) postea acá
     if (url.pathname.startsWith("/lector/")) return rutaLector(env, req, url, ctx);
-    if (url.pathname.startsWith("/informes/")) return rutaInformes(env, url);   // cola de informes para la tarea programada de Claude
+    if (url.pathname.startsWith("/informes/")) return rutaInformes(env, url);
+    if (url.pathname.startsWith("/img/")) return rutaImagen(env, url);   // foto de referencia para la búsqueda por imagen en 1688   // cola de informes para la tarea programada de Claude
     if (url.pathname === "/reset") {
       if (clave !== env.VERIFY_TOKEN) return new Response("Falta ?clave=", { status: 401 });
       const tel = (url.searchParams.get("tel") || "").replace(/\D/g, "");

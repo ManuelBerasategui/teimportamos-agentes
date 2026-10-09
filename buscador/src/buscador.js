@@ -28,6 +28,8 @@ const RECARGO_1688 = 0.10;
 const ACTORES = {
   "1688": { id: "webdata_labs~1688-scraper", usdPorItem: 0.003 },
   alibaba: { id: "automation-lab~alibaba-products-scraper", usdPorItem: 0.003 },
+  // Búsqueda por imagen en 1688 (misma foto, mismo producto). Más caro: ~USD 0,01 por resultado
+  "1688img": { id: "dltik~1688-scraper", usdPorItem: 0.01, usdPorRun: 0.25 },
 };
 const PROHIBIDO = /\b(vapes?|vapers?|vapeador|elf ?bar|lost ?mary|pods? desechables?|puffs?|cigarrillos?|tabaco|nicotina|medicamentos?|f[aá]rmacos?|drogas?|marihuana|cannabis|thc|cbd)\b/i;
 // Búsqueda web (Tavily): países, idioma de las búsquedas y cuántas búsquedas por país
@@ -151,6 +153,17 @@ export function puntuar(lista, cantidad) {
 // Normalizar lo que devuelve cada actor de Apify a un formato común
 // ---------------------------------------------------------------------------
 export function normalizar(fuente, it) {
+  if (fuente === "1688img") {
+    // Formato del actor dltik/1688-scraper: priceLadder [{beginAmount, price}], moq, supplier.companyName
+    const tramos = (it.priceLadder || []).map((t) => ({ desde: n(t.beginAmount, 1), precio: n(t.price) })).filter((t) => t.precio > 0);
+    if (!tramos.length && n(it.priceMin)) tramos.push({ desde: n(it.moq, 1), precio: n(it.priceMax || it.priceMin) });
+    return {
+      fuente, titulo: it.titleEn || it.title || "", titulo_orig: it.title || "", link: it.url || (it.offerId ? `https://detail.1688.com/offer/${it.offerId}.html` : ""),
+      foto: (it.images || [])[0] || it.image || "", proveedor: it.supplier?.companyName || it.companyName || "", prov_link: it.supplier?.shopUrl || it.supplierUrl || "",
+      ubicacion: it.supplier?.location || it.location || "China", tipo: "trading", verificado: 0, anios: null, ventas: n(it.soldCount) || null, calif: null,
+      minimo: n(it.moq) || tramos[0]?.desde || null, tramos, moneda: "CNY", contacto: "", resumen: "Encontrado por imagen",
+    };
+  }
   if (fuente === "1688") {
     const s = it.merchantSigns || {}, tags = (it.merchantTags || []).join(" ");
     let tramos = (it.priceTiers || []).map((t) => ({ desde: n(t.minQuantity, 1), precio: n(t.price) })).filter((t) => t.precio > 0);
@@ -287,7 +300,8 @@ Reglas: no traduzcas marcas registradas como si fueran genéricas si piden répl
   };
 }
 
-function entradaActor(fuente, b, c, max) {
+function entradaActor(fuente, b, c, max, env = {}) {
+  if (fuente === "1688img") return { mode: "image", inputs: [`${env.PANEL_URL || "https://cotizador.berasateguimanuel07.workers.dev"}/img/${b.id}.jpg`], maxResults: max };
   const filtroMinimo = b.solo_minimo && b.cantidad > 0;
   if (fuente === "1688") return { searchQueries: [c.zh], maxProducts: max, translateTitles: true, sortBy: "relevance", ...(filtroMinimo ? { minOrderQuantity: b.cantidad } : {}) };
   return { queries: [c.en], maxItems: max, maxPagesPerQuery: 2, ...(filtroMinimo ? { maxMinimumOrder: b.cantidad } : {}) };
@@ -335,9 +349,9 @@ export async function lanzarNuevas(env, log = []) {
     const c = await prepararConsultas(env, { ...b, fuentes: JSON.stringify(usarWeb ? ["web"] : []) });
     const runs = [];
     for (const f of fuentes) {
-      const q = new URLSearchParams({ maxItems: String(tp.resultadosPorFuente), maxTotalChargeUsd: String(TOPES.usdPorRun), timeout: "600" });
-      const actor = (f === "1688" ? env.ACTOR_1688 : env.ACTOR_ALIBABA) || ACTORES[f].id;
-      const r = await apify(env, `/acts/${actor}/runs?${q}`, { method: "POST", body: JSON.stringify(entradaActor(f, b, c, tp.resultadosPorFuente)) });
+      const q = new URLSearchParams({ maxItems: String(tp.resultadosPorFuente), maxTotalChargeUsd: String(ACTORES[f].usdPorRun || TOPES.usdPorRun), timeout: "600" });
+      const actor = ({ "1688": env.ACTOR_1688, alibaba: env.ACTOR_ALIBABA, "1688img": env.ACTOR_1688_IMAGEN })[f] || ACTORES[f].id;
+      const r = await apify(env, `/acts/${actor}/runs?${q}`, { method: "POST", body: JSON.stringify(entradaActor(f, b, c, tp.resultadosPorFuente, env)) });
       if (r.ok && r.j?.data?.id) runs.push({ fuente: f, id: r.j.data.id, ds: r.j.data.defaultDatasetId, estado: "RUNNING", desde: Date.now() });
       else runs.push({ fuente: f, estado: "NO_ARRANCO", error: `${r.status} ${r.err}`.trim().slice(0, 200) });
     }

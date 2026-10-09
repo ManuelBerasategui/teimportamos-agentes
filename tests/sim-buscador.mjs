@@ -169,6 +169,23 @@ console.log("6c) Sin cantidad, con presupuesto");
   const t = (q) => B.puestoEnArgentina(1, q, 0.2).total; assert.ok(t(sg.q) <= 250 && t(sg.q + 1) > 250); bien(`con USD 250 entran ${sg.q} u (total USD ${t(sg.q).toFixed(2)})`);
   assert.equal(B.cantidadSugerida({ minimo: 500, tramos: [{ desde: 500, precio: 5 }] }, bx, aUsd, 1).excede, true); bien("si el mínimo no entra en el presupuesto, lo avisa");
   const r0 = await api(cM, "nueva", { producto: "zapatos de baile jazz", cantidad: "", presupuesto: "250", fuentes: ["1688"] }); assert.equal(r0.ok, true); bien("se puede buscar sin cantidad"); }
+console.log("6d) Búsqueda por imagen en 1688 e informe con China");
+{ const ri = await api(cM, "nueva", { producto: "cancha inflable", fuentes: ["1688img"], foto: "data:image/jpeg;base64,/9j/AAAA" });
+  assert.equal(ri.ok, true); const img = await W.fetch(new Request("https://x/img/" + ri.id + ".jpg"), env, ctx); assert.equal(img.status, 200); assert.equal(img.headers.get("content-type"), "image/jpeg");
+  bien("foto guardada y pública para Apify en /img/ID.jpg");
+  assert.equal((await api(cM, "nueva", { producto: "cancha inflable 2", fuentes: ["1688img"] })).ok, false); bien("sin foto no deja buscar por imagen");
+  const ent = B.normalizar("1688img", { url: "https://detail.1688.com/offer/5.html", title: "充气足球场", priceLadder: [{ beginAmount: 1, price: 1500 }], moq: 1, supplier: { companyName: "广州充气" }, images: ["https://img/x.jpg"] });
+  assert.equal(ent.tramos[0].precio, 1500); assert.equal(ent.proveedor, "广州充气"); bien("normaliza resultados del actor de imagen");
+  db.prepare("UPDATE busquedas SET estado='lista' WHERE id=?").run(ri.id);
+  const ii = await (await W.fetch(new Request("https://x/panel/api/busquedas/informe-nuevo", { method: "POST", headers: { cookie: cM }, body: JSON.stringify({ producto: "medias elite", cliente: "C", paises: ["ar"], china: ["1688"] }) }), env, ctx)).json();
+  assert.equal(ii.ok, true); assert.match(ii.res, /1688\/Alibaba lanzada/);
+  const fila = db.prepare("SELECT * FROM informes WHERE cliente='C'").get(); assert.ok(fila.busqueda); assert.match(fila.detalle, /la agrega el panel/);
+  db.prepare("INSERT INTO proveedores (id,busqueda,ts,fuente,titulo,link,proveedor,ubicacion,tramos,moneda,precio_usd,puesto_u,total,puntaje,estado) VALUES ('pz',?,1,'1688','Medias elite','https://detail.1688.com/offer/9.html','Fabrica X','Zhuji','[{\"desde\":10,\"precio\":3}]','CNY',0.45,4.2,420,8,'nuevo')").run(fila.busqueda);
+  db.prepare("UPDATE informes SET contenido=? WHERE id=?").run(JSON.stringify({ html: '<html><body><div class="nota">x</div></body></html>', datos: { rubros: [] } }), fila.id);
+  const vh = await (await W.fetch(new Request("https://x/panel/api/busquedas/informe-ver?id=" + fila.id, { headers: { cookie: cM } }), env, ctx)).text();
+  assert.match(vh, /China · 1688 \/ Alibaba/); assert.match(vh, /Fabrica X/);
+  const pl = await (await W.fetch(new Request("https://x/panel/api/busquedas/informe-planilla?id=" + fila.id, { headers: { cookie: cM } }), env, ctx)).text(); assert.match(pl, /Fabrica X/);
+  bien("informe con China: lanza la búsqueda y suma la sección al PDF y a la planilla"); db.prepare("UPDATE busquedas SET archivada=1 WHERE estado='nueva'").run(); db.prepare("UPDATE informes SET estado='cancelado' WHERE cliente='C'").run(); }
 console.log("7) Fallas");
 db.prepare("UPDATE busquedas SET lanzada_ts = 0").run();   // simula día nuevo
 const r4 = await api(cS, "nueva", { producto: "caja de luz LED slim 50x70", cantidad: 20, fuentes: ["1688", "alibaba"] });
