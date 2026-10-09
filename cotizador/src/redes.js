@@ -535,9 +535,9 @@ ${CARR_CSS}
 <div id="m-videos" style="display:none">
   <section class="card"><h2>Subir clips <span class="estado">se editan solos y te llegan acá para aprobar</span></h2>
     <div class="espacio"><span class="estado" id="vEspacio">Espacio</span><div class="barra" id="vBarra"><i style="width:0"></i></div></div>
-    <label class="drop" id="vDrop" for="vArch"><input type="file" id="vArch" accept="video/*" multiple>
+    <div class="drop" id="vDrop"><input type="file" id="vArch" accept="video/*,.mov,.mp4,.m4v" multiple>
       <span class="drop-ic"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4M7.5 8.5L12 4l4.5 4.5"/><path d="M4 14.5V18a2.5 2.5 0 0 0 2.5 2.5h11A2.5 2.5 0 0 0 20 18v-3.5"/></svg></span>
-      <b>Elegí tus clips</b><span class="estado"><span class="sololg">o arrastralos acá · </span>podés elegir varios a la vez</span></label>
+      <b>Elegí tus clips</b><span class="estado"><span class="sololg">o arrastralos acá · </span>podés elegir varios a la vez</span></div>
     <div id="vSel"></div>
     <button class="btn p grande" id="bSubir" disabled><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4M7.5 8.5L12 4l4.5 4.5"/><path d="M4 14.5V18a2.5 2.5 0 0 0 2.5 2.5h11A2.5 2.5 0 0 0 20 18v-3.5"/></svg>Subir y editar</button><div class="prog" id="vProg"></div>
     <details class="reglas"><summary>Cómo grabar para que salga bien</summary><br>• Marcá cada clip: <b>Gancho</b> (el arranque), <b>Cuerpo</b> (el resto, con el cierre adentro) o <b>Completo</b> (gancho y cuerpo juntos).<br>• Si subís varios ganchos y un cuerpo, sale un reel por cada gancho: así probamos cuál retiene más.<br>• Si te equivocás, hacé una pausa de 2 segundos y repetí la frase desde el principio: queda la última toma.<br>• Los silencios se cortan solos. Grabá vertical y con buena luz.</details>
@@ -706,9 +706,12 @@ function agregarArchivos(lista) {
   pintarSel();
 }
 var ultSel = "";
-function tomarArchivos(inp) { var fs = inp.files; if (!fs || !fs.length) return; var firma = Array.prototype.map.call(fs, function (f) { return f.name + f.size; }).join("|"); if (firma === ultSel) return; ultSel = firma; agregarArchivos(fs); setTimeout(function () { inp.value = ""; ultSel = ""; }, 1500); }
+function tomarArchivos(inp) { var fs = inp.files; if (!fs || !fs.length) return; esperandoGaleria = false; var firma = Array.prototype.map.call(fs, function (f) { return f.name + f.size; }).join("|"); if (firma === ultSel) return; ultSel = firma; agregarArchivos(fs); setTimeout(function () { inp.value = ""; ultSel = ""; }, 1500); }
 $("#vArch").addEventListener("change", function () { tomarArchivos(this); });
 $("#vArch").addEventListener("input", function () { tomarArchivos(this); });
+var esperandoGaleria = false;
+$("#vArch").addEventListener("click", function () { esperandoGaleria = true; });
+window.addEventListener("focus", function () { if (!esperandoGaleria) return; setTimeout(function () { if (esperandoGaleria && !VSEL.length) aviso("El teléfono no entregó los videos. Probá elegir de a uno, o desde Archivos en vez de Fotos."); esperandoGaleria = false; }, 2500); });
 var DROP = $("#vDrop");
 ["dragenter", "dragover"].forEach(function (e) { DROP.addEventListener(e, function (ev) { ev.preventDefault(); DROP.classList.add("sobre"); }); });
 ["dragleave", "drop"].forEach(function (e) { DROP.addEventListener(e, function (ev) { ev.preventDefault(); DROP.classList.remove("sobre"); }); });
