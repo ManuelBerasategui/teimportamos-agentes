@@ -414,7 +414,7 @@ header b{color:#fff;font-size:17px;white-space:nowrap}header b span{color:var(--
 .chips{display:flex;gap:8px;margin-top:8px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none}.chips::-webkit-scrollbar{display:none}.chips .btn{white-space:nowrap;border-radius:99px;flex:none}
 .espacio{display:flex;align-items:center;gap:10px;margin-bottom:12px}.espacio .estado{white-space:nowrap}.espacio .barra{flex:1}
 .drop{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;text-align:center;border:2px dashed #f4b593;background:#fff7f2;border-radius:14px;padding:22px 16px;cursor:pointer;transition:background .15s,border-color .15s}
-.drop:hover,.drop.sobre{background:#ffedd5;border-color:var(--nar)}.drop input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.drop:hover,.drop.sobre{background:#ffedd5;border-color:var(--nar)}.drop{position:relative}.drop input{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;font-size:0}
 .drop-ic{width:52px;height:52px;border-radius:50%;background:var(--nar);color:#fff;display:flex;align-items:center;justify-content:center;margin-bottom:6px}.drop-ic .ic{width:26px;height:26px;vertical-align:0}
 .drop b{font-size:16px}
 .cl{display:grid;grid-template-columns:40px 1fr auto;gap:10px;align-items:center;border:1px solid var(--borde);border-radius:12px;padding:10px;margin-top:10px;background:#fff}
@@ -699,13 +699,16 @@ function cuando(ts) { var d = new Date(ts); return d.toLocaleDateString("es-AR",
 function tipoInicial(f, i, todos) { var n = f.name.toLowerCase(); return /gancho|hook/.test(n) ? "gancho" : /cuerpo|body/.test(n) ? "cuerpo" : todos.length === 1 ? "completo" : i === 0 ? "gancho" : "cuerpo"; }
 function agregarArchivos(lista) {
   if (SUBIENDO) return;
-  var nuevos = Array.prototype.slice.call(lista).filter(function (f) { return /^video\//.test(f.type) || /\.(mp4|mov|m4v|webm|3gp|mkv)$/i.test(f.name); });
-  if (!nuevos.length) return aviso("Elegí archivos de video");
+  var nuevos = Array.prototype.slice.call(lista || []).filter(function (f) { return f && f.size > 0 && !/^image\//.test(f.type || ""); });
+  if (!nuevos.length) return aviso(lista && lista.length ? "Esos archivos no son videos" : "No llegó ningún archivo: probá de nuevo");
   var todos = VSEL.map(function (x) { return x.f; }).concat(nuevos);
   VSEL = VSEL.concat(nuevos.map(function (f, i) { return { f: f, tipo: tipoInicial(f, VSEL.length + i, todos) }; })).slice(0, 12);
   pintarSel();
 }
-$("#vArch").onchange = function () { agregarArchivos(this.files); this.value = ""; };
+var ultSel = "";
+function tomarArchivos(inp) { var fs = inp.files; if (!fs || !fs.length) return; var firma = Array.prototype.map.call(fs, function (f) { return f.name + f.size; }).join("|"); if (firma === ultSel) return; ultSel = firma; agregarArchivos(fs); setTimeout(function () { inp.value = ""; ultSel = ""; }, 1500); }
+$("#vArch").addEventListener("change", function () { tomarArchivos(this); });
+$("#vArch").addEventListener("input", function () { tomarArchivos(this); });
 var DROP = $("#vDrop");
 ["dragenter", "dragover"].forEach(function (e) { DROP.addEventListener(e, function (ev) { ev.preventDefault(); DROP.classList.add("sobre"); }); });
 ["dragleave", "drop"].forEach(function (e) { DROP.addEventListener(e, function (ev) { ev.preventDefault(); DROP.classList.remove("sobre"); }); });
