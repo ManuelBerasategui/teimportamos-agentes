@@ -89,13 +89,13 @@ function dibujar(ctx, b, y, d) {
     if (b.card) { ctx.save(); ctx.shadowColor = "rgba(30,40,90,.22)"; ctx.shadowBlur = 40; ctx.shadowOffsetY = 14; rr(ctx, x - 14, y - 14, b.w + 28, b.h + 28, 26); ctx.fillStyle = "#fff"; ctx.fill(); ctx.restore(); ctx.save(); rr(ctx, x, y, b.w, b.h, 16); ctx.clip(); ctx.drawImage(b.img, x, y, b.w, b.h); ctx.restore(); }
     else ctx.drawImage(b.img, x, y, b.w, b.h);
   } else if (b.k === "av") {
-    ctx.font = fnt(50); var t = "@" + USUARIO, tw = ctx.measureText(t).width, tot = 72 + 18 + tw + 14 + 34, x = W / 2 - tot / 2, cy = y + 40;
+    ctx.font = fnt(56); var t = "@" + USUARIO, tw = ctx.measureText(t).width, tot = 72 + 18 + tw + 14 + 34, x = W / 2 - tot / 2, cy = y + 40;
     ctx.save(); ctx.beginPath(); ctx.arc(x + 36, cy, 36, 0, 7); ctx.fillStyle = "#fff"; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = "#D6D9EA"; ctx.stroke(); ctx.clip(); if (d.logo) ctx.drawImage(d.logo, x, cy - 36, 72, 72); ctx.restore();
     ctx.fillStyle = AZUL; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText(t, x + 90, cy + 2);
     var bx = x + 90 + tw + 14 + 17; ctx.beginPath(); ctx.arc(bx, cy, 16, 0, 7); ctx.fillStyle = "#3897F0"; ctx.fill(); ctx.strokeStyle = "#fff"; ctx.lineWidth = 4; ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.beginPath(); ctx.moveTo(bx - 7, cy); ctx.lineTo(bx - 2, cy + 5); ctx.lineTo(bx + 8, cy - 6); ctx.stroke(); ctx.textBaseline = "top";
   } else if (b.k === "bar") {
     var va = numC(b.av), vb = numC(b.bv), mx = Math.max(va || 1, vb || 1), ancho = 560;
-    ctx.font = fnt(50); ctx.textAlign = "left"; ctx.fillText(b.al_, 110, y);
+    ctx.font = fnt(60); ctx.textAlign = "left"; ctx.fillText(b.al_, 110, y);
     var wa = Math.max(60, ancho * (va || 0) / mx); ctx.fillRect(110, y + 64, wa, 84); ctx.fillText(b.av_, 110 + wa + 26, y + 80);
     ctx.fillText(b.bl_, 110, y + 176);
     var wb = Math.max(60, ancho * (vb || 0) / mx); ctx.save(); ctx.beginPath(); ctx.rect(110, y + 240, wb, 84); ctx.clip(); ctx.lineWidth = 14; for (var s = -100; s < wb + 100; s += 34) { ctx.beginPath(); ctx.moveTo(110 + s, y + 324); ctx.lineTo(110 + s + 84, y + 240); ctx.stroke(); } ctx.restore();
@@ -105,7 +105,7 @@ function dibujar(ctx, b, y, d) {
 function numC(t) { var m = String(t || "").replace(/\./g, "").match(/\d+/); return m ? +m[0] : 0; }
 function rr(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
 function bloques(s, i, d) {
-  var T = function (t, sz, al, ex) { return Object.assign({ k: "t", t: rell(t), sz: sz, al: al || "c" }, ex || {}); }, out = [];
+  var T = function (t, sz, al, ex) { return Object.assign({ k: "t", t: rell(t), sz: Math.round(sz * (sz < 90 ? 1.16 : 1.08)), al: al || "c" }, ex || {}); }, out = [];
   var foto = d.fotos[i];
   if (s.tipo === "portada") out = [{ k: "img", img: foto, mw: 640, mh: 560, gap: 50 }, T(s.titulo, 96), T(s.subtitulo, 60, "c", { gap: 70 }), { k: "av" }];
   else if (s.tipo === "captura") out = [T(s.arriba, 100, "c", { gap: 50 }), { k: "img", img: foto, mw: 860, mh: 520, card: true, gap: 70 }, T(s.abajo, 64)];
