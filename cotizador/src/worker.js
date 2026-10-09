@@ -2819,8 +2819,13 @@ const PANEL_APP = String.raw`<!doctype html><html lang="es"><head><meta charset=
 *{box-sizing:border-box}html,body{margin:0;height:100%;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;color:var(--texto);background:var(--fondo)}
 button{font:inherit;cursor:pointer}
 .top{height:56px;background:#0B0B0B;border-bottom:3px solid var(--azul);display:flex;align-items:center;gap:16px;padding:0 16px;position:sticky;top:0;z-index:5}
-.marca{font-weight:700;color:var(--azul);white-space:nowrap}.tabs{display:flex;gap:4px;flex:1}
-.tab{border:0;background:none;padding:8px 14px;border-radius:8px;color:#D1D5DB;font-weight:600}.tab.on{background:var(--azul);color:#fff}
+.marca{font-weight:700;color:var(--azul);white-space:nowrap}.tabs{display:flex;gap:4px;flex:1;align-items:center;min-width:0}
+.tab{display:inline-flex;align-items:center;gap:7px;border:0;background:none;padding:8px 12px;border-radius:9px;color:#C9CDD3;font-weight:600;font-size:14px;text-decoration:none;white-space:nowrap;transition:background .15s,color .15s}
+.tab:hover{background:rgba(255,255,255,.08);color:#fff}.tab.on{background:var(--azul);color:#fff}
+.tab.wa{margin-left:auto;background:rgba(37,211,102,.14);color:#4ADE80}.tab.wa:hover{background:#25D366;color:#fff}
+.tio{position:relative;display:inline-flex}.ti{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.tab .nc{display:none}.tab .badge{position:absolute;top:-8px;left:-12px;right:auto;margin:0;min-width:17px;height:17px;padding:0 5px;font-size:10.5px;line-height:17px;font-weight:800;box-shadow:0 0 0 2px #0B0B0B}
+@media (min-width:761px) and (max-width:1100px){.tab{padding:8px 9px;gap:5px;font-size:13px}.marca{display:none}}
 .user{color:#9CA3AF;font-size:13px;white-space:nowrap}.user a{color:#D1D5DB}
 .vista{display:none}.vista.on{display:block}
 /* Dashboard */
@@ -2901,10 +2906,14 @@ button{font:inherit;cursor:pointer}
 .candado{position:absolute;right:62px;bottom:64px;background:#fff;border:1px solid var(--borde);border-radius:22px;padding:10px 8px;font-size:16px;box-shadow:0 4px 12px rgba(0,0,0,.08);z-index:4;text-align:center;line-height:1.2}
 .fallo{background:var(--rojo2);border:1px solid #FCA5A5;color:#991B1B;border-radius:10px;padding:8px 12px;font-size:13px;margin:8px 0}
 @media (max-width:760px){
-  .top{height:52px;padding:0 12px}.tabs{position:fixed;left:0;right:0;bottom:0;z-index:20;background:#0B0B0B;border-top:3px solid var(--azul);padding:6px 6px calc(6px + env(safe-area-inset-bottom));gap:2px}
-  .tab{flex:1;padding:10px 1px;font-size:11px;text-align:center;border-radius:10px;min-width:0}.tab .badge{margin-left:3px}.tabs>a{flex:1;padding:10px 1px!important;font-size:11px;text-align:center;border-radius:10px!important;min-width:0}
-  body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
-  .chats,.ag{height:calc(100dvh - 52px - 64px - env(safe-area-inset-bottom))}
+  .top{height:52px;padding:0 12px}.tabs{position:fixed;left:0;right:0;bottom:0;z-index:20;background:#0B0B0B;border-top:1px solid #1F2937;padding:6px 2px calc(6px + env(safe-area-inset-bottom));gap:0;box-shadow:0 -4px 16px rgba(0,0,0,.25)}
+  .tab,.tab.wa{flex:1;flex-direction:column;gap:3px;padding:4px 0;font-size:10.5px;font-weight:600;border-radius:10px;min-width:0;margin:0;background:none;color:#9CA3AF}
+  .tab:hover{background:none}.tab.on{background:none;color:var(--azul)}.tab.on .tio{background:rgba(234,91,12,.18)}.tab.wa{color:#4ADE80}
+  .tio{padding:3px 11px;border-radius:99px}.ti{width:22px;height:22px}
+  .tab .nl{display:none}.tab .nc{display:block;max-width:100%;overflow:hidden;font-size:10px;letter-spacing:-.15px}
+  .tab .badge{top:-3px;left:auto;right:3px}
+  body{padding-bottom:calc(66px + env(safe-area-inset-bottom))}
+  .chats,.ag{height:calc(100dvh - 52px - 66px - env(safe-area-inset-bottom))}
   .chead{padding:8px 10px;gap:6px}.chead .q{min-width:0}.chead .btn{padding:6px 9px;font-size:12px}.chead .estado{font-size:11px}
   .comp{padding:8px;gap:6px}.comp textarea{font-size:16px;height:42px;padding:10px}.comp button{min-width:44px;padding:0 12px}
   .m{font-size:15px}.it{padding:13px 12px}.buscar input{font-size:16px}.chips{overflow-x:auto;flex-wrap:nowrap}.chip{flex:none;padding:7px 12px}
@@ -2918,7 +2927,7 @@ button{font:inherit;cursor:pointer}
 @media (max-width:760px){.lista{width:100%}.conv{display:none}.chats.abierto .conv{display:flex}.chats.abierto .lista{display:none}.volver{display:inline}.msgs{padding:12px}.m{max-width:86%}.marca{display:none}.user span{display:none}}
 </style></head><body>
 <div class="top"><div class="marca">Te Importamos</div>
-<div class="tabs"><button class="tab on" data-v="dash">Dashboard</button><button class="tab" data-v="pend">Pendientes<span class="badge" id="nPend"></span></button><button class="tab" data-v="agentes">Agentes</button><a href="/panel/cotizar" style="text-decoration:none;padding:8px 14px;border-radius:8px;font-weight:600;color:#D1D5DB;align-self:center">Cotizar</a><a href="/panel/busquedas" style="text-decoration:none;padding:8px 14px;border-radius:8px;font-weight:600;color:#D1D5DB;align-self:center">Búsquedas</a><a href="/panel/redes" style="text-decoration:none;padding:8px 14px;border-radius:8px;font-weight:600;color:#D1D5DB;align-self:center">Redes</a><a href="/panel/805" style="text-decoration:none;padding:8px 14px;border-radius:8px;font-weight:600;color:#fff;background:#25D366;align-self:center">WhatsApp</a></div>
+<nav class="tabs"><button class="tab on" data-v="dash"><span class="tio"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7.5" height="9" rx="2"/><rect x="13.5" y="3" width="7.5" height="5.5" rx="2"/><rect x="13.5" y="11.5" width="7.5" height="9.5" rx="2"/><rect x="3" y="15" width="7.5" height="6" rx="2"/></svg></span><span class="nl">Dashboard</span><span class="nc">Inicio</span></button><button class="tab" data-v="pend"><span class="tio"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="3.5" width="16" height="17.5" rx="3"/><path d="M8.5 9l1.5 1.5 3-3M8.5 15.5l1.5 1.5 3-3M15.5 10h1M15.5 16.5h1"/></svg><span class="badge" id="nPend"></span></span><span class="nl">Pendientes</span><span class="nc">Pendientes</span></button><button class="tab" data-v="agentes"><span class="tio"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="8" width="16" height="12" rx="3.5"/><path d="M12 8V4.5"/><circle cx="12" cy="3.5" r="1"/><path d="M9 13.5v1.5M15 13.5v1.5M1.5 13v3M22.5 13v3"/></svg></span><span class="nl">Agentes</span><span class="nc">Agentes</span></button><a class="tab ln" href="/panel/cotizar"><span class="tio"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="2.5" width="14" height="19" rx="3"/><rect x="8" y="5.5" width="8" height="4" rx="1"/><path d="M8.5 13h.01M12 13h.01M15.5 13h.01M8.5 16.5h.01M12 16.5h.01M15.5 16.5h.01"/></svg></span><span class="nl">Cotizar</span><span class="nc">Cotizar</span></a><a class="tab ln" href="/panel/busquedas"><span class="tio"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M20.5 20.5l-5.3-5.3"/></svg></span><span class="nl">Búsquedas</span><span class="nc">Buscar</span></a><a class="tab ln" href="/panel/redes"><span class="tio"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10.5v3a1.5 1.5 0 0 0 1.5 1.5H8l6.5 4V5L8 9H5.5A1.5 1.5 0 0 0 4 10.5z"/><path d="M18 9a4 4 0 0 1 0 6"/></svg></span><span class="nl">Redes</span><span class="nc">Redes</span></a><a class="tab ln wa" href="/panel/805"><span class="tio"><svg class="ti" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 12.5a7.5 7.5 0 0 1-7.5 7.5H4l2.2-2.6A7.5 7.5 0 1 1 20 12.5z"/><path d="M9 11h7M9 14.5h4.5"/></svg></span><span class="nl">WhatsApp</span><span class="nc">WhatsApp</span></a></nav>
 <div class="user"><span id="usuario"></span> · <a href="/logout">Salir</a></div></div>
 
 <div class="vista on" id="v-dash"><div class="dash">
@@ -2958,9 +2967,9 @@ var hora = function (ms) { if (!ms) return ""; var d = new Date(ms), h = new Dat
 var FILTRO = "", P = "dia", graficos = {}, chats = [], actual = null, firmaLista = "", firmaChat = "";
 
 // ---------- Pestañas ----------
-document.querySelectorAll(".tab").forEach(function (b) { b.onclick = function () { verTab(b.dataset.v); }; });
+document.querySelectorAll(".tab[data-v]").forEach(function (b) { b.onclick = function () { verTab(b.dataset.v); }; });
 function verTab(v) {
-  document.querySelectorAll(".tab").forEach(function (b) { b.classList.toggle("on", b.dataset.v === v); });
+  document.querySelectorAll(".tab[data-v]").forEach(function (b) { b.classList.toggle("on", b.dataset.v === v); });
   document.querySelectorAll(".vista").forEach(function (x) { x.classList.toggle("on", x.id === "v-" + v); });
   if (v === "chats") cargarLista(); else if (v === "pend") cargarTareas(); else if (v === "agentes") cargarAgente(); else cargarDash();
 }
