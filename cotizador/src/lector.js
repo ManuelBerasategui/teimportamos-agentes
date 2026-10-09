@@ -330,7 +330,7 @@ export async function generarReporte(env, iaJSON, tipo = "805_diario", hasta = D
   const m = await metricas(env, desde, fin);
   const prev = await metricas(env, desde - dias * 86400e3, desde);
   const l = await listas(env);
-  const productos = (await env.DB.prepare("SELECT producto, COUNT(*) n FROM w_conv WHERE grupo=0 AND producto<>'' AND ult_ts>=? AND ult_ts<? GROUP BY lower(producto) ORDER BY n DESC LIMIT 12").bind(desde, fin).all()).results || [];
+  const productos = (await env.DB.prepare("SELECT producto, COUNT(*) n FROM w_conv WHERE grupo=0 AND producto<>'' AND COALESCE(etapa,'')<>'no_cliente' AND lower(producto) NOT LIKE '%vap%' AND lower(producto) NOT LIKE '%elf%bar%' AND ult_ts>=? AND ult_ts<? GROUP BY lower(producto) ORDER BY n DESC LIMIT 12").bind(desde, fin).all()).results || [];
   // Lo que se habló en grupos (para que la IA lo resuma)
   const grupos = (await env.DB.prepare("SELECT c.nombre, m.texto FROM w_msg m LEFT JOIN w_conv c ON c.conv=m.conv WHERE m.grupo=1 AND m.yo=0 AND m.ts>=? AND m.ts<? ORDER BY m.ts DESC LIMIT 150").bind(desde, fin).all()).results || [];
   const chatsDia = (await env.DB.prepare("SELECT nombre, conv, puntaje, producto, etapa, resumen FROM w_conv WHERE grupo=0 AND ult_ts>=? AND ult_ts<? ORDER BY COALESCE(puntaje,0) DESC LIMIT 80").bind(desde, fin).all()).results || [];
