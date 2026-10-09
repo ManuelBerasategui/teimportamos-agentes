@@ -1,6 +1,6 @@
 import { rutaLector, apiLector, cronLector, paginaReporte } from "./lector.js";
 import { PANEL_805 } from "./lector-panel.js";
-import { apiCotizar, paginaCotizacion, PANEL_COTIZAR } from "./cotizar.js";
+import { apiCotizar, paginaCotizacion, PANEL_COTIZAR, cotizarAuto } from "./cotizar.js";
 import { apiBusquedas, PANEL_BUSQUEDAS, rutaInformes, rutaImagen } from "./busquedas.js";
 import { apiRedes, PANEL_REDES, cronRedes } from "./redes.js";
 /**
@@ -3251,7 +3251,7 @@ $("#agEnviar").onclick = function () {
 };
 
 // ---------- Pendientes ----------
-var TIPOS = { ig_revisar: "Instagram: comentario para vos", cierre: "Quiere comprar", proveedor: "Buscar proveedor", cotizacion: "Cotización para aprobar", comprobante: "Comprobante de pago", derivado: "Chat derivado: respondele vos", promesa: "El agente prometió algo", riesgo: "Chat en riesgo", recontactar: "Seguimiento para mandar vos", busqueda_lista: "Búsqueda de proveedores lista", informe_listo: "Informe de proveedores listo" };
+var TIPOS = { ig_revisar: "Instagram: comentario para vos", cierre: "Quiere comprar", proveedor: "Buscar proveedor", cotizacion: "Cotización para aprobar", comprobante: "Comprobante de pago", derivado: "Chat derivado: respondele vos", promesa: "El agente prometió algo", riesgo: "Chat en riesgo", recontactar: "Seguimiento para mandar vos", busqueda_lista: "Búsqueda de proveedores lista", cotizacion_auto: "Cotización automática lista", informe_listo: "Informe de proveedores listo" };
 var ORDEN = { cierre: 0, cotizacion: 0, comprobante: 1, proveedor: 2, busqueda_lista: 2, derivado: 2, promesa: 3, riesgo: 4, recontactar: 5 }, firmaT = "";
 function hace(ms) { var m = Math.round((Date.now() - ms) / 60000); return m < 60 ? "hace " + m + " min" : m < 1440 ? "hace " + Math.round(m / 60) + " h" : "hace " + Math.round(m / 1440) + " d"; }
 function contarPend() { api("tareas").then(function (ts) { $("#nPend").textContent = ts.length || ""; if ($("#v-pend").classList.contains("on")) pintarTareas(ts); }).catch(function () {}); }
@@ -3281,6 +3281,7 @@ function pintarTareas(ts) {
     if (t.tipo === "cotizacion") b = ['<button class="btn lleno" data-a="ok">Enviar al cliente</button>', '<button class="btn rojo" data-a="no">Descartar</button>'];
     else if (t.tipo === "comprobante") b = ['<button class="btn lleno" data-a="ok">Entró la plata</button>', '<button class="btn rojo" data-a="no">No entró</button>'];
     else if (t.tipo === "recontactar") b = ['<a class="btn lleno" target="_blank" data-wa="1" href="https://wa.me/' + t.tel + '?text=' + encodeURIComponent(t.datos.mensaje || "") + '">Abrir en mi WhatsApp</a>', '<button class="btn" data-a="hecho">Ya lo mandé</button>'];
+    else if (t.tipo === "cotizacion_auto") b = ['<a class="btn lleno" target="_blank" href="/panel/cotizar/pdf?id=' + esc(t.datos.cotiz || "") + '">Ver / PDF</a>', '<a class="btn" href="/panel/cotizar?id=' + esc(t.datos.cotiz || "") + '">Editar</a>', '<button class="btn" data-a="hecho">Ya la mandé</button>'];
     else if (t.tipo === "busqueda_lista") b = ['<a class="btn lleno" href="/panel/busquedas#' + esc(t.datos.busqueda || "") + '">Ver proveedores</a>', '<button class="btn" data-a="hecho">Listo, resuelto</button>'];
     else if (t.tipo === "proveedor") b = ['<a class="btn lleno" href="/panel/busquedas?tarea=' + encodeURIComponent(t.id) + '">Buscar proveedor ahora</a>', '<button class="btn" data-a="hecho">Listo, resuelto</button>'];
     else b = ['<button class="btn" data-a="hecho">Listo, resuelto</button>'];
@@ -3337,6 +3338,7 @@ export default {
       if (m % 5 === 0) await correrSeguimientos(env).catch((e) => console.log("Error seguimientos:", e?.stack || e));
       await procesarBuffers(env).catch((e) => console.log("Error red:", e?.stack || e));
       await cronLector(env, iaJSON, evento.scheduledTime || Date.now()).catch((e) => console.log("Error lector 805:", e?.stack || e));
+      if (m % 5 === 4 && env.LECTOR_TOKEN) await cotizarAuto(env, { T, leerPagina, iaJSON, iaConImagenes }).catch((e) => console.log("Error cotización automática:", e?.stack || e));
       if (env.DB) await cronRedes(env, iaJSON, evento.scheduledTime || Date.now(), BASE_URL).catch((e) => console.log("Error redes:", e?.stack || e));
     })());
   },

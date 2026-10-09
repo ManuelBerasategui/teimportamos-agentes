@@ -79,6 +79,50 @@ ${String(indicaciones || "").slice(0, 3000)}`;
   return { items, cliente: r.cliente || "", honorarios: r.honorarios ?? null, mostrar_desglose: r.mostrar_desglose !== false, notas_pdf: r.notas_pdf || "" };
 }
 
+// ---------------------------------------------------------------------------
+// Cotización AUTOMÁTICA desde el 805: si un cliente mandó link(s) de Alibaba.com + cantidad, se arma sola
+// y queda en Pendientes ("Cotización lista") con el PDF. No se le manda nada al cliente.
+// Fotos, nombres sueltos y links de 1688 NO se cotizan solos (siguen como "esperan cotización").
+// ---------------------------------------------------------------------------
+const RE_ALIBABA = /https?:\/\/(?:[a-z0-9-]+\.)*alibaba\.com\/[^\s<>"']+/gi;
+export async function cotizarAuto(env, h, { limite = 2 } = {}) {
+  await tabla(env);
+  const hasta = Date.now() - 3 * 86400e3;
+  const convs = (await env.DB.prepare("SELECT conv, nombre FROM w_conv WHERE grupo=0 AND archivado=0 AND ult_cliente_ts>=? AND ult_cliente_ts>=ult_yo_ts - 3*86400000 ORDER BY ult_cliente_ts DESC LIMIT 60").bind(hasta).all().catch(() => ({ results: [] }))).results || [];
+  const hechos = [];
+  for (const c of convs) {
+    if (hechos.length >= limite) break;
+    const ms = (await env.DB.prepare("SELECT texto, ts FROM w_msg WHERE conv=? AND yo=0 AND ts>=? ORDER BY ts").bind(c.conv, hasta).all()).results || [];
+    const texto = ms.map((m) => m.texto).join("\n");
+    const links = [...new Set((texto.match(RE_ALIBABA) || []).map((l) => l.replace(/[),.;]+$/, "").split("?")[0]))];
+    if (!links.length) continue;
+    const clave = "cotauto:" + c.conv + ":" + links.sort().join("|").slice(0, 300);
+    const ya = await env.DB.prepare("SELECT v FROM kv WHERE k=?").bind(clave).first();
+    if (ya) continue;
+    // Hace falta la cantidad: si todavía no la dijo, se espera (se vuelve a mirar en la próxima vuelta)
+    if (!/\d/.test(texto.replace(RE_ALIBABA, ""))) continue;
+    const r = await leerItems(env, h, texto.slice(-6000), "Cotizá solo los productos de los links de Alibaba que mandó el cliente, con la cantidad que pidió. Si no dijo cantidad para un producto, poné 0.", []);
+    const items = r.items.filter((i) => /alibaba\.com/i.test(i.link || "") && i.cantidad > 0 && i.precio > 0);
+    const sinCant = r.items.some((i) => /alibaba\.com/i.test(i.link || "") && !i.cantidad);
+    const marca = (v) => env.DB.prepare("INSERT INTO kv (k,v,exp) VALUES (?,?,NULL) ON CONFLICT(k) DO UPDATE SET v=excluded.v").bind(clave, v).run();
+    if (!items.length) { if (!sinCant) await marca("no-se-pudo"); continue; }   // sin cantidad: espera; página ilegible: queda para cotizar a mano
+    const ult = await env.DB.prepare("SELECT MAX(num) n FROM cotiz_manual").first();
+    const id = Math.random().toString(36).slice(2, 10), num = (ult?.n || 0) + 1;
+    const cliente = c.nombre || "+" + c.conv;
+    const est = items.some((i) => i.peso_estimado);
+    const datos = { items: items.map((i) => ({ nombre: i.nombre, variante: i.variante || "", link: i.link, cantidad: i.cantidad, precio: i.precio, peso: i.peso })), desglose: true,
+      notas: est ? "Peso estimado: el valor final puede variar un poco cuando el proveedor confirme el peso." : "", auto: true, conv: c.conv };
+    await env.DB.prepare("INSERT INTO cotiz_manual (id, ts, num, quien, cliente, datos) VALUES (?,?,?,?,?,?)").bind(id, Date.now(), num, "auto", cliente.slice(0, 80), JSON.stringify(datos)).run();
+    const tot = calcular(datos.items, datos, h.T).total;
+    const det = items.map((i) => `• ${i.nombre} x${i.cantidad}: USD ${i.precio}/u FOB${i.peso_estimado ? " (peso estimado)" : ""}`).join("\n") + (r.items.length > items.length ? "\n(Hay productos que no se pudieron leer: cotizalos a mano.)" : "");
+    await env.DB.prepare("INSERT INTO tareas (id, ts, tipo, tel, nombre, titulo, detalle, datos, ref, estado) VALUES (?,?,?,?,?,?,?,?,?,'abierta')")
+      .bind("ca" + id, Date.now(), "cotizacion_auto", c.conv, cliente, `Cotización lista: ${items.length} producto${items.length > 1 ? "s" : ""} · total USD ${tot.toFixed(2)} puesto`, det, JSON.stringify({ cotiz: id, num }), "cotauto:" + id).run();
+    await marca(id);
+    hechos.push({ conv: c.conv, id, total: tot });
+  }
+  return hechos;
+}
+
 export async function apiCotizar(env, req, url, quien, h) {
   await tabla(env);
   const r = url.pathname.replace("/panel/api/cotizar/", "");
@@ -178,4 +222,5 @@ function historial(){fetch("/panel/api/cotizar/lista").then(function(r){return r
 $("#hist").addEventListener("click",function(ev){var d=ev.target.closest("[data-del]"),ed=ev.target.closest("[data-ed]");if(d){ev.preventDefault();if(!confirm("¿Borrar esta cotización?"))return;fetch("/panel/api/cotizar/borrar",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id:d.dataset.del})}).then(historial)}
 if(ed){ev.preventDefault();fetch("/panel/api/cotizar/una?id="+ed.dataset.ed).then(function(r){return r.json()}).then(function(f){ID=f.id;NUM=f.num;IT=f.datos.items;$("#cli").value=f.cliente||"";$("#hon").value=f.datos.honorarios==null?"":f.datos.honorarios;$("#fle").value=f.datos.flete==null?"":f.datos.flete;$("#des").checked=f.datos.desglose!==false;$("#notas").value=f.datos.notas||"";$("#paso2").style.display="";pintar();$("#paso2").scrollIntoView({behavior:"smooth"})})}});
 historial();
+(function(){var q=new URLSearchParams(location.search).get("id");if(!q)return;fetch("/panel/api/cotizar/una?id="+encodeURIComponent(q)).then(function(r){return r.json()}).then(function(f){if(!f.id)return;ID=f.id;NUM=f.num;IT=f.datos.items;$("#cli").value=f.cliente||"";$("#hon").value=f.datos.honorarios==null?"":f.datos.honorarios;$("#fle").value=f.datos.flete==null?"":f.datos.flete;$("#des").checked=f.datos.desglose!==false;$("#notas").value=f.datos.notas||"";$("#paso2").style.display="";pintar();$("#paso2").scrollIntoView({behavior:"smooth"})})})();
 </script></body></html>`;
