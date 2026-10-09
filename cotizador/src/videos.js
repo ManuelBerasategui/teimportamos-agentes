@@ -210,6 +210,18 @@ export async function servirObjeto(env, req, key, descargar = "") {
   return new Response(o.body, { headers: { ...h, "Content-Length": String(cab.size) } });
 }
 
+// Avisa a GitHub que arranque el editor ya (si no, lo agarra el horario programado, que GitHub a veces atrasa horas).
+// Necesita GH_TOKEN en Cloudflare: token "fine-grained" de GitHub con permiso Actions: Read and write sobre este repo.
+export const REPO = "ManuelBerasategui/teimportamos-agentes";
+export async function despertarEditor(env) {
+  if (!env.GH_TOKEN) return "programado";
+  const r = await fetch(`https://api.github.com/repos/${REPO}/actions/workflows/videos.yml/dispatches`, { method: "POST",
+    headers: { Authorization: `Bearer ${env.GH_TOKEN}`, Accept: "application/vnd.github+json", "User-Agent": "teimportamos-panel", "X-GitHub-Api-Version": "2022-11-28", "Content-Type": "application/json" },
+    body: JSON.stringify({ ref: "main" }) }).catch(() => null);
+  if (!r?.ok) console.log("No se pudo despertar el editor:", r?.status, r ? (await r.text()).slice(0, 200) : "sin respuesta");
+  return r?.ok ? "ya" : "programado";
+}
+
 // ---------- API del panel (/panel/api/videos/...) ----------
 export async function apiVideos(env, req, url, quien) {
   if (!env.VIDEOS) return json({ error: "Falta conectar el bucket de videos (R2) al panel." }, 500);
@@ -277,7 +289,7 @@ export async function apiVideos(env, req, url, quien) {
     const clips = JSON.parse(l.clips);
     for (const c of clips) if (!c.subido || !(await env.VIDEOS.head(c.key))) return json({ error: `Falta subir ${c.nombre}` }, 400);
     await env.DB.prepare("UPDATE ig_lotes SET estado='en_cola' WHERE id=?").bind(l.id).run();
-    return json({ ok: true });
+    return json({ ok: true, editor: await despertarEditor(env) });
   }
   if (r === "lote-cancelar" && req.method === "POST") {
     const b = await req.json().catch(() => ({}));

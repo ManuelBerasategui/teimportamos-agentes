@@ -75,7 +75,13 @@ const p1 = await panel(`subir-parte?lote=${L}&n=2&parte=1`, cuerpo.slice(0, 1500
 const p2 = await panel(`subir-parte?lote=${L}&n=2&parte=2`, cuerpo.slice(1500), "PUT");
 await panel(`subir-fin?lote=${L}&n=2`, { partes: [p1, p2] });
 chk("subida en partes arma el archivo completo", ini.uploadId && objs.get(ln.clips[2].key).size === 2500 && objs.get(ln.clips[2].key).d[2499] === 3);
-chk("lote listo para editar", (await panel("lote-listo", { lote: L })).ok && fila("SELECT estado FROM ig_lotes WHERE id=?", L).estado === "en_cola");
+const gh = [];
+globalThis.fetch = async (u, o = {}) => { if (String(u).includes("telegram")) tg.push(String(u)); if (String(u).includes("api.github.com")) { gh.push([String(u), o.headers?.Authorization, o.body]); return new Response(null, { status: 204 }); } return new Response("{}"); };
+env.GH_TOKEN = "ghp_prueba";
+const listo = await panel("lote-listo", { lote: L });
+chk("lote listo para editar", listo.ok && fila("SELECT estado FROM ig_lotes WHERE id=?", L).estado === "en_cola");
+chk("despierta al editor de GitHub al toque", listo.editor === "ya" && gh.length === 1 && gh[0][0].endsWith("/actions/workflows/videos.yml/dispatches") && gh[0][1] === "Bearer ghp_prueba" && JSON.parse(gh[0][2]).ref === "main");
+delete env.GH_TOKEN;
 chk("no se puede subir más a un lote listo", !!(await panel(`subir-simple?lote=${L}&n=0`, g1, "PUT")).error);
 
 // 3) Editor de GitHub

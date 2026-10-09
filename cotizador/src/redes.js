@@ -750,7 +750,7 @@ $("#bSubir").onclick = function () {
     return sig();
   }).then(function () { return VAPI("lote-listo", { lote: lote }); }).then(function (r) {
     if (!r.ok) throw new Error(r.error || "error");
-    SUBIENDO = false; VSEL = []; $("#vArch").value = ""; pintarSel(); $("#vProg").textContent = "Listo. Se editan en los próximos minutos y te aviso por Telegram."; cargarVideos();
+    SUBIENDO = false; VSEL = []; $("#vArch").value = ""; pintarSel(); $("#vProg").textContent = r.editor === "ya" ? "Listo. Ya se están editando: en 10 a 15 minutos te aviso por Telegram." : "Listo. Se editan en la próxima vuelta del editor y te aviso por Telegram."; cargarVideos();
   }).catch(function (e) {
     SUBIENDO = false; pintarSel(); $("#vProg").textContent = "No se pudo subir: " + (e && e.message ? e.message : "error");
     if (lote) VAPI("lote-cancelar", { lote: lote }).catch(function () {});
