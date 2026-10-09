@@ -86,7 +86,7 @@ export async function limpiezaVideos(env, ahora = Date.now()) {
   await prepararVideos(env);
   let n = 0;
   for (const l of (await env.DB.prepare("SELECT * FROM ig_lotes WHERE estado='subiendo' AND ts < ?").bind(ahora - 24 * 3600e3).all()).results || []) { await cancelarLote(env, l); n++; }
-  for (const l of (await env.DB.prepare("SELECT * FROM ig_lotes WHERE estado IN ('error','cancelado','hecho') AND bytes > 0").all()).results || []) { await cancelarLote(env, l, l.estado); n++; }
+  for (const l of (await env.DB.prepare("SELECT * FROM ig_lotes WHERE bytes > 0 AND (estado IN ('cancelado','hecho') OR (estado='error' AND ts < ?))").bind(ahora - 7 * 86400e3).all()).results || []) { await cancelarLote(env, l, l.estado); n++; }
   const viejos = (await env.DB.prepare("SELECT id, clave, portada FROM ig_videos WHERE borrado=0 AND ((estado='publicado' AND publicado_ts < ?) OR estado='descartado' OR (estado='revision' AND ts < ?))")
     .bind(ahora - VIDEOS.borrarPublicadosDias * 86400e3, ahora - VIDEOS.vencerRevisionDias * 86400e3).all()).results || [];
   if (viejos.length) {
@@ -185,8 +185,9 @@ export async function rutaVideosEditor(env, req, url, iaJSON, base = "") {
     const l = await env.DB.prepare("SELECT * FROM ig_lotes WHERE id=?").bind(String(b.lote || "")).first();
     if (!l) return json({ error: "lote desconocido" }, 404);
     const final = l.intentos >= 3;
+    // Los clips NO se borran: quedan para "Reintentar" desde el panel (la limpieza los saca a los 7 días)
     await env.DB.prepare("UPDATE ig_lotes SET estado=?, error=? WHERE id=?").bind(final ? "error" : "en_cola", String(b.error || "").slice(0, 400), l.id).run();
-    if (final) { await cancelarLote(env, { ...l }, "error"); await telegram(env, `⚠️ No pude editar un lote de videos: ${String(b.error || "").slice(0, 200)}`).catch(() => {}); }
+    if (final) await telegram(env, `⚠️ No pude editar un lote de videos: ${String(b.error || "").slice(0, 200)}\nPodés reintentarlo desde Redes > Videos.`).catch(() => {});
     return json({ ok: true, reintenta: !final });
   }
   return json({ error: "ruta desconocida" }, 404);
@@ -289,6 +290,14 @@ export async function apiVideos(env, req, url, quien) {
     const clips = JSON.parse(l.clips);
     for (const c of clips) if (!c.subido || !(await env.VIDEOS.head(c.key))) return json({ error: `Falta subir ${c.nombre}` }, 400);
     await env.DB.prepare("UPDATE ig_lotes SET estado='en_cola' WHERE id=?").bind(l.id).run();
+    return json({ ok: true, editor: await despertarEditor(env) });
+  }
+  if (r === "lote-reintentar" && req.method === "POST") {
+    const b = await req.json().catch(() => ({}));
+    const l = await lote(b.lote);
+    if (!l || l.estado !== "error") return json({ error: "Solo se puede reintentar un lote con error" }, 400);
+    for (const c of JSON.parse(l.clips)) if (!(await env.VIDEOS.head(c.key))) return json({ error: "Los clips de ese lote ya no están guardados: volvé a subirlos" }, 400);
+    await env.DB.prepare("UPDATE ig_lotes SET estado='en_cola', intentos=0, error=NULL, tomado_ts=NULL WHERE id=?").bind(l.id).run();
     return json({ ok: true, editor: await despertarEditor(env) });
   }
   if (r === "lote-cancelar" && req.method === "POST") {

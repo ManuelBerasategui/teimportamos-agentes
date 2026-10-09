@@ -244,6 +244,12 @@ def procesar(trabajo):
 
 
 def main():
+    if len(sys.argv) > 1 and sys.argv[1] == "--verificar":   # prueba de instalación: carga Whisper y transcribe un audio de prueba
+        with tempfile.TemporaryDirectory() as d:
+            a = os.path.join(d, "t.wav")
+            subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "sine=frequency=300:duration=2", a], check=True)
+            print("Whisper OK, palabras en el audio de prueba:", len(transcribir(a)))
+        return
     if len(sys.argv) > 2 and sys.argv[1] == "--prueba":   # prueba local sin Whisper ni panel
         trans = json.load(open(sys.argv[2]))
         d = tempfile.mkdtemp()
@@ -257,7 +263,7 @@ def main():
         return
     if not CLAVE:
         sys.exit("Falta TI_CLAVE (secret de GitHub)")
-    for _ in range(3):   # hasta 3 lotes por corrida
+    for _ in range(3):   # hasta 3 lotes por corrida; si uno falla, se corta (no se reintenta en la misma vuelta)
         t = api("/videos/trabajo", {})
         if not t.get("lote"):
             print("No hay lotes para editar.")
@@ -267,9 +273,10 @@ def main():
         except Exception as e:
             print("Error en el lote", t["lote"], e)
             try:
-                api("/videos/error", {"lote": t["lote"], "error": str(e)[:400]})
+                api("/videos/error", {"lote": t["lote"], "error": f"{type(e).__name__}: {e}"[:400]})
             except Exception:
                 pass
+            sys.exit(1)
 
 
 if __name__ == "__main__":

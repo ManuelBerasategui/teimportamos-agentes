@@ -763,7 +763,7 @@ function cargarVideos() {
     var pc = Math.min(100, Math.round((r.usado / r.tope) * 100));
     $("#vEspacio").textContent = "Espacio: " + gbs(r.usado) + " de " + gbs(r.tope);
     $("#vBarra").className = "barra" + (pc < 70 ? " ok" : ""); $("#vBarra").firstChild.style.width = pc + "%";
-    $("#vLotes").innerHTML = r.lotes.length ? r.lotes.map(function (l) { return '<div class="clip"><span>' + l.clips.length + " clips (" + l.clips.map(function (c) { return c.tipo; }).join(", ") + ') <span class="estado">' + hace(l.ts) + "</span>" + (l.error ? '<div class="estado" style="color:var(--rojo)">' + esc(l.error) + "</div>" : "") + '</span><span class="fila"><span class="pill' + (l.estado === "error" ? "" : " n") + '">' + (ESTL[l.estado] || l.estado) + "</span>" + (l.estado !== "procesando" ? '<button class="btn ch" data-cancel="' + l.id + '">Cancelar</button>' : "") + "</span></div>"; }).join("") : '<div class="vacio">Nada en edición.</div>';
+    $("#vLotes").innerHTML = r.lotes.length ? r.lotes.map(function (l) { return '<div class="clip"><span>' + l.clips.length + " clips (" + l.clips.map(function (c) { return c.tipo; }).join(", ") + ') <span class="estado">' + hace(l.ts) + "</span>" + (l.error ? '<div class="estado" style="color:var(--rojo)">' + esc(l.error) + "</div>" : "") + '</span><span class="fila"><span class="pill' + (l.estado === "error" ? "" : " n") + '">' + (ESTL[l.estado] || l.estado) + "</span>" + (l.estado === "error" ? '<button class="btn p ch" data-retry="' + l.id + '">Reintentar</button>' : "") + (l.estado !== "procesando" ? '<button class="btn ch" data-cancel="' + l.id + '">Cancelar</button>' : "") + "</span></div>"; }).join("") : '<div class="vacio">Nada en edición.</div>';
     var rev = r.videos.filter(function (v) { return v.estado === "revision" || v.estado === "error"; });
     badge("#bVid", rev.length);
     var perm = r.videos.filter(function (v) { return v.estado === "error" && /instagram_business_content_publish/.test(v.error || ""); }).length;
@@ -787,6 +787,7 @@ function cargarVideos() {
 }
 $("#m-videos").onclick = function (ev) {
   var b = ev.target.closest("button"); if (!b) return;
+  if (b.dataset.retry) { b.disabled = true; VAPI("lote-reintentar", { lote: b.dataset.retry }).then(function (r) { if (!r.ok) { b.disabled = false; return aviso(r.error || "No se pudo"); } aviso("Reintentando: en 10 a 15 minutos te aviso"); cargarVideos(); }); return; }
   if (b.dataset.cancel) { if (!confirm("¿Cancelar este lote? Se borran los clips.")) return; VAPI("lote-cancelar", { lote: b.dataset.cancel }).then(cargarVideos); return; }
   var card = b.closest("[data-id]"); if (!card || !b.dataset.a) return;
   var ta = card.querySelector("textarea"), a = b.dataset.a;

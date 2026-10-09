@@ -120,7 +120,12 @@ chk("fin: aviso por Telegram", tg.length === 1);
 const l2 = (await panel("lote-nuevo", { clips: [{ nombre: "z.mp4", tipo: "completo", bytes: 10 }] })).lote;
 await panel(`subir-simple?lote=${l2}&n=0`, new Uint8Array(10), "PUT"); await panel("lote-listo", { lote: l2 });
 for (let i = 0; i < 3; i++) { await editor("trabajo", {}); await editor("error", { lote: l2, error: "ffmpeg falló" }); }
-chk("tras 3 errores queda en error y borra el clip", fila("SELECT estado FROM ig_lotes WHERE id=?", l2).estado === "error" && ![...objs.keys()].some((k) => k.startsWith("lotes/" + l2)));
+chk("tras 3 errores queda en error y NO borra el clip", fila("SELECT estado FROM ig_lotes WHERE id=?", l2).estado === "error" && [...objs.keys()].some((k) => k.startsWith("lotes/" + l2)));
+const re = await panel("lote-reintentar", { lote: l2 });
+chk("reintentar vuelve a la cola", re.ok && fila("SELECT estado, intentos FROM ig_lotes WHERE id=?", l2).estado === "en_cola" && fila("SELECT intentos FROM ig_lotes WHERE id=?", l2).intentos === 0);
+chk("no se reintenta un lote que no tiene error", !!(await panel("lote-reintentar", { lote: l2 })).error);
+for (let i = 0; i < 3; i++) { await editor("trabajo", {}); await editor("error", { lote: l2, error: "ffmpeg falló" }); }
+db.prepare("UPDATE ig_lotes SET ts=? WHERE id=?").run(Date.now() - 8 * 86400e3, l2);
 
 // 5) Revisión, aprobación y horarios (19 h, uno por día)
 const est = await panel("estado");
@@ -182,6 +187,7 @@ db.prepare("INSERT INTO ig_lotes (id, ts, estado, clips, bytes) VALUES ('viejo',
 await R2.put("lotes/viejo/0.mp4", new Uint8Array(50));
 const lim = await V.limpiezaVideos(env);
 chk("borra el video publicado hace más de 3 días (queda el link)", !objs.has(k0) && !objs.has(kp0) && fila("SELECT borrado, link FROM ig_videos WHERE id=?", va.id).borrado === 1);
+chk("lote con error de más de 7 días se borra", ![...objs.keys()].some((k) => k.startsWith("lotes/" + l2)));
 chk("cancela subidas abandonadas", !objs.has("lotes/viejo/0.mp4") && fila("SELECT estado FROM ig_lotes WHERE id='viejo'").estado === "cancelado");
 chk("recalcula el espacio real", lim.usado === [...objs.values()].reduce((s, o) => s + o.size, 0));
 chk("cron de limpieza solo a las 4:10", (await V.cronVideos(env, Date.UTC(2026, 9, 10, 15, 0))) === false && (await V.cronVideos(env, Date.UTC(2026, 9, 10, 7, 10))) === true);
