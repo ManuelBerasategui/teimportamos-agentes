@@ -41,6 +41,7 @@ export async function prepararVideos(env) {
 
 // ---------- Espacio usado (se mide en R2 de verdad, no se estima) ----------
 export async function espacioUsado(env, forzar = false) {
+  await prepararVideos(env);
   const c = JSON.parse((await kvGet(env, "videos_bytes")) || "null");
   if (!forzar && c && Date.now() - c.ts < 5 * 60e3) return c.bytes;
   let total = 0, cursor;

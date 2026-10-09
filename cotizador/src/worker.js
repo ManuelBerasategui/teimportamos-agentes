@@ -4,6 +4,7 @@ import { apiCotizar, paginaCotizacion, PANEL_COTIZAR, cotizarAuto } from "./coti
 import { apiBusquedas, PANEL_BUSQUEDAS, rutaInformes, rutaImagen } from "./busquedas.js";
 import { apiRedes, PANEL_REDES, cronRedes } from "./redes.js";
 import { apiVideos, rutaVideosEditor, cronVideos } from "./videos.js";
+import { apiCarruseles, cronCarr } from "./carruseles.js";
 /**
  * Agente de WhatsApp · Te Importamos (v15.0: + pestaña Búsquedas de proveedores)
  * Cloudflare Workers + Gemini (gratis) con respaldo de Cloudflare AI.
@@ -3350,6 +3351,7 @@ export default {
       await cronLector(env, iaJSON, evento.scheduledTime || Date.now()).catch((e) => console.log("Error lector 805:", e?.stack || e));
       if (m % 5 === 4 && env.LECTOR_TOKEN) await cotizarAuto(env, { T, leerPagina, iaJSON, iaConImagenes }).catch((e) => console.log("Error cotización automática:", e?.stack || e));
       if (env.DB) await cronVideos(env, evento.scheduledTime || Date.now()).catch((e) => console.log("Error videos:", e?.stack || e));
+      if (env.DB) await cronCarr(env, evento.scheduledTime || Date.now()).catch((e) => console.log("Error carruseles:", e?.stack || e));
       if (env.DB) await cronRedes(env, iaJSON, evento.scheduledTime || Date.now(), BASE_URL, T).catch((e) => console.log("Error redes:", e?.stack || e));
     })());
   },
@@ -3425,6 +3427,7 @@ export default {
     if (url.pathname.startsWith("/panel/api/cotizar/")) return apiCotizar(env, req, url, url.searchParams.get("quien"), { T, leerPagina, iaJSON, iaConImagenes });
     if (url.pathname === "/panel/cotizar/pdf") return paginaCotizacion(env, url.searchParams.get("id") || "", T);
     if (url.pathname === "/panel/cotizar") return new Response(PANEL_COTIZAR, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
+    if (url.pathname.startsWith("/panel/api/carruseles/")) return apiCarruseles(env, req, url, url.searchParams.get("quien"), iaJSON, T);
     if (url.pathname.startsWith("/panel/api/videos/")) return apiVideos(env, req, url, url.searchParams.get("quien"));
     if (url.pathname.startsWith("/panel/api/redes/")) return apiRedes(env, req, url, url.searchParams.get("quien"), iaJSON, BASE_URL, T);
     if (url.pathname === "/panel/redes") return new Response(PANEL_REDES, { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });

@@ -68,8 +68,10 @@ export async function prepararSync(env) {
 export async function yo(env, ig, refrescar = false) {
   const g = !refrescar && (await kvGet(env, "ig_yo"));
   if (g) return JSON.parse(g);
-  const r = await ig("/me", "GET", { fields: "user_id,username,followers_count,media_count" });
-  const y = { id: String(r.user_id || r.id), username: r.username, seguidores: r.followers_count ?? null, publicaciones: r.media_count ?? null };
+  let r;
+  try { r = await ig("/me", "GET", { fields: "user_id,username,followers_count,media_count,profile_picture_url" }); }
+  catch (e) { if (e.message === "TOPE_CONSULTAS") throw e; r = await ig("/me", "GET", { fields: "user_id,username,followers_count,media_count" }); }
+  const y = { id: String(r.user_id || r.id), username: r.username, seguidores: r.followers_count ?? null, publicaciones: r.media_count ?? null, foto: r.profile_picture_url || null };
   await kvPut(env, "ig_yo", JSON.stringify(y));
   return y;
 }

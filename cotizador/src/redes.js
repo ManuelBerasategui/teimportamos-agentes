@@ -4,6 +4,7 @@
 // Nada de esto publica en Instagram ni le manda mensajes a nadie.
 import { telegram } from "./lector.js";
 import { calcular } from "./cotizar.js";
+import { CARR_CSS, CARR_HTML, CARR_JS } from "./carruseles-ui.js";
 
 // Copia idéntica de instagram/src/sync.js (la simulación verifica que sean iguales)
 export const ESQUEMA_IG = [
@@ -393,6 +394,7 @@ export async function apiRedes(env, req, url, quien, iaJSON, base = "", T = null
 
 export const PANEL_REDES = String.raw`<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Redes · Te Importamos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin><link href="https://fonts.googleapis.com/css2?family=Patrick+Hand&display=swap" rel="stylesheet">
 <style>
 :root{--nar:#EA5B0C;--fondo:#f5f7fb;--borde:#e3e8f0;--txt:#0f172a;--gris:#64748b;--rojo:#dc2626;--verde:#16a34a;--ambar:#d97706}
 *{box-sizing:border-box}body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--fondo);color:var(--txt)}
@@ -464,6 +466,7 @@ select{padding:5px 6px;border:1px solid var(--borde);border-radius:6px;font-size
 .sticker .ops{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}.sticker .ops span{background:#fff;border:1px solid #ddd6fe;border-radius:99px;padding:4px 10px;font-size:13px;font-weight:600}
 .refs{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0}
 .idea .tit{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}.idea .tit h3{flex:1}
+${CARR_CSS}
 .aviso{position:fixed;left:50%;bottom:18px;transform:translateX(-50%);background:#0f172a;color:#fff;padding:10px 16px;border-radius:10px;font-size:14px;display:none;z-index:20;max-width:90vw}
 .acciones .btn{display:inline-flex;align-items:center}
 @media(max-width:760px){
@@ -499,7 +502,7 @@ select{padding:5px 6px;border:1px solid var(--borde);border-radius:6px;font-size
 </style></head><body>
 <header><a class="volver" href="/panel" aria-label="Volver al panel"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg><span>Panel</span></a><b>Te Importamos · <span>Redes</span></b><span class="sync" id="sync"></span></header>
 <main>
-<nav class="modos" id="modos"><button data-m="resumen" class="on"><span class="ico"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 20h18"/><rect x="5" y="11" width="3" height="6" rx="1"/><rect x="10.5" y="7" width="3" height="10" rx="1"/><rect x="16" y="4" width="3" height="13" rx="1"/></svg></span><span class="lg">Resumen</span><span class="ct">Resumen</span></button><button data-m="ideas"><span class="ico"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21.5h4"/><path d="M12 2.5a6.5 6.5 0 0 0-3.9 11.7c.6.5.9 1.2.9 1.9V17h6v-.9c0-.7.3-1.4.9-1.9A6.5 6.5 0 0 0 12 2.5z"/></svg><span class="bd" id="bIdeas" style="display:none"></span></span><span class="lg">Ideas para grabar</span><span class="ct">Ideas</span></button><button data-m="dms"><span class="ico"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 12a8.5 8.5 0 0 1-12.3 7.6L3.5 21l1.4-4.6A8.5 8.5 0 1 1 20.5 12z"/></svg><span class="bd" id="bDms" style="display:none"></span></span><span class="lg">DMs sin responder</span><span class="ct">DMs</span></button><button data-m="videos"><span class="ico"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="13" height="12" rx="2.5"/><path d="M15.5 10.2l6-3.2v10l-6-3.2z"/></svg><span class="bd" id="bVid" style="display:none"></span></span><span class="lg">Videos</span><span class="ct">Videos</span></button><button data-m="reels"><span class="ico"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4.5"/><path d="M3 8.5h18M8.5 3l2.5 5.5M14 3l2.5 5.5"/><path d="M10.2 12.2v5.6l4.8-2.8z"/></svg></span><span class="lg">Reels</span><span class="ct">Reels</span></button><button data-m="agente"><span class="ico"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="8" width="16" height="12" rx="3.5"/><path d="M12 8V4.5"/><circle cx="12" cy="3.5" r="1"/><path d="M9 13.5v1.5M15 13.5v1.5M1.5 13v3M22.5 13v3"/></svg></span><span class="lg">Preguntale al agente</span><span class="ct">Agente</span></button></nav>
+<nav class="modos" id="modos"><button data-m="resumen" class="on"><span class="ico"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 20h18"/><rect x="5" y="11" width="3" height="6" rx="1"/><rect x="10.5" y="7" width="3" height="10" rx="1"/><rect x="16" y="4" width="3" height="13" rx="1"/></svg></span><span class="lg">Resumen</span><span class="ct">Resumen</span></button><button data-m="ideas"><span class="ico"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21.5h4"/><path d="M12 2.5a6.5 6.5 0 0 0-3.9 11.7c.6.5.9 1.2.9 1.9V17h6v-.9c0-.7.3-1.4.9-1.9A6.5 6.5 0 0 0 12 2.5z"/></svg><span class="bd" id="bIdeas" style="display:none"></span></span><span class="lg">Ideas para grabar</span><span class="ct">Ideas</span></button><button data-m="dms"><span class="ico"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 12a8.5 8.5 0 0 1-12.3 7.6L3.5 21l1.4-4.6A8.5 8.5 0 1 1 20.5 12z"/></svg><span class="bd" id="bDms" style="display:none"></span></span><span class="lg">DMs sin responder</span><span class="ct">DMs</span></button><button data-m="videos"><span class="ico"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="13" height="12" rx="2.5"/><path d="M15.5 10.2l6-3.2v10l-6-3.2z"/></svg><span class="bd" id="bVid" style="display:none"></span></span><span class="lg">Videos</span><span class="ct">Videos</span></button><button data-m="carr"><span class="ico"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="4" width="11" height="16" rx="2.5"/><path d="M3 7v10M21 7v10"/></svg></span><span class="lg">Carruseles</span><span class="ct">Carrusel</span></button><button data-m="reels"><span class="ico"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4.5"/><path d="M3 8.5h18M8.5 3l2.5 5.5M14 3l2.5 5.5"/><path d="M10.2 12.2v5.6l4.8-2.8z"/></svg></span><span class="lg">Reels</span><span class="ct">Reels</span></button><button data-m="agente"><span class="ico"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="8" width="16" height="12" rx="3.5"/><path d="M12 8V4.5"/><circle cx="12" cy="3.5" r="1"/><path d="M9 13.5v1.5M15 13.5v1.5M1.5 13v3M22.5 13v3"/></svg></span><span class="lg">Preguntale al agente</span><span class="ct">Agente</span></button></nav>
 
 <div id="m-resumen">
   <div class="nota" id="sinDatos" style="display:none">Todavía no hay datos guardados. El agente de Instagram los trae solo cada 2 horas, o tocá <b>Traer datos ahora</b>.</div>
@@ -543,7 +546,7 @@ select{padding:5px 6px;border:1px solid var(--borde);border-radius:6px;font-size
   <section class="card"><h2>Para revisar <span class="estado">al aprobar, sale el próximo día libre a las 19 h como reel de prueba</span></h2><div class="nota" id="vPermiso" style="display:none"></div><div class="vgrid" id="vRev"><div class="vacio">Cargando...</div></div></section>
   <section class="card"><h2>Programados y publicados</h2><div id="vProx"></div></section>
 </div>
-
+${CARR_HTML}
 <div id="m-reels" style="display:none">
   <section class="card"><div class="fila" style="justify-content:space-between"><h2>Reels y publicaciones</h2><select id="fDias"><option value="30">30 días</option><option value="60" selected>60 días</option><option value="120">120 días</option></select></div>
   <p class="estado" style="margin-top:0">Si el formato está mal, cambialo: así las ideas aprenden de lo que de verdad funcionó.</p>
@@ -571,9 +574,9 @@ function fecha(ts) { var d = new Date(ts); return d.toLocaleDateString("es-AR", 
 function cambio(v) { return v == null ? "" : '<i class="' + (v >= 0 ? "sube" : "baja") + '">' + (v >= 0 ? "+" : "") + v + "% vs semana anterior</i>"; }
 function modo(m) {
   document.querySelectorAll("#modos button").forEach(function (b) { b.classList.toggle("on", b.dataset.m === m); });
-  ["resumen", "ideas", "dms", "videos", "reels", "agente"].forEach(function (x) { $("#m-" + x).style.display = x === m ? "" : "none"; });
+  ["resumen", "ideas", "dms", "videos", "carr", "reels", "agente"].forEach(function (x) { $("#m-" + x).style.display = x === m ? "" : "none"; });
   if (location.hash.slice(1) !== m) history.replaceState(null, "", "#" + m);
-  if (m === "ideas") ideasTipo(IDEAS_K); if (m === "dms") cargarDms(); if (m === "reels") cargarReels(); if (m === "videos") cargarVideos(); if (m === "agente") pintarHilo();
+  if (m === "ideas") ideasTipo(IDEAS_K); if (m === "dms") cargarDms(); if (m === "reels") cargarReels(); if (m === "videos") cargarVideos(); if (m === "carr") cargarCarr(); if (m === "agente") pintarHilo();
 }
 document.querySelectorAll("#modos button").forEach(function (b) { b.onclick = function () { modo(b.dataset.m); }; });
 
@@ -798,9 +801,10 @@ $("#m-videos").onclick = function (ev) {
 $("#m-videos").addEventListener("change", function (ev) { var t = ev.target; if (!t.dataset.cap) return; var card = t.closest("[data-id]"); VAPI("caption", { id: card.dataset.id, caption: t.value }).then(function (r) { if (r.ok) aviso("Texto guardado"); }); });
 VAPI("estado").then(function (r) { if (r.videos) badge("#bVid", r.videos.filter(function (v) { return v.estado === "revision" || v.estado === "error"; }).length); }).catch(function () {});
 
+${CARR_JS}
 cargarResumen();
 api("dms").then(function (r) { badge("#bDms", r.error ? 0 : r.dms.length); }).catch(function () {});
-function desdeHash() { var h = location.hash.slice(1); modo(["resumen", "ideas", "dms", "videos", "reels", "agente"].indexOf(h) >= 0 ? h : "resumen"); }
+function desdeHash() { var h = location.hash.slice(1); modo(["resumen", "ideas", "dms", "videos", "carr", "reels", "agente"].indexOf(h) >= 0 ? h : "resumen"); }
 window.addEventListener("hashchange", desdeHash);
 desdeHash();
 </script></body></html>`;

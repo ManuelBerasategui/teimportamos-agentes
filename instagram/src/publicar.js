@@ -97,3 +97,69 @@ export async function servirParaInstagram(env, req, token) {
   const o = await env.VIDEOS.get(v.clave);
   return new Response(o.body, { headers: { ...h, "Content-Length": String(cab.size) } });
 }
+
+// =====================================================================
+//  Carruseles aprobados (Redes > Carruseles): imágenes en R2, link temporal /c/<token>/<n>.jpg
+// =====================================================================
+// Copia idéntica de cotizador/src/carruseles.js (la simulación verifica que sean iguales)
+export const ESQUEMA_CARR = [
+  "CREATE TABLE IF NOT EXISTS ig_carruseles (id TEXT PRIMARY KEY, ts INTEGER, estado TEXT, titulo TEXT, angulo TEXT, por_que TEXT, producto TEXT, datos TEXT, slides TEXT, caption TEXT, chat TEXT, n_slides INTEGER DEFAULT 0, programado_ts INTEGER, token TEXT, contenedor TEXT, media_id TEXT, link TEXT, error TEXT, aprobado_por TEXT, publicado_ts INTEGER, borrado INTEGER DEFAULT 0)",
+  "CREATE INDEX IF NOT EXISTS ig_carruseles_estado ON ig_carruseles(estado, programado_ts)",
+  "CREATE INDEX IF NOT EXISTS ig_carruseles_token ON ig_carruseles(token)",
+];
+const listosC = new WeakSet();
+async function prepararC(env) {
+  if (listosC.has(env.DB)) return;
+  await env.DB.batch(ESQUEMA_CARR.map((s) => env.DB.prepare(s)));
+  listosC.add(env.DB);
+}
+async function errorCarr(env, c, msg, crearTarea) {
+  await env.DB.prepare("UPDATE ig_carruseles SET estado='error', error=?, token=NULL WHERE id=?").bind(String(msg).slice(0, 400), c.id).run();
+  if (crearTarea) await crearTarea(env, { tipo: "ig_revisar", tel: "ig:carrusel", nombre: "Carrusel de Instagram", titulo: "No se pudo publicar un carrusel", detalle: `${String(msg).slice(0, 300)}\n\nVolvé a aprobarlo desde Redes > Carruseles cuando esté resuelto.`, datos: {} }).catch(() => {});
+}
+async function terminarCarr(env, ig, c, crearTarea) {
+  const st = await ig(`/${c.contenedor}`, "GET", { fields: "status_code,status" });
+  if (st.status_code === "FINISHED") {
+    const pub = await ig("/me/media_publish", "POST", { creation_id: c.contenedor });
+    let link = "";
+    try { link = (await ig(`/${pub.id}`, "GET", { fields: "permalink" })).permalink || ""; } catch {}
+    await env.DB.prepare("UPDATE ig_carruseles SET estado='publicado', media_id=?, link=?, publicado_ts=?, token=NULL WHERE id=?").bind(pub.id, link, Date.now(), c.id).run();
+    return "publicado";
+  }
+  if (st.status_code === "ERROR" || st.status_code === "EXPIRED") { await errorCarr(env, c, `Instagram rechazó el carrusel: ${st.status || st.status_code}`, crearTarea); return "error"; }
+  if (Date.now() - (c.programado_ts || 0) > 3 * 3600e3) { await errorCarr(env, c, "Instagram no terminó de procesar el carrusel en 3 horas", crearTarea); return "error"; }
+  return "procesando";
+}
+export async function publicarCarruseles(env, ig, { crearTarea, base = BASE_PUBLICA } = {}) {
+  await prepararC(env);
+  const out = [];
+  for (const c of (await env.DB.prepare("SELECT * FROM ig_carruseles WHERE estado='publicando' AND contenedor IS NOT NULL LIMIT 3").all()).results || []) {
+    try { out.push({ id: c.id, estado: await terminarCarr(env, ig, c, crearTarea) }); } catch (e) { out.push({ id: c.id, estado: "reintenta", error: e.message }); }
+  }
+  const c = await env.DB.prepare("SELECT * FROM ig_carruseles WHERE estado='aprobado' AND programado_ts <= ? AND borrado=0 ORDER BY programado_ts LIMIT 1").bind(Date.now()).first();
+  if (!c) return out;
+  const token = tokenAzar();
+  await env.DB.prepare("UPDATE ig_carruseles SET estado='publicando', token=? WHERE id=? AND estado='aprobado'").bind(token, c.id).run();
+  try {
+    const hijos = [];
+    for (let i = 0; i < c.n_slides; i++) hijos.push((await ig("/me/media", "POST", { image_url: `${base}/c/${token}/${i}.jpg`, is_carousel_item: "true" })).id);
+    const cont = await ig("/me/media", "POST", { media_type: "CAROUSEL", children: hijos.join(","), caption: c.caption || "" });
+    await env.DB.prepare("UPDATE ig_carruseles SET contenedor=? WHERE id=?").bind(cont.id, c.id).run();
+    out.push({ id: c.id, estado: await terminarCarr(env, ig, { ...c, contenedor: cont.id, token }, crearTarea).catch(() => "procesando") });
+  } catch (e) {
+    const permiso = /permission|\(#10\)|\(#200\)|scope/i.test(e.message);
+    await errorCarr(env, c, permiso ? "Al token de Instagram le falta el permiso instagram_business_content_publish" : e.message, crearTarea);
+    out.push({ id: c.id, estado: "error", error: e.message });
+  }
+  return out;
+}
+// GET /c/<token>/<n>.jpg → la imagen del slide, solo mientras se está publicando
+export async function servirSlide(env, token, n) {
+  if (!/^[0-9a-f]{48}$/.test(token) || !env.VIDEOS) return new Response("No encontrado", { status: 404 });
+  await prepararC(env);
+  const c = await env.DB.prepare("SELECT id, n_slides FROM ig_carruseles WHERE token=? AND estado='publicando'").bind(token).first();
+  if (!c || !(n >= 0 && n < c.n_slides)) return new Response("No encontrado", { status: 404 });
+  const o = await env.VIDEOS.get(`carruseles/${c.id}/slide-${n}.jpg`);
+  if (!o) return new Response("No encontrado", { status: 404 });
+  return new Response(o.body, { headers: { "Content-Type": "image/jpeg", "Cache-Control": "no-store" } });
+}
