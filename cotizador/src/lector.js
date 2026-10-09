@@ -325,10 +325,15 @@ ${bloques.join("\n\n")}`);
     for (const a of r.chats) {
       const t = mapa[String(a.chat)]; if (!t) continue;
       ops.push(env.DB.prepare("DELETE FROM w_hito WHERE conv=? AND tipo='cotizacion' AND ts>=? AND ts<?").bind(t.conv, t.ini, t.ini + 86400e3));
-      if (!t.prov && a.interno !== true) for (const q of (a.cotizaciones || []).slice(0, 10)) {
-        if (/\bvap\w*|elf ?bar|ice king|ignite|\bpods?\b/i.test(String(q.producto || ""))) continue;
-        const m = t.ms[parseInt(q.msg)];
-        const ts = m && m.ts >= t.ini ? m.ts : t.ini + 12 * 3600e3;
+      // Una cotización = una tanda al mismo cliente: lo que se manda dentro de 30 min cuenta como una sola
+      const qs = (!t.prov && a.interno !== true ? a.cotizaciones || [] : [])
+        .filter((q) => !/\bvap\w*|elf ?bar|ice king|ignite|\bpods?\b/i.test(String(q.producto || "")))
+        .map((q) => { const m = t.ms[parseInt(q.msg)]; return { ...q, ts: m && m.ts >= t.ini ? m.ts : t.ini + 12 * 3600e3 }; })
+        .sort((x, y) => x.ts - y.ts);
+      let ultQ = 0;
+      for (const q of qs.slice(0, 10)) {
+        if (q.ts - ultQ < 30 * 60e3) continue;
+        ultQ = q.ts; const ts = q.ts;
         ops.push(env.DB.prepare("INSERT OR IGNORE INTO w_hito (id,conv,tipo,ts,dato) VALUES (?,?,?,?,?)").bind(`ci:${t.conv}:${ts}`, t.conv, "cotizacion", ts, String(q.producto || "").slice(0, 120)));
       }
       ops.push(env.DB.prepare("INSERT INTO w_audit (conv, dia, ts) VALUES (?,?,?) ON CONFLICT(conv, dia) DO UPDATE SET ts=excluded.ts").bind(t.conv, t.dia, Date.now()));
@@ -486,7 +491,7 @@ export async function cronLector(env, iaJSON, scheduledTime) {
   if (!(await kvGet(env, "lector_reparado_v1"))) await repararPropios(env).catch((e) => console.log("lector reparar", e?.stack || e));
   if (!(await kvGet(env, "lector_resp_v1"))) { await env.DB.prepare("UPDATE w_conv SET analizado_ts=0 WHERE ult_yo=0 AND grupo=0 AND ult_cliente_ts>=?").bind(Date.now() - 72 * 3600e3).run(); await kvPut(env, "lector_resp_v1", Date.now()); }
   if (!(await kvGet(env, "lector_ventas_v1"))) { await env.DB.prepare("UPDATE w_conv SET analizado_ts=0 WHERE conv IN (SELECT conv FROM w_hito WHERE tipo='venta') OR ult_ts>=?").bind(Date.now() - 3 * 86400e3).run(); await kvPut(env, "lector_ventas_v1", Date.now()); }
-  if (!(await kvGet(env, "lector_audit_v2"))) { await env.DB.prepare("DELETE FROM w_audit").run(); await kvPut(env, "lector_audit_v2", Date.now()); }
+  if (!(await kvGet(env, "lector_audit_v3"))) { await env.DB.prepare("DELETE FROM w_audit").run(); await kvPut(env, "lector_audit_v3", Date.now()); }
   if (!(await kvGet(env, "lector_pend_v1"))) { await env.DB.prepare("UPDATE w_conv SET analizado_ts=0 WHERE grupo=0 AND ult_ts>=?").bind(Date.now() - 3 * 86400e3).run(); await kvPut(env, "lector_pend_v1", Date.now()); }
   if (!(await kvGet(env, "lector_cotiz_v2"))) await recalcularCotizaciones(env).catch((e) => console.log("lector cotiz", e?.stack || e));
   const t = new Date(scheduledTime);
