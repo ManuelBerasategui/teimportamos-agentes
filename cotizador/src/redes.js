@@ -535,7 +535,7 @@ ${CARR_CSS}
 <div id="m-videos" style="display:none">
   <section class="card"><h2>Subir clips <span class="estado">se editan solos y te llegan acá para aprobar</span></h2>
     <div class="espacio"><span class="estado" id="vEspacio">Espacio</span><div class="barra" id="vBarra"><i style="width:0"></i></div></div>
-    <div class="drop" id="vDrop"><input type="file" id="vArch" accept="video/*,.mov,.mp4,.m4v" multiple>
+    <div class="drop" id="vDrop"><input type="file" id="vArch" accept="video/*,.mov,.mp4,.m4v" multiple><input type="file" id="vRes" accept="video/*,.mov,.mp4,.m4v" multiple style="display:none">
       <span class="drop-ic"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4M7.5 8.5L12 4l4.5 4.5"/><path d="M4 14.5V18a2.5 2.5 0 0 0 2.5 2.5h11A2.5 2.5 0 0 0 20 18v-3.5"/></svg></span>
       <b>Elegí tus clips</b><span class="estado"><span class="sololg">o arrastralos acá · </span>podés elegir varios a la vez</span></div>
     <div class="estado" style="margin-top:8px;text-align:center">¿No aparecen los clips? Usá este botón común: <input type="file" id="vArch2" multiple style="max-width:100%;font-size:14px;margin-top:6px"></div>
@@ -737,46 +737,61 @@ $("#vSel").onclick = function (ev) {
   if (b.dataset.q != null) { VSEL.splice(+b.dataset.q, 1); pintarSel(); return; }
   var c = b.closest(".cl"); if (b.dataset.t && c) { VSEL[+c.dataset.i].tipo = b.dataset.t; pintarSel(); }
 };
+function conTope(pr, ms) { return Promise.race([pr, new Promise(function (_, no) { setTimeout(function () { no(new Error("se cortó la conexión")); }, ms); })]); }
+function reintentar(fn, n) { return fn().catch(function (e) { if (n <= 1) throw e; return new Promise(function (ok) { setTimeout(ok, 5000); }).then(function () { return reintentar(fn, n - 1); }); }); }
+var WL = null; function despierto(si) { try { if (si && navigator.wakeLock) navigator.wakeLock.request("screen").then(function (w) { WL = w; }).catch(function () {}); else if (!si && WL) { WL.release(); WL = null; } } catch (e) {} }
 function subirClip(lote, i, x, parteTam) {
   var f = x.f, tipo = f.type || "video/mp4", base = "lote=" + lote + "&n=" + i, el = $("#vp" + i), bar = $("#vb" + i), mb = (f.size / 1048576).toFixed(0) + " MB";
   function marca(p, pc) { if (el) el.textContent = mb + " · " + p; if (bar) { bar.style.display = "block"; bar.firstChild.style.width = (pc == null ? 100 : pc) + "%"; bar.classList.toggle("ok", pc == null); } }
-  if (f.size <= parteTam) { marca("subiendo...", 50); return VAPI("subir-simple?" + base, f, "PUT", { "x-tipo": tipo }).then(function (r) { if (!r.ok) throw new Error(r.error || "error"); marca("subido"); }); }
-  return VAPI("subir-inicio?" + base, {}, "POST", { "x-tipo": tipo }).then(function (r) {
+  if (f.size <= parteTam) { marca("subiendo...", 50); return reintentar(function () { return conTope(VAPI("subir-simple?" + base, f, "PUT", { "x-tipo": tipo }), 300000).then(function (r) { if (!r.ok) throw new Error(r.error || "error"); marca("subido"); }); }, 4); }
+  return reintentar(function () { return conTope(VAPI("subir-inicio?" + base, {}, "POST", { "x-tipo": tipo }), 60000); }, 4).then(function (r) {
     if (!r.uploadId) throw new Error(r.error || "no se pudo empezar");
     var total = Math.ceil(f.size / parteTam), partes = [], k = 0;
     function sig() {
-      if (k >= total) return VAPI("subir-fin?" + base, { partes: partes }).then(function (z) { if (!z.ok) throw new Error(z.error || "error al cerrar"); marca("subido"); });
+      if (k >= total) return reintentar(function () { return conTope(VAPI("subir-fin?" + base, { partes: partes }), 120000).then(function (z) { if (!z.ok) throw new Error(z.error || "error al cerrar"); marca("subido"); }); }, 4);
       var n = k + 1, trozo = f.slice(k * parteTam, Math.min(f.size, (k + 1) * parteTam));
       marca("subiendo " + Math.round((k / total) * 100) + "%", Math.max(4, Math.round((k / total) * 100)));
-      return VAPI("subir-parte?" + base + "&parte=" + n, trozo, "PUT").then(function (p) { if (!p.etag) throw new Error(p.error || "parte fallida"); partes.push(p); k++; return sig(); });
+      return reintentar(function () { return conTope(VAPI("subir-parte?" + base + "&parte=" + n, trozo, "PUT"), 180000).then(function (p) { if (!p.etag) throw new Error(p.error || "parte fallida"); return p; }); }, 5).then(function (p) { partes.push(p); k++; return sig(); });
     }
     return sig();
   });
 }
 $("#bSubir").onclick = function () {
-  if (!VSEL.length || SUBIENDO) return; SUBIENDO = true; pintarSel(); $("#vProg").textContent = "Preparando...";
+  if (!VSEL.length || SUBIENDO) return; SUBIENDO = true; despierto(true); pintarSel(); $("#vProg").textContent = "Preparando...";
   var lote;
   VAPI("lote-nuevo", { clips: VSEL.map(function (x) { return { nombre: x.f.name, tipo: x.tipo, bytes: x.f.size }; }) }).then(function (r) {
     if (!r.lote) throw new Error(r.error || "No se pudo crear el lote");
     lote = r.lote; var parte = (VEST && VEST.parte) || 20971520, i = 0;
-    function sig() { if (i >= VSEL.length) return; var j = i++; $("#vProg").textContent = "Subiendo clip " + (j + 1) + " de " + VSEL.length + " (no cierres esta pantalla)"; return subirClip(lote, j, VSEL[j], parte).then(sig); }
+    function sig() { if (i >= VSEL.length) return; var j = i++; $("#vProg").textContent = "Subiendo clip " + (j + 1) + " de " + VSEL.length + ". No cierres esta pantalla ni bloquees el celular."; return subirClip(lote, j, VSEL[j], parte).then(sig); }
     return sig();
   }).then(function () { return VAPI("lote-listo", { lote: lote }); }).then(function (r) {
     if (!r.ok) throw new Error(r.error || "error");
-    SUBIENDO = false; VSEL = []; $("#vArch").value = ""; pintarSel(); $("#vProg").textContent = r.editor === "ya" ? "Listo. Ya se están editando: en 10 a 15 minutos te aviso por Telegram." : "Listo. Se editan en la próxima vuelta del editor y te aviso por Telegram."; cargarVideos();
+    SUBIENDO = false; despierto(false); VSEL = []; $("#vArch").value = ""; pintarSel(); $("#vProg").textContent = r.editor === "ya" ? "Listo. Ya se están editando: en 10 a 15 minutos te aviso por Telegram." : "Listo. Se editan en la próxima vuelta del editor y te aviso por Telegram."; cargarVideos();
   }).catch(function (e) {
-    SUBIENDO = false; pintarSel(); $("#vProg").textContent = "No se pudo subir: " + (e && e.message ? e.message : "error");
-    if (lote) VAPI("lote-cancelar", { lote: lote }).catch(function () {});
+    SUBIENDO = false; despierto(false); pintarSel(); $("#vProg").textContent = "Se cortó la subida (" + (e && e.message ? e.message : "error") + "). Lo que ya subió queda guardado: tocá Continuar en la lista de abajo y elegí los mismos archivos."; cargarVideos();
   });
 };
-var ESTL = { subiendo: "Subiendo", en_cola: "En cola para editar", procesando: "Editando...", error: "Error" };
+var SEGUIR = null;
+$("#vRes").onchange = function () {
+  var l = SEGUIR, fs = [].slice.call(this.files || []); this.value = ""; if (!l || !fs.length) return;
+  var falta = l.clips.filter(function (c) { return !c.subido; }), pares = [], no = [];
+  falta.forEach(function (c) { var f = fs.filter(function (x) { return x.name === c.nombre; })[0]; if (f) pares.push({ c: c, f: f }); else no.push(c.nombre); });
+  if (no.length) { $("#vProg").textContent = "Faltan estos archivos: " + no.join(", ") + ". Volvé a tocar Continuar y elegilos también."; return; }
+  SUBIENDO = true; despierto(true); cargarVideos(); var parte = (VEST && VEST.parte) || 20971520, i = 0;
+  function sig() { if (i >= pares.length) return; var p = pares[i++]; $("#vProg").textContent = "Subiendo " + p.c.nombre + " (" + i + " de " + pares.length + "). No cierres esta pantalla ni bloquees el celular."; return subirClip(l.id, p.c.n, { f: p.f, tipo: p.c.tipo }, parte).then(sig); }
+  Promise.resolve().then(sig).then(function () { return VAPI("lote-listo", { lote: l.id }); }).then(function (r) {
+    if (!r.ok) throw new Error(r.error || "error");
+    SUBIENDO = false; despierto(false); $("#vProg").textContent = "Listo, se completó la subida. Te aviso por Telegram cuando estén editados."; cargarVideos();
+  }).catch(function (e) { SUBIENDO = false; despierto(false); $("#vProg").textContent = "Se cortó otra vez (" + (e && e.message ? e.message : "error") + "). Podés tocar Continuar de nuevo."; cargarVideos(); });
+};
+var ESTL = { subiendo: "Subida sin terminar", en_cola: "En cola para editar", procesando: "Editando...", error: "Error" };
 function cargarVideos() {
   VAPI("estado").then(function (r) {
     VEST = r; if (r.error) { $("#vRev").innerHTML = '<div class="vacio">' + esc(r.error) + "</div>"; return; }
     var pc = Math.min(100, Math.round((r.usado / r.tope) * 100));
     $("#vEspacio").textContent = "Espacio: " + gbs(r.usado) + " de " + gbs(r.tope);
     $("#vBarra").className = "barra" + (pc < 70 ? " ok" : ""); $("#vBarra").firstChild.style.width = pc + "%";
-    $("#vLotes").innerHTML = r.lotes.length ? r.lotes.map(function (l) { return '<div class="clip"><span>' + l.clips.length + " clips (" + l.clips.map(function (c) { return c.tipo; }).join(", ") + ') <span class="estado">' + hace(l.ts) + "</span>" + (l.error ? '<div class="estado" style="color:var(--rojo)">' + esc(l.error) + "</div>" : "") + '</span><span class="fila"><span class="pill' + (l.estado === "error" ? "" : " n") + '">' + (ESTL[l.estado] || l.estado) + "</span>" + (l.estado === "error" ? '<button class="btn p ch" data-retry="' + l.id + '">Reintentar</button>' : "") + (l.estado !== "procesando" ? '<button class="btn ch" data-cancel="' + l.id + '">Cancelar</button>' : "") + "</span></div>"; }).join("") : '<div class="vacio">Nada en edición.</div>';
+    $("#vLotes").innerHTML = r.lotes.length ? r.lotes.map(function (l) { return '<div class="clip"><span>' + l.clips.length + " clips (" + l.clips.map(function (c) { return c.tipo; }).join(", ") + ') <span class="estado">' + hace(l.ts) + "</span>" + (l.error ? '<div class="estado" style="color:var(--rojo)">' + esc(l.error) + "</div>" : "") + '</span><span class="fila"><span class="pill' + (l.estado === "error" ? "" : " n") + '">' + (ESTL[l.estado] || l.estado) + "</span>" + (l.estado === "error" ? '<button class="btn p ch" data-retry="' + l.id + '">Reintentar</button>' : "") + (l.estado === "subiendo" && !SUBIENDO ? '<button class="btn p ch" data-seguir="' + l.id + '">Continuar (' + l.clips.filter(function (c) { return c.subido; }).length + " de " + l.clips.length + " subidos)</button>" : "") + (l.estado !== "procesando" ? '<button class="btn ch" data-cancel="' + l.id + '">Cancelar</button>' : "") + "</span></div>"; }).join("") : '<div class="vacio">Nada en edición.</div>';
     var rev = r.videos.filter(function (v) { return v.estado === "revision" || v.estado === "error"; });
     badge("#bVid", rev.length);
     var perm = r.videos.filter(function (v) { return v.estado === "error" && /instagram_business_content_publish/.test(v.error || ""); }).length;
@@ -801,6 +816,7 @@ function cargarVideos() {
 $("#m-videos").onclick = function (ev) {
   var b = ev.target.closest("button"); if (!b) return;
   if (b.dataset.retry) { b.disabled = true; VAPI("lote-reintentar", { lote: b.dataset.retry }).then(function (r) { if (!r.ok) { b.disabled = false; return aviso(r.error || "No se pudo"); } aviso("Reintentando: en 10 a 15 minutos te aviso"); cargarVideos(); }); return; }
+  if (b.dataset.seguir) { SEGUIR = (VEST.lotes || []).filter(function (l) { return l.id === b.dataset.seguir; })[0]; if (SEGUIR) $("#vRes").click(); return; }
   if (b.dataset.cancel) { if (!confirm("¿Cancelar este lote? Se borran los clips.")) return; VAPI("lote-cancelar", { lote: b.dataset.cancel }).then(cargarVideos); return; }
   var card = b.closest("[data-id]"); if (!card || !b.dataset.a) return;
   var ta = card.querySelector("textarea"), a = b.dataset.a;

@@ -86,7 +86,7 @@ async function cancelarLote(env, l, estado = "cancelado") {
 export async function limpiezaVideos(env, ahora = Date.now()) {
   await prepararVideos(env);
   let n = 0;
-  for (const l of (await env.DB.prepare("SELECT * FROM ig_lotes WHERE estado='subiendo' AND ts < ?").bind(ahora - 24 * 3600e3).all()).results || []) { await cancelarLote(env, l); n++; }
+  for (const l of (await env.DB.prepare("SELECT * FROM ig_lotes WHERE estado='subiendo' AND ts < ?").bind(ahora - 48 * 3600e3).all()).results || []) { await cancelarLote(env, l); n++; }
   for (const l of (await env.DB.prepare("SELECT * FROM ig_lotes WHERE bytes > 0 AND (estado IN ('cancelado','hecho') OR (estado='error' AND ts < ?))").bind(ahora - 7 * 86400e3).all()).results || []) { await cancelarLote(env, l, l.estado); n++; }
   const viejos = (await env.DB.prepare("SELECT id, clave, portada FROM ig_videos WHERE borrado=0 AND ((estado='publicado' AND publicado_ts < ?) OR estado='descartado' OR (estado='revision' AND ts < ?))")
     .bind(ahora - VIDEOS.borrarPublicadosDias * 86400e3, ahora - VIDEOS.vencerRevisionDias * 86400e3).all()).results || [];

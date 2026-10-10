@@ -183,7 +183,7 @@ chk("sin permiso: error claro y tarea en Pendientes", /instagram_business_conten
 
 // 7) Limpieza
 db.prepare("UPDATE ig_videos SET publicado_ts=? WHERE id=?").run(Date.now() - 4 * 86400e3, va.id);
-db.prepare("INSERT INTO ig_lotes (id, ts, estado, clips, bytes) VALUES ('viejo', ?, 'subiendo', ?, 50)").run(Date.now() - 2 * 86400e3, JSON.stringify([{ n: 0, key: "lotes/viejo/0.mp4", subido: true }]));
+db.prepare("INSERT INTO ig_lotes (id, ts, estado, clips, bytes) VALUES ('viejo', ?, 'subiendo', ?, 50)").run(Date.now() - 3 * 86400e3, JSON.stringify([{ n: 0, key: "lotes/viejo/0.mp4", subido: true }]));
 await R2.put("lotes/viejo/0.mp4", new Uint8Array(50));
 const lim = await V.limpiezaVideos(env);
 chk("borra el video publicado hace más de 3 días (queda el link)", !objs.has(k0) && !objs.has(kp0) && fila("SELECT borrado, link FROM ig_videos WHERE id=?", va.id).borrado === 1);
