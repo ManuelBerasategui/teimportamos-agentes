@@ -227,12 +227,23 @@ def procesar(trabajo):
         clips = {}
         for c in trabajo["clips"]:
             arch = os.path.join(d, f"clip{c['n']}{os.path.splitext(c.get('nombre') or '.mp4')[1] or '.mp4'}")
+            print(f"bajando clip {c['n']}...", flush=True)
             bajar(c["url"], arch)
+            print(f"  {os.path.getsize(arch) / 1e6:.0f} MB; achicando a 1080p para no quedarnos sin memoria...", flush=True)
+            chico = os.path.join(d, f"clip{c['n']}_1080.mp4")
+            subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-threads", "2", "-i", arch,
+                            "-vf", "scale='if(gt(iw,ih),-2,min(1080,iw))':'if(gt(iw,ih),min(1080,ih),-2)',fps=30",
+                            "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p",
+                            "-c:a", "aac", "-b:a", "192k", chico], check=True)
+            os.remove(arch)
+            arch = chico
+            print("  transcribiendo...", flush=True)
             pal = transcribir(arch)
             clips[c["n"]] = {"archivo": arch, "palabras": pal, "frases": frases_de(pal), "dur": duracion(arch), "tipo": c["tipo"]}
             print(f"clip {c['n']} ({c['tipo']}): {clips[c['n']]['dur']:.1f} s, {len(pal)} palabras")
         decision = api("/videos/decidir", {"lote": lote, "clips": [{"n": n, "tipo": c["tipo"], "dur": c["dur"],
                        "frases": [{"i": f["i"], "texto": f["texto"], "ini": f["ini"], "fin": f["fin"]} for f in c["frases"]]} for n, c in clips.items()]})
+        print("armando los videos...", flush=True)
         hechos = armar_videos(clips, decision, d)
         if not hechos:
             raise RuntimeError("No quedó ningún video con voz (¿los clips tienen audio?)")
