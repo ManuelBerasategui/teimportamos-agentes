@@ -3020,7 +3020,7 @@ button{font:inherit;cursor:pointer}
 <div class="card reportes"><div class="cab"><h3 id="rep-tit" style="margin:0">Reportes diarios</h3><button class="btn" id="generar">Generar ahora</button></div><div id="reps"></div></div>
 </div></div>
 
-<div class="vista" id="v-agentes"><div class="ag"><div class="lista" id="agLista"><button data-a="asistente" class="on">Asistente de WhatsApp</button><button data-a="whatsapp">Agente de WhatsApp</button><button data-a="redes">Agente de Redes</button></div>
+<div class="vista" id="v-agentes"><div class="ag"><div class="lista" id="agLista"><button data-a="whatsapp" class="on">Agente de WhatsApp</button><button data-a="redes">Agente de Redes</button></div>
 <div class="cuerpo"><div class="hilo" id="agHilo"><div class="vacio">Cargando...</div></div>
 <details class="reglas" id="agReglasBox"><summary><b>Lo que sabe</b> (<span id="agN">0</span> reglas) · tocá para ver, editar o borrar</summary><ol id="agReglas"></ol><button id="agOrdenar" style="color:var(--azul)">Ordenar y fusionar reglas parecidas</button> · <button id="agLimpiar" style="color:var(--gris)">Borrar esta conversación</button></details>
 <div class="adj" id="agAdj"></div>
@@ -3282,7 +3282,7 @@ function prepararMic(btn) {
 document.addEventListener("click", function (ev) { var b = ev.target.closest("[data-g]"); if (!b || !G) return; terminarGrab(b.dataset.g === "mandar"); });
 
 // ---------- Agentes ----------
-var AG = "asistente", agImgs = [], ASIS = [];
+var AG = "whatsapp", agImgs = [], ASIS = [];
 function pintarAsistente() {
   $("#agReglasBox").style.display = "none"; $("#agFoto").style.display = "none"; $("#agTxt").placeholder = "Preguntale sobre los chats del 805: a quién le tenías que mandar algo, qué se pidió más hoy, quién quedó sin respuesta...";
   $("#agHilo").innerHTML = (ASIS.length ? ASIS : [{ r: "a", t: "Preguntame lo que quieras sobre los chats del WhatsApp 805. Por ejemplo: a quién le tenías que mandar un producto, qué se pidió más hoy o quién quedó sin respuesta." }]).map(function (m) { return '<div class="burb ' + (m.r === "u" ? "u" : "a") + '">' + esc(m.t).replace(/\+?(549\d{8,11})/g, '<a href="/panel/805#$1" style="color:inherit;font-weight:700">+$1</a>') + "</div>"; }).join("") +
