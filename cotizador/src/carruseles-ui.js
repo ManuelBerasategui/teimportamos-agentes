@@ -135,8 +135,8 @@ function recursos() {
 }
 function pintarCanvas() {
   return recursos().then(function (d) {
-    $("#cCanvas").innerHTML = CC.slides.map(function (s, i) { return '<div class="slc"><span class="n">' + (i + 1) + " · " + esc((TIPOS_S[s.tipo] || {}).nombre || s.tipo) + '</span><canvas data-i="' + i + '"></canvas>' + ((TIPOS_S[s.tipo] || {}).foto ? '<label class="btn ch" style="text-align:center;cursor:pointer">' + (CC.datos.fotos && CC.datos.fotos[i] ? "Cambiar foto" : "Subir foto") + '<input type="file" accept="image/*" data-foto="' + i + '" style="display:none"></label>' : "") + "</div>"; }).join("");
-    document.querySelectorAll("#cCanvas canvas").forEach(function (cv) { render(cv, CC.slides[+cv.dataset.i], +cv.dataset.i, d); });
+    $("#cCanvas").innerHTML = CC.slides.map(function (s, i) { return '<div class="slc"><span class="n">' + (i + 1) + " · " + esc((TIPOS_S[s.tipo] || {}).nombre || s.tipo) + '</span><canvas data-i="' + i + '"></canvas>' + ((TIPOS_S[s.tipo] || {}).foto ? '<label class="btn ch" style="text-align:center;cursor:pointer">' + (CC.datos.fotos && CC.datos.fotos[i] ? "Cambiar foto" : "Subir foto de este slide") + '<input type="file" accept="image/*" data-foto="' + i + '" style="display:none"></label>' : "") + "</div>"; }).join("");
+    document.querySelectorAll("#cCanvas canvas").forEach(function (cv) { render(cv, CC.slides[+cv.dataset.i], +cv.dataset.i, d); var inp = cv.parentNode.querySelector("input[data-foto]"); if (inp) { cv.style.cursor = "pointer"; cv.title = "Tocá para subir la foto"; cv.onclick = function () { inp.click(); }; } });
   });
 }
 function cargarCarr() {
