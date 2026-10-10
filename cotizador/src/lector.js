@@ -155,6 +155,9 @@ async function guardarLote(env, lote) {
       if (yo && esCotizacion(texto)) ops.push(env.DB.prepare("INSERT OR IGNORE INTO w_hito (id,conv,tipo,ts,dato) VALUES (?,?,?,?,?)").bind("c:" + m.external_id, conv, "cotizacion", ts, String(texto).slice(0, 300)));
       const pago = (!yo && (/^\((image|document)\)/.test(texto) || tipo === "image" || tipo === "document") && RE_PAGO_CLIENTE.test(texto)) || (!yo && RE_PAGO_CLIENTE.test(texto) && /comprobante/i.test(texto)) || (yo && RE_PAGO_NOSOTROS.test(texto));
       // ventas: las decide la auditoría diaria por IA (no por palabras sueltas)
+      // Si alguien del equipo (vos o tu socio) le manda un archivo, un link o un precio, la tarea de cotizar/prometido se da por resuelta sola
+      if (yo && !grupo && !hist && (/^\(archivo\)|^\((image|document|video)\)/.test(texto) || tipo !== "text" || /https?:\/\//.test(texto) || RE_MONTO.test(texto)))
+        ops.push(env.DB.prepare("UPDATE tareas SET estado='resuelta' WHERE ref=? AND estado='abierta' AND tipo IN ('cotizacion','promesa') AND ts<?").bind("w805:" + conv, ts));
       if (!yo && !hist) clienteNuevo = true;
     }
   }
@@ -272,11 +275,11 @@ ${bloques.join("\n\n")}`);
 const TIPOS_PEND = { cotizacion: "cotizacion", promesa: "promesa", comprobante: "comprobante", proveedor: "proveedor" };
 function pendienteOps(env, c, p) {
   const tipo = p && TIPOS_PEND[p.tipo];
-  if (!tipo) return [env.DB.prepare("UPDATE tareas SET estado='hecha' WHERE ref=? AND estado='abierta'").bind("w805:" + c.conv)];
+  if (!tipo) return [env.DB.prepare("UPDATE tareas SET estado='resuelta' WHERE ref=? AND estado='abierta'").bind("w805:" + c.conv)];
   const id = `w805:${c.conv}:${tipo}:${diaAR(Date.now())}`;
   return [
-    env.DB.prepare("UPDATE tareas SET estado='hecha' WHERE ref=? AND estado='abierta' AND id<>? AND tipo<>?").bind("w805:" + c.conv, id, tipo),
-    env.DB.prepare("INSERT INTO tareas (id, ts, tipo, tel, nombre, titulo, detalle, datos, ref, estado) SELECT ?,?,?,?,?,?,?,?,?,'abierta' WHERE NOT EXISTS (SELECT 1 FROM tareas WHERE ref=? AND tipo=? AND (estado='abierta' OR ts>=?))")
+    env.DB.prepare("UPDATE tareas SET estado='resuelta' WHERE ref=? AND estado='abierta' AND id<>? AND tipo<>?").bind("w805:" + c.conv, id, tipo),
+    env.DB.prepare("INSERT INTO tareas (id, ts, tipo, tel, nombre, titulo, detalle, datos, ref, estado) SELECT ?,?,?,?,?,?,?,?,?,'abierta' WHERE NOT EXISTS (SELECT 1 FROM tareas WHERE ref=? AND tipo=? AND (estado='abierta' OR (estado='hecha' AND ts>=?)))")
       .bind(id, Date.now(), tipo, c.conv, c.nombre || "", String(p.titulo || "").slice(0, 90), String(p.detalle || "").slice(0, 400), JSON.stringify({ origen: "805" }), "w805:" + c.conv, "w805:" + c.conv, tipo, c.ult_cliente_ts || 0),
   ];
 }
@@ -505,6 +508,10 @@ export async function cronLector(env, iaJSON, scheduledTime) {
     await env.DB.batch([env.DB.prepare("DELETE FROM w_audit"), env.DB.prepare("DELETE FROM w_hito WHERE tipo='venta' AND id LIKE 'v:%' AND COALESCE(oculto,0)=0")]);
     const dias = []; for (let t = Date.parse("2026-10-01T12:00:00Z"); diaAR(t) < diaAR(Date.now()); t += 86400e3) dias.push(diaAR(t));
     await kvPut(env, "lector_backfill", JSON.stringify(dias)); await kvPut(env, "lector_audit_v4", Date.now());
+  }
+  if (!(await kvGet(env, "lector_pend_res_v1"))) {
+    await env.DB.prepare("UPDATE tareas SET estado='resuelta' WHERE estado='abierta' AND ref LIKE 'w805:%' AND tipo IN ('cotizacion','promesa') AND EXISTS (SELECT 1 FROM w_msg m WHERE m.conv=tareas.tel AND m.yo=1 AND m.ts>tareas.ts AND (m.tipo<>'text' OR m.texto LIKE '(archivo)%' OR m.texto LIKE '%http%' OR m.texto LIKE '%usd%' OR m.texto LIKE '%$%'))").run();
+    await kvPut(env, "lector_pend_res_v1", Date.now());
   }
   if (!(await kvGet(env, "lector_pend_v1"))) { await env.DB.prepare("UPDATE w_conv SET analizado_ts=0 WHERE grupo=0 AND ult_ts>=?").bind(Date.now() - 3 * 86400e3).run(); await kvPut(env, "lector_pend_v1", Date.now()); }
   if (!(await kvGet(env, "lector_cotiz_v2"))) await recalcularCotizaciones(env).catch((e) => console.log("lector cotiz", e?.stack || e));
