@@ -287,7 +287,11 @@ def main():
         try:
             procesar(t)
         except Exception as e:
+            import traceback
+            tb = traceback.format_exc()
             print("Error en el lote", t["lote"], e)
+            print(tb)
+            print("::error title=Editor::" + f"{type(e).__name__}: {e}"[:900].replace("\n", " | ") + " || " + tb[-600:].replace("\n", " | "))
             try:
                 api("/videos/error", {"lote": t["lote"], "error": f"{type(e).__name__}: {e}"[:400]})
             except Exception:
