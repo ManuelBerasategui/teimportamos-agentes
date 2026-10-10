@@ -233,7 +233,7 @@ DATOS CARGADOS: ${JSON.stringify({ producto: datos.producto, precio_ml: datos.pr
 SLIDES ACTUALES (numerados desde 1): ${JSON.stringify(c.slides)}
 RETOQUES DE FOTOS ACTUALES (por número de slide): ${JSON.stringify(Object.fromEntries(Object.entries(c.datos?.fx || {}).map(([i, v]) => [+i + 1, v])))}
 Fotos subidas en los slides: ${Object.keys(c.datos?.fotos || {}).map((i) => +i + 1).join(", ") || "ninguna"}.
-Si pide retocar una foto (rotar, sombra, más grande, moverla, más brillo, etc.), devolvé en "fotos_fx" SOLO el slide que cambia, con TODOS sus valores finales (los actuales + el cambio). Valores posibles: ${Object.entries(FX).map(([k, v]) => `${k} (${v[0]} a ${v[1]}): ${v[2]}`).join("; ")}. "Ligeramente" = valores chicos (rot 4 a 6, sombra 1, piso 1 o 2). Para quitar un retoque poné su valor normal. No podés recortar el fondo ni dibujar sobre la foto: si lo pide, decíselo.
+Si pide retocar una foto (rotar, sombra, más grande, moverla, más brillo, etc.), devolvé en "fotos_fx" SOLO el slide que cambia, con TODOS sus valores finales (los actuales + el cambio). Valores posibles: ${Object.entries(FX).map(([k, v]) => `${k} (${v[0]} a ${v[1]}): ${v[2]}`).join("; ")}. "Ligeramente" = valores chicos (rot 4 a 6, sombra 1, piso 1 o 2). Para quitar un retoque poné su valor normal. No podés recortar el fondo ni dibujar sobre la foto: si lo pide, decíselo. Si la foto tiene fondo blanco o liso, para "sombra" usá sobre todo "piso" (la de "sombra" queda alrededor del rectángulo). NUNCA digas que cambiaste algo que no devolviste en el JSON.
 TEXTO DEL POSTEO: ${JSON.stringify(c.caption || "")}
 REGLAS QUE YA SABÉS: ${rg.map((x, i) => `${i + 1}. ${x}`).join(" ") || "ninguna"}
 CHARLA PREVIA: ${c.chat.slice(-8).map((m) => `${m.r === "u" ? "DUEÑO" : "VOS"}: ${m.t}`).join(" | ") || "-"}
@@ -258,6 +258,7 @@ Respondé SOLO JSON: {"respuesta":"corta, qué cambiaste","slides":[...] o null,
     const fx = {}; for (const [n, v] of Object.entries(r.fotos_fx)) if (+n >= 1) fx[+n - 1] = v;
     const base = cambios.datos || c.datos || {};
     cambios.datos = limpiarDatos({ fx: { ...(base.fx || {}), ...fx } }, base);
+    cambios.nota_fx = Object.keys(fx).map((i) => `slide ${+i + 1}: ${Object.entries(cambios.datos.fx[i] || {}).map(([k, v]) => k + " " + v).join(", ") || "sin retoques"}`).join(" · ");
   }
   let regla = "";
   if (r.regla && String(r.regla).trim().length > 5) {
@@ -265,7 +266,11 @@ Respondé SOLO JSON: {"respuesta":"corta, qué cambiaste","slides":[...] o null,
     const l = rg.filter((x) => x.toLowerCase() !== regla.toLowerCase()).concat(regla).slice(-40);
     await kvPut(env, "ig_reglas_carrusel", JSON.stringify(l));
   }
-  return { ok: true, respuesta: String(r.respuesta || "Listo.").slice(0, 600), regla, ...cambios };
+  const { nota_fx, ...resto } = cambios;
+  let respuesta = String(r.respuesta || "Listo.").slice(0, 600);
+  if (nota_fx) respuesta += `\n(Retoque aplicado → ${nota_fx})`;
+  else if (/foto|imagen|sombra|rot|gir/i.test(String(mensaje)) && !resto.slides && !resto.caption && !resto.datos) respuesta += "\n(Ojo: esta vez no se aplicó ningún cambio. Pedímelo de nuevo, más concreto: ej. \"slide 1: sombra en el piso suave\".)";
+  return { ok: true, respuesta, regla, ...resto };
 }
 
 // ---------- Virales de referencia: capturas analizadas por la IA ----------
