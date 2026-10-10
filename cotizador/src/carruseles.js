@@ -99,7 +99,20 @@ export function limpiarDatos(d = {}, previo = {}) {
     costo: d.costo !== undefined ? num(d.costo) : previo.costo ?? null,
     cantidad: d.cantidad !== undefined ? num(d.cantidad) : previo.cantidad ?? null,
     fotos: { ...(previo.fotos || {}), ...(d.fotos || {}) },
+    fx: limpiarFx({ ...(previo.fx || {}), ...(d.fx || {}) }),
   };
+}
+// Retoques de las fotos de cada slide (los aplica el dibujo del panel, así se ven en el preview y en lo publicado)
+export const FX = { rot: [-20, 20, "grados de rotación (negativo = a la izquierda)"], escala: [0.5, 1.4, "tamaño (1 = normal)"], dx: [-300, 300, "mover a la derecha (+) o izquierda (-), px"], dy: [-300, 300, "mover abajo (+) o arriba (-), px"], sombra: [0, 3, "sombra que sigue la forma del producto: 0 nada, 1 suave, 2 media, 3 fuerte"], piso: [0, 3, "sombra difusa en el piso, debajo del producto: 0 a 3"], brillo: [60, 150, "brillo en % (100 normal)"], contraste: [60, 150, "contraste en % (100 normal)"], saturacion: [0, 180, "saturación en % (100 normal, 0 blanco y negro)"], redondeo: [0, 80, "esquinas redondeadas en px"] };
+export function limpiarFx(fx) {
+  const out = {};
+  for (const [i, v] of Object.entries(fx || {})) {
+    if (!/^\d+$/.test(i) || !v || typeof v !== "object") continue;
+    const o = {};
+    for (const [k, [mn, mx]] of Object.entries(FX)) if (v[k] !== undefined && v[k] !== null && Number.isFinite(+v[k])) o[k] = Math.min(mx, Math.max(mn, +v[k]));
+    if (Object.keys(o).length) out[i] = o;
+  }
+  return out;
 }
 // Las cuentas: siempre en código
 export function calcularDatos(d = {}) {
@@ -218,13 +231,16 @@ ${MANUAL}
 Tipos de slide: ${AYUDA_TIPOS}. Para precios usá las marcas {precio_ml} {costo} {diferencia} {cantidad} {total} {producto}; nunca números de precio.
 DATOS CARGADOS: ${JSON.stringify({ producto: datos.producto, precio_ml: datos.precio_ml, costo: datos.costo, cantidad: datos.cantidad, diferencia: datos.diferencia, total: datos.total })}
 SLIDES ACTUALES (numerados desde 1): ${JSON.stringify(c.slides)}
+RETOQUES DE FOTOS ACTUALES (por número de slide): ${JSON.stringify(Object.fromEntries(Object.entries(c.datos?.fx || {}).map(([i, v]) => [+i + 1, v])))}
+Fotos subidas en los slides: ${Object.keys(c.datos?.fotos || {}).map((i) => +i + 1).join(", ") || "ninguna"}.
+Si pide retocar una foto (rotar, sombra, más grande, moverla, más brillo, etc.), devolvé en "fotos_fx" SOLO el slide que cambia, con TODOS sus valores finales (los actuales + el cambio). Valores posibles: ${Object.entries(FX).map(([k, v]) => `${k} (${v[0]} a ${v[1]}): ${v[2]}`).join("; ")}. "Ligeramente" = valores chicos (rot 4 a 6, sombra 1, piso 1 o 2). Para quitar un retoque poné su valor normal. No podés recortar el fondo ni dibujar sobre la foto: si lo pide, decíselo.
 TEXTO DEL POSTEO: ${JSON.stringify(c.caption || "")}
 REGLAS QUE YA SABÉS: ${rg.map((x, i) => `${i + 1}. ${x}`).join(" ") || "ninguna"}
 CHARLA PREVIA: ${c.chat.slice(-8).map((m) => `${m.r === "u" ? "DUEÑO" : "VOS"}: ${m.t}`).join(" | ") || "-"}
 EL DUEÑO DICE: "${String(mensaje).slice(0, 800)}"
 Hacé lo que pide con criterio de editor viral: si te dice que algo es aburrido o no engancha, no lo maquilles; cambiá el enfoque (tensión, número concreto, comparación, pregunta que obliga a pasar). Si cambia slides, devolvé TODOS los slides (completos, en orden). Si pide cambiar los datos (precio, costo, cantidad), devolvelos en "datos" con números.
 Si lo que dice es una preferencia para SIEMPRE (ej. "nunca pongas...", "siempre...", "me gusta más que..."), devolvela en "regla" en una frase corta; si es solo para este carrusel, "regla" vacío.
-Respondé SOLO JSON: {"respuesta":"corta, qué cambiaste","slides":[...] o null,"caption":"..." o null,"datos":{...} o null,"regla":"..." o ""}`);
+Respondé SOLO JSON: {"respuesta":"corta, qué cambiaste","slides":[...] o null,"caption":"..." o null,"datos":{...} o null,"fotos_fx":{"1":{"rot":-5,"sombra":1}} o null,"regla":"..." o ""}`);
   if (!r) return { ok: false, error: "La IA no respondió. Probá de nuevo." };
   const cambios = {};
   if (Array.isArray(r.slides)) {
@@ -238,6 +254,11 @@ Respondé SOLO JSON: {"respuesta":"corta, qué cambiaste","slides":[...] o null,
   }
   if (typeof r.caption === "string" && r.caption.trim() && !PROHIBIDO.test(r.caption)) cambios.caption = r.caption.slice(0, 2200);
   if (r.datos && typeof r.datos === "object") cambios.datos = limpiarDatos(r.datos, c.datos);
+  if (r.fotos_fx && typeof r.fotos_fx === "object") {
+    const fx = {}; for (const [n, v] of Object.entries(r.fotos_fx)) if (+n >= 1) fx[+n - 1] = v;
+    const base = cambios.datos || c.datos || {};
+    cambios.datos = limpiarDatos({ fx: { ...(base.fx || {}), ...fx } }, base);
+  }
   let regla = "";
   if (r.regla && String(r.regla).trim().length > 5) {
     regla = String(r.regla).trim().slice(0, 200);

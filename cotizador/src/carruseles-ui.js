@@ -89,8 +89,17 @@ function dibujar(ctx, b, y, d) {
   } else if (b.k === "img") {
     var x = (W - b.w) / 2;
     if (!b.img) { ctx.save(); ctx.setLineDash([14, 12]); ctx.lineWidth = 4; ctx.strokeStyle = "#B8BEDC"; ctx.strokeRect(x, y, b.w, b.h); ctx.restore(); ctx.font = fnt(46); ctx.textAlign = "center"; ctx.fillStyle = "#8C94C4"; ctx.fillText("Subí la foto de este slide", W / 2, y + b.h / 2 - 24); return; }
+    var f = b.fx || {}; ctx.save();
+    var sc = f.escala || 1, cx = x + b.w / 2 + (f.dx || 0), cy = y + b.h / 2 + (f.dy || 0);
+    if (f.piso) { ctx.save(); ctx.filter = "blur(" + (14 + f.piso * 6) + "px)"; ctx.fillStyle = "rgba(25,30,60," + (0.12 + f.piso * 0.08) + ")"; ctx.beginPath(); ctx.ellipse(cx, cy + b.h * sc / 2 + 6, b.w * sc * 0.42, 16 + f.piso * 5, 0, 0, 7); ctx.fill(); ctx.restore(); }
+    ctx.translate(cx, cy); ctx.rotate((f.rot || 0) * Math.PI / 180); ctx.scale(sc, sc); ctx.translate(-x - b.w / 2, -y - b.h / 2);
+    var filt = []; if (f.brillo) filt.push("brightness(" + f.brillo + "%)"); if (f.contraste) filt.push("contrast(" + f.contraste + "%)"); if (f.saturacion != null) filt.push("saturate(" + f.saturacion + "%)");
+    if (f.sombra) { ctx.shadowColor = "rgba(20,25,55," + (0.18 + f.sombra * 0.1) + ")"; ctx.shadowBlur = 12 + f.sombra * 14; ctx.shadowOffsetX = 4 * f.sombra; ctx.shadowOffsetY = 8 * f.sombra; }
+    if (f.redondeo && !b.card) { var cv2 = document.createElement("canvas"); cv2.width = b.w; cv2.height = b.h; var c2 = cv2.getContext("2d"); rr(c2, 0, 0, b.w, b.h, f.redondeo); c2.clip(); c2.drawImage(b.img, 0, 0, b.w, b.h); b = Object.assign({}, b, { img: cv2 }); }
+    if (filt.length) ctx.filter = filt.join(" ");
     if (b.card) { ctx.save(); ctx.shadowColor = "rgba(30,40,90,.22)"; ctx.shadowBlur = 40; ctx.shadowOffsetY = 14; rr(ctx, x - 14, y - 14, b.w + 28, b.h + 28, 26); ctx.fillStyle = "#fff"; ctx.fill(); ctx.restore(); ctx.save(); rr(ctx, x, y, b.w, b.h, 16); ctx.clip(); ctx.drawImage(b.img, x, y, b.w, b.h); ctx.restore(); }
     else ctx.drawImage(b.img, x, y, b.w, b.h);
+    ctx.restore();
   } else if (b.k === "av") {
     ctx.font = fnt(56); var t = "@" + USUARIO, tw = ctx.measureText(t).width, tot = 72 + 18 + tw + 14 + 34, x = W / 2 - tot / 2, cy = y + 40;
     ctx.save(); ctx.beginPath(); ctx.arc(x + 36, cy, 36, 0, 7); ctx.fillStyle = "#fff"; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = "#D6D9EA"; ctx.stroke(); ctx.clip(); if (d.logo) ctx.drawImage(d.logo, x, cy - 36, 72, 72); ctx.restore();
@@ -109,9 +118,9 @@ function numC(t) { var m = String(t || "").replace(/\./g, "").match(/\d+/); retu
 function rr(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
 function bloques(s, i, d) {
   var T = function (t, sz, al, ex) { return Object.assign({ k: "t", t: rell(t), sz: Math.round(sz * (sz < 90 ? 1.16 : 1.08)), al: al || "c" }, ex || {}); }, out = [];
-  var foto = d.fotos[i];
-  if (s.tipo === "portada") out = [{ k: "img", img: foto, mw: 640, mh: 560, gap: 50 }, T(s.titulo, 96), T(s.subtitulo, 60, "c", { gap: 70 }), { k: "av" }];
-  else if (s.tipo === "captura") out = [T(s.arriba, 100, "c", { gap: 50 }), { k: "img", img: foto, mw: 860, mh: 520, card: true, gap: 70 }, T(s.abajo, 64)];
+  var foto = d.fotos[i], fx = (CC.datos && CC.datos.fx && CC.datos.fx[i]) || null;
+  if (s.tipo === "portada") out = [{ k: "img", img: foto, fx: fx, mw: 640, mh: 560, gap: 50 }, T(s.titulo, 96), T(s.subtitulo, 60, "c", { gap: 70 }), { k: "av" }];
+  else if (s.tipo === "captura") out = [T(s.arriba, 100, "c", { gap: 50 }), { k: "img", img: foto, fx: fx, mw: 860, mh: 520, card: true, gap: 70 }, T(s.abajo, 64)];
   else if (s.tipo === "numero") out = [T(s.arriba, 70, "c", { gap: 30 }), T(s.numero, 200, "c", { sub: true, gap: 40 }), T(s.abajo, 64)];
   else if (s.tipo === "suma") { out = [T(s.titulo, 100, "l", { gap: 50 })]; (s.items || []).forEach(function (it, k) { out.push(T((k ? "+ " : "   ") + it, 62, "l", { gap: 10 })); }); out.push({ k: "hr", gap: 20 }, T(s.total, 92, "l")); }
   else if (s.tipo === "barras") out = [T(s.titulo, 100, "l", { gap: 50 }), { k: "bar", al_: rell(s.a_label), av_: rell(s.a_valor), av: rell(s.a_valor), bl_: rell(s.b_label), bv_: rell(s.b_valor), bv: rell(s.b_valor), gap: 50 }, T(s.conclusion, 84, "l")];
