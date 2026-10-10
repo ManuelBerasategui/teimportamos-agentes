@@ -644,6 +644,7 @@ export async function apiLector(env, req, url, iaJSON) {
     const b = await req.json(); const conv = String(b.conv || "");
     if (b.lista === "ven") await env.DB.prepare("UPDATE w_hito SET oculto=1 WHERE id=? AND tipo='venta'").bind(String(b.id || "")).run();
     else { const col = b.lista === "esc" ? "visto_esc" : b.lista === "cot" ? "visto_cot" : "visto_ts"; await env.DB.prepare(`UPDATE w_conv SET ${col}=? WHERE conv=?`).bind(Date.now(), conv).run(); }
+    if (b.lista !== "ven") await env.DB.prepare("UPDATE tareas SET estado='hecha' WHERE ref=? AND estado='abierta'").bind("w805:" + conv).run();
     await env.DB.prepare("DELETE FROM kv WHERE k='lector_resumen'").run(); return json({ ok: true });
   }
   if (r === "archivar" && req.method === "POST") {
