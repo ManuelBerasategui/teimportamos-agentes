@@ -248,6 +248,7 @@ Para cada chat devolvé:
     "proveedor" (hay que buscar proveedor o averiguar algo con un proveedor para poder avanzar),
    "titulo": máximo 8 palabras concretas (ej. "Cotizar 50 tarjetas NFC", "Pasarle cotización por 80 y 100 u"), "detalle": 1 oración}.
    Si ya lo cumplimos más abajo en el chat, o el cliente cerró la charla, o no es cliente: null.
+   MUY IMPORTANTE: si el ÚLTIMO mensaje es NUESTRO y le pide algo al cliente (link, foto, cantidad, modelo, datos, "¿qué producto buscás?") o le hace una pregunta, la pelota está del lado del cliente: pendiente null (no hay nada que hacer hasta que conteste). Lo mismo si nuestra última respuesta ya le dio lo que pedía.
 - Si es_proveedor es true: etapa "no_cliente", puntaje 1, cot_pend false, venta_real false.
 - Consultas por vapers, vapes, pods o tabaco: etapa "no_cliente" (no los trabajamos; los atiende el socio por otro canal).
 - resumen: 1 oración con lo esencial (nombre, producto, cantidad, en qué quedó)
@@ -274,7 +275,9 @@ ${bloques.join("\n\n")}`);
 // Pendientes del panel que salen del análisis del 805 (uno abierto por chat como máximo)
 const TIPOS_PEND = { cotizacion: "cotizacion", promesa: "promesa", comprobante: "comprobante", proveedor: "proveedor" };
 function pendienteOps(env, c, p) {
-  const tipo = p && TIPOS_PEND[p.tipo];
+  let tipo = p && TIPOS_PEND[p.tipo];
+  // Si lo último lo escribimos nosotros preguntándole algo, esperamos al cliente: no hay tarea de cotizar ni promesa
+  if (tipo && (tipo === "cotizacion" || tipo === "promesa") && c.ult_yo && /\?\s*$|\b(pasame|mandame|envi[aá]me|ten[eé]s (alg[uú]n )?(link|foto)|qu[eé] (producto|modelo|cantidad))\b/i.test(String(c.ult_texto || ""))) tipo = null;
   if (!tipo) return [env.DB.prepare("UPDATE tareas SET estado='resuelta' WHERE ref=? AND estado='abierta'").bind("w805:" + c.conv)];
   const id = `w805:${c.conv}:${tipo}:${diaAR(Date.now())}`;
   return [
@@ -513,6 +516,7 @@ export async function cronLector(env, iaJSON, scheduledTime) {
     await env.DB.prepare("UPDATE tareas SET estado='resuelta' WHERE estado='abierta' AND ref LIKE 'w805:%' AND tipo IN ('cotizacion','promesa') AND EXISTS (SELECT 1 FROM w_msg m WHERE m.conv=tareas.tel AND m.yo=1 AND m.ts>tareas.ts AND (m.tipo<>'text' OR m.texto LIKE '(archivo)%' OR m.texto LIKE '%http%' OR m.texto LIKE '%usd%' OR m.texto LIKE '%$%'))").run();
     await kvPut(env, "lector_pend_res_v1", Date.now());
   }
+  if (!(await kvGet(env, "lector_pend_v2"))) { await env.DB.prepare("UPDATE w_conv SET analizado_ts=0 WHERE conv IN (SELECT tel FROM tareas WHERE estado='abierta' AND ref LIKE 'w805:%')").run(); await kvPut(env, "lector_pend_v2", Date.now()); }
   if (!(await kvGet(env, "lector_pend_v1"))) { await env.DB.prepare("UPDATE w_conv SET analizado_ts=0 WHERE grupo=0 AND ult_ts>=?").bind(Date.now() - 3 * 86400e3).run(); await kvPut(env, "lector_pend_v1", Date.now()); }
   if (!(await kvGet(env, "lector_cotiz_v2"))) await recalcularCotizaciones(env).catch((e) => console.log("lector cotiz", e?.stack || e));
   const t = new Date(scheduledTime);
