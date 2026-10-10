@@ -3,7 +3,7 @@ import { PANEL_805 } from "./lector-panel.js";
 import { apiCotizar, paginaCotizacion, PANEL_COTIZAR, cotizarAuto } from "./cotizar.js";
 import { apiBusquedas, PANEL_BUSQUEDAS, rutaInformes, rutaImagen } from "./busquedas.js";
 import { apiRedes, PANEL_REDES, cronRedes } from "./redes.js";
-import { apiVideos, rutaVideosEditor, cronVideos } from "./videos.js";
+import { apiVideos, rutaVideosEditor, cronVideos, despertarEditor } from "./videos.js";
 import { apiCarruseles, cronCarr } from "./carruseles.js";
 import { conApp, rutaApp } from "./app.js";
 /**
@@ -2598,12 +2598,46 @@ async function panelAPI(env, req, url, quien) {
 // ---------------- Pestaña "Agentes": el equipo habla con cada agente, le enseña y le pide acciones ----------------
 const AGENTES = {
   whatsapp: { nombre: "Agente de WhatsApp", clave: "aprendido" },
-  instagram: { nombre: "Agente de Instagram", clave: "ig_reglas" },
+  redes: { nombre: "Agente de Redes", clave: "ig_reglas" },
 };
-async function hiloAgente(env, a) {
-  const ag = AGENTES[a] || AGENTES.whatsapp;
-  return { hilo: JSON.parse((await env.ESTADO.get(`agente_hilo:${a}`)) || "[]"), reglas: JSON.parse((await env.ESTADO.get(ag.clave)) || "[]") };
+// El Agente de Redes guarda lo que aprende separado por área; cada parte del sistema lee la suya
+const AREAS_REDES = { comentarios: "ig_reglas", ideas: "ig_reglas_ideas", carruseles: "ig_reglas_carrusel", videos: "ig_reglas_videos" };
+const CONFIG_VIDEO = { sub_tam: [82, "tamaño de los subtítulos (60 a 110)"], sub_alto: [620, "distancia de los subtítulos al borde de abajo, en px (300 a 1100)"], gancho_tam: [76, "tamaño del texto de arriba (50 a 100)"], gancho_alto: [250, "distancia del texto de arriba al borde de arriba, en px (120 a 700)"] };
+const nombreAg = (a) => (a === "instagram" ? "redes" : AGENTES[a] ? a : "whatsapp");
+async function reglasPlanas(env, a) {
+  if (a !== "redes") return JSON.parse((await env.ESTADO.get(AGENTES[a].clave)) || "[]").map((t, i) => ({ t, clave: AGENTES[a].clave, i }));
+  const out = [];
+  for (const [area, clave] of Object.entries(AREAS_REDES)) JSON.parse((await env.ESTADO.get(clave)) || "[]").forEach((t, i) => out.push({ t: `[${area}] ${t}`, clave, i, area }));
+  return out;
 }
+async function hiloAgente(env, a) {
+  a = nombreAg(a);
+  return { hilo: JSON.parse((await env.ESTADO.get(`agente_hilo:${a}`)) || "[]"), reglas: (await reglasPlanas(env, a)).map((x) => x.t) };
+}
+// Foto del estado del sistema de redes (para que el agente diagnostique y para el texto que se le manda a Claude)
+async function estadoRedes(env) {
+  const q = async (sql) => { try { return (await env.DB.prepare(sql).all()).results || []; } catch { return null; } };
+  const f = (ts) => (ts ? new Date(ts - 3 * 3600e3).toISOString().slice(0, 16).replace("T", " ") : "-");
+  const lotes = await q("SELECT id, ts, estado, intentos, tomado_ts, error FROM ig_lotes ORDER BY ts DESC LIMIT 6");
+  const vids = await q("SELECT estado, COUNT(*) n FROM ig_videos WHERE borrado=0 GROUP BY estado");
+  const verr = await q("SELECT id, error, ts FROM ig_videos WHERE error IS NOT NULL AND error <> '' ORDER BY ts DESC LIMIT 4");
+  const carr = await q("SELECT estado, COUNT(*) n FROM ig_carruseles WHERE borrado=0 GROUP BY estado");
+  const cerr = await q("SELECT id, titulo, error, ts FROM ig_carruseles WHERE error IS NOT NULL AND error <> '' ORDER BY ts DESC LIMIT 4");
+  const hist = await q("SELECT ts, estado FROM ig_historias ORDER BY ts DESC LIMIT 1");
+  const ideas = await q("SELECT ts FROM ig_ideas ORDER BY ts DESC LIMIT 1");
+  const dms = await q("SELECT MAX(actualizado) m, COUNT(*) n FROM ig_dms");
+  const posts = await q("SELECT MAX(actualizado) m, COUNT(*) n FROM ig_posts");
+  return [
+    `Hora AR: ${f(Date.now())}`,
+    `Lotes de video (últimos): ${lotes ? lotes.map((l) => `${l.id} ${f(l.ts)} estado=${l.estado} intentos=${l.intentos}${l.tomado_ts ? " tomado " + f(l.tomado_ts) : ""}${l.error ? " ERROR: " + String(l.error).slice(0, 200) : ""}`).join(" | ") || "ninguno" : "tabla sin crear"}`,
+    `Videos por estado: ${vids ? vids.map((x) => x.estado + " " + x.n).join(", ") || "ninguno" : "-"}${verr?.length ? " · errores: " + verr.map((x) => String(x.error).slice(0, 150)).join(" | ") : ""}`,
+    `Carruseles por estado: ${carr ? carr.map((x) => x.estado + " " + x.n).join(", ") || "ninguno" : "-"}${cerr?.length ? " · errores: " + cerr.map((x) => `"${x.titulo}": ${String(x.error).slice(0, 150)}`).join(" | ") : ""}`,
+    `Última historia propuesta: ${hist?.[0] ? f(hist[0].ts) : "-"} · últimas ideas: ${ideas?.[0] ? f(ideas[0].ts) : "-"}`,
+    `DMs sincronizados: ${dms?.[0]?.n ?? "-"} (último ${f(dms?.[0]?.m)}) · posts: ${posts?.[0]?.n ?? "-"} (último ${f(posts?.[0]?.m)})`,
+    `Editor de videos: GH_TOKEN ${env.GH_TOKEN ? "cargado" : "NO cargado (el editor depende del cron de GitHub, que se atrasa)"} · ajustes actuales: ${(await env.ESTADO.get("ig_config_videos")) || "los de fábrica"}`,
+  ].join("\n");
+}
+const PARA_CLAUDE = (agente) => `"para_claude": SOLO si el problema NO se arregla con una regla ni con una acción tuya (es un error del sistema, algo que no se sincroniza bien, un dato que se calcula mal, un botón que no anda, un video que sale roto): escribí acá un pedido completo para Claude Code, el programador. Tiene que entenderse sin contexto: qué hace mal (síntoma exacto), qué esperaba el dueño, ejemplos concretos con datos (nombre/número/fecha/id/error), qué ya probaste y en qué parte creés que está (${agente === "redes" ? "cotizador/src/redes.js, videos.js, carruseles.js, carruseles-ui.js, instagram/src/*.js, tools/editor/editar.py" : "cotizador/src/worker.js: tareas/pendientes, cerebro, sincronización con los chats"}). Si no hace falta, dejalo "".`;
 async function iaConImagenes(env, prompt, imagenes) {
   const partes = [{ text: prompt }, ...imagenes.slice(0, 6).map((d) => { const m = String(d).match(/^data:([^;]+);base64,(.+)$/); return m ? { inline_data: { mime_type: m[1], data: m[2] } } : null; }).filter(Boolean)];
   for (const m of (await modelosDisponibles(env)).slice(0, 3)) {
@@ -2617,7 +2651,7 @@ async function iaConImagenes(env, prompt, imagenes) {
   return null;
 }
 async function hablarConAgente(env, { agente, texto, imagenes }, quien) {
-  const a = AGENTES[agente] ? agente : "whatsapp", ag = AGENTES[a];
+  const a = nombreAg(agente);
   const { hilo, reglas } = await hiloAgente(env, a);
   texto = String(texto || "").slice(0, 4000); imagenes = Array.isArray(imagenes) ? imagenes : [];
   // MODO PRUEBA: "probá: mensaje de un cliente" → muestra qué le respondería, sin mandar nada
@@ -2669,9 +2703,15 @@ async function hablarConAgente(env, { agente, texto, imagenes }, quien) {
     }
     datos = `\nDATOS REALES DE LAS ÚLTIMAS ${horas} H (C=cliente, A=agente/vos, E=equipo humano):\nEventos: ${ev.map((x) => x.tipo + " " + x.n).join(", ") || "-"}\n${txt || "(no hay chats en ese período)"}`;
   }
+  const estado = a === "redes" ? await estadoRedes(env) : "";
   const contexto = a === "whatsapp"
-    ? `Sos el agente de WhatsApp de "Te Importamos" (atendés clientes que quieren importar). Te habla ${quien || "el equipo"}, tu jefe, para enseñarte, corregirte o pedirte acciones.`
-    : `Sos el agente de Instagram de "Te Importamos": respondés comentarios públicos con frases muy cortas (1 a 4 palabras) invitando al DM. Te habla ${quien || "el equipo"}, tu jefe, para ajustar cómo respondés.`;
+    ? `Sos el agente de WhatsApp de "Te Importamos" (atendés clientes que quieren importar). Te habla ${quien || "el equipo"}, tu jefe, para enseñarte, corregirte o pedirte acciones. También manejás los PENDIENTES del panel (tareas que se abren y cierran según lo que pasa en cada chat): si el jefe dice que un pendiente está mal, proponé la acción para corregir ese chat y una regla para que no vuelva a pasar; si es un error de cómo se sincronizan, armá el pedido "para_claude".`
+    : `Sos el Agente de Redes de "Te Importamos" (Instagram). Manejás TODO: respuestas a comentarios (frases muy cortas, 1 a 4 palabras, invitando al DM), ideas de reels, historias, carruseles y la edición automática de videos. Te habla ${quien || "el equipo"}, tu jefe, para enseñarte, corregirte o preguntarte por qué algo falla.
+Cada regla nueva va con su ÁREA al principio, entre corchetes, exactamente una de: [comentarios] [ideas] [carruseles] [videos]. Ej: "[videos] Sacá también las frases donde me trabo aunque no se repitan." · "[ideas] No propongas ideas de ropa." ("ideas" sirve para ideas de reels y para historias; "videos" para qué frases se cortan, el texto de arriba y el caption).
+Cosas de la edición que SÍ podés cambiar vos con la acción "ajustar_video" (poné en "config" solo lo que cambia): ${Object.entries(CONFIG_VIDEO).map(([k, v]) => `${k} = ${v[1]}, de fábrica ${v[0]}`).join("; ")}.
+Si los videos quedaron trabados o con error, podés proponer la acción "reintentar_videos" (los vuelve a poner en cola y despierta al editor).
+ESTADO ACTUAL DEL SISTEMA (datos reales, usalos para diagnosticar):
+${estado}`;
   const r = await iaConImagenes(env, `${contexto}
 Respondé en español rioplatense, claro, como un empleado que entendió (sin jerga técnica). Si te manda capturas, leelas y explicá qué hiciste mal.
 REGLAS DE HONESTIDAD (obligatorias):
@@ -2685,7 +2725,8 @@ CÓMO REDACTAR UNA REGLA (muy importante):
 - Derivar al equipo solo si el jefe lo pide explícitamente.
 - Si no estás seguro de qué acción quiere, NO propongas la regla: preguntale en "respuesta" qué querés que le diga el agente al cliente en ese caso.
 Cuando te enseñe algo NO lo copies literal: entendé la intención de fondo, pensá en qué otros casos parecidos aplica y proponé UNA regla general bien redactada (1 o 2 oraciones en imperativo, con el porqué si ayuda), que sirva para todos esos casos. Si ya existe una regla parecida, proponé la versión mejorada que la reemplace y poné el número viejo en "olvidar". No repitas reglas que ya existen.
-Cuando te pida hacer algo sobre un chat, proponé la acción (el equipo la confirma con un botón).
+Cuando te pida hacer algo${a === "whatsapp" ? " sobre un chat" : ""}, proponé la acción (el equipo la confirma con un botón).
+Si algo es un error del sistema que no podés arreglar vos, decíselo claro y armá "para_claude".
 
 REGLAS QUE YA TENÉS:
 ${reglas.map((x, i) => `${i + 1}. ${x}`).join("\n") || "(ninguna)"}
@@ -2700,24 +2741,59 @@ Respondé SOLO JSON:
 {"respuesta": "lo que le contestás",
  "reglas_nuevas": ["regla 1", "..."],
  "olvidar": [números de reglas existentes que hay que borrar porque el jefe dijo que están mal],
- "acciones": [{"tipo": "${a === "whatsapp" ? "quitar_riesgo|cerrar_pendientes|enviar_cotizacion|mensaje_cliente|pausar|reanudar" : "ninguna"}", "tel": "número del chat", "texto": "solo para mensaje_cliente: el mensaje exacto", "descripcion": "qué vas a hacer, en una frase"}]}`, imagenes);
+ "acciones": [${a === "whatsapp" ? `{"tipo": "quitar_riesgo|cerrar_pendientes|enviar_cotizacion|mensaje_cliente|pausar|reanudar", "tel": "número del chat", "texto": "solo para mensaje_cliente: el mensaje exacto", "descripcion": "qué vas a hacer, en una frase"}` : `{"tipo": "ajustar_video|reintentar_videos", "config": {"sub_tam": 90}, "descripcion": "qué vas a hacer, en una frase"}`}],
+ ${PARA_CLAUDE(a)}}`, imagenes);
   if (!r) return { ok: false, respuesta: "No pude pensar la respuesta (la IA no respondió). Probá de nuevo en un minuto." };
-  const nuevo = [...hilo, { r: "u", t: texto || "(imágenes)", ts: Date.now(), n: imagenes.length }, { r: "a", t: String(r.respuesta || ""), ts: Date.now(), reglas: (r.reglas_nuevas || []).filter(Boolean).slice(0, 5), olvidar: (r.olvidar || []).filter((n) => n > 0 && n <= reglas.length), acciones: (r.acciones || []).filter((x) => x && x.tipo && x.tipo !== "ninguna").slice(0, 5) }].slice(-40);
+  const nuevo = [...hilo, { r: "u", t: texto || "(imágenes)", ts: Date.now(), n: imagenes.length }, { r: "a", t: String(r.respuesta || ""), ts: Date.now(), reglas: (r.reglas_nuevas || []).filter(Boolean).slice(0, 5), olvidar: (r.olvidar || []).filter((n) => n > 0 && n <= reglas.length), acciones: (r.acciones || []).filter((x) => x && x.tipo && x.tipo !== "ninguna").slice(0, 5), ...(String(r.para_claude || "").trim().length > 30 ? { para_claude: armarParaClaude(a, String(r.para_claude).trim(), texto, estado) } : {}) }].slice(-40);
   await env.ESTADO.put(`agente_hilo:${a}`, JSON.stringify(nuevo));
   return { ok: true, ...(await hiloAgente(env, a)) };
 }
+function armarParaClaude(a, pedido, texto, estado) {
+  return `Hola Claude. Soy Manuel (Te Importamos). Repo: github.com/ManuelBerasategui/teimportamos-agentes (Cloudflare Workers + D1 "agente" + R2; deploy automático desde main). Antes de pushear corré todas las simulaciones de tests/ (desde cotizador/).
+Esto lo escribió el ${AGENTES[a].nombre} del panel porque no lo puede arreglar sin tocar código:
+
+${pedido}
+
+Lo que le dije al agente: "${String(texto || "").slice(0, 800)}"${estado ? `\n\nEstado del sistema en ese momento:\n${estado}` : ""}
+
+Arreglalo, explicame qué cambiaste y qué tengo que hacer yo (máximo 3 pasos).`;
+}
 async function aplicarAgente(env, { agente, tipo, regla, n, accion }, quien) {
-  const a = AGENTES[agente] ? agente : "whatsapp", ag = AGENTES[a];
-  const reglas = JSON.parse((await env.ESTADO.get(ag.clave)) || "[]");
+  const a = nombreAg(agente), ag = AGENTES[a];
+  const planas = await reglasPlanas(env, a);
+  const leer = async (clave) => JSON.parse((await env.ESTADO.get(clave)) || "[]");
   if (tipo === "regla" && regla) {
-    reglas.push(String(regla).slice(0, 400));
-    await env.ESTADO.put(ag.clave, JSON.stringify(reglas));
-    const n = await consolidarReglas(env, ag.clave, a);
-    return { ok: true, res: n ? `Aprendido. Lo integré con lo que ya sabía (ahora tiene ${n} reglas)` : "Regla guardada: la aplica desde el próximo mensaje" };
+    let txt = String(regla).trim(), clave = ag.clave;
+    if (a === "redes") { const m = txt.match(/^\[(\w+)\]\s*/); clave = AREAS_REDES[m?.[1]?.toLowerCase()] || AREAS_REDES.comentarios; if (m) txt = txt.slice(m[0].length); }
+    const reglas = await leer(clave); reglas.push(txt.slice(0, 400));
+    await env.ESTADO.put(clave, JSON.stringify(reglas));
+    const k = await consolidarReglas(env, clave, a);
+    return { ok: true, res: k ? `Aprendido. Lo integré con lo que ya sabía (esa área tiene ${k} reglas)` : "Regla guardada: la aplica desde la próxima vez" };
   }
-  if (tipo === "consolidar") { const n = await consolidarReglas(env, ag.clave, a, true); return { ok: !!n, res: n ? `Listo, ordené todo en ${n} reglas` : "No hizo falta cambiar nada" }; }
-  if (tipo === "olvidar") { const x = reglas.splice(+n - 1, 1); await env.ESTADO.put(ag.clave, JSON.stringify(reglas)); return { ok: !!x.length, res: x.length ? "Regla borrada" : "No encontré esa regla" }; }
-  if (tipo === "editar") { if (!reglas[+n - 1]) return { ok: false, res: "No encontré esa regla" }; reglas[+n - 1] = String(regla || "").slice(0, 400); await env.ESTADO.put(ag.clave, JSON.stringify(reglas.filter(Boolean))); return { ok: true, res: "Regla actualizada" }; }
+  if (tipo === "consolidar") { let t = 0; for (const c of a === "redes" ? Object.values(AREAS_REDES) : [ag.clave]) t += (await consolidarReglas(env, c, a, true)) || 0; return { ok: !!t, res: t ? "Listo, ordené las reglas" : "No hizo falta cambiar nada" }; }
+  if (tipo === "olvidar" || tipo === "editar") {
+    const p = planas[+n - 1]; if (!p) return { ok: false, res: "No encontré esa regla" };
+    const reglas = await leer(p.clave);
+    if (tipo === "olvidar") reglas.splice(p.i, 1); else reglas[p.i] = String(regla || "").replace(/^\[\w+\]\s*/, "").slice(0, 400);
+    await env.ESTADO.put(p.clave, JSON.stringify(reglas.filter(Boolean)));
+    return { ok: true, res: tipo === "olvidar" ? "Regla borrada" : "Regla actualizada" };
+  }
+  if (tipo === "accion" && accion && a === "redes") {
+    if (accion.tipo === "ajustar_video") {
+      const act = JSON.parse((await env.ESTADO.get("ig_config_videos")) || "{}"), lim = { sub_tam: [60, 110], sub_alto: [300, 1100], gancho_tam: [50, 100], gancho_alto: [120, 700] };
+      for (const [k, v] of Object.entries(accion.config || {})) if (lim[k] && Number.isFinite(+v)) act[k] = Math.min(lim[k][1], Math.max(lim[k][0], Math.round(+v)));
+      await env.ESTADO.put("ig_config_videos", JSON.stringify(act));
+      return { ok: true, res: "Ajuste guardado: se usa en el próximo lote que edite" };
+    }
+    if (accion.tipo === "reintentar_videos") {
+      const r = await env.DB.prepare("UPDATE ig_lotes SET estado='en_cola', intentos=0, error=NULL, tomado_ts=NULL WHERE estado IN ('error','procesando')").run().catch(() => null);
+      const k = r?.meta?.changes || 0;
+      if (!k) return { ok: false, res: "No hay lotes trabados ni con error" };
+      const ed = await despertarEditor(env).catch(() => null);
+      return { ok: true, res: `${k} lote(s) de nuevo en cola${ed?.ok ? "; ya desperté al editor" : "; el editor los toma en su próxima vuelta"}` };
+    }
+    return { ok: false, res: "No sé hacer esa acción" };
+  }
   if (tipo === "accion" && accion && a === "whatsapp") {
     const tel = String(accion.tel || "").replace(/\D/g, "");
     if (!tel) return { ok: false, res: "Falta el número del chat" };
@@ -2740,7 +2816,7 @@ async function aplicarAgente(env, { agente, tipo, regla, n, accion }, quien) {
 async function consolidarReglas(env, clave, agente, forzar = false) {
   const reglas = JSON.parse((await env.ESTADO.get(clave)) || "[]");
   if (reglas.length < 3 && !forzar) return 0;
-  const r = await iaJSON(env, `Sos el editor de las reglas aprendidas del ${agente === "instagram" ? "agente de Instagram" : "agente de WhatsApp"} de "Te Importamos".
+  const r = await iaJSON(env, `Sos el editor de las reglas aprendidas del ${agente === "whatsapp" ? "agente de WhatsApp" : `Agente de Redes (área: ${(Object.entries(AREAS_REDES).find(([, c]) => c === clave) || ["comentarios"])[0]})`} de "Te Importamos".
 Tarea: devolvé la lista ordenada y sin repeticiones.
 - Fusioná en UNA sola regla las que dicen lo mismo o se superponen (la más nueva manda si se contradicen; las más nuevas están al final).
 - Generalizá cuando varias son casos particulares de una misma idea, pero NO pierdas ningún dato concreto (números, links, precios, nombres, excepciones).
@@ -2944,7 +3020,7 @@ button{font:inherit;cursor:pointer}
 <div class="card reportes"><div class="cab"><h3 id="rep-tit" style="margin:0">Reportes diarios</h3><button class="btn" id="generar">Generar ahora</button></div><div id="reps"></div></div>
 </div></div>
 
-<div class="vista" id="v-agentes"><div class="ag"><div class="lista" id="agLista"><button data-a="asistente" class="on">Asistente de WhatsApp</button><button data-a="instagram">Agente de Instagram</button></div>
+<div class="vista" id="v-agentes"><div class="ag"><div class="lista" id="agLista"><button data-a="asistente" class="on">Asistente de WhatsApp</button><button data-a="whatsapp">Agente de WhatsApp</button><button data-a="redes">Agente de Redes</button></div>
 <div class="cuerpo"><div class="hilo" id="agHilo"><div class="vacio">Cargando...</div></div>
 <details class="reglas" id="agReglasBox"><summary><b>Lo que sabe</b> (<span id="agN">0</span> reglas) · tocá para ver, editar o borrar</summary><ol id="agReglas"></ol><button id="agOrdenar" style="color:var(--azul)">Ordenar y fusionar reglas parecidas</button> · <button id="agLimpiar" style="color:var(--gris)">Borrar esta conversación</button></details>
 <div class="adj" id="agAdj"></div>
@@ -3226,8 +3302,9 @@ function pintarAgente(d) {
     (m.reglas || []).forEach(function (r, j) { x += '<div class="prop"><span>📌 ' + esc(r) + '</span><button class="btn lleno" data-regla="' + i + "-" + j + '">Guardar regla</button></div>'; });
     (m.olvidar || []).forEach(function (n) { x += '<div class="prop"><span>🗑️ Borrar la regla ' + n + ": " + esc((d.reglas || [])[n - 1] || "") + '</span><button class="btn rojo" data-olvidar="' + n + '">Borrar</button></div>'; });
     (m.acciones || []).forEach(function (a, j) { x += '<div class="prop"><span>⚡ ' + esc(a.descripcion || a.tipo) + (a.texto ? ': "' + esc(a.texto) + '"' : "") + '</span><button class="btn lleno" data-accion="' + i + "-" + j + '">Hacerlo</button></div>'; });
+    if (m.para_claude) x += '<div class="prop" style="flex-direction:column;align-items:stretch"><span><b>Esto es un arreglo de código.</b> Copiá este texto y mandáselo a Claude:</span><textarea readonly rows="6" style="width:100%;font-size:12px;margin:6px 0">' + esc(m.para_claude) + '</textarea><button class="btn lleno" data-claude="' + i + '">Copiar para Claude</button></div>';
     return x + "</div>";
-  }).join("") : '<div class="vacio">Escribile al agente para enseñarle algo o corregirlo.<br><br>Ejemplos:<br>· "el chat de Abel no está en riesgo"<br>· "cuando pregunten por factura, decí que hacemos factura C" <br>· pegá una captura y decile "acá respondiste mal porque..."<br><br><b>Para probarlo sin usar WhatsApp</b>, escribí:<br>· "probá: traen productos de arabia saudita?"<br>y te muestra qué le contestaría a un cliente, sin mandar nada.</div>';
+  }).join("") : AG === "redes" ? '<div class="vacio">Este agente maneja comentarios, ideas, historias, carruseles y videos. Enseñale o contale qué anda mal.<br><br>Ejemplos:<br>· "en los videos los subtítulos quedan muy abajo"<br>· "no me propongas más ideas de ropa"<br>· "los videos están hace una hora en cola, ¿qué pasa?"<br>· "a los comentarios que dicen precio respondé: te paso info por DM"<br><br>Si es un error de código, te arma el texto listo para mandarle a Claude.</div>' : '<div class="vacio">Escribile al agente para enseñarle algo o corregirlo.<br><br>Ejemplos:<br>· "el chat de Abel no está en riesgo"<br>· "cuando pregunten por factura, decí que hacemos factura C" <br>· pegá una captura y decile "acá respondiste mal porque..."<br><br><b>Para probarlo sin usar WhatsApp</b>, escribí:<br>· "probá: traen productos de arabia saudita?"<br>y te muestra qué le contestaría a un cliente, sin mandar nada.</div>';
   window.__agHilo = h;
   $("#agN").textContent = (d.reglas || []).length;
   $("#agReglas").innerHTML = (d.reglas || []).map(function (r, i) { return '<li>' + esc(r) + ' <button data-editar="' + (i + 1) + '" title="Editar">✏️</button><button data-olvidar="' + (i + 1) + '" title="Borrar">🗑️</button></li>'; }).join("") || "<li>Todavía no tiene reglas guardadas.</li>";
@@ -3238,6 +3315,7 @@ $("#agHilo").onclick = function (ev) {
   var b = ev.target.closest("button"); if (!b) return; var h = window.__agHilo || [];
   if (b.dataset.regla) { var p = b.dataset.regla.split("-"); agAplicar({ tipo: "regla", regla: h[p[0]].reglas[p[1]] }, b); }
   if (b.dataset.olvidar) agAplicar({ tipo: "olvidar", n: +b.dataset.olvidar }, b);
+  if (b.dataset.claude) { var tx = h[b.dataset.claude].para_claude; (navigator.clipboard ? navigator.clipboard.writeText(tx) : Promise.reject()).then(function () { aviso("Copiado. Pegáselo a Claude"); }).catch(function () { var ta = b.previousSibling; ta.select(); document.execCommand("copy"); aviso("Copiado"); }); }
   if (b.dataset.accion) { var q = b.dataset.accion.split("-"), ac = h[q[0]].acciones[q[1]]; if (ac.tipo === "mensaje_cliente" && !confirm("¿Mandarle este mensaje al cliente?\n\n" + ac.texto)) return; agAplicar({ tipo: "accion", accion: ac }, b); }
 };
 $("#agReglas").onclick = function (ev) {

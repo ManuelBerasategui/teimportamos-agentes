@@ -111,8 +111,9 @@ export function combinaciones(clips) {
 export async function decidir(env, iaJSON, body) {
   const clips = (body.clips || []).map((c) => ({ n: +c.n, tipo: c.tipo, frases: (c.frases || []).slice(0, 200).map((f) => ({ i: +f.i, texto: String(f.texto || "").slice(0, 300) })) }));
   const combos = combinaciones(clips);
+  let rv = []; try { rv = JSON.parse((await kvGet(env, "ig_reglas_videos")) || "[]"); } catch {}
   const r = await iaJSON(env, `Sos el editor de reels de "Te Importamos" (importación por encargo, Rosario). Te paso la transcripción de clips grabados a cámara, frase por frase.
-1) Para cada clip, decidí qué frases quedan. Regla: si una frase se repite (entera o empezada y cortada) porque se volvió a grabar, quedate SOLO con la última versión completa. Sacá frases que sean solo muletillas ("eh", "bueno", "a ver") o pruebas ("¿se escucha?", "arranco"). No saques nada que no esté repetido. No cambies el orden.
+${rv.length ? "REGLAS QUE TE ENSEÑÓ EL DUEÑO (obligatorias):\n" + rv.map((x, i) => `${i + 1}. ${x}`).join("\n") + "\n" : ""}1) Para cada clip, decidí qué frases quedan. Regla: si una frase se repite (entera o empezada y cortada) porque se volvió a grabar, quedate SOLO con la última versión completa. Sacá frases que sean solo muletillas ("eh", "bueno", "a ver") o pruebas ("¿se escucha?", "arranco"). No saques nada que no esté repetido. No cambies el orden.
 2) Para cada video (combinación de clips), escribí:
 - "texto": el texto que va arriba en pantalla todo el video, de 3 a 7 palabras, en minúscula, como hablan en Rosario, que obligue a quedarse (ej: "es tremendo esto", "no me quedó nada"). Sin emojis. Sin precios.
 - "caption": 1 o 2 frases cortas sobre el video + "${CTA}" + 3 hashtags (#importaciones #pormayor #proveedores u otros del tema). Sin precios, sin prometer ganancias, sin "tenemos stock".
@@ -142,13 +143,14 @@ export async function rutaVideosEditor(env, req, url, iaJSON, base = "") {
   if ((req.headers.get("x-clave") || "") !== env.VERIFY_TOKEN || !env.VERIFY_TOKEN) return json({ error: "clave incorrecta" }, 401);
   await prepararVideos(env);
   const r = url.pathname.replace("/videos/", "");
-  const vencido = Date.now() - 45 * 60e3;
+  const vencido = Date.now() - 20 * 60e3;
   if (r === "hay") return json({ n: (await env.DB.prepare("SELECT COUNT(*) n FROM ig_lotes WHERE (estado='en_cola' OR (estado='procesando' AND tomado_ts < ?)) AND intentos < 3").bind(vencido).first()).n });
   if (r === "trabajo") {
     const l = await env.DB.prepare("SELECT * FROM ig_lotes WHERE (estado='en_cola' OR (estado='procesando' AND tomado_ts < ?)) AND intentos < 3 ORDER BY ts LIMIT 1").bind(vencido).first();
     if (!l) return json({});
     await env.DB.prepare("UPDATE ig_lotes SET estado='procesando', tomado_ts=?, intentos=intentos+1 WHERE id=?").bind(Date.now(), l.id).run();
-    return json({ lote: l.id, clips: JSON.parse(l.clips).map((c) => ({ n: c.n, tipo: c.tipo, nombre: c.nombre, url: "/videos/archivo?key=" + encodeURIComponent(c.key) })) });
+    let config = {}; try { config = JSON.parse((await kvGet(env, "ig_config_videos")) || "{}"); } catch {}
+    return json({ config, lote: l.id, clips: JSON.parse(l.clips).map((c) => ({ n: c.n, tipo: c.tipo, nombre: c.nombre, url: "/videos/archivo?key=" + encodeURIComponent(c.key) })) });
   }
   if (r === "archivo") {
     const key = url.searchParams.get("key") || "";

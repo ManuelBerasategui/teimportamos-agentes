@@ -50,6 +50,9 @@ NUNCA: vapes, tabaco, fármacos, suplementos, drogas, armas, réplicas. No prome
 const AR = 3 * 3600e3;
 const json = (o, s = 200) => new Response(JSON.stringify(o), { status: s, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });
 const kvGet = async (env, k) => (await env.DB.prepare("SELECT v FROM kv WHERE k=?").bind(k).first())?.v ?? null;
+// Reglas que el dueño le enseñó al Agente de Redes (pestaña Agentes del panel)
+export async function reglasDe(env, clave) { try { return JSON.parse((await kvGet(env, clave)) || "[]").filter(Boolean); } catch { return []; } }
+const bloqueReglas = (l) => l.length ? `\nREGLAS QUE TE ENSEÑÓ EL DUEÑO (obligatorias, mandan sobre todo lo demás):\n${l.map((x, i) => `${i + 1}. ${x}`).join("\n")}\n` : "";
 const kvPut = (env, k, v) => env.DB.prepare("INSERT INTO kv (k,v,exp) VALUES (?,?,NULL) ON CONFLICT(k) DO UPDATE SET v=excluded.v, exp=NULL").bind(k, String(v)).run();
 const id = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const fecha = (ts) => new Date(ts - AR).toISOString().slice(0, 16).replace("T", " ").replace(/^(\d+)-(\d+)-(\d+)/, "$3/$2");
@@ -120,7 +123,7 @@ export async function generarIdeas(env, iaJSON, quien = "auto", cantidad = 7, T 
   const dmsTxt = d.dms.slice(0, 25).map((x) => String(x.ult_texto || "").slice(0, 120)).filter((t) => t && !t.startsWith("["));
   const r = await iaJSON(env, `Sos el estratega de contenido de Instagram de este negocio:
 ${NEGOCIO}
-
+${bloqueReglas(await reglasDe(env, "ig_reglas_ideas"))}
 El dueño solo se graba; todo lo publica como REEL DE PRUEBA (le llega primero a gente que no lo sigue). Necesita ${cantidad} guiones para grabar esta semana.
 
 LO QUE YA SABEMOS (diagnóstico de 120 publicaciones):
@@ -207,7 +210,7 @@ export async function generarHistorias(env, iaJSON, { T, quien = "auto", cantida
   const [dms, coms] = await Promise.all([dmsPendientes(env, 30), comentariosIG(env, 7)]);
   const r = await iaJSON(env, `Sos quien maneja las HISTORIAS de Instagram de este negocio:
 ${NEGOCIO}
-
+${bloqueReglas(await reglasDe(env, "ig_reglas_ideas"))}
 Proponé ${cantidad} historias para subir HOY, sacadas de lo que pasa de verdad en el WhatsApp y en Instagram. Las historias son para gente que ya te sigue: generan confianza y llevan al DM o al WhatsApp.
 
 DATOS REALES:

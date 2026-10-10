@@ -18,6 +18,8 @@ ANCHO, ALTO, FPS = 1080, 1920, 30
 PAUSA_CORTE = 0.35      # silencios más largos que esto se cortan (segundos)
 MARGEN = 0.08           # aire antes y después de cada palabra
 PAUSA_FRASE = 0.6       # pausa que separa una frase de otra (para detectar tomas repetidas)
+# Ajustes que el Agente de Redes puede cambiar desde el panel (kv ig_config_videos)
+CFG = {"sub_tam": 82, "sub_alto": 620, "gancho_tam": 76, "gancho_alto": 250}
 NARANJA_ASS = "&H000C5BEA"   # #EA5B0C en formato ASS (AABBGGRR)
 
 
@@ -147,8 +149,8 @@ WrapStyle: 2
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Sub,Montserrat,82,&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,7,2,2,80,80,620,1
-Style: Gancho,Montserrat,76,&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,7,2,8,90,90,250,1
+Style: Sub,Montserrat,{CFG['sub_tam']},&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,7,2,2,80,80,{CFG['sub_alto']},1
+Style: Gancho,Montserrat,{CFG['gancho_tam']},&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,7,2,8,90,90,{CFG['gancho_alto']},1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -218,6 +220,9 @@ def armar_videos(clips, decision, dir_tmp):
 # ---------------------------------------------------------------- Un lote completo
 def procesar(trabajo):
     lote = trabajo["lote"]
+    for k, v in (trabajo.get("config") or {}).items():
+        if k in CFG and isinstance(v, (int, float)) and 20 <= v <= 1700:
+            CFG[k] = int(v)
     with tempfile.TemporaryDirectory() as d:
         clips = {}
         for c in trabajo["clips"]:
