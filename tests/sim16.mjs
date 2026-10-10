@@ -45,4 +45,24 @@ db.prepare("UPDATE w_conv SET ult_yo=0, resp=1, puntaje=9, ult_cliente_ts=?, ale
 const n1=await L.alertasRapidas(env), n2=await L.alertasRapidas(env);
 const h=new Date(Date.now()-AR).getUTCHours();
 if (h>=9 && h<23) { chk("alerta agrupada", n1===1 && tg.length===1 && tg[0].startsWith("Importante")); chk("no repite", n2===0); }
+// ventas y chats nuevos por auditoría
+const d2="2026-10-08", i2=Date.parse(d2+"T00:00:00Z")+AR;
+const m2=(id,conv,yo,texto,h)=>db.prepare("INSERT INTO w_msg (id,conv,grupo,yo,tipo,texto,ts) VALUES (?,?,0,?,?,?,?)").run(id,conv,yo,"text",texto,i2+h*3600e3);
+db.prepare("INSERT INTO w_conv (conv,nombre,grupo,primer_ts,ult_ts,ult_yo,ult_cliente_ts,n) VALUES ('333','Facu',0,?,?,1,?,3)").run(i2-5*86400e3,i2+12*3600e3,i2+11*3600e3);
+db.prepare("INSERT INTO w_conv (conv,nombre,grupo,primer_ts,ult_ts,ult_yo,ult_cliente_ts,n) VALUES ('444','Nuevo',0,?,?,1,?,3)").run(i2+9*3600e3,i2+10*3600e3,i2+9*3600e3);
+db.prepare("INSERT INTO w_conv (conv,nombre,grupo,primer_ts,ult_ts,ult_yo,ult_cliente_ts,n) VALUES ('555','Viejo',0,?,?,1,?,3)").run(i2+9*3600e3,i2+10*3600e3,i2+9*3600e3);
+m2("v0","333",1,"vieja",-100); m2("v1","333",1,"ya salio tu pedido, codigo AB123",12); m2("v2","444",0,"hola cuanto sale",9); m2("v3","444",1,"te paso el alias",9.5); m2("v4","444",0,"(archivo)",10); m2("v5","444",1,"recibido!",10.1);
+m2("v6","555",0,"hola, te escribo por el pedido que te hice",9); m2("v7","555",1,"si dale",9.5);
+let pr="";
+const ia2=async(_e,p)=>{pr=p; return {chats:[{chat:"333|"+d2,interno:false,primer_contacto:false,cotizaciones:[],venta:null},{chat:"444|"+d2,interno:false,primer_contacto:true,cotizaciones:[],venta:{msg:3,producto:"auriculares",monto:"USD 120"}},{chat:"555|"+d2,interno:false,primer_contacto:false,cotizaciones:[],venta:null}]};};
+await L.auditarCotizaciones(env, ia2, {dia:d2});
+chk("marca historial previo", pr.includes("333|"+d2+" (Facu) [hay mensajes de días anteriores]"));
+chk("aviso de seguimiento no es venta", db.prepare("SELECT COUNT(*) n FROM w_hito WHERE conv='333' AND tipo='venta'").get().n===0);
+const v=db.prepare("SELECT * FROM w_hito WHERE conv='444' AND tipo='venta'").get();
+chk("venta con hora del pago", v && v.ts===i2+10.1*3600e3);
+const mm=await L.metricas(env, i2, i2+86400e3);
+chk("ventas del día = 1", mm.ventas===1);
+chk("nuevos excluye cliente viejo", mm.nuevos===1);
+db.prepare("UPDATE w_hito SET oculto=1 WHERE conv='444'").run(); await L.auditarCotizaciones(env, ia2, {dia:d2, rehacer:true});
+chk("oculta sigue oculta", (await L.metricas(env, i2, i2+86400e3)).ventas===0);
 console.log(`sim16: ${ok} ok, ${mal} fallas`);

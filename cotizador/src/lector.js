@@ -55,7 +55,7 @@ export async function prepararLector(env) {
     env.DB.prepare("CREATE TABLE IF NOT EXISTS reportes (id TEXT PRIMARY KEY, tipo TEXT, desde INTEGER, hasta INTEGER, creado INTEGER, datos TEXT)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT, exp INTEGER)"),
   ]);
-  for (const col of ["resp INTEGER", "visto_ts INTEGER DEFAULT 0", "prov INTEGER DEFAULT 0", "visto_esc INTEGER DEFAULT 0", "visto_cot INTEGER DEFAULT 0"]) await env.DB.prepare(`ALTER TABLE w_conv ADD COLUMN ${col}`).run().catch(() => {});
+  for (const col of ["resp INTEGER", "visto_ts INTEGER DEFAULT 0", "prov INTEGER DEFAULT 0", "visto_esc INTEGER DEFAULT 0", "visto_cot INTEGER DEFAULT 0", "nuevo_ok INTEGER"]) await env.DB.prepare(`ALTER TABLE w_conv ADD COLUMN ${col}`).run().catch(() => {});
   await env.DB.prepare("ALTER TABLE w_hito ADD COLUMN oculto INTEGER DEFAULT 0").run().catch(() => {});
   tablasLector = true;
 }
@@ -154,7 +154,7 @@ async function guardarLote(env, lote) {
     if (!grupo) {
       if (yo && esCotizacion(texto)) ops.push(env.DB.prepare("INSERT OR IGNORE INTO w_hito (id,conv,tipo,ts,dato) VALUES (?,?,?,?,?)").bind("c:" + m.external_id, conv, "cotizacion", ts, String(texto).slice(0, 300)));
       const pago = (!yo && (/^\((image|document)\)/.test(texto) || tipo === "image" || tipo === "document") && RE_PAGO_CLIENTE.test(texto)) || (!yo && RE_PAGO_CLIENTE.test(texto) && /comprobante/i.test(texto)) || (yo && RE_PAGO_NOSOTROS.test(texto));
-      if (pago) ops.push(env.DB.prepare("INSERT OR IGNORE INTO w_hito (id,conv,tipo,ts,dato) VALUES (?,?,?,?,?)").bind(`v:${conv}:${diaAR(ts)}`, conv, "venta", ts, String(texto).slice(0, 300)));
+      // ventas: las decide la auditoría diaria por IA (no por palabras sueltas)
       if (!yo && !hist) clienteNuevo = true;
     }
   }
@@ -184,7 +184,7 @@ export async function metricas(env, desde, hasta = Date.now()) {
   // Liviano: usa índices (w_conv por fechas, w_hito por tipo) y nunca recorre todos los mensajes
   const q = (sql, ...b) => env.DB.prepare(sql).bind(...b).first();
   const [nuevos, activos, cot, cotChats, ventas, sinResp] = await Promise.all([
-    q("SELECT COUNT(*) n FROM w_conv WHERE primer_ts>=? AND primer_ts<? AND grupo=0", desde, hasta),
+    q("SELECT COUNT(*) n FROM w_conv WHERE primer_ts>=? AND primer_ts<? AND grupo=0 AND COALESCE(nuevo_ok,1)=1", desde, hasta),
     q("SELECT COUNT(*) n FROM w_conv WHERE ult_ts>=? AND ult_ts<? AND grupo=0", desde, hasta),
     q("SELECT COUNT(*) n FROM w_hito WHERE tipo='cotizacion' AND ts>=? AND ts<?", desde, hasta),
     q("SELECT COUNT(DISTINCT conv) n FROM w_hito WHERE tipo='cotizacion' AND ts>=? AND ts<?", desde, hasta),
@@ -259,7 +259,6 @@ ${bloques.join("\n\n")}`);
       ops.push(env.DB.prepare("UPDATE w_conv SET analizado_ts=?, puntaje=?, temp=?, producto=?, etapa=?, accion=?, resumen=?, cot_pend=?, resp=?, prov=? WHERE conv=?")
         .bind(Date.now(), Math.max(1, Math.min(10, parseInt(a.puntaje) || 1)), String(a.temp || ""), String(a.producto || "").slice(0, 80), String(a.etapa || ""), String(a.accion || "").slice(0, 300) + (a.prioridad ? `|p${a.prioridad}` : ""), String(a.resumen || "").slice(0, 400), a.cot_pend ? 1 : 0, a.necesita_respuesta === false ? 0 : 1, a.es_proveedor ? 1 : 0, c.conv));
       if (a.es_proveedor) ops.push(env.DB.prepare("UPDATE w_hito SET oculto=1 WHERE conv=? AND tipo='venta'").bind(c.conv));
-      else if (a.venta_real) ops.push(env.DB.prepare("INSERT OR IGNORE INTO w_hito (id,conv,tipo,ts,dato) SELECT ?,?,?,?,? WHERE NOT EXISTS (SELECT 1 FROM w_hito WHERE conv=? AND tipo='venta' AND ts>=?)").bind(`v:${c.conv}:${diaAR(c.ult_ts || Date.now())}`, c.conv, "venta", c.ult_ts || Date.now(), String(a.resumen || "venta").slice(0, 300), c.conv, Date.now() - 30 * 86400e3));
       ops.push(...pendienteOps(env, c, a.es_proveedor || a.etapa === "no_cliente" ? null : a.pendiente));
       hechos++;
     }
@@ -288,7 +287,7 @@ function pendienteOps(env, c, p) {
 // ---------------------------------------------------------------------------
 export async function auditarCotizaciones(env, iaJSON, { limite = 30, dia = null, conv = null, debug = false, rehacer = false } = {}) {
   await prepararLector(env);
-  const desde = dia ? Date.parse(dia + "T00:00:00Z") + AR : Math.max(Date.parse("2026-10-07T00:00:00Z") + AR, Date.now() - 4 * 86400e3);
+  const desde = dia ? Date.parse(dia + "T00:00:00Z") + AR : inicioDiaAR(Date.now() - 86400e3);
   const hasta = dia ? desde + 86400e3 : Date.now();
   const pares = (await env.DB.prepare(`SELECT m.conv, MAX(m.ts) ult, MIN(m.ts) pri FROM w_msg m WHERE m.ts>=? AND m.ts<? AND m.yo=1 AND m.grupo=0 GROUP BY m.conv, date((m.ts-${AR})/1000,'unixepoch')`).bind(desde, hasta).all()).results || [];
   const pend = [];
@@ -304,11 +303,13 @@ export async function auditarCotizaciones(env, iaJSON, { limite = 30, dia = null
     const tanda = pend.slice(i, i + 6), bloques = [], mapa = {};
     for (const t of tanda) {
       const ini = Date.parse(t.dia + "T00:00:00Z") + AR;
-      const c = await env.DB.prepare("SELECT nombre, prov, etapa FROM w_conv WHERE conv=?").bind(t.conv).first();
+      const c = await env.DB.prepare("SELECT nombre, prov, etapa, primer_ts FROM w_conv WHERE conv=?").bind(t.conv).first();
+      t.empieza = (c?.primer_ts || 0) >= ini && (c?.primer_ts || 0) < ini + 86400e3;
+      const previo = await env.DB.prepare("SELECT 1 FROM w_msg WHERE conv=? AND ts<? LIMIT 1").bind(t.conv, ini - 6 * 3600e3).first();
       const ms = (await env.DB.prepare("SELECT id, yo, texto, ts FROM w_msg WHERE conv=? AND ts>=? AND ts<? ORDER BY ts LIMIT 160").bind(t.conv, ini - 6 * 3600e3, ini + 86400e3).all()).results || [];
       t.prov = c?.prov || 0; t.ini = ini; t.ms = ms;
       const k = `${t.conv}|${t.dia}`; mapa[k] = t;
-      bloques.push(`### CHAT ${k} (${c?.nombre || "sin nombre"})
+      bloques.push(`### CHAT ${k} (${c?.nombre || "sin nombre"})${previo ? " [hay mensajes de días anteriores]" : t.empieza ? " [primer mensaje registrado este día]" : ""}
 ` + ms.map((m, n) => `${m.ts < ini ? "(día anterior) " : ""}#${n} ${m.yo ? "NOSOTROS" : "CLIENTE"}: ${String(m.texto).slice(0, 300)}`).join("\n"));
     }
     const r = await iaJSON(env, `Sos auditor de "Te Importamos" (importación por encargo). Contá las COTIZACIONES que NOSOTROS le mandamos al cliente en cada chat, solo en los mensajes que NO dicen "(día anterior)".
@@ -316,7 +317,9 @@ Una cotización es cuando le pasamos al cliente el precio de lo que pidió (prec
 Los adjuntos (fotos, capturas, PDF) aparecen como "(archivo)" o con su texto al pie: deducí por el contexto si eran la cotización (ej. "ahi te cotizo" + (archivo); "ahi esta por 50 unidades"; (archivo) y después el cliente pregunta "¿ese precio es puesto acá?", "le falta un 0 al flete?", "me quedaria en..."; "te armo por 80 y 100" + (archivo)).
 Varios archivos seguidos del mismo producto = UNA cotización. Una cotización nueva por otra cantidad u otro producto = otra cotización.
 NO cuentan: catálogos o listas generales de precios ("PRECIOS MAYORISTA DE ZAPATILLAS", PDF de catálogo), fotos de productos de ejemplo, datos de pago o envío, mensajes automáticos, chats con proveedores (cuando NOSOTROS le compramos a ellos) ni charlas internas del equipo.
-Devolvé JSON: {"chats":[{"chat":"id exacto","interno":true SOLO si es una charla entre socios del equipo o con un proveedor al que le compramos (si no, false),"cotizaciones":[{"msg":número del mensaje (#) donde se mandó,"producto":"2-5 palabras"}]}]}
+VENTAS: marcá "venta" SOLO si ESE DÍA (mensajes sin "(día anterior)") el cliente nos PAGÓ por primera vez esa compra: mandó el comprobante de la seña o del total, o le confirmamos que recibimos su pago. NO es venta del día: pasarle el código de seguimiento, avisar que salió o llegó el pedido, datos de envío, reclamos, el saldo de una compra ya señada antes, pedir el alias sin pagar todavía, ni pagos que NOSOTROS le hacemos a un proveedor.
+CHAT NUEVO: "primer_contacto" true solo si este día es la primera vez que esta persona nos escribe (consulta inicial, sin señales de que ya nos conocía: compras anteriores, pedidos en curso, "como te dije", etc.).
+Devolvé JSON: {"chats":[{"chat":"id exacto","interno":true SOLO si es una charla entre socios del equipo o con un proveedor al que le compramos (si no, false),"primer_contacto":true|false,"cotizaciones":[{"msg":número del mensaje (#) donde se mandó,"producto":"2-5 palabras"}],"venta":null o {"msg":número del mensaje del pago o la confirmación,"producto":"2-5 palabras","monto":"si se ve, si no \"\""}}]}
 
 ${bloques.join("\n\n")}`);
     if (debug) return { r, prompt: bloques.join("\n\n").slice(0, 6000) };
@@ -336,6 +339,13 @@ ${bloques.join("\n\n")}`);
         ultQ = q.ts; const ts = q.ts;
         ops.push(env.DB.prepare("INSERT OR IGNORE INTO w_hito (id,conv,tipo,ts,dato) VALUES (?,?,?,?,?)").bind(`ci:${t.conv}:${ts}`, t.conv, "cotizacion", ts, String(q.producto || "").slice(0, 120)));
       }
+      // Venta del día: se reemplaza lo de ese día (lo que marcaste como "no es venta" queda oculto)
+      ops.push(env.DB.prepare("DELETE FROM w_hito WHERE conv=? AND tipo='venta' AND ts>=? AND ts<? AND COALESCE(oculto,0)=0").bind(t.conv, t.ini, t.ini + 86400e3));
+      if (!t.prov && a.interno !== true && a.venta && !/\bvap\w*|elf ?bar|ice king|ignite|\bpods?\b/i.test(String(a.venta.producto || ""))) {
+        const m = t.ms[parseInt(a.venta.msg)], ts = m && m.ts >= t.ini ? m.ts : t.ini + 12 * 3600e3;
+        ops.push(env.DB.prepare("INSERT OR IGNORE INTO w_hito (id,conv,tipo,ts,dato) VALUES (?,?,?,?,?)").bind(`vi:${t.conv}:${t.dia}`, t.conv, "venta", ts, `${String(a.venta.producto || "").slice(0, 80)}${a.venta.monto ? " · " + String(a.venta.monto).slice(0, 40) : ""}`));
+      }
+      if (t.empieza) ops.push(env.DB.prepare("UPDATE w_conv SET nuevo_ok=? WHERE conv=?").bind(t.prov || a.interno === true || a.primer_contacto === false ? 0 : 1, t.conv));
       ops.push(env.DB.prepare("INSERT INTO w_audit (conv, dia, ts) VALUES (?,?,?) ON CONFLICT(conv, dia) DO UPDATE SET ts=excluded.ts").bind(t.conv, t.dia, Date.now()));
       hechos++;
     }
@@ -491,13 +501,24 @@ export async function cronLector(env, iaJSON, scheduledTime) {
   if (!(await kvGet(env, "lector_reparado_v1"))) await repararPropios(env).catch((e) => console.log("lector reparar", e?.stack || e));
   if (!(await kvGet(env, "lector_resp_v1"))) { await env.DB.prepare("UPDATE w_conv SET analizado_ts=0 WHERE ult_yo=0 AND grupo=0 AND ult_cliente_ts>=?").bind(Date.now() - 72 * 3600e3).run(); await kvPut(env, "lector_resp_v1", Date.now()); }
   if (!(await kvGet(env, "lector_ventas_v1"))) { await env.DB.prepare("UPDATE w_conv SET analizado_ts=0 WHERE conv IN (SELECT conv FROM w_hito WHERE tipo='venta') OR ult_ts>=?").bind(Date.now() - 3 * 86400e3).run(); await kvPut(env, "lector_ventas_v1", Date.now()); }
-  if (!(await kvGet(env, "lector_audit_v3"))) { await env.DB.prepare("DELETE FROM w_audit").run(); await kvPut(env, "lector_audit_v3", Date.now()); }
+  if (!(await kvGet(env, "lector_audit_v4"))) {
+    await env.DB.batch([env.DB.prepare("DELETE FROM w_audit"), env.DB.prepare("DELETE FROM w_hito WHERE tipo='venta' AND id LIKE 'v:%' AND COALESCE(oculto,0)=0")]);
+    const dias = []; for (let t = Date.parse("2026-10-01T12:00:00Z"); diaAR(t) < diaAR(Date.now()); t += 86400e3) dias.push(diaAR(t));
+    await kvPut(env, "lector_backfill", JSON.stringify(dias)); await kvPut(env, "lector_audit_v4", Date.now());
+  }
   if (!(await kvGet(env, "lector_pend_v1"))) { await env.DB.prepare("UPDATE w_conv SET analizado_ts=0 WHERE grupo=0 AND ult_ts>=?").bind(Date.now() - 3 * 86400e3).run(); await kvPut(env, "lector_pend_v1", Date.now()); }
   if (!(await kvGet(env, "lector_cotiz_v2"))) await recalcularCotizaciones(env).catch((e) => console.log("lector cotiz", e?.stack || e));
   const t = new Date(scheduledTime);
   const m = t.getUTCMinutes(), hAR = (t.getUTCHours() + 21) % 24;
   if (m % 15 === 7) await analizarChats(env, iaJSON).catch((e) => console.log("lector analizar", e?.stack || e));
-  if (m % 15 === 11) await auditarCotizaciones(env, iaJSON).catch((e) => console.log("lector auditar", e?.stack || e));
+  if (m % 15 === 11) await auditarCotizaciones(env, iaJSON, { limite: 18 }).catch((e) => console.log("lector auditar", e?.stack || e));
+  if (m % 15 === 4) {   // recálculo de días anteriores, de a uno, hasta terminar
+    const pend = JSON.parse((await kvGet(env, "lector_backfill")) || "[]");
+    if (pend.length) {
+      const r = await auditarCotizaciones(env, iaJSON, { dia: pend[pend.length - 1], limite: 18 }).catch(() => null);
+      if (r && r.pendientes === 0) { pend.pop(); await kvPut(env, "lector_backfill", JSON.stringify(pend)); }
+    }
+  }
   if (m % 30 === 3) await alertasRapidas(env).catch((e) => console.log("lector alertas", e?.stack || e));
   // Reporte diario: desde las 21 h; si falla o se saltea, reintenta cada 10 min y se recupera durante todo el día siguiente
   {
