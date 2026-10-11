@@ -3020,7 +3020,7 @@ button{font:inherit;cursor:pointer}
 <div class="card reportes"><div class="cab"><h3 id="rep-tit" style="margin:0">Reportes diarios</h3><button class="btn" id="generar">Generar ahora</button></div><div id="reps"></div></div>
 </div></div>
 
-<div class="vista" id="v-agentes"><div class="ag"><div class="lista" id="agLista"><button data-a="asistente" class="on">Asistente de WhatsApp</button><button data-a="whatsapp">Agente API (pausado)</button><button data-a="redes">Agente de Redes</button></div>
+<div class="vista" id="v-agentes"><div class="ag"><div class="lista" id="agLista"><button data-a="asistente" class="on">Asistente de WhatsApp</button><button data-a="redes">Agente de Redes</button></div>
 <div class="cuerpo"><div class="hilo" id="agHilo"><div class="vacio">Cargando...</div></div>
 <details class="reglas" id="agReglasBox"><summary><b>Lo que sabe</b> (<span id="agN">0</span> reglas) · tocá para ver, editar o borrar</summary><ol id="agReglas"></ol><button id="agOrdenar" style="color:var(--azul)">Ordenar y fusionar reglas parecidas</button> · <button id="agLimpiar" style="color:var(--gris)">Borrar esta conversación</button></details>
 <div class="adj" id="agAdj"></div>
