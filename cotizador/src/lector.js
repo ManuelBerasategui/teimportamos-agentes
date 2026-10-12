@@ -61,6 +61,13 @@ export async function prepararLector(env) {
 }
 
 const kvGet = async (env, k) => (await env.DB.prepare("SELECT v FROM kv WHERE k=?").bind(k).first())?.v ?? null;
+const REGLAS_DUENO = `
+- Si nuestro último mensaje es una pregunta (por ejemplo "que cantidad?") y el cliente la contesta, aunque sea con pocas palabras, el cliente espera que le coticemos o le contestemos: necesita_respuesta true.
+- Si nosotros prometimos algo (te paso el precio, consulto y te aviso, ahí te mando) y todavía no se ve en el chat que lo cumplimos con un precio, un texto o un link, y el cliente escribe después un gracias, dale u ok, igual necesita_respuesta true.
+- Los mensajes nuestros que empiezan con "Bienvenido!! Te voy a derivar con alguien del equipo" los manda un bot, no una persona: si después no hay mensajes escritos por una persona del equipo, el cliente todavía no fue atendido y necesita_respuesta true.
+- Si el cliente deja una frase a medias o una pregunta suelta ("una consulta", "una sola quería saber"), espera respuesta: necesita_respuesta true.
+- Ante la duda de si hay que responder, poné necesita_respuesta true. Es peor perder un cliente que mostrar uno de más.
+`;
 const kvPut = (env, k, v) => env.DB.prepare("INSERT INTO kv (k,v,exp) VALUES (?,?,NULL) ON CONFLICT(k) DO UPDATE SET v=excluded.v, exp=NULL").bind(k, String(v)).run();
 
 // ---------------------------------------------------------------------------
@@ -147,8 +154,9 @@ async function guardarLote(env, lote) {
     if (!grupo && !yo && m.sender_name && !/^te importamos/i.test(m.sender_name)) c.nombre = m.sender_name;
     if (m.conversation_name && (grupo || !/^te importamos/i.test(m.conversation_name))) c.nombre = m.conversation_name;
     c.primer = Math.min(c.primer, ts); c.n++;
-    if (ts >= c.ult) { c.ult = ts; c.ultYo = yo; c.texto = String(texto).slice(0, 200); }
-    if (yo) c.ultYoTs = Math.max(c.ultYoTs, ts); else c.ultCli = Math.max(c.ultCli, ts);
+    const esAuto = yo && /^¡?bienvenid[oa]!*\s*te voy a derivar/i.test(String(texto));   // bot de bienvenida: no cuenta como respuesta nuestra
+    if (!esAuto && ts >= c.ult) { c.ult = ts; c.ultYo = yo; c.texto = String(texto).slice(0, 200); }
+    if (esAuto) { /* no cuenta */ } else if (yo) c.ultYoTs = Math.max(c.ultYoTs, ts); else c.ultCli = Math.max(c.ultCli, ts);
     convs.set(conv, c);
     // Hitos exactos (solo chats individuales)
     if (!grupo) {
@@ -239,6 +247,7 @@ Para cada chat devolvé:
 - accion: qué tenemos que hacer AHORA, concreto y corto (ej. "mandale la cotización de las 50 tarjetas NFC", "respondele si el envío llega a Tierra del Fuego", "escribile ofreciendo 10% off, quedó en pensarlo"). "" si no hace falta nada.
 - prioridad: 1 (urgente) a 3 (puede esperar)
 - necesita_respuesta: true si el ÚLTIMO mensaje del chat es del CLIENTE y espera algo de nosotros (una pregunta, un pedido, datos, una foto, una duda). false si el último mensaje del cliente es un cierre o acuse ("dale", "ok", "gracias", "perfecto", "lo pienso", "te aviso", "cuando tenga todo te hago el pedido", un sticker o emoji), o si el último mensaje es nuestro. EXCEPCIÓN IMPORTANTE: si el último mensaje del cliente es un acuse (dale, gracias, ok) pero el mensaje nuestro anterior es un (archivo) sin texto que respondía a una consulta de precio, ese (archivo) puede ser un AUDIO donde prometimos consultar el precio. En ese caso poné necesita_respuesta true y en accion escribí: Revisar si ya se le pasó el precio, el (archivo) puede ser un audio.
+REGLAS DEL DUEÑO (mandan por encima de todo lo anterior):${REGLAS_DUENO}
 - es_proveedor: true si el chat es con un PROVEEDOR, mayorista, fábrica o tienda a la que NOSOTROS le compramos (nosotros pedimos precios, nosotros pagamos/transferimos, ellos nos venden). false si es un cliente que nos compra a nosotros.
 - venta_real: true solo si en este chat un CLIENTE nos compró: nos pagó una seña o el total (mandó comprobante, confirmamos su pago). false si fuimos nosotros los que pagamos a un proveedor, o si todavía no pagó.
 - pendiente: lo que NOSOTROS tenemos pendiente con este cliente AHORA, o null si no hay nada. {"tipo": uno de
