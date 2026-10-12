@@ -167,7 +167,8 @@ async function guardarLote(env, lote) {
       const pago = (!yo && (/^\((image|document)\)/.test(texto) || tipo === "image" || tipo === "document") && RE_PAGO_CLIENTE.test(texto)) || (!yo && RE_PAGO_CLIENTE.test(texto) && /comprobante/i.test(texto)) || (yo && RE_PAGO_NOSOTROS.test(texto));
       // ventas: las decide la auditoría diaria por IA (no por palabras sueltas)
       // Si alguien del equipo (vos o tu socio) le manda un archivo, un link o un precio, la tarea de cotizar/prometido se da por resuelta sola
-      if (yo && !grupo && !hist && (/^\(archivo\)|^\((image|document|video)\)/.test(texto) || tipo !== "text" || /https?:\/\//.test(texto) || RE_MONTO.test(texto)))
+            // Cualquier respuesta de una persona del equipo (no del bot) da por resuelta la tarea de cotizar/prometido
+      if (yo && !grupo && !hist && !esAuto)
         ops.push(env.DB.prepare("UPDATE tareas SET estado='resuelta' WHERE ref=? AND estado='abierta' AND tipo IN ('cotizacion','promesa') AND ts<?").bind("w805:" + conv, ts));
       if (!yo && !hist) clienteNuevo = true;
     }
