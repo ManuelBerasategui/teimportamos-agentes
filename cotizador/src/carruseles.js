@@ -22,15 +22,36 @@ const kvPut = (env, k, v) => env.DB.prepare("INSERT INTO kv (k,v,exp) VALUES (?,
 const PROHIBIDO = /\b(vapes?|vapers?|vapeador|pods? desechables?|tabaco|nicotina|medicamentos?|f[aá]rmacos?|drogas?|armas?|r[eé]plicas?|millonari[oa]s?|stock disponible|env[ií]o gratis)\b/i;
 const NEGOCIO = `"Te Importamos" (Rosario): importación por encargo, nos encargamos de todo (proveedor, aduana, envío). Sin stock: todo por encargo. Tarifa China: honorarios USD 80 + handling USD 30 + flete aéreo USD 18/kg + impuestos aprox. 30%; aéreo 10 a 15 días. Mínimos: tecnología/bazar 5 u., ropa 10 u., zapatillas 3 pares; cupos compartidos. NUNCA: vapes, tabaco, fármacos, réplicas; no prometer ganancias ni "hacerse millonario", ni envío gratis, ni "tenemos stock". Tono rioplatense, cercano, frases cortas.`;
 
+export const ESTILOS = {
+  manuscrito: { nombre: "Manuscrito crema (el de siempre)", fondo: "#F3EFE8", tinta: "#3B4796", acento: "#3B4796", fuente: "mano" },
+  marca: { nombre: "Marca: negro y naranja", fondo: "#0B0B0B", tinta: "#FFFFFF", acento: "#EA5B0C", fuente: "sans" },
+  naranja: { nombre: "Naranja fuerte", fondo: "#EA5B0C", tinta: "#FFFFFF", acento: "#0B0B0B", fuente: "sans" },
+  editorial: { nombre: "Editorial blanco y negro", fondo: "#FFFFFF", tinta: "#111111", acento: "#EA5B0C", fuente: "serif" },
+  nota: { nombre: "Nota amarilla", fondo: "#FFF3B0", tinta: "#1F2937", acento: "#DC2626", fuente: "mano" },
+};
+const direccion = async (env) => (await kvGet(env, "ig_direccion_carrusel")) || "";
+const textoDireccion = (d) => (d ? `DIRECCIÓN CREATIVA DEL DUEÑO (manda sobre todo lo demás): ${d}` : "");
+const FORMATOS = `FORMATOS POSIBLES (usá variedad real, no te quedes en precios):
+- mito: "Mito: ..." → por qué es falso → cómo es en realidad
+- error: errores típicos al importar, cada uno con su consecuencia concreta
+- caso_real: un pedido real sin nombres (qué pidió, qué pasó, qué incluyó el precio)
+- paso_a_paso: cómo se hace una cosa en N pasos
+- que_pasa_si: "¿Qué pasa si ...?" y la respuesta honesta
+- detras_de_escena: lo que no se ve de una importación
+- lista_productos: N productos que la gente pide mucho y por qué
+- opinion: una postura fuerte que genere debate
+- pregunta_respuesta: la pregunta que más nos hacen, contestada
+- comparacion_ml: precio en MercadoLibre vs puesto en Argentina (solo uno de varios formatos)
+- otro: lo que se te ocurra a partir de las referencias`;
 // ---------- Manual de viralidad (lo aprendido del carrusel ganador y de lo que no funcionó) ----------
 const MANUAL = `CÓMO ESCRIBIMOS (obligatorio):
 - Español de Argentina con voseo: "mirá", "fijate", "traelo", "pagás", "querés". JAMÁS: "descubre", "debes", "puedes", "tienes", "evita", "aprende", "conoce", "vosotros".
 - Prohibido el tono de folleto o curso: nada de "secretos", "la verdad que nadie te cuenta", "errores costosos", "sin riesgos", "el proceso", "guía definitiva", "¡increíble!". Si suena a publicidad, está mal.
 - Cada slide dice UNA cosa, corta (título de 3 a 8 palabras). Nada de párrafos explicativos.
 - Concreto siempre: un producto que la gente conoce, un precio real, una cantidad, una cuenta. "Un ventilador de mano" le gana a "electrónica de China".
-- La portada es una tensión o una comparación que obliga a pasar: "En MercadoLibre sale {precio_ml}. ¿Cuánto cuesta traerlo de China?". Debe poder leerse en 2 segundos.
+- Ritmo: gancho que genera tensión → cada slide abre curiosidad para el siguiente → un giro o dato que sorprende → cierre claro. El orden depende del formato; no uses siempre el mismo.
 - Cada slide deja algo abierto para el siguiente ("Y se vende. Mucho." → "Traído de China, puesto en Argentina:" → el número).
-- Ritmo del ganador: gancho con precio → prueba de que se vende → el número que sorprende → qué incluye → la diferencia → el "ojo con algo" honesto → multiplicalo → un dato más → pasos simples → "Comentá PALABRA".
+- Ritmo: gancho que genera tensión → cada slide abre curiosidad para el siguiente → un giro o dato que sorprende → cierre claro. El orden depende del formato; no uses siempre el mismo.
 - Honestidad que da confianza: mencionar comisiones, que hay mínimos, que el precio es del día. Nunca prometer ganancias.
 - El cierre pide comentar UNA palabra en mayúsculas relacionada al tema (COSTO, LISTA, CUPO, PRECIO).`;
 const MAL = /\b(descubr\w*|debes|deber[aá]s|puedes|tienes|evita\w*|aprende\w*|conoce\w*|vosotros|os\s|secreto\w*|esconde\w*|sin riesgos?|errores costosos|gu[ií]a definitiva|incre[ií]ble|nadie te cuenta)\b/i;
@@ -47,7 +68,7 @@ export function problemasTexto(slides, caption = "") {
 const descartes = async (env) => JSON.parse((await kvGet(env, "ig_descartes_carrusel")) || "[]");
 const textoDescartes = (l) => l.length ? l.slice(-25).map((d) => `- "${d.titulo}"${d.gancho ? ` (portada: "${d.gancho}")` : ""}${d.motivo ? ` → POR QUÉ NO: ${d.motivo}` : " → sin motivo"}`).join("\n") : "ninguna";
 const referencias = async (env) => JSON.parse((await kvGet(env, "ig_refs_carrusel")) || "[]");
-const textoRefs = (refs) => refs.length ? refs.slice(-12).map((r, i) => `${i + 1}. ${r.cuenta ? "@" + r.cuenta + " · " : ""}gancho: "${r.gancho}" · estructura: ${(r.estructura || []).join(" → ")} · por qué funciona: ${r.por_que} · técnicas: ${(r.tecnicas || []).join(", ")}`).join("\n") : "todavía no hay";
+const textoRefs = (refs) => refs.length ? refs.slice(-12).map((r, i) => `${i + 1}. ${r.cuenta ? "@" + r.cuenta + " · " : ""}formato: ${r.formato || "-"} · gancho: "${r.gancho}" · estructura: ${(r.estructura || []).join(" → ")} · por qué funciona: ${r.por_que} · técnicas: ${(r.tecnicas || []).join(", ")} · cómo adaptarlo: ${r.adaptacion || "-"}`).join("\n") : "todavía no hay";
 
 // ---------- Tipos de slide (del carrusel que mejor funcionó) ----------
 export const TIPOS_SLIDE = {
@@ -60,6 +81,8 @@ export const TIPOS_SLIDE = {
   multiplicacion: { nombre: "Multiplicación", campos: ["arriba", "linea", "numero", "abajo"] },
   lista: { nombre: "Lista numerada", campos: ["titulo", "items"] },
   cta: { nombre: "Cierre (comentá)", campos: ["texto", "palabra", "abajo"] },
+  grande: { nombre: "Frase grande", campos: ["texto", "abajo"] },
+  versus: { nombre: "Uno contra otro", campos: ["titulo", "a_label", "a_texto", "b_label", "b_texto"] },
 };
 const LISTAS = new Set(["items", "parrafos"]);
 // El carrusel ganador (54 me gusta, el mejor de 4 o 5 estilos), como ejemplo para la IA
@@ -95,6 +118,7 @@ export function limpiarDatos(d = {}, previo = {}) {
   const num = (v) => { const n = Number(String(v ?? "").replace(/[^\d,.-]/g, "").replace(/\./g, "").replace(",", ".")); return Number.isFinite(n) && n > 0 ? Math.round(n) : null; };
   return {
     producto: String(d.producto ?? previo.producto ?? "").slice(0, 80),
+    estilo: ESTILOS[d.estilo] ? d.estilo : previo.estilo || "manuscrito",
     precio_ml: d.precio_ml !== undefined ? num(d.precio_ml) : previo.precio_ml ?? null,
     costo: d.costo !== undefined ? num(d.costo) : previo.costo ?? null,
     cantidad: d.cantidad !== undefined ? num(d.cantidad) : previo.cantidad ?? null,
@@ -142,37 +166,48 @@ async function rendimiento(env) {
   const todos = await q("SELECT ts, texto, alcance, guardados, compartidos, comentarios FROM ig_posts WHERE media='CAROUSEL_ALBUM' AND ts > ? ORDER BY ts DESC LIMIT 15", Date.now() - 90 * 86400e3);
   return `CARRUSELES HECHOS CON ESTE CREADOR: ${propios.map((x) => `"${x.titulo}" (${x.angulo}): alcance ${x.alcance ?? "-"}, guardados ${x.guardados ?? "-"}, compartidos ${x.compartidos ?? "-"}, comentarios ${x.comentarios ?? "-"}`).join(" | ") || "ninguno todavía"}
 CARRUSELES DE LA CUENTA (90 días): ${todos.map((x) => `alcance ${x.alcance ?? "-"}, guardados ${x.guardados ?? "-"}, comentarios ${x.comentarios ?? "-"}${x.texto ? `, texto "${String(x.texto).slice(0, 60)}"` : ""}`).join(" | ") || "sin datos"}
-EL ESTILO QUE MEJOR FUNCIONÓ (de 4 o 5 probados): comparación "En MercadoLibre sale $X, ¿cuánto cuesta traerlo de China?" con números reales, la diferencia por unidad y por lote, y cierre "Comentá COSTO".`;
+UN FORMATO PROBADO (uno entre varios, falta testear otros): comparación de precio con MercadoLibre. Compará el rendimiento por ángulo y proponé repetir lo que anduvo y probar variantes.
 }
 
 // ---------- Ideas ----------
-export async function generarIdeasCarrusel(env, iaJSON, { T, quien = "panel", cantidad = 5 } = {}) {
+export async function generarIdeasCarrusel(env, iaJSON, { T, quien = "panel", cantidad = 5, ref = null } = {}) {
   await prepararCarr(env);
   const w = await datosWhatsApp(env, T);
   const previas = (await env.DB.prepare("SELECT titulo, producto, angulo, estado FROM ig_carruseles WHERE ts > ? ORDER BY ts DESC LIMIT 40").bind(Date.now() - 45 * 86400e3).all()).results || [];
   const rg = await reglas(env);
+  const refs = await referencias(env);
+  const foco = ref != null && refs[ref] ? refs[ref] : null;
   const r = await iaJSON(env, `Sos quien arma los CARRUSELES de Instagram de este negocio:
 ${NEGOCIO}
 ${MANUAL}
-VIRALES DE REFERENCIA QUE ANALIZAMOS (copiá la mecánica, no el contenido):
-${textoRefs(await referencias(env))}
-IDEAS QUE EL DUEÑO DESCARTÓ (aprendé de esto: no propongas nada parecido, y donde dice por qué, corregí ese error en todas las ideas nuevas):
+${FORMATOS}
+${textoDireccion(await direccion(env))}
+VIRALES DE REFERENCIA (copiá la mecánica y el formato, no el contenido; adaptalo a lo que sabe y vende este negocio):
+${textoRefs(refs)}
+${foco ? `ESTA VEZ BASATE SOLO EN ESTA REFERENCIA y hacé ${cantidad} variantes distintas adaptadas al negocio: ${JSON.stringify(foco)}` : ""}
+IDEAS QUE EL DUEÑO DESCARTÓ (no propongas nada parecido; donde dice por qué, corregí ese error):
 ${textoDescartes(await descartes(env))}
-Proponé ${cantidad} ideas de carrusel. La mayoría (al menos 3) con el estilo ganador: un producto concreto que la gente busca, comparando lo que sale en MercadoLibre contra lo que cuesta traerlo. Las otras pueden ser otros ángulos (errores al importar, cómo funciona un cupo, qué incluye el precio), siempre con números o pasos concretos.
+Proponé ${cantidad} ideas de carrusel pensadas como EXPERIMENTOS para viralizar. Reglas:
+- Cada idea usa un FORMATO distinto de la lista; a lo sumo una puede ser comparacion_ml, salvo que la dirección creativa diga otra cosa.
+- Si hay referencias, al menos 2 ideas salen de una de ellas (decí cuál en "inspirado_en").
+- Pensá en lo que hace que la gente guarde, comparta o comente: curiosidad, un mito que se rompe, algo que le pasó a alguien parecido, una opinión fuerte. No solo precios.
+- Cada idea lleva una "hipotesis": qué estamos testeando (ej. "los mitos generan más compartidos que los precios").
 ${await rendimiento(env)}
 LO QUE PASA EN EL WHATSAPP (datos reales):
 COTIZACIONES ARMADAS: ${w.cotizaciones.map((c) => c.items.map((i) => `${i.cantidad} × ${i.nombre}`).join(" + ") + (c.total ? ` = USD ${c.total}` : "")).join(" | ") || "ninguna"}
 PRODUCTOS COTIZADOS POR CHAT: ${w.cotizados.map((x) => `${x.producto} (${x.n})`).join(", ") || "sin datos"}
 LO MÁS CONSULTADO (14 días): ${w.demanda14.map((x) => `${x.producto} (${x.n})`).join(", ") || "sin datos"}
 REGLAS QUE TE ENSEÑÓ EL DUEÑO: ${rg.map((x, i) => `${i + 1}. ${x}`).join(" ") || "ninguna"}
-IDEAS YA PROPUESTAS (no repitas el mismo producto ni el mismo ángulo): ${previas.map((x) => `${x.titulo} [${x.estado}]`).join(" | ") || "ninguna"}
-Cada idea trae el título de la portada tal como iría ("gancho"), con voseo y concreto.
-Respondé SOLO JSON: {"ideas":[{"titulo":"nombre corto de la idea","gancho":"texto exacto de la portada","producto":"... o vacío","angulo":"comparacion_ml|errores|como_funciona|que_incluye|caso_real|otro","por_que":"el dato concreto en el que te basás, con número"}]}`);
+IDEAS YA PROPUESTAS (no repitas producto ni ángulo): ${previas.map((x) => `${x.titulo} [${x.estado}]`).join(" | ") || "ninguna"}
+Cada idea trae el título de la portada tal como iría ("gancho"), con voseo y concreto. Nunca escribas precios con números.
+Respondé SOLO JSON: {"ideas":[{"titulo":"nombre corto","gancho":"texto exacto de la portada","producto":"... o vacío","angulo":"mito|error|caso_real|paso_a_paso|que_pasa_si|detras_de_escena|lista_productos|opinion|pregunta_respuesta|comparacion_ml|otro","hipotesis":"qué testeamos","inspirado_en":"número de referencia o vacío","por_que":"el dato o razón concreta"}]}`);
   const ya = new Set(previas.map((x) => (x.producto || x.titulo).toLowerCase()));
   const ideas = (r?.ideas || []).filter((x) => x?.titulo && !PROHIBIDO.test(JSON.stringify(x)) && !MAL.test(String(x.gancho || x.titulo)) && !ya.has(String(x.producto || x.titulo).toLowerCase())).slice(0, cantidad);
   if (!ideas.length) return { ok: false, error: r ? "No salieron ideas nuevas." : "La IA no respondió. Probá de nuevo en un minuto." };
   await env.DB.batch(ideas.map((x) => env.DB.prepare("INSERT INTO ig_carruseles (id, ts, estado, titulo, angulo, por_que, producto, datos, slides, caption, chat) VALUES (?,?,'idea',?,?,?,?,?,'[]','','[]')")
-    .bind(nuevoId(), Date.now(), String(x.titulo).slice(0, 140), String(x.angulo || "otro").slice(0, 30), (x.gancho ? "Portada: \"" + String(x.gancho).slice(0, 140) + "\" · " : "") + String(x.por_que || "").slice(0, 300), String(x.producto || "").slice(0, 80), JSON.stringify({ producto: String(x.producto || "").slice(0, 80) }))));
+    .bind(nuevoId(), Date.now(), String(x.titulo).slice(0, 140), String(x.angulo || "otro").slice(0, 30),
+      (x.gancho ? "Portada: \"" + String(x.gancho).slice(0, 140) + "\" · " : "") + (x.hipotesis ? "Testea: " + String(x.hipotesis).slice(0, 160) + " · " : "") + String(x.por_que || "").slice(0, 240),
+      String(x.producto || "").slice(0, 80), JSON.stringify({ producto: String(x.producto || "").slice(0, 80) }))));
   return { ok: true, cantidad: ideas.length };
 }
 
@@ -184,19 +219,20 @@ export async function armarEstructura(env, iaJSON, c, T) {
   const base = `Negocio:
 ${NEGOCIO}
 ${MANUAL}
-IDEA: "${c.titulo}" · producto: ${c.producto || "-"} · ángulo: ${c.angulo} · ${c.por_que}
+${FORMATOS}
+${textoDireccion(await direccion(env))}
+IDEA: "${c.titulo}" · producto: ${c.producto || "-"} · formato/ángulo: ${c.angulo} · ${c.por_que}
 Tipos de slide disponibles: ${AYUDA_TIPOS}.
-Para precios y cuentas usá SOLO estas marcas, que el sistema reemplaza con los datos reales: {precio_ml} {costo} {diferencia} {cantidad} {total} {producto}. NUNCA escribas un precio con números.
-EL CARRUSEL QUE MEJOR FUNCIONÓ (la vara a superar; copiá ritmo, largo y tono):
+Si el carrusel necesita precios o cuentas, usá SOLO estas marcas: {precio_ml} {costo} {diferencia} {cantidad} {total} {producto}. NUNCA escribas un precio con números. Si el formato no necesita números (mito, error, opinión...), no uses las marcas.
+EJEMPLO DE UN FORMATO (el de precios; NO lo imites si la idea es de otro formato, usalo solo para calibrar tono y largo):
 ${JSON.stringify(EJEMPLO)}
-VIRALES DE REFERENCIA ANALIZADOS:
+VIRALES DE REFERENCIA (si hay una relacionada con esta idea, copiá su estructura y ritmo):
 ${textoRefs(refs)}
 REGLAS QUE TE ENSEÑÓ EL DUEÑO (respetalas siempre): ${rg.map((x, i) => `${i + 1}. ${x}`).join(" ") || "ninguna"}
 LO QUE EL DUEÑO DESCARTÓ Y POR QUÉ (no repitas esos errores): ${textoDescartes(await descartes(env))}
-Cotizaciones reales recientes: ${w.cotizaciones.map((q) => q.items.map((i) => i.nombre).join(" + ")).join(" | ") || "ninguna"}.`;
-  // 1) tres versiones distintas
+Cotizaciones reales recientes: ${w.cotizaciones.map((q) => q.items.map((i) => i.nombre).join(" + ")).join(" | ") || "ninguna"}.`;  // 1) tres versiones distintas
   const r1 = await iaJSON(env, `${base}
-Escribí 3 VERSIONES distintas del carrusel completo (7 a 10 slides; la última "cta"). Cambiá sobre todo el gancho de la portada y el orden de la tensión.
+Escribí 3 VERSIONES distintas del carrusel completo (6 a 10 slides según el formato; la última "cta"). Que cambien el gancho de la portada, la estructura y el orden de la tensión, no solo las palabras.
 Respondé SOLO JSON: {"versiones":[{"slides":[...],"caption":"2 o 3 frases + comentá la PALABRA + 3 hashtags"}]}`);
   const versiones = (r1?.versiones || []).map((v) => ({ slides: limpiarSlides(v.slides), caption: String(v.caption || "") })).filter((v) => v.slides.length >= 3 && !PROHIBIDO.test(JSON.stringify(v)));
   if (!versiones.length) return { ok: false, error: "La IA no armó una estructura válida. Probá de nuevo." };
@@ -204,7 +240,7 @@ Respondé SOLO JSON: {"versiones":[{"slides":[...],"caption":"2 o 3 frases + com
   const r2 = await iaJSON(env, `${base}
 Sos el EDITOR más exigente de contenido viral de Argentina. Estas son 3 versiones:
 ${versiones.map((v, i) => `VERSIÓN ${i + 1}: ${JSON.stringify(v)}`).join("\n")}
-Puntuá cada una de 1 a 10 en: gancho (¿frena el scroll en 2 segundos?), curiosidad (¿cada slide obliga a pasar?), concreción (producto y números reales), voz (voseo, cero folleto). Elegí la mejor y MEJORALA: reescribí cada slide que no sea un 9. Compará contra el carrusel ganador: tiene que ser igual o mejor.
+Puntuá cada una de 1 a 10 en: gancho (¿frena el scroll en 2 segundos?), curiosidad (¿cada slide obliga a pasar?), concreción (producto y números reales), voz (voseo, cero folleto). Elegí la mejor y MEJORALA: reescribí cada slide que no sea un 9. Compará contra las referencias virales: tiene que ser igual o mejor.
 Respondé SOLO JSON: {"puntajes":[{"version":1,"gancho":0,"curiosidad":0,"concrecion":0,"voz":0}],"elegida":1,"slides":[...],"caption":"..."}`);
   let slides = limpiarSlides(r2?.slides), caption = String(r2?.caption || "");
   if (slides.length < 3 || PROHIBIDO.test(JSON.stringify(slides) + caption)) { slides = versiones[0].slides; caption = versiones[0].caption; }
@@ -229,6 +265,8 @@ export async function chatCarrusel(env, iaJSON, c, mensaje) {
 ${NEGOCIO}
 ${MANUAL}
 Tipos de slide: ${AYUDA_TIPOS}. Para precios usá las marcas {precio_ml} {costo} {diferencia} {cantidad} {total} {producto}; nunca números de precio.
+${textoDireccion(await direccion(env))}
+ESTILO VISUAL ACTUAL: ${c.datos?.estilo || "manuscrito"}. Estilos disponibles: ${Object.entries(ESTILOS).map(([k, v]) => `${k} (${v.nombre})`).join("; ")}. Si pide cambiar el diseño o los colores, devolvé "estilo" con la clave.
 DATOS CARGADOS: ${JSON.stringify({ producto: datos.producto, precio_ml: datos.precio_ml, costo: datos.costo, cantidad: datos.cantidad, diferencia: datos.diferencia, total: datos.total })}
 SLIDES ACTUALES (numerados desde 1): ${JSON.stringify(c.slides)}
 RETOQUES DE FOTOS ACTUALES (por número de slide): ${JSON.stringify(Object.fromEntries(Object.entries(c.datos?.fx || {}).map(([i, v]) => [+i + 1, v])))}
@@ -254,6 +292,7 @@ Respondé SOLO JSON: {"respuesta":"corta, qué cambiaste","slides":[...] o null,
   }
   if (typeof r.caption === "string" && r.caption.trim() && !PROHIBIDO.test(r.caption)) cambios.caption = r.caption.slice(0, 2200);
   if (r.datos && typeof r.datos === "object") cambios.datos = limpiarDatos(r.datos, c.datos);
+  if (ESTILOS[r.estilo]) cambios.datos = limpiarDatos({ estilo: r.estilo }, cambios.datos || c.datos);
   if (r.fotos_fx && typeof r.fotos_fx === "object") {
     const fx = {}; for (const [n, v] of Object.entries(r.fotos_fx)) if (+n >= 1) fx[+n - 1] = v;
     const base = cambios.datos || c.datos || {};
@@ -274,18 +313,48 @@ Respondé SOLO JSON: {"respuesta":"corta, qué cambiaste","slides":[...] o null,
 }
 
 // ---------- Virales de referencia: capturas analizadas por la IA ----------
-export async function analizarReferencia(env, iaImg, imagenes, nota = "") {
-  const imgs = (imagenes || []).filter((d) => /^data:image\/(jpeg|png|webp);base64,/.test(String(d))).slice(0, 6);
-  if (!imgs.length) return { ok: false, error: "Subí al menos una captura del carrusel" };
+const aB64 = (buf) => { let s = ""; const b = new Uint8Array(buf); for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return btoa(s); };
+const desescapar = (t) => String(t || "").replace(/&amp;/g, "&").replace(/&quot;/g, '"').replace(/&#0?39;|&#x27;/g, "'").replace(/&lt;/g, "<").replace(/&gt;/g, ">");
+// Lee portada y texto de un link público (Instagram suele bloquearlo: en ese caso devuelve null)
+export async function leerLink(url) {
+  if (!/^https:\/\//i.test(url)) return null;
+  try {
+    const f = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0 (compatible; facebookexternalhit/1.1; +http://www.facebook.com/externalhit_uatext.php)", "Accept-Language": "es-AR,es;q=0.9" }, redirect: "follow" });
+    if (!f.ok) return null;
+    const html = (await f.text()).slice(0, 400000);
+    const og = (p) => desescapar((html.match(new RegExp(`<meta[^>]+(?:property|name)=["']${p}["'][^>]+content=["']([^"']*)["']`, "i")) || html.match(new RegExp(`<meta[^>]+content=["']([^"']*)["'][^>]+(?:property|name)=["']${p}["']`, "i")) || [])[1]);
+    const texto = [og("og:title"), og("og:description")].filter(Boolean).join(" · ");
+    let imagen = null;
+    const u = og("og:image");
+    if (u) {
+      const fi = await fetch(u).catch(() => null);
+      const tipo = fi?.headers.get("content-type") || "";
+      if (fi?.ok && /^image\/(jpeg|png|webp)/.test(tipo)) { const buf = await fi.arrayBuffer(); if (buf.byteLength < 4 * 1048576) imagen = `data:${tipo.split(";")[0]};base64,${aB64(buf)}`; }
+    }
+    return texto || imagen ? { texto, imagen } : null;
+  } catch { return null; }
+}
+export async function analizarReferencia(env, iaImg, imagenes, nota = "", link = "") {
+  let imgs = (imagenes || []).filter((d) => /^data:image\/(jpeg|png|webp);base64,/.test(String(d))).slice(0, 6);
+  let texto = nota ? "Nota del dueño: " + String(nota).slice(0, 300) : "", aviso = "";
+  if (link) {
+    const l = await leerLink(String(link).trim());
+    if (l?.imagen) imgs = [l.imagen, ...imgs].slice(0, 6);
+    if (l?.texto) texto += "\nTexto del posteo (sacado del link): " + l.texto.slice(0, 1500);
+    if (!l) aviso = "No pude leer el link (Instagram suele bloquearlo). Subí capturas de los slides.";
+    else if (!imagenes?.length) aviso = "Del link solo pude leer la portada y el texto. Para analizar toda la estructura, subí capturas de los demás slides.";
+  }
+  if (!imgs.length) return { ok: false, error: aviso || "Subí al menos una captura o un link" };
   if (!iaImg) return { ok: false, error: "La IA de imágenes no está disponible" };
-  const r = await iaImg(env, `Estas son capturas de los slides de un carrusel de Instagram que se viralizó (en orden). ${nota ? "Nota del dueño: " + String(nota).slice(0, 300) : ""}
-Analizalo como un estratega de contenido: qué hace que funcione. No copies el texto: extraé la MECÁNICA reutilizable.
-Respondé SOLO JSON: {"cuenta":"usuario si se ve, sin @, o vacío","tema":"de qué trata en 5 palabras","gancho":"el texto de la portada tal cual","estructura":["función de cada slide en 2 a 5 palabras"],"por_que":"por qué engancha, en una frase","tecnicas":["técnicas concretas: ej. número en la portada, comparación, pregunta abierta, lista, antes/después"]}`, imgs);
-  if (!r?.gancho) return { ok: false, error: "No pude leer las capturas. Probá con capturas más nítidas." };
-  const ref = { ts: Date.now(), cuenta: String(r.cuenta || "").replace(/^@/, "").slice(0, 40), tema: String(r.tema || "").slice(0, 80), gancho: String(r.gancho).slice(0, 200), estructura: (r.estructura || []).map((x) => String(x).slice(0, 60)).slice(0, 12), por_que: String(r.por_que || "").slice(0, 240), tecnicas: (r.tecnicas || []).map((x) => String(x).slice(0, 60)).slice(0, 8) };
+  const r = await iaImg(env, `Estas son imágenes (en orden) de un carrusel de Instagram que se viralizó. ${texto}
+Analizalo como un estratega de contenido: qué hace que funcione. No copies el texto: extraé la MECÁNICA reutilizable y decí cómo lo adaptaríamos a "Te Importamos" (importación por encargo desde Rosario, sin vapers ni prometer ganancias).
+Claves de estilo disponibles: ${Object.keys(ESTILOS).join(", ")}.
+Respondé SOLO JSON: {"cuenta":"usuario si se ve, sin @, o vacío","tema":"de qué trata en 5 palabras","formato":"mito|error|caso_real|paso_a_paso|que_pasa_si|lista|opinion|comparacion|otro","gancho":"texto de la portada tal cual","estructura":["función de cada slide en 2 a 5 palabras"],"por_que":"por qué engancha, en una frase","tecnicas":["técnicas concretas"],"estilo_visual":"cómo se ve: fondo, tipografía, colores, en una frase","estilo_sugerido":"la clave de estilo más parecida","adaptacion":"cómo lo haríamos para Te Importamos, en una frase"}`, imgs);
+  if (!r?.gancho) return { ok: false, error: "No pude leer las imágenes. Probá con capturas más nítidas." };
+  const ref = { ts: Date.now(), cuenta: String(r.cuenta || "").replace(/^@/, "").slice(0, 40), tema: String(r.tema || "").slice(0, 80), formato: String(r.formato || "otro").slice(0, 30), gancho: String(r.gancho).slice(0, 200), estructura: (r.estructura || []).map((x) => String(x).slice(0, 60)).slice(0, 12), por_que: String(r.por_que || "").slice(0, 240), tecnicas: (r.tecnicas || []).map((x) => String(x).slice(0, 60)).slice(0, 8), estilo_visual: String(r.estilo_visual || "").slice(0, 160), estilo_sugerido: ESTILOS[r.estilo_sugerido] ? r.estilo_sugerido : "", adaptacion: String(r.adaptacion || "").slice(0, 240) };
   const l = (await referencias(env)).concat(ref).slice(-30);
   await kvPut(env, "ig_refs_carrusel", JSON.stringify(l));
-  return { ok: true, referencia: ref, referencias: l };
+  return { ok: true, referencia: ref, referencias: l, aviso };
 }
 
 // ---------- Horarios: un carrusel por día a las 12 h ----------
@@ -335,7 +404,7 @@ export async function apiCarruseles(env, req, url, quien, iaJSON, T = null, iaIm
   if (r === "lista") {
     const l = (await env.DB.prepare("SELECT id, ts, estado, titulo, angulo, por_que, producto, n_slides, programado_ts, link, error, publicado_ts FROM ig_carruseles WHERE estado <> 'descartado' AND ts > ? ORDER BY ts DESC LIMIT 60").bind(Date.now() - 60 * 86400e3).all()).results || [];
     const yo = JSON.parse((await kvGet(env, "ig_yo")) || "{}");
-    return json({ carruseles: l, reglas: await reglas(env), referencias: await referencias(env), descartes: (await descartes(env)).length, usuario: yo.username || "te.importamos.arg", tipos: TIPOS_SLIDE });
+    return json({ carruseles: l, reglas: await reglas(env), referencias: await referencias(env), descartes: (await descartes(env)).length, usuario: yo.username || "te.importamos.arg", tipos: TIPOS_SLIDE, estilos: ESTILOS, direccion: await direccion(env) });
   }
   if (r === "logo") {
     let o = await env.VIDEOS.get("marca/perfil.jpg");
@@ -353,13 +422,14 @@ export async function apiCarruseles(env, req, url, quien, iaJSON, T = null, iaIm
     if (!/^carruseles\/[a-z0-9]+\/(foto|slide)-\d+\.(jpg|png|webp)$/.test(key)) return new Response("clave inválida", { status: 400 });
     return servir(env, req, key);
   }
-  if (r === "referencia" && req.method === "POST") return json(await analizarReferencia(env, iaImg, body.imagenes, body.nota));
+  if (r === "referencia" && req.method === "POST") return json(await analizarReferencia(env, iaImg, body.imagenes, body.nota, body.link));
+  if (r === "direccion" && req.method === "POST") { await kvPut(env, "ig_direccion_carrusel", String(body.texto || "").slice(0, 1500)); return json({ ok: true }); }
   if (r === "referencia-borrar" && req.method === "POST") {
     const l = (await referencias(env)).filter((_, i) => i !== +body.i);
     await kvPut(env, "ig_refs_carrusel", JSON.stringify(l));
     return json({ ok: true, referencias: l });
   }
-  if (r === "generar-ideas" && req.method === "POST") return json(await generarIdeasCarrusel(env, iaJSON, { T, quien }));
+  if (r === "generar-ideas" && req.method === "POST") return json(await generarIdeasCarrusel(env, iaJSON, { T, quien, ref: body.ref != null ? +body.ref : null }));
   if (r === "regla-borrar" && req.method === "POST") {
     const l = (await reglas(env)).filter((_, i) => i !== +body.i);
     await kvPut(env, "ig_reglas_carrusel", JSON.stringify(l));
