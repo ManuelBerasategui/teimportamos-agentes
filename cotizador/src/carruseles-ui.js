@@ -29,11 +29,15 @@ export const CARR_HTML = `
  <div id="c-lista">
   <div class="barraher"><button class="btn p" id="bCarrIdeas">Generar ideas de carruseles</button></div>
   <p class="estado ayuda">El agente propone; elegís una idea, te arma la estructura, la confirmás, hace los slides con el estilo que mejor funcionó y los aprobás. Se publican a las 12 h (o cuando elijas).</p>
+  <section class="card"><h2>Dirección creativa <span class="estado">decile al agente qué querés probar; lo tiene en cuenta en todo</span></h2>
+   <textarea id="cDir" placeholder="Ej: esta semana quiero probar mitos de la importación y casos reales. Menos precios. Tono más picante." style="width:100%;min-height:80px;border:1px solid var(--borde);border-radius:10px;padding:10px;font:inherit;font-size:14px"></textarea>
+   <div class="fila" style="margin-top:8px"><button class="btn p ch" id="cDirGuardar">Guardar dirección</button></div></section>
   <section class="card"><h2>En armado</h2><div class="cgrid" id="cArmado"></div></section>
   <section class="card"><h2>Ideas</h2><div class="cgrid" id="cIdeas"></div></section>
   <section class="card"><h2>Programados y publicados</h2><div id="cProg"></div></section>
   <section class="card"><h2>Virales de referencia <span class="estado">subí capturas de los slides de un carrusel que se viralizó (tuyo o de otra cuenta): el agente analiza la mecánica y la usa</span></h2>
-   <div class="fila"><label class="btn ch" style="cursor:pointer">Elegir capturas<input type="file" id="rArch" accept="image/*" multiple style="display:none"></label><input id="rNota" placeholder="Nota opcional (de qué cuenta es, cuánto pegó)" style="flex:1;min-width:180px;padding:8px;border:1px solid var(--borde);border-radius:8px;font:inherit"><button class="btn p ch" id="rAnalizar" disabled>Analizar</button></div>
+   <div class="fila"><input id="rLink" placeholder="Link del carrusel (Instagram, TikTok...) opcional" style="flex:1;min-width:200px;padding:8px;border:1px solid var(--borde);border-radius:8px;font:inherit"></div>
+   <div class="fila" style="margin-top:6px"><label class="btn ch" style="cursor:pointer">Elegir capturas<input type="file" id="rArch" accept="image/*" multiple style="display:none"></label><input id="rNota" placeholder="Nota opcional (cuenta, cuánto pegó)" style="flex:1;min-width:180px;padding:8px;border:1px solid var(--borde);border-radius:8px;font:inherit"><button class="btn p ch" id="rAnalizar" disabled>Analizar</button></div>
    <div class="estado" id="rSel" style="margin-top:6px"></div><div id="rLista" style="margin-top:8px"></div></section>
   <section class="card"><h2>Lo que aprendió <span class="estado">reglas que le enseñaste en los chats; tocá × para borrar una</span></h2><div class="reglasc" id="cReglas"></div></section>
  </div>
@@ -46,7 +50,7 @@ export const CARR_HTML = `
      <div class="calc" id="dCalc"></div>
     </section>
     <section class="card" id="cEstr"><div class="fila" style="justify-content:space-between"><h2>Estructura <span class="estado">editá lo que quieras o pedíselo al agente</span></h2><button class="btn p" id="cConfirmar">Confirmar estructura y hacer slides</button></div><div id="cSlidesTxt"></div></section>
-    <section class="card" id="cDis" style="display:none"><div class="fila" style="justify-content:space-between"><h2>Slides</h2><button class="btn ch" id="cAEstr">Volver a la estructura</button></div><div class="slides" id="cCanvas"></div>
+    <section class="card" id="cDis" style="display:none"><div class="fila" style="justify-content:space-between"><h2>Slides</h2><button class="btn ch" id="cAEstr">Volver a la estructura</button></div><div class="slides" id="cCanvas"></div><label class="estado">Estilo <select id="dEstilo" style="padding:7px;border:1px solid var(--borde);border-radius:8px;font:inherit"></select></label>
      <h2 style="margin-top:16px">Texto del posteo</h2><textarea id="cCaption" style="width:100%;min-height:110px;border:1px solid var(--borde);border-radius:10px;padding:10px;font:inherit;font-size:14px"></textarea>
      <div class="fila" style="margin-top:10px"><label class="estado">Publicar el <input type="datetime-local" id="cCuando" style="padding:7px;border:1px solid var(--borde);border-radius:8px;font:inherit"></label><button class="btn p" id="cAprobar">Aprobar y programar</button><button class="btn ch" id="cBajar">Descargar slides</button><button class="btn ch" id="cDescartar">Descartar</button></div><div class="prog" id="cProgTxt"></div>
     </section>
@@ -61,13 +65,15 @@ export const CARR_JS = String.raw`
 var CAPI = function (r, body, metodo, extra) { return fetch("/panel/api/carruseles/" + r, { method: metodo || (body ? "POST" : "GET"), headers: Object.assign(body && !(body instanceof Blob) ? { "Content-Type": "application/json" } : {}, extra || {}), body: body instanceof Blob ? body : body ? JSON.stringify(body) : undefined }).then(function (x) { if (x.status === 401) { location.href = "/login?volver=/panel/redes%23carr"; throw 0; } return x.json(); }); };
 var CL = null, CC = null, USUARIO = "te.importamos.arg", TIPOS_S = {}, IMGS = {}, FUENTE = null;
 var EST_C = { idea: "Idea", estructura: "Estructura", slides: "Slides", aprobado: "Programado", publicando: "Publicando", publicado: "Publicado", error: "Error" };
-var W = 1080, H = 1350, AZUL = "#3B4796", CREMA = "#F3EFE8";
+var W = 1080, H = 1350, AZUL = "#3B4796", CREMA = "#F3EFE8", ACENTO = "#3B4796", FAM = '"Patrick Hand", "Comic Sans MS", cursive', PESO = "", KS = 1, ESTILOS_S = {};
+var FAMS = { mano: ['"Patrick Hand", "Comic Sans MS", cursive', ""], sans: ['system-ui, "Segoe UI", Arial, sans-serif', "bold "], serif: ['Georgia, "Times New Roman", serif', "bold "] };
 function fuente() { if (FUENTE) return FUENTE; FUENTE = (document.fonts && document.fonts.load ? Promise.all([document.fonts.load('64px "Patrick Hand"'), document.fonts.ready]) : Promise.resolve()).catch(function () {}); return FUENTE; }
 function pesos(n) { return n == null ? null : "$" + Math.round(n).toLocaleString("es-AR"); }
 function datosC() { var d = CC.datos || {}; var dif = d.precio_ml && d.costo ? d.precio_ml - d.costo : null; return { producto: d.producto || "", precio_ml: pesos(d.precio_ml), costo: pesos(d.costo), diferencia: pesos(dif), total: dif != null && d.cantidad ? pesos(dif * d.cantidad) : null, cantidad: d.cantidad ? String(d.cantidad) : null }; }
 function rell(t) { var v = datosC(); return String(t || "").replace(/\{(producto|precio_ml|costo|diferencia|total|cantidad)\}/g, function (m, k) { return v[k] || "[" + k.replace("_", " ") + "]"; }); }
 function cargarImg(src) { if (!src) return Promise.resolve(null); if (IMGS[src]) return IMGS[src]; IMGS[src] = new Promise(function (ok) { var i = new Image(); i.onload = function () { ok(i); }; i.onerror = function () { ok(null); }; i.src = src; }); return IMGS[src]; }
-function fnt(sz) { return sz + 'px "Patrick Hand", "Comic Sans MS", cursive'; }
+function aplicarEstilo() { var s = ESTILOS_S[(CC && CC.datos && CC.datos.estilo) || "manuscrito"] || ESTILOS_S.manuscrito || { fondo: CREMA, tinta: AZUL, acento: AZUL, fuente: "mano" }; CREMA = s.fondo; AZUL = s.tinta; ACENTO = s.acento || s.tinta; var f = FAMS[s.fuente] || FAMS.mano; FAM = f[0]; PESO = f[1]; }
+function fnt(sz) { return PESO + sz + "px " + FAM; }
 function partir(ctx, txt, maxW, sz) {
   ctx.font = fnt(sz); var out = [];
   String(txt).split("\n").forEach(function (par) { var pal = par.split(" "), l = ""; pal.forEach(function (p) { var t = l ? l + " " + p : p; if (ctx.measureText(t).width > maxW && l) { out.push(l); l = p; } else l = t; }); out.push(l); });
@@ -85,7 +91,7 @@ function dibujar(ctx, b, y, d) {
   if (b.k === "t") {
     ctx.font = fnt(b.sz); ctx.textAlign = b.al === "c" ? "center" : "left"; var x = b.al === "c" ? W / 2 : 110, maxw = 0;
     b.lines.forEach(function (l, i) { ctx.fillText(l, x, y + i * b.sz * 1.16); maxw = Math.max(maxw, ctx.measureText(l).width); });
-    if (b.sub) { var yy = y + b.lines.length * b.sz * 1.16 + 6, x0 = b.al === "c" ? W / 2 - maxw / 2 - 10 : x - 6, x1 = x0 + maxw + 20; ctx.lineWidth = 6; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(x0, yy + 4); ctx.quadraticCurveTo((x0 + x1) / 2, yy - 4, x1, yy + 2); ctx.stroke(); }
+    if (b.sub) { var yy = y + b.lines.length * b.sz * 1.16 + 6, x0 = b.al === "c" ? W / 2 - maxw / 2 - 10 : x - 6, x1 = x0 + maxw + 20; ctx.strokeStyle = ACENTO; ctx.lineWidth = 6; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(x0, yy + 4); ctx.quadraticCurveTo((x0 + x1) / 2, yy - 4, x1, yy + 2); ctx.stroke(); }
   } else if (b.k === "img") {
     var x = (W - b.w) / 2;
     if (!b.img) { ctx.save(); ctx.setLineDash([14, 12]); ctx.lineWidth = 4; ctx.strokeStyle = "#B8BEDC"; ctx.strokeRect(x, y, b.w, b.h); ctx.restore(); ctx.font = fnt(46); ctx.textAlign = "center"; ctx.fillStyle = "#8C94C4"; ctx.fillText("Subí la foto de este slide", W / 2, y + b.h / 2 - 24); return; }
@@ -117,7 +123,7 @@ function dibujar(ctx, b, y, d) {
 function numC(t) { var m = String(t || "").replace(/\./g, "").match(/\d+/); return m ? +m[0] : 0; }
 function rr(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
 function bloques(s, i, d) {
-  var T = function (t, sz, al, ex) { return Object.assign({ k: "t", t: rell(t), sz: Math.round(sz * (sz < 90 ? 1.16 : 1.08)), al: al || "c" }, ex || {}); }, out = [];
+  var T = function (t, sz, al, ex) { return Object.assign({ k: "t", t: rell(t),sz: Math.round(sz * (sz < 90 ? 1.16 : 1.08) * KS), al: al || "c" }, ex || {}); }, out = [];
   var foto = d.fotos[i], fx = (CC.datos && CC.datos.fx && CC.datos.fx[i]) || null;
   if (s.tipo === "portada") out = [{ k: "img", img: foto, fx: fx, mw: 640, mh: 560, gap: 50 }, T(s.titulo, 96), T(s.subtitulo, 60, "c", { gap: 70 }), { k: "av" }];
   else if (s.tipo === "captura") out = [T(s.arriba, 100, "c", { gap: 50 }), { k: "img", img: foto, fx: fx, mw: 860, mh: 520, card: true, gap: 70 }, T(s.abajo, 64)];
@@ -128,12 +134,16 @@ function bloques(s, i, d) {
   else if (s.tipo === "multiplicacion") out = [T(s.arriba, 66, "c", { gap: 30 }), T(s.linea, 96, "c", { sub: true, gap: 40 }), T(s.numero, 150, "c", { gap: 26 }), T(s.abajo, 62)];
   else if (s.tipo === "lista") { out = [T(s.titulo, 104, "l", { gap: 44 })]; (s.items || []).forEach(function (it, k) { out.push(T((k + 1) + ". " + it, 62, "l", { gap: 22 })); }); }
   else if (s.tipo === "cta") out = [{ k: "av", gap: 40 }, T(s.texto, 66, "c", { gap: 30 }), T("Comentá “" + String(s.palabra || "").toUpperCase() + "”", 112, "c", { gap: 20 }), T(s.abajo, 66)];
+  else if (s.tipo === "grande") out = [T(s.texto, 150, "c", { sub: true, gap: 50 }), T(s.abajo, 66)];
+  else if (s.tipo === "versus") out = [T(s.titulo, 96, "l", { gap: 40 }), T(s.a_label, 78, "l", { sub: true, gap: 8 }), T(s.a_texto, 60, "l", { gap: 50 }), T(s.b_label, 78, "l", { sub: true, gap: 8 }), T(s.b_texto, 60, "l")];
   return out;
 }
 function render(canvas, s, i, d) {
-  var ctx = canvas.getContext("2d"); canvas.width = W; canvas.height = H;
+  var ctx = canvas.getContext("2d"); canvas.width = W; canvas.height = H; aplicarEstilo();
+  var bl, tot;
+  for (KS = 1; ; KS -= 0.08) { bl = bloques(s, i, d); tot = 0; bl.forEach(function (b) { tot += medir(ctx, b); }); if (tot <= H - 140 || KS <= 0.5) break; }
+  KS = 1;
   ctx.fillStyle = CREMA; ctx.fillRect(0, 0, W, H);
-  var bl = bloques(s, i, d), tot = 0; bl.forEach(function (b) { tot += medir(ctx, b); });
   var y = Math.max(70, (H - tot) / 2 + 10);
   bl.forEach(function (b) { dibujar(ctx, b, y, d); y += b.h + (b.gap == null ? 22 : b.gap); });
 }
@@ -151,6 +161,7 @@ function pintarCanvas() {
 function cargarCarr() {
   CAPI("lista").then(function (r) {
     CL = r; USUARIO = r.usuario || USUARIO; TIPOS_S = r.tipos || {}; pintarRefs(r.referencias);
+    ESTILOS_S = r.estilos || {}; $("#dEstilo").innerHTML = Object.keys(ESTILOS_S).map(function (k) { return '<option value="' + k + '">' + esc(ESTILOS_S[k].nombre) + "</option>"; }).join(""); if (document.activeElement !== $("#cDir")) $("#cDir").value = r.direccion || "";
     var tarjeta = function (c) { return '<div class="ccard" data-c="' + c.id + '"><span class="pill n" style="align-self:flex-start">' + (EST_C[c.estado] || c.estado) + "</span><h3>" + esc(c.titulo) + '</h3><div class="pq">' + esc(c.por_que || "") + '</div><div class="fila" style="margin-top:auto"><button class="btn ch" data-desc="' + c.id + '">Descartar</button></div><div class="dform" style="display:none"><textarea placeholder="¿Por qué la descartás? (opcional, cuanto mejor lo expliques, más aprende)" style="width:100%;min-height:70px;border:1px solid var(--borde);border-radius:8px;padding:8px;font:inherit;font-size:13px"></textarea><div class="fila" style="margin-top:6px"><button class="btn p ch" data-descok="' + c.id + '">Descartar</button><button class="btn ch" data-desccancel="1">Cancelar</button></div></div></div>'; };
     var arm = r.carruseles.filter(function (c) { return ["estructura", "slides", "error"].indexOf(c.estado) >= 0; }), ide = r.carruseles.filter(function (c) { return c.estado === "idea"; }), prog = r.carruseles.filter(function (c) { return ["aprobado", "publicando", "publicado"].indexOf(c.estado) >= 0; });
     $("#cArmado").innerHTML = arm.length ? arm.map(tarjeta).join("") : '<div class="vacio">Nada en armado.</div>';
@@ -160,13 +171,18 @@ function cargarCarr() {
   });
 }
 function pintarRefs(l) {
-  $("#rLista").innerHTML = (l || []).slice().reverse().map(function (x, k) { var i = l.length - 1 - k; return '<div class="idea" style="padding:10px"><div class="tit"><b>' + esc(x.gancho) + '</b><button class="mini btn ch" data-refb="' + i + '">Borrar</button></div><div class="pq">' + (x.cuenta ? "@" + esc(x.cuenta) + " · " : "") + esc(x.tema || "") + "</div><div class=\"pq\"><b>Estructura:</b> " + esc((x.estructura || []).join(" → ")) + '</div><div class="pq"><b>Por qué funciona:</b> ' + esc(x.por_que) + '</div><div class="pq"><b>Técnicas:</b> ' + esc((x.tecnicas || []).join(", ")) + "</div></div>"; }).join("") || '<div class="vacio">Todavía no analizaste ninguno.</div>';
+  $("#rLista").innerHTML = (l || []).slice().reverse().map(function (x, k) { var i = l.length - 1 - k; return '<div class="idea" style="padding:10px"><div class="tit"><b>' + esc(x.gancho) + '</b><span class="fila"><button class="mini btn ch" data-refidea="' + i + '">Ideas con esta</button><button class="mini btn ch" data-refb="' + i + '">Borrar</button></span></div><div class="pq">' + (x.cuenta ? "@" + esc(x.cuenta) + " · " : "") + esc(x.tema || "") + (x.formato ? " · formato: " + esc(x.formato) : "") + '</div><div class="pq"><b>Estructura:</b> ' + esc((x.estructura || []).join(" → ")) + '</div><div class="pq"><b>Por qué funciona:</b> ' + esc(x.por_que) + '</div><div class="pq"><b>Técnicas:</b> ' + esc((x.tecnicas || []).join(", ")) + '</div>' + (x.adaptacion ? '<div class="pq"><b>Para nosotros:</b> ' + esc(x.adaptacion) + "</div>" : "") + "</div>"; }).join("") || '<div class="vacio">Todavía no analizaste ninguno.</div>';
 }
 var RFOTOS = [];
 function achicar(f) { return new Promise(function (ok) { var r = new FileReader(); r.onload = function () { var im = new Image(); im.onload = function () { var k = Math.min(1, 1080 / Math.max(im.width, im.height)), c = document.createElement("canvas"); c.width = im.width * k; c.height = im.height * k; c.getContext("2d").drawImage(im, 0, 0, c.width, c.height); ok(c.toDataURL("image/jpeg", 0.85)); }; im.onerror = function () { ok(null); }; im.src = r.result; }; r.readAsDataURL(f); }); }
-$("#rArch").addEventListener("change", function () { var fs = Array.prototype.slice.call(this.files || []).slice(0, 6); Promise.all(fs.map(achicar)).then(function (l) { RFOTOS = l.filter(Boolean); $("#rSel").textContent = RFOTOS.length ? RFOTOS.length + " capturas listas para analizar" : ""; $("#rAnalizar").disabled = !RFOTOS.length; }); });
-$("#rAnalizar").onclick = function () { var b = this; b.disabled = true; b.textContent = "Analizando..."; CAPI("referencia", { imagenes: RFOTOS, nota: $("#rNota").value }).then(function (r) { b.textContent = "Analizar"; if (!r.ok) { b.disabled = false; return aviso(r.error); } RFOTOS = []; $("#rSel").textContent = ""; $("#rNota").value = ""; pintarRefs(r.referencias); aviso("Analizado: lo voy a usar en los próximos carruseles"); }); };
-$("#rLista").onclick = function (ev) { var b = ev.target.closest("[data-refb]"); if (b) CAPI("referencia-borrar", { i: +b.dataset.refb }).then(function (r) { pintarRefs(r.referencias); }); };
+function habilitarRef() { $("#rAnalizar").disabled = !(RFOTOS.length || $("#rLink").value.trim()); }
+$("#rArch").addEventListener("change", function () { var fs = Array.prototype.slice.call(this.files || []).slice(0, 6); Promise.all(fs.map(achicar)).then(function (l) { RFOTOS = l.filter(Boolean); $("#rSel").textContent = RFOTOS.length ? RFOTOS.length + " capturas listas para analizar" : ""; habilitarRef(); }); });
+$("#rLink").addEventListener("input", habilitarRef);
+$("#rAnalizar").onclick = function () { var b = this; b.disabled = true; b.textContent = "Analizando..."; CAPI("referencia", { imagenes: RFOTOS, nota: $("#rNota").value, link: $("#rLink").value.trim() }).then(function (r) { b.textContent = "Analizar"; if (!r.ok) { b.disabled = false; return aviso(r.error); } RFOTOS = []; $("#rSel").textContent = ""; $("#rNota").value = ""; $("#rLink").value = ""; pintarRefs(r.referencias); aviso(r.aviso || "Analizado: lo voy a usar en los próximos carruseles"); }); };
+$("#rLista").onclick = function (ev) {
+  var b = ev.target.closest("[data-refb]"); if (b) return CAPI("referencia-borrar", { i: +b.dataset.refb }).then(function (r) { pintarRefs(r.referencias); });
+  var g = ev.target.closest("[data-refidea]"); if (g) { g.disabled = true; g.textContent = "Pensando..."; CAPI("generar-ideas", { ref: +g.dataset.refidea }).then(function (r) { g.disabled = false; g.textContent = "Ideas con esta"; if (!r.ok) return aviso(r.error); aviso(r.cantidad + " ideas nuevas basadas en esa referencia"); cargarCarr(); }); }
+};
 $("#c-lista").onclick = function (ev) {
   if (ev.target.closest("#rLista") || ev.target.closest("#rArch") || ev.target.closest("#rAnalizar") || ev.target.closest("#rNota")) return;
   var dd = ev.target.closest("[data-desc]"); if (dd) { var cd = dd.closest(".ccard"); cd.querySelector(".dform").style.display = ""; dd.style.display = "none"; cd.querySelector("textarea").focus(); return; }
@@ -193,6 +209,9 @@ function pintarEd() {
   $("#cTit").textContent = c.titulo; $("#cPq").textContent = c.por_que || "";
   $("#cPasos").innerHTML = ["1. Estructura", "2. Slides", "3. Programado"].map(function (p, i) { var on = (i === 0 && ["idea", "estructura"].indexOf(c.estado) >= 0) || (i === 1 && enSlides) || (i === 2 && ["aprobado", "publicando", "publicado"].indexOf(c.estado) >= 0); return '<span class="' + (on ? "on" : "") + '">' + p + "</span>"; }).join("");
   var d = c.datos || {};
+  $("#dEstilo").value = d.estilo || "manuscrito";
+  var usaN = /\{(producto|precio_ml|costo|diferencia|total|cantidad)\}/.test(JSON.stringify(c.slides || [])) || d.precio_ml || d.costo;
+  $("#dProd").closest(".datos").style.display = usaN ? "" : "none"; $("#dCalc").style.display = usaN ? "" : "none";
   $("#dProd").value = d.producto || ""; $("#dMl").value = d.precio_ml || ""; $("#dCosto").value = d.costo || ""; $("#dCant").value = d.cantidad || "";
   ["#dProd", "#dMl", "#dCosto", "#dCant"].forEach(function (s) { $(s).disabled = !editable; });
   pintarCalc();
@@ -204,7 +223,7 @@ function pintarEd() {
 }
 function localDT(ts) { var d = new Date(ts - new Date(ts).getTimezoneOffset() * 60000); return d.toISOString().slice(0, 16); }
 function pintarCalc() { var v = datosC(); $("#dCalc").innerHTML = v.diferencia ? "Diferencia por unidad: <b>" + v.diferencia + "</b>" + (v.total ? " · En " + v.cantidad + " unidades: <b>" + v.total + "</b>" : "") + " · las cuentas las hace el sistema" : "Cargá el precio en MercadoLibre y el costo puesto: la diferencia y el total se calculan solos."; }
-var CAMPOS_N = { titulo: "Título", subtitulo: "Subtítulo", arriba: "Texto de arriba", abajo: "Texto de abajo", numero: "Número grande", items: "Ítems (uno por renglón)", total: "Total", a_label: "Barra 1 (nombre)", a_valor: "Barra 1 (valor)", b_label: "Barra 2 (nombre)", b_valor: "Barra 2 (valor)", conclusion: "Conclusión", parrafos: "Párrafos (uno por renglón)", linea: "Cuenta", texto: "Texto", palabra: "Palabra para comentar" };
+var CAMPOS_N = { titulo: "Título", subtitulo: "Subtítulo", arriba: "Texto de arriba", abajo: "Texto de abajo", numero: "Número grande", items: "Ítems (uno por renglón)", total: "Total", a_label: "Barra 1 (nombre)", a_valor: "Barra 1 (valor)", b_label: "Barra 2 (nombre)", b_valor: "Barra 2 (valor)", conclusion: "Conclusión", parrafos: "Párrafos (uno por renglón)", linea: "Cuenta", texto: "Texto", palabra: "Palabra para comentar", a_texto: "Lado 1 (texto)", b_texto: "Lado 2 (texto)" };
 function pintarEstr() {
   $("#cSlidesTxt").innerHTML = (CC.slides || []).map(function (s, i) {
     var t = TIPOS_S[s.tipo] || { campos: [] };
@@ -245,4 +264,6 @@ $("#cAprobar").onclick = function () {
 };
 $("#cBajar").onclick = function () { pintarCanvas().then(function () { document.querySelectorAll("#cCanvas canvas").forEach(function (cv, i) { var a = document.createElement("a"); a.download = "slide-" + (i + 1) + ".jpg"; a.href = cv.toDataURL("image/jpeg", 0.92); a.click(); }); }); };
 $("#cDescartar").onclick = function () { var m = prompt("¿Por qué lo descartás? (opcional, así aprende)"); if (m === null) return; CAPI("descartar", { id: CC.id, motivo: m }).then(function () { $("#cVolver").onclick(); }); };
+$("#cDirGuardar").onclick = function () { CAPI("direccion", { texto: $("#cDir").value }).then(function (r) { aviso(r.ok ? "Dirección guardada" : "No se pudo guardar"); }); };
+$("#dEstilo").onchange = function () { CC.datos = Object.assign({}, CC.datos, { estilo: this.value }); guardarCarr(); pintarCanvas(); };
 `;
