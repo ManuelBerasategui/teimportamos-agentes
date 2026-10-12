@@ -291,7 +291,7 @@ function pendienteOps(env, c, p) {
   const id = `w805:${c.conv}:${tipo}:${diaAR(Date.now())}`;
   return [
     env.DB.prepare("UPDATE tareas SET estado='resuelta' WHERE ref=? AND estado='abierta' AND id<>? AND tipo<>?").bind("w805:" + c.conv, id, tipo),
-    env.DB.prepare("INSERT INTO tareas (id, ts, tipo, tel, nombre, titulo, detalle, datos, ref, estado) SELECT ?,?,?,?,?,?,?,?,?,'abierta' WHERE NOT EXISTS (SELECT 1 FROM tareas WHERE ref=? AND tipo=? AND (estado='abierta' OR (estado='hecha' AND ts>=?)))")
+    env.DB.prepare("INSERT OR REPLACE INTO tareas (id, ts, tipo, tel, nombre, titulo, detalle, datos, ref, estado) SELECT ?,?,?,?,?,?,?,?,?,'abierta' WHERE NOT EXISTS (SELECT 1 FROM tareas WHERE ref=? AND tipo=? AND (estado='abierta' OR (estado='hecha' AND ts>=?)))")
       .bind(id, Date.now(), tipo, c.conv, c.nombre || "", String(p.titulo || "").slice(0, 90), String(p.detalle || "").slice(0, 400), JSON.stringify({ origen: "805" }), "w805:" + c.conv, "w805:" + c.conv, tipo, c.ult_cliente_ts || 0),
   ];
 }
