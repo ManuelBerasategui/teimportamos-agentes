@@ -3076,7 +3076,7 @@ function pintarWA(d) {
   var k = [["Chats nuevos", p.nuevos, "#1FA855"], ["Cotizaciones", p.cotizaciones, "#EA5B0C", (p.chatsCotizados || 0) + " chats"], ["Ventas", p.ventas, "#2563EB"], ["Sin responder", p.sinResponder, "#DC2626", "últimas 72 h"], ["Respuesta", p.respuestaMin == null ? "-" : p.respuestaMin + " min", "#6B7280", "mediana"], ["Conversión", p.conversion == null ? "-" : p.conversion + "%", "#0B0B0B", "cotizado a venta"]];
   var ok = d.ultimo && Date.now() - d.ultimo < 6 * 3600e3;
   var est = '<span class="wpunto" style="background:' + (ok ? "#1FA855" : "#DC2626") + '"></span>WhatsApp 805 · ' + (d.ultimo ? (ok ? "conectado" : "sin datos recientes") + " · último mensaje " + hace(d.ultimo) : "sin datos");
-  var tabs = [["sin", "Responder ya", (d.sinResponder || []).length]];
+  ar tabs = [["sin", "Responder ya", (d.sinResponder || []).length]];
   $("#waDash").innerHTML = '<div class="westado">' + est + '<a href="/panel/805" class="wlink">Ver chats de WhatsApp</a></div>' +
     '<div class="wkpis">' + k.map(function (x) { return '<div class="wkpi" style="--c:' + x[2] + '"><small>' + x[0] + "</small><div>" + (x[1] == null ? 0 : x[1]) + "</div>" + (x[3] ? "<i>" + x[3] + "</i>" : "") + "</div>"; }).join("") + "</div>" +
     '<div class="card wcard"><div class="wsub">' + tabs.map(function (t) { return '<button data-wl="' + t[0] + '"' + (WA_LISTA === t[0] ? ' class="on"' : "") + ">" + t[1] + "<span>" + t[2] + "</span></button>"; }).join("") + '</div><div class="wscroll"><table class="wtab" id="waTabla"></table></div></div>';
