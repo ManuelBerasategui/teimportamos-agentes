@@ -32,6 +32,9 @@ const RE_PALABRA_COT = /total|c\/u|por unidad|cada un[oa]|puesto en|precio final
 const RE_NO_COT = /cupo|abrimos|promo|oferta del d[ií]a|seguimos atendiendo|manden sus productos|difusi[oó]n/i;
 const esCotizacion = (t) => { t = String(t || ""); return RE_MONTO.test(t) && RE_PALABRA_COT.test(t) && !RE_NO_COT.test(t); };
 const esGrupo = (conv) => /@|g\.us|-/.test(String(conv));
+// Mensajes del agente automático de Meta (figuran como nuestros pero no los escribió una persona)
+const RE_BOT = /^¡?bienvenid[oa]!*[\s\S]{0,80}?te voy a derivar con alguien|^te voy a derivar con alguien del equipo|ya le avis[eé] a (nuestro|el) equipo[\s\S]{0,120}se pondr[aá]n? en contacto/i;
+const esBot = (t) => RE_BOT.test(String(t || "").trim());
 const diaAR = (ts) => new Date(ts - AR).toISOString().slice(0, 10);
 const inicioDiaAR = (ts = Date.now()) => Date.parse(diaAR(ts) + "T00:00:00Z") + AR;
 const horaAR = (ts = Date.now()) => new Date(ts - AR).getUTCHours();
@@ -154,7 +157,7 @@ async function guardarLote(env, lote) {
     if (!grupo && !yo && m.sender_name && !/^te importamos/i.test(m.sender_name)) c.nombre = m.sender_name;
     if (m.conversation_name && (grupo || !/^te importamos/i.test(m.conversation_name))) c.nombre = m.conversation_name;
     c.primer = Math.min(c.primer, ts); c.n++;
-    const esAuto = yo && /^¡?bienvenid[oa]!*\s*te voy a derivar/i.test(String(texto));   // bot de bienvenida: no cuenta como respuesta nuestra
+    const esAuto = yo && esBot(texto);   // bot de Meta: no cuenta como respuesta nuestra
     if (!esAuto && ts >= c.ult) { c.ult = ts; c.ultYo = yo; c.texto = String(texto).slice(0, 200); }
     if (esAuto) { /* no cuenta */ } else if (yo) c.ultYoTs = Math.max(c.ultYoTs, ts); else c.ultCli = Math.max(c.ultCli, ts);
     convs.set(conv, c);
@@ -200,7 +203,7 @@ export async function metricas(env, desde, hasta = Date.now()) {
     q("SELECT COUNT(*) n FROM w_hito WHERE tipo='cotizacion' AND ts>=? AND ts<?", desde, hasta),
     q("SELECT COUNT(DISTINCT conv) n FROM w_hito WHERE tipo='cotizacion' AND ts>=? AND ts<?", desde, hasta),
     q("SELECT COUNT(*) n FROM w_hito h LEFT JOIN w_conv c ON c.conv=h.conv WHERE h.tipo='venta' AND h.ts>=? AND h.ts<? AND COALESCE(h.oculto,0)=0 AND COALESCE(c.prov,0)=0", desde, hasta),
-    q("SELECT COUNT(*) n FROM w_conv WHERE ult_cliente_ts>=? AND grupo=0 AND archivado=0 AND ult_yo=0 AND COALESCE(resp,1)=1 AND ult_cliente_ts>COALESCE(visto_ts,0) AND COALESCE(etapa,'')<>'no_cliente'", Date.now() - 72 * 3600e3),
+        q("SELECT COUNT(*) n FROM w_conv WHERE ult_cliente_ts>=? AND grupo=0 AND archivado=0 AND ult_yo=0 AND COALESCE(prov,0)=0 AND lower(COALESCE(producto,'')) NOT LIKE '%vap%' AND lower(COALESCE(producto,'')) NOT LIKE '%elf%bar%' AND lower(COALESCE(producto,'')) NOT LIKE '%pod%' AND ult_cliente_ts>COALESCE(visto_ts,0)", Date.now() - 14 * 86400e3),
   ]);
   // Tiempo de respuesta: solo con los mensajes de las últimas 24 h del período (acotado)
   const desdeResp = Math.max(desde, hasta - 86400e3);
@@ -233,7 +236,7 @@ export async function analizarChats(env, iaJSON, { limite = LECTOR.analizarPorVu
     const bloques = [];
     for (const c of tanda) {
       const ms = ((await env.DB.prepare("SELECT yo, texto, ts FROM w_msg WHERE conv=? ORDER BY ts DESC LIMIT ?").bind(c.conv, LECTOR.mensajesPorChat).all()).results || []).reverse();
-      bloques.push(`### CHAT ${c.conv} (${c.nombre || "sin nombre"})\n` + ms.map((m) => `[${fechaHora(m.ts)}] ${m.yo ? "NOSOTROS" : "CLIENTE"}: ${String(m.texto).slice(0, 400)}`).join("\n"));
+      bloques.push(`### CHAT ${c.conv} (${c.nombre || "sin nombre"})\n` + ms.map((m) => `[${fechaHora(m.ts)}] ${m.yo ? (esBot(m.texto) ? "BOT AUTOMATICO (no es una persona)" : "NOSOTROS") : "CLIENTE"}: ${String(m.texto).slice(0, 400)}`).join("\n"));
     }
     const r = await iaJSON(env, `Sos analista comercial de "Te Importamos" (importaciones desde China/EE.UU., catálogo de stock, combos para revender; Rosario, Argentina).
 Leé cada chat de WhatsApp y devolvé SOLO datos reales del chat (no inventes). Ahora es ${fechaHora(Date.now())} (hora Argentina).
@@ -376,7 +379,7 @@ export async function listas(env) {
   const q = async (sql, ...b) => (await env.DB.prepare(sql).bind(...b).all()).results || [];
   const hace72 = Date.now() - 72 * 3600e3;
   const [sinResponder, escribiles, cotPend, ventasRec] = await Promise.all([
-    q("SELECT * FROM w_conv WHERE ult_cliente_ts>=? AND grupo=0 AND archivado=0 AND ult_yo=0 AND COALESCE(resp,1)=1 AND ult_cliente_ts>COALESCE(visto_ts,0) AND COALESCE(etapa,'')<>'no_cliente' ORDER BY COALESCE(puntaje,5) DESC, ult_cliente_ts ASC LIMIT 60", hace72),
+    q("SELECT * FROM w_conv WHERE ult_cliente_ts>=? AND grupo=0 AND archivado=0 AND ult_yo=0 AND COALESCE(prov,0)=0 AND lower(COALESCE(producto,'')) NOT LIKE '%vap%' AND lower(COALESCE(producto,'')) NOT LIKE '%elf%bar%' AND lower(COALESCE(producto,'')) NOT LIKE '%pod%' AND ult_cliente_ts>COALESCE(visto_ts,0) ORDER BY COALESCE(resp,1) DESC, COALESCE(puntaje,5) DESC, ult_cliente_ts ASC LIMIT 120", Date.now() - 14 * 86400e3),
     q("SELECT * FROM w_conv WHERE grupo=0 AND archivado=0 AND COALESCE(prov,0)=0 AND COALESCE(visto_esc,0)<ult_ts AND puntaje>=6 AND accion<>'' AND etapa NOT IN ('vendido','perdido','no_cliente') AND ult_ts>=? ORDER BY puntaje DESC, ult_ts DESC LIMIT 40", Date.now() - 10 * 86400e3),
     q("SELECT * FROM w_conv WHERE ult_ts>=? AND grupo=0 AND archivado=0 AND cot_pend=1 AND COALESCE(prov,0)=0 AND COALESCE(visto_cot,0)<ult_ts ORDER BY ult_cliente_ts ASC LIMIT 40", Date.now() - 14 * 86400e3),
     q("SELECT h.id, h.ts, h.dato, c.conv, c.nombre, c.producto FROM w_hito h LEFT JOIN w_conv c ON c.conv=h.conv WHERE h.tipo='venta' AND COALESCE(h.oculto,0)=0 AND COALESCE(c.prov,0)=0 ORDER BY h.ts DESC LIMIT 20"),
@@ -510,6 +513,21 @@ export async function recalcularCotizaciones(env) {
   return ops.length;
 }
 
+export async function repararBot(env) {
+  const filas = (await env.DB.prepare("SELECT DISTINCT conv FROM w_msg WHERE yo=1 AND grupo=0 AND ts>=? AND (lower(texto) LIKE '%te voy a derivar%' OR lower(texto) LIKE '%se pondrán en contacto%' OR lower(texto) LIKE '%se pondran en contacto%')").bind(Date.now() - 30 * 86400e3).all()).results || [];
+  const ops = [];
+  for (const f of filas) {
+    const ms = (await env.DB.prepare("SELECT yo, texto, ts FROM w_msg WHERE conv=? ORDER BY ts DESC LIMIT 40").bind(f.conv).all()).results || [];
+    const reales = ms.filter((m) => !(m.yo && esBot(m.texto)));
+    const ult = reales[0]; if (!ult) continue;
+    const ultYoTs = reales.find((m) => m.yo)?.ts || 0, ultCli = reales.find((m) => !m.yo)?.ts || 0;
+    ops.push(env.DB.prepare("UPDATE w_conv SET ult_yo=?, ult_yo_ts=?, ult_cliente_ts=?, ult_texto=?, analizado_ts=0 WHERE conv=?").bind(ult.yo ? 1 : 0, ultYoTs, ultCli, String(ult.texto).slice(0, 200), f.conv));
+  }
+  for (let i = 0; i < ops.length; i += 80) await env.DB.batch(ops.slice(i, i + 80));
+  await kvPut(env, "lector_bot_v1", Date.now());
+  return ops.length;
+}
+
 export async function cronLector(env, iaJSON, scheduledTime) {
   if (!env.DB || !env.LECTOR_TOKEN) return;   // el lector no está configurado todavía
   await prepararLector(env);
@@ -528,6 +546,7 @@ export async function cronLector(env, iaJSON, scheduledTime) {
   if (!(await kvGet(env, "lector_pend_v2"))) { await env.DB.prepare("UPDATE w_conv SET analizado_ts=0 WHERE conv IN (SELECT tel FROM tareas WHERE estado='abierta' AND ref LIKE 'w805:%')").run(); await kvPut(env, "lector_pend_v2", Date.now()); }
   if (!(await kvGet(env, "lector_pend_v1"))) { await env.DB.prepare("UPDATE w_conv SET analizado_ts=0 WHERE grupo=0 AND ult_ts>=?").bind(Date.now() - 3 * 86400e3).run(); await kvPut(env, "lector_pend_v1", Date.now()); }
   if (!(await kvGet(env, "lector_cotiz_v2"))) await recalcularCotizaciones(env).catch((e) => console.log("lector cotiz", e?.stack || e));
+  if (!(await kvGet(env, "lector_bot_v1"))) await repararBot(env).catch((e) => console.log("lector bot", e?.stack || e));
   const t = new Date(scheduledTime);
   const m = t.getUTCMinutes(), hAR = (t.getUTCHours() + 21) % 24;
   if (m % 15 === 7) await analizarChats(env, iaJSON).catch((e) => console.log("lector analizar", e?.stack || e));
