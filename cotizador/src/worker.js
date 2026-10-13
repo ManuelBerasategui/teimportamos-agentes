@@ -3012,7 +3012,7 @@ button{font:inherit;cursor:pointer}
 <div class="vista on" id="v-dash"><div class="dash">
 <div class="filtros" id="filtros"><button data-p="dia" class="on">Hoy</button><button data-p="semana">7 días</button><button data-p="mes">30 días</button></div>
 <div id="waDash"><div class="vacio">Cargando...</div></div>
-<div id="ventasBox"></div>
+<div class="card" style="margin-top:12px"><h3>Chats nuevos, cotizados y vendidos por día</h3><div class="alto"><canvas id="g-dias"></canvas></div></div><div id="ventasBox"></div>
 <div class="card reportes"><div class="cab"><h3 id="rep-tit" style="margin:0">Reportes diarios</h3><button class="btn" id="generar">Generar ahora</button></div><div id="reps"></div></div>
 </div></div>
 
@@ -3082,7 +3082,11 @@ function pintarWA(d) {
   var dias = Object.keys(d.nuevosPorDia || {}), cuantos = P === "mes" ? 30 : 14; dias = dias.slice(-cuantos);
   var etiq = dias.map(function (x) { var q = x.split("-"); return q[2] + "/" + q[1]; });
   var nombreDia = dias.map(function (x) { return new Date(x + "T12:00:00").toLocaleDateString("es-AR", { weekday: "long", day: "numeric", month: "long" }); });
-  grafico("g-dias", { type: "bar", data: { labels: etiq, datasets: [{ label: "Chats nuevos", data: dias.map(function (x) { return d.nuevosPorDia[x]; }), backgroundColor: dias.map(function (x, i) { return i === dias.length - 1 ? "#1FA855" : "#9FDDB4"; }), borderRadius: 4 }] }, options: Object.assign({}, base, { plugins: { legend: { display: false }, tooltip: { callbacks: { title: function (it) { return nombreDia[it[0].dataIndex]; }, label: function (it) { return it.raw + " chats nuevos"; } } } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 } } } }) });
+    grafico("g-dias", { type: "bar", data: { labels: etiq, datasets: [
+    { type: "bar", label: "Chats nuevos", data: dias.map(function (x) { return d.nuevosPorDia[x]; }), backgroundColor: "#9FDDB4", borderRadius: 4, order: 3, yAxisID: "y" },
+    { type: "line", label: "Cotizados", data: dias.map(function (x) { return (d.cotPorDia || {})[x] || 0; }), borderColor: "#EA5B0C", backgroundColor: "#EA5B0C", tension: 0.3, pointRadius: 3, borderWidth: 2, order: 1, yAxisID: "y1" },
+    { type: "line", label: "Vendidos", data: dias.map(function (x) { return (d.venPorDia || {})[x] || 0; }), borderColor: "#2563EB", backgroundColor: "#2563EB", tension: 0.3, pointRadius: 4, borderWidth: 2, order: 0, yAxisID: "y1" }
+  ] }, options: Object.assign({}, base, { interaction: { mode: "index", intersect: false }, plugins: { legend: { position: "bottom", labels: { boxWidth: 12, font: { size: 12 } } }, tooltip: { callbacks: { title: function (it) { return nombreDia[it[0].dataIndex]; } } } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 }, title: { display: true, text: "Chats nuevos" } }, y1: { position: "right", beginAtZero: true, ticks: { precision: 0 }, grid: { drawOnChartArea: false }, title: { display: true, text: "Cotizados y ventas" } } } }) });
   var t = dd.temp || {};
   grafico("g-temp", { type: "doughnut", data: { labels: ["Caliente", "Tibio", "Frío", "Sin analizar"], datasets: [{ data: [t.caliente || 0, t.tibio || 0, t.frio || 0, t.sin || 0], backgroundColor: ["#DC2626", "#EA5B0C", "#2563EB", "#E5E7EB"], borderWidth: 0 }] }, options: Object.assign({}, base, { cutout: "62%" }) });
   var pr = dd.productos || [];
