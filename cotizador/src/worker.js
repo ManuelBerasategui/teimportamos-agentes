@@ -3121,8 +3121,10 @@ function cargarVentas() {
 }
 function cargarDash() {
   cargarVentas();
-var REPS = [];
-function cargarReportes() {
+  fetch("/panel/api/805/resumen").then(function (r) { return r.json(); }).then(pintarWA).catch(function () { $("#waDash").innerHTML = '<div class="vacio">No se pudieron cargar las métricas de WhatsApp</div>'; });
+  cargarReportes();
+}
+var REPS = [];function cargarReportes() {
   $("#rep-tit").textContent = "Reportes de WhatsApp (diario a las 21:00 y semanal los domingos)";
   fetch("/panel/api/805/reportes").then(function (r) { return r.json(); }).then(function (rs) {
     REPS = rs;
