@@ -58,7 +58,12 @@ export async function prepararLector(env) {
     env.DB.prepare("CREATE TABLE IF NOT EXISTS reportes (id TEXT PRIMARY KEY, tipo TEXT, desde INTEGER, hasta INTEGER, creado INTEGER, datos TEXT)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT, exp INTEGER)"),
   ]);
-  for (const col of ["resp INTEGER", "visto_ts INTEGER DEFAULT 0", "prov INTEGER DEFAULT 0", "visto_esc INTEGER DEFAULT 0", "visto_cot INTEGER DEFAULT 0", "nuevo_ok INTEGER"]) await env.DB.prepare(`ALTER TABLE w_conv ADD COLUMN ${col}`).run().catch(() => {});
+    for (const col of ["resp INTEGER", "visto_ts INTEGER DEFAULT 0", "prov INTEGER DEFAULT 0", "visto_esc INTEGER DEFAULT 0", "visto_cot INTEGER DEFAULT 0", "nuevo_ok INTEGER", "perfil TEXT", "presup_usd INTEGER", "origen TEXT", "motivo TEXT"]) await env.DB.prepare(`ALTER TABLE w_conv ADD COLUMN ${col}`).run().catch(() => {});
+  await env.DB.batch([
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS ag_chat (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, rol TEXT, texto TEXT)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS ag_mem (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, tipo TEXT, texto TEXT)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS ag_obj (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, metrica TEXT, periodo TEXT, meta INTEGER, activo INTEGER DEFAULT 1)"),
+  ]);
   await env.DB.prepare("ALTER TABLE w_hito ADD COLUMN oculto INTEGER DEFAULT 0").run().catch(() => {});
   tablasLector = true;
 }
@@ -265,6 +270,10 @@ REGLAS DEL DUEÑO (mandan por encima de todo lo anterior):${REGLAS_DUENO}
 - Si es_proveedor es true: etapa "no_cliente", puntaje 1, cot_pend false, venta_real false.
 - Consultas por vapers, vapes, pods o tabaco: etapa "no_cliente" (no los trabajamos; los atiende el socio por otro canal).
 - resumen: 1 oración con lo esencial (nombre, producto, cantidad, en qué quedó)
+- perfil: "A" (vende en Mercado Libre o quiere arrancar a vender en serio, con presupuesto claro), "B" (negocio físico, empresa o marca que compra para abaratar costos o insumos), "C" (revendedor chico o emprendedor que arranca, cantidades chicas), "D" (consumidor final, 1 a 3 unidades para uso propio), "E" (curioso: pregunta precio, catálogo o cómo funciona, sin producto ni cantidad concreta, y no avanza). Si pide cantidad mayorista (20 unidades o más, o más de USD 1000) NUNCA es "D". Si es proveedor o no es cliente: "".
+- presup_usd: presupuesto en dólares (número entero) o null. Si no lo dijo, estimalo con cantidad por precio aproximado del producto (ej. 20 iPhones = 16000; 50 tarjetas NFC = 150). Si habla en pesos argentinos, dividí por ${DOLAR}.
+- origen: cómo nos conoció, SOLO si lo dijo en el chat: "reel" | "historia" | "instagram" | "tiktok" | "web" | "recomendacion" | "grupo" | "mercadolibre" | "otro" | null.
+- motivo_perdida: solo si etapa es "perdido" o la charla se cortó después de cotizarle: "caro" | "minimo" (quería menos que el mínimo) | "plazo" | "desconfianza" | "sin_respuesta" (dejó de contestar aunque le escribimos después de cotizar) | "sin_seguimiento" (lo último es nuestra cotización y nunca más le escribimos) | "otro" | null.
 Respondé JSON: {"chats":[{...}]}
 
 ${bloques.join("\n\n")}`);
@@ -273,9 +282,14 @@ ${bloques.join("\n\n")}`);
     for (const a of lista) {
       const c = tanda.find((x) => x.conv === String(a.conv));
       if (!c) continue;
-      ops.push(env.DB.prepare("UPDATE w_conv SET analizado_ts=?, puntaje=?, temp=?, producto=?, etapa=?, accion=?, resumen=?, cot_pend=?, resp=?, prov=? WHERE conv=?")
-        .bind(Date.now(), Math.max(1, Math.min(10, parseInt(a.puntaje) || 1)), String(a.temp || ""), String(a.producto || "").slice(0, 80), String(a.etapa || ""), String(a.accion || "").slice(0, 300) + (a.prioridad ? `|p${a.prioridad}` : ""), String(a.resumen || "").slice(0, 400), a.cot_pend ? 1 : 0, a.necesita_respuesta === false ? 0 : 1, a.es_proveedor ? 1 : 0, c.conv));
-      if (a.es_proveedor) ops.push(env.DB.prepare("UPDATE w_hito SET oculto=1 WHERE conv=? AND tipo='venta'").bind(c.conv));
+      let perfil = ["A", "B", "C", "D", "E"].includes(String(a.perfil || "").toUpperCase()) ? String(a.perfil).toUpperCase() : null;
+      const presup = Number.isFinite(+a.presup_usd) && +a.presup_usd > 0 ? Math.min(500000, Math.round(+a.presup_usd)) : null;
+      if (perfil === "D" && presup >= 1000) perfil = "C";
+      if (a.es_proveedor) perfil = null;
+      const origen = ["reel", "historia", "instagram", "tiktok", "web", "recomendacion", "grupo", "mercadolibre", "otro"].includes(a.origen) ? a.origen : null;
+      const motivo = ["caro", "minimo", "plazo", "desconfianza", "sin_respuesta", "sin_seguimiento", "otro"].includes(a.motivo_perdida) ? a.motivo_perdida : null;
+      ops.push(env.DB.prepare("UPDATE w_conv SET analizado_ts=?, puntaje=?, temp=?, producto=?, etapa=?, accion=?, resumen=?, cot_pend=?, resp=?, prov=?, perfil=?, presup_usd=?, origen=COALESCE(?, origen), motivo=? WHERE conv=?")
+        .bind(Date.now(), Math.max(1, Math.min(10, parseInt(a.puntaje) || 1)), String(a.temp || ""), String(a.producto || "").slice(0, 80), String(a.etapa || ""), String(a.accion || "").slice(0, 300) + (a.prioridad ? `|p${a.prioridad}` : ""), String(a.resumen || "").slice(0, 400), a.cot_pend ? 1 : 0, a.necesita_respuesta === false ? 0 : 1, a.es_proveedor ? 1 : 0, perfil, presup, origen, motivo, c.conv));      if (a.es_proveedor) ops.push(env.DB.prepare("UPDATE w_hito SET oculto=1 WHERE conv=? AND tipo='venta'").bind(c.conv));
       ops.push(...pendienteOps(env, c, a.es_proveedor || a.etapa === "no_cliente" ? null : a.pendiente));
       hechos++;
     }
@@ -560,6 +574,8 @@ export async function cronLector(env, iaJSON, scheduledTime) {
     }
   }
   if (m % 30 === 3) await alertasRapidas(env).catch((e) => console.log("lector alertas", e?.stack || e));
+  if (!(await kvGet(env, "perfil_v1"))) { await env.DB.prepare("UPDATE w_conv SET analizado_ts=0 WHERE grupo=0 AND ult_ts>=?").bind(Date.now() - 14 * 86400e3).run(); await kvPut(env, "perfil_v1", Date.now()); }
+  if (hAR === 10 && m >= 5 && m < 20) await avisoSeguimientos(env).catch((e) => console.log("lector seguimientos", e?.stack || e));
   // Reporte diario: desde las 21 h; si falla o se saltea, reintenta cada 10 min y se recupera durante todo el día siguiente
   {
     const ref = hAR >= 21 ? scheduledTime : scheduledTime - 86400e3;
@@ -709,7 +725,9 @@ export async function apiLector(env, req, url, iaJSON) {
     return json(filas.map((f) => ({ ...f, datos: JSON.parse(f.datos || "{}") })));
   }
   if (r === "telegram" && req.method === "POST") return json(await vincularTelegram(env));
-  if (r === "preguntar" && req.method === "POST") { const b = await req.json().catch(() => ({})); return json(await preguntarAsistente(env, iaJSON, b.pregunta, b.historial)); }
+    if (r === "preguntar" && req.method === "POST") { const b = await req.json().catch(() => ({})); return json(await preguntarVendedor(env, iaJSON, b.pregunta)); }
+  if (r === "seguimiento") return json(await seguimientos(env));
+  if (r === "objetivos") return json(await avanceObjetivos(env));
   if (r === "reparar" && req.method === "POST") { const corregidos = await repararPropios(env); return json({ ok: true, corregidos, cotizaciones: await recalcularCotizaciones(env) }); }
   if (r === "qr") { const q = JSON.parse((await kvGet(env, "lector_qr")) || "null"); return json(q && Date.now() - q.ts < 90e3 ? q : { qr: "", estado: q?.estado === "paired" ? "paired" : "" }); }
   if (r === "probar-alertas" && req.method === "POST") return json({ ok: true, alertas: await alertasRapidas(env) });
@@ -743,4 +761,152 @@ ${(ia.difusion || []).length ? `<h3>Para mandar en los grupos</h3>${ia.difusion.
 <p class="np" style="margin-top:24px"><button onclick="print()" style="background:#EA5B0C;color:#fff;border:0;border-radius:8px;padding:10px 16px;font-weight:700;cursor:pointer">Guardar como PDF</button></p>
 <script>setTimeout(()=>print(),400)</script></body></html>`;
   return new Response(html, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+}
+
+// ---------------------------------------------------------------------------
+// 10) Jefe de ventas: perfiles, seguimiento, objetivos y memoria (un solo agente)
+// ---------------------------------------------------------------------------
+const DOLAR = 1450;   // pesos por dólar para estimar presupuestos (ajustalo cada tanto)
+const METRICAS_OBJ = ["chats_nuevos", "chats_ab", "cotizaciones", "chats_cotizados", "ventas"];
+
+// Cotizados que no respondieron: reglas en código (día 1, después cada 2 días, después cada 3, hasta 12 días)
+export async function seguimientos(env) {
+  const ahora = Date.now();
+  const filas = (await env.DB.prepare(`SELECT c.conv, c.nombre, c.perfil, c.presup_usd, c.producto, c.etapa, c.ult_yo_ts, c.ult_texto, MAX(h.ts) cot_ts
+    FROM w_hito h JOIN w_conv c ON c.conv=h.conv
+    WHERE h.tipo='cotizacion' AND h.ts>=? AND c.grupo=0 AND c.archivado=0 AND COALESCE(c.prov,0)=0 AND c.ult_yo=1
+      AND COALESCE(c.etapa,'') NOT IN ('vendido','perdido','no_cliente')
+      AND NOT EXISTS (SELECT 1 FROM w_hito v WHERE v.conv=c.conv AND v.tipo='venta' AND v.ts>=? AND COALESCE(v.oculto,0)=0)
+    GROUP BY c.conv LIMIT 200`).bind(ahora - 12 * 86400e3, ahora - 12 * 86400e3).all()).results || [];
+  const lista = [];
+  for (const f of filas) {
+    const dCot = (ahora - f.cot_ts) / 86400e3, dYo = (ahora - (f.ult_yo_ts || 0)) / 86400e3;
+    const espera = dCot < 3 ? 1 : dCot < 7 ? 2 : 3;
+    if (dYo < espera) continue;
+    lista.push({ ...f, dias_cot: Math.floor(dCot), dias_sin: Math.floor(dYo), pri: { A: 0, B: 0, C: 1, D: 2, E: 3 }[f.perfil] ?? 2 });
+  }
+  return lista.sort((a, b) => a.pri - b.pri || (b.presup_usd || 0) - (a.presup_usd || 0)).slice(0, 40);
+}
+
+// Chats, cotizados y ventas por perfil, de dónde vienen y por qué se pierden
+export async function metricasPerfil(env, desde) {
+  const all = async (sql, ...b) => (await env.DB.prepare(sql).bind(...b).all()).results || [];
+  const base = "FROM w_conv c WHERE c.ult_ts>=? AND c.grupo=0 AND COALESCE(c.prov,0)=0 AND COALESCE(c.etapa,'')<>'no_cliente'";
+  const [perfiles, origen, motivos] = await Promise.all([
+    all(`SELECT COALESCE(c.perfil,'sin') perfil, COUNT(*) chats,
+      SUM(CASE WHEN EXISTS (SELECT 1 FROM w_hito h WHERE h.conv=c.conv AND h.tipo='cotizacion' AND h.ts>=?) THEN 1 ELSE 0 END) cotizados,
+      SUM(CASE WHEN EXISTS (SELECT 1 FROM w_hito h WHERE h.conv=c.conv AND h.tipo='venta' AND h.ts>=? AND COALESCE(h.oculto,0)=0) THEN 1 ELSE 0 END) ventas,
+      SUM(COALESCE(c.presup_usd,0)) usd ${base} GROUP BY 1`, desde, desde, desde),
+    all(`SELECT c.origen, COALESCE(c.perfil,'sin') perfil, COUNT(*) n ${base} AND c.origen IS NOT NULL GROUP BY 1, 2`, desde),
+    all(`SELECT c.motivo, COUNT(*) n ${base} AND c.motivo IS NOT NULL GROUP BY 1`, desde),
+  ]);
+  return { perfiles, origen, motivos };
+}
+
+// Objetivos activos con su avance (los mide el código, no la IA)
+export async function avanceObjetivos(env) {
+  const objs = (await env.DB.prepare("SELECT * FROM ag_obj WHERE activo=1 ORDER BY id").all()).results || [];
+  if (!objs.length) return [];
+  const hoy = inicioDiaAR(), desdes = { dia: hoy, semana: hoy - 6 * 86400e3, mes: hoy - 29 * 86400e3 }, cache = {};
+  for (const o of objs) {
+    const per = desdes[o.periodo] ? o.periodo : "semana";
+    if (!cache[per]) {
+      const m = await metricas(env, desdes[per]);
+      const ab = await env.DB.prepare("SELECT COUNT(*) n FROM w_conv WHERE primer_ts>=? AND grupo=0 AND perfil IN ('A','B') AND COALESCE(nuevo_ok,1)=1").bind(desdes[per]).first();
+      cache[per] = { chats_nuevos: m.nuevos, chats_ab: ab?.n || 0, cotizaciones: m.cotizaciones, chats_cotizados: m.chatsCotizados, ventas: m.ventas };
+    }
+    o.periodo = per; o.actual = cache[per][o.metrica] ?? 0; o.pct = o.meta ? Math.round((o.actual * 100) / o.meta) : 0;
+  }
+  return objs;
+}
+
+// Telegram a las 10 h: seguimientos del día (una vez por día)
+export async function avisoSeguimientos(env) {
+  const k = "seg_tg:" + diaAR(Date.now());
+  if (await kvGet(env, k)) return 0;
+  await kvPut(env, k, Date.now());
+  const s = await seguimientos(env);
+  if (!s.length) return 0;
+  const top = s.slice(0, 8).map((f) => `- ${f.nombre || telefono(f.conv)}${f.perfil ? " (" + f.perfil + ")" : ""} · ${f.producto || "-"}${f.presup_usd ? " · aprox USD " + f.presup_usd : ""} · cotizado hace ${f.dias_cot} d`);
+  await telegram(env, `Seguimientos de hoy: ${s.length}\n${top.join("\n")}\nPedile al agente: "pasame los mensajes de seguimiento de hoy"\n${(env.PUBLIC_URL || "https://cotizador.berasateguimanuel07.workers.dev") + "/panel"}`);
+  return s.length;
+}
+
+// El agente: asistente de WhatsApp + jefe de ventas, con memoria liviana en D1
+export async function preguntarVendedor(env, iaJSON, pregunta) {
+  await prepararLector(env);
+  const q = String(pregunta || "").slice(0, 1000);
+  const ahora = Date.now(), hoy = inicioDiaAR(ahora);
+  const all = async (sql, ...b) => (await env.DB.prepare(sql).bind(...b).all()).results || [];
+  if (/^(borr|olvid)[aá]\s+(toda\s+)?la\s+memoria/i.test(q.trim())) {
+    await env.DB.batch([env.DB.prepare("DELETE FROM ag_mem"), env.DB.prepare("DELETE FROM ag_chat")]);
+    return { respuesta: "Listo, borré la memoria y la charla. Arrancamos de cero." };
+  }
+  const [mHoy, m7, m30, p7, p30, segs, objs, mem, charla] = await Promise.all([
+    metricas(env, hoy), metricas(env, hoy - 6 * 86400e3), metricas(env, hoy - 29 * 86400e3),
+    metricasPerfil(env, hoy - 6 * 86400e3), metricasPerfil(env, hoy - 29 * 86400e3),
+    seguimientos(env), avanceObjetivos(env),
+    all("SELECT tipo, texto, ts FROM ag_mem ORDER BY ts DESC LIMIT 60"),
+    all("SELECT rol, texto FROM ag_chat ORDER BY id DESC LIMIT 12"),
+  ]);
+  const chats = await all("SELECT conv, nombre, perfil, presup_usd, origen, motivo, puntaje, producto, etapa, accion, resumen, ult_yo, ult_ts, cot_pend FROM w_conv WHERE grupo=0 AND archivado=0 AND COALESCE(prov,0)=0 AND COALESCE(etapa,'')<>'no_cliente' AND ult_ts>=? ORDER BY CASE WHEN perfil IN ('A','B') THEN 0 ELSE 1 END, COALESCE(presup_usd,0) DESC, COALESCE(puntaje,0) DESC LIMIT 120", hoy - 13 * 86400e3);
+  const palabras = [...new Set(normalQ(q).split(/[^a-z0-9ñ]+/).filter((w) => w.length > 3 && !VACIAS_Q.has(w)))].slice(0, 3);
+  let hallados = [];
+  for (const w of palabras) {
+    const raiz = w.replace(/(es|s)$/, "");
+    hallados.push(...(await all("SELECT m.conv, c.nombre, m.yo, m.texto, m.ts FROM w_msg m LEFT JOIN w_conv c ON c.conv=m.conv WHERE m.ts>=? AND m.grupo=0 AND lower(m.texto) LIKE ? ORDER BY m.ts DESC LIMIT 30", ahora - 14 * 86400e3, `%${raiz}%`)));
+  }
+  const vistos = new Set(); hallados = hallados.filter((h) => { const k = h.conv + h.ts; if (vistos.has(k)) return false; vistos.add(k); return true; }).slice(0, 60);
+  const fChat = (c) => `- ${c.nombre || "sin nombre"} (+${c.conv}) · perfil ${c.perfil || "?"}${c.presup_usd ? " · aprox USD " + c.presup_usd : ""} · ${c.puntaje ?? "?"}/10 · ${c.producto || "-"} · ${c.etapa || "-"}${c.cot_pend ? " · ESPERA COTIZACION" : ""}${!c.ult_yo ? " · SIN RESPONDER" : ""}${c.origen ? " · vino de " + c.origen : ""}${c.motivo ? " · se perdió por " + c.motivo : ""} · último ${fechaHora(c.ult_ts)}${c.resumen ? " · " + c.resumen : ""}${c.accion ? " · pendiente: " + String(c.accion).replace(/\|p\d$/, "") : ""}`;
+  const contexto = `MEMORIA (notas guardadas de charlas anteriores, la más nueva primero):
+${mem.map((n) => `- [${fechaHora(n.ts)}] (${n.tipo}) ${n.texto}`).join("\n") || "vacía"}
+OBJETIVOS ACTIVOS Y AVANCE (medidos por el código): ${JSON.stringify(objs.map((o) => ({ metrica: o.metrica, periodo: o.periodo, meta: o.meta, actual: o.actual, pct: o.pct })))}
+METRICAS EXACTAS · hoy: ${JSON.stringify(mHoy)} · 7 dias: ${JSON.stringify(m7)} · 30 dias: ${JSON.stringify(m30)}
+POR PERFIL (A Mercado Libre/con presupuesto, B negocio, C revendedor chico, D consumidor final, E curioso) · 7 dias: ${JSON.stringify(p7)} · 30 dias: ${JSON.stringify(p30)}
+SEGUIMIENTOS PENDIENTES HOY (cotizados que no respondieron, ordenados por prioridad):
+${segs.slice(0, 25).map((s) => `- ${s.nombre || "sin nombre"} (+${s.conv}) · perfil ${s.perfil || "?"} · ${s.producto || "-"}${s.presup_usd ? " · aprox USD " + s.presup_usd : ""} · cotizado hace ${s.dias_cot} d · sin escribirle hace ${s.dias_sin} d · nuestro último mensaje: "${String(s.ult_texto || "").slice(0, 100)}"`).join("\n") || "ninguno"}
+CHATS DE LOS ULTIMOS 14 DIAS (primero A y B):
+${chats.map(fChat).join("\n").slice(0, 30000)}
+MENSAJES QUE COINCIDEN CON LA PREGUNTA (${palabras.join(", ") || "ninguna palabra clave"}):
+${hallados.map((h) => `[${fechaHora(h.ts)}] ${h.nombre || "sin nombre"} (+${h.conv}) ${h.yo ? "NOSOTROS" : "CLIENTE"}: ${String(h.texto).slice(0, 250)}`).join("\n").slice(0, 15000) || "ninguno"}`;
+  const previa = charla.reverse().map((h) => `${h.rol === "u" ? "MANUEL" : "VOS"}: ${String(h.texto).slice(0, 700)}`).join("\n");
+  const r = await iaJSON(env, `Sos el JEFE DE VENTAS de "Te Importamos" (importación por encargo desde China y EE.UU., Rosario, Argentina). Hablás con Manuel, el dueño. Ahora es ${fechaHora(ahora)} (hora Argentina).
+Tu objetivo: que cerremos más ventas con el cliente ideal, perfil A (vende o quiere vender en Mercado Libre con USD 1.000 a 3.000) y perfil B (negocio que quiere abaratar costos). Los curiosos (E) no son prioridad.
+Cómo cotizamos China: total = (FOB + flete + handling USD 30) x 1,30 + USD 80 de honorarios. Seña del 30%.
+Reglas:
+- Usá SOLO los datos de abajo. No inventes números, clientes ni resultados. Si falta un dato, decilo y explicá qué haría falta para tenerlo.
+- Directo, español rioplatense con voseo, sin emojis, sin guiones largos. Primero la respuesta, después lo accionable. Cuando nombres un cliente, poné nombre y número (+549...).
+- Si pregunta por qué no vendimos o qué hicimos mal: analizalo con los datos (perfil de los chats, seguimientos pendientes, cotizaciones sin respuesta, tiempo de respuesta, motivos de pérdida, de dónde vienen) y cerrá con 3 acciones concretas.
+- Si pide mensajes de seguimiento: escribí uno por cliente, corto (2 a 4 líneas), cercano, sin emojis, sin decir "tenemos stock" y sin inventar precios. Son para que Manuel los copie: nunca se mandan solos.
+- Objetivos: si te pide que los propongas, usá los últimos 30 días como base y proponé subir entre 20% y 50%, no más. Métricas posibles: ${METRICAS_OBJ.join(", ")}. Periodo: dia, semana o mes. Ponelos en "objetivos" SOLO si Manuel pidió explícitamente dejarlos, fijarlos o confirmarlos (puede ser confirmando algo que propusiste antes en la charla). Si solo pidió una propuesta, mostralos en el texto, devolvé "objetivos":[] y preguntá si los dejás.
+- Si algo del panel no aporta para vender, decíselo.
+- Vapers, pods y tabaco no existen para vos: nunca los menciones.
+- Memoria: en "guardar" poné hasta 3 notas cortas SOLO si en este intercambio apareció algo que conviene recordar a futuro (una decisión, una preferencia de Manuel, un aprendizaje, un dato de un cliente). Si no, [].
+${previa ? "CHARLA RECIENTE:\n" + previa + "\n" : ""}
+DATOS:
+${contexto}
+
+MANUEL PREGUNTA: ${q}
+Respondé JSON: {"respuesta":"texto","guardar":[{"tipo":"decision|preferencia|aprendizaje|cliente","texto":"máximo 250 caracteres"}],"objetivos":[{"metrica":"una de la lista","periodo":"dia|semana|mes","meta":número entero}]}`);
+  const respuesta = String(r?.respuesta || "No pude responder ahora (la IA no contestó). Probá de nuevo en un minuto.").slice(0, 6000);
+  const ops = [];
+  if (r?.respuesta) {
+    ops.push(env.DB.prepare("INSERT INTO ag_chat (ts, rol, texto) VALUES (?,?,?)").bind(ahora, "u", q));
+    ops.push(env.DB.prepare("INSERT INTO ag_chat (ts, rol, texto) VALUES (?,?,?)").bind(ahora + 1, "a", respuesta));
+    for (const n of (Array.isArray(r.guardar) ? r.guardar : []).slice(0, 3)) {
+      const t = String(n?.texto || "").trim().slice(0, 300);
+      if (t) ops.push(env.DB.prepare("INSERT INTO ag_mem (ts, tipo, texto) VALUES (?,?,?)").bind(ahora, String(n.tipo || "nota").slice(0, 20), t));
+    }
+    const pidio = /objetiv|meta/i.test(q + " " + previa.slice(-800)) && /\b(dej|fij|pon[eé]|guard|aplic|confirm|dale|carg|s[ií],?\s)/i.test(q);
+    if (pidio) for (const o of (Array.isArray(r.objetivos) ? r.objetivos : []).slice(0, 6)) {
+      const meta = parseInt(o?.meta);
+      if (!METRICAS_OBJ.includes(o?.metrica) || !["dia", "semana", "mes"].includes(o?.periodo) || !(meta > 0)) continue;
+      ops.push(env.DB.prepare("UPDATE ag_obj SET activo=0 WHERE metrica=? AND periodo=?").bind(o.metrica, o.periodo));
+      ops.push(env.DB.prepare("INSERT INTO ag_obj (ts, metrica, periodo, meta, activo) VALUES (?,?,?,?,1)").bind(ahora, o.metrica, o.periodo, meta));
+    }
+    ops.push(env.DB.prepare("DELETE FROM ag_chat WHERE id NOT IN (SELECT id FROM ag_chat ORDER BY id DESC LIMIT 40)"));
+    ops.push(env.DB.prepare("DELETE FROM ag_mem WHERE id NOT IN (SELECT id FROM ag_mem ORDER BY id DESC LIMIT 80)"));
+    await env.DB.batch(ops);
+  }
+  return { respuesta, fuentes: { chats: chats.length, mensajes: hallados.length, seguimientos: segs.length } };
 }
