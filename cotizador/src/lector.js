@@ -677,7 +677,16 @@ export async function apiLector(env, req, url, iaJSON) {
       dist[k] = { temp: t, etapa: e, puntaje: pu, productos: prods };
     }
     for (const s of serie) { const k = diaAR(s.ts); if (k in porDia) porDia[k]++; }
-    const d = { dist, dia, semana, mes, ...l, estado, ultimo: +(await kvGet(env, "lector_ultimo")) || null, telegram: !!(env.TELEGRAM_TOKEN && (env.TELEGRAM_CHAT || (await kvGet(env, "telegram_chat")))), configurado: !!env.LECTOR_TOKEN, productos, nuevosPorDia: porDia };
+    const cotPorDia = {}, venPorDia = {}, cotVistos = new Set();
+    for (const k in porDia) { cotPorDia[k] = 0; venPorDia[k] = 0; }
+    const hitosDia = (await env.DB.prepare("SELECT h.tipo, h.ts, h.conv FROM w_hito h LEFT JOIN w_conv c ON c.conv=h.conv WHERE h.tipo IN ('cotizacion','venta') AND h.ts>=? AND COALESCE(h.oculto,0)=0 AND COALESCE(c.prov,0)=0").bind(hoy - 29 * 86400e3).all()).results || [];
+    for (const h of hitosDia) {
+      const k = diaAR(h.ts);
+      if (!(k in porDia)) continue;
+      if (h.tipo === "venta") venPorDia[k]++;
+      else if (!cotVistos.has(k + h.conv)) { cotVistos.add(k + h.conv); cotPorDia[k]++; }
+    }
+    const d = { dist, dia, semana, mes, ...l, estado, ultimo: +(await kvGet(env, "lector_ultimo")) || null, telegram: !!(env.TELEGRAM_TOKEN && (env.TELEGRAM_CHAT || (await kvGet(env, "telegram_chat")))), configurado: !!env.LECTOR_TOKEN, productos, nuevosPorDia: porDia, cotPorDia, venPorDia };
     await kvPut(env, "lector_resumen", JSON.stringify({ ts: Date.now(), d }));
     return json(d);
   }
