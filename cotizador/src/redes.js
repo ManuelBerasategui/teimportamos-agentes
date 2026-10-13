@@ -413,6 +413,7 @@ header b{color:#fff;font-size:17px;white-space:nowrap}header b span{color:var(--
 .modos .ico{position:relative;display:inline-flex}.modos .ic{width:20px;height:20px;vertical-align:0}.modos .ct{display:none}.modos .lg{white-space:nowrap}
 .modos .bd{position:absolute;top:-8px;left:-13px;min-width:18px;height:18px;padding:0 5px;border-radius:99px;background:var(--rojo);color:#fff;font-size:11px;line-height:18px;text-align:center;font-weight:800;box-shadow:0 0 0 2px #fff}
 .modos button.on .bd{box-shadow:0 0 0 2px var(--nar)}
+.modos-sub{display:flex;gap:6px;margin:-5px 0 14px;overflow-x:auto;scrollbar-width:none}.modos-sub button{flex:none;border:1px solid var(--borde);background:#fff;border-radius:999px;padding:7px 12px;color:var(--gris);font:600 13px system-ui;cursor:pointer}.modos-sub button.on{background:#ffedd5;border-color:#fdba74;color:#9a3412}
 .barraher{display:flex;gap:8px;align-items:center}.barraher select{flex:none;max-width:none;padding:9px 10px;font-size:14px;border-radius:8px}.ayuda{margin:8px 0 12px}
 .chips{display:flex;gap:8px;margin-top:8px;overflow-x:auto;padding-bottom:4px;scrollbar-width:none}.chips::-webkit-scrollbar{display:none}.chips .btn{white-space:nowrap;border-radius:99px;flex:none}
 .espacio{display:flex;align-items:center;gap:10px;margin-bottom:12px}.espacio .estado{white-space:nowrap}.espacio .barra{flex:1}
@@ -478,6 +479,7 @@ ${CARR_CSS}
   header{padding:10px 12px;gap:8px}header b{font-size:16px}.volver span{display:none}.sync{font-size:11px;max-width:40%}
   .modos{position:fixed;left:0;right:0;bottom:0;z-index:10;margin:0;gap:0;background:#0B0B0B;padding:6px 4px calc(6px + env(safe-area-inset-bottom));box-shadow:0 -2px 12px rgba(0,0,0,.25)}
   .modos button{flex-direction:column;gap:3px;border:0;background:none;color:#9CA3AF;padding:6px 2px;border-radius:10px;font-size:11px;font-weight:600}
+  .modos-sub{position:sticky;top:48px;z-index:4;background:var(--fondo);padding:7px 0;margin:0 0 10px}
   .modos button.on{background:none;color:var(--nar)}.modos button.on .ico{background:rgba(234,91,12,.16)}
   .modos .ico{padding:3px 12px;border-radius:99px}.modos .ic{width:22px;height:22px}
   .modos .lg{display:none}.modos .ct{display:block}
@@ -505,7 +507,9 @@ ${CARR_CSS}
 </style></head><body>
 <header><a class="volver" href="/panel" aria-label="Volver al panel"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg><span>Panel</span></a><b>Te Importamos · <span>Redes</span></b><span class="sync" id="sync"></span></header>
 <main>
-<nav class="modos" id="modos"><button data-m="resumen" class="on"><span class="ico"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 20h18"/><rect x="5" y="11" width="3" height="6" rx="1"/><rect x="10.5" y="7" width="3" height="10" rx="1"/><rect x="16" y="4" width="3" height="13" rx="1"/></svg></span><span class="lg">Resumen</span><span class="ct">Resumen</span></button><button data-m="ideas"><span class="ico"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21.5h4"/><path d="M12 2.5a6.5 6.5 0 0 0-3.9 11.7c.6.5.9 1.2.9 1.9V17h6v-.9c0-.7.3-1.4.9-1.9A6.5 6.5 0 0 0 12 2.5z"/></svg><span class="bd" id="bIdeas" style="display:none"></span></span><span class="lg">Ideas para grabar</span><span class="ct">Ideas</span></button><button data-m="dms"><span class="ico"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 12a8.5 8.5 0 0 1-12.3 7.6L3.5 21l1.4-4.6A8.5 8.5 0 1 1 20.5 12z"/></svg><span class="bd" id="bDms" style="display:none"></span></span><span class="lg">DMs sin responder</span><span class="ct">DMs</span></button><button data-m="videos"><span class="ico"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="13" height="12" rx="2.5"/><path d="M15.5 10.2l6-3.2v10l-6-3.2z"/></svg><span class="bd" id="bVid" style="display:none"></span></span><span class="lg">Videos</span><span class="ct">Videos</span></button><button data-m="carr"><span class="ico"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="4" width="11" height="16" rx="2.5"/><path d="M3 7v10M21 7v10"/></svg></span><span class="lg">Carruseles</span><span class="ct">Carrusel</span></button><button data-m="reels"><span class="ico"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4.5"/><path d="M3 8.5h18M8.5 3l2.5 5.5M14 3l2.5 5.5"/><path d="M10.2 12.2v5.6l4.8-2.8z"/></svg></span><span class="lg">Reels</span><span class="ct">Reels</span></button><button data-m="agente"><span class="ico"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="8" width="16" height="12" rx="3.5"/><path d="M12 8V4.5"/><circle cx="12" cy="3.5" r="1"/><path d="M9 13.5v1.5M15 13.5v1.5M1.5 13v3M22.5 13v3"/></svg></span><span class="lg">Preguntale al agente</span><span class="ct">Agente</span></button></nav>
+<nav class="modos" id="modos-main"><button data-view="resumen" class="on">Inicio</button><button data-view="contenido">Contenido</button><button data-view="dms">Mensajes <span class="bd" id="bDmsMain" style="display:none"></span></button><button data-view="agente">Agente</button></nav>
+<nav class="modos-sub" id="modos-sub" style="display:none"><button data-sub="ideas">Ideas e historias</button><button data-sub="videos">Videos</button><button data-sub="carr">Carruseles</button><button data-sub="reels">Rendimiento</button></nav>
+<nav class="modos" id="modos" style="display:none!important"><button data-m="resumen" class="on"><span class="ico"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 20h18"/><rect x="5" y="11" width="3" height="6" rx="1"/><rect x="10.5" y="7" width="3" height="10" rx="1"/><rect x="16" y="4" width="3" height="13" rx="1"/></svg></span><span class="lg">Resumen</span><span class="ct">Resumen</span></button><button data-m="ideas"><span class="ico"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21.5h4"/><path d="M12 2.5a6.5 6.5 0 0 0-3.9 11.7c.6.5.9 1.2.9 1.9V17h6v-.9c0-.7.3-1.4.9-1.9A6.5 6.5 0 0 0 12 2.5z"/></svg><span class="bd" id="bIdeas" style="display:none"></span></span><span class="lg">Ideas para grabar</span><span class="ct">Ideas</span></button><button data-m="dms"><span class="ico"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 12a8.5 8.5 0 0 1-12.3 7.6L3.5 21l1.4-4.6A8.5 8.5 0 1 1 20.5 12z"/></svg><span class="bd" id="bDms" style="display:none"></span></span><span class="lg">DMs sin responder</span><span class="ct">DMs</span></button><button data-m="videos"><span class="ico"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="13" height="12" rx="2.5"/><path d="M15.5 10.2l6-3.2v10l-6-3.2z"/></svg><span class="bd" id="bVid" style="display:none"></span></span><span class="lg">Videos</span><span class="ct">Videos</span></button><button data-m="carr"><span class="ico"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="4" width="11" height="16" rx="2.5"/><path d="M3 7v10M21 7v10"/></svg></span><span class="lg">Carruseles</span><span class="ct">Carrusel</span></button><button data-m="reels"><span class="ico"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4.5"/><path d="M3 8.5h18M8.5 3l2.5 5.5M14 3l2.5 5.5"/><path d="M10.2 12.2v5.6l4.8-2.8z"/></svg></span><span class="lg">Reels</span><span class="ct">Reels</span></button><button data-m="agente"><span class="ico"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="8" width="16" height="12" rx="3.5"/><path d="M12 8V4.5"/><circle cx="12" cy="3.5" r="1"/><path d="M9 13.5v1.5M15 13.5v1.5M1.5 13v3M22.5 13v3"/></svg></span><span class="lg">Preguntale al agente</span><span class="ct">Agente</span></button></nav>
 
 <div id="m-resumen">
   <div class="nota" id="sinDatos" style="display:none">Todavía no hay datos guardados. El agente de Instagram los trae solo cada 2 horas, o tocá <b>Traer datos ahora</b>.</div>
@@ -577,13 +581,20 @@ function num(v) { return v == null ? "-" : Math.round(v).toLocaleString("es-AR")
 function hace(ms) { if (!ms) return "nunca"; var m = Math.round((Date.now() - ms) / 60000); return m < 60 ? "hace " + m + " min" : m < 1440 ? "hace " + Math.round(m / 60) + " h" : "hace " + Math.round(m / 1440) + " d"; }
 function fecha(ts) { var d = new Date(ts); return d.toLocaleDateString("es-AR", { day: "2-digit", month: "2-digit" }) + " " + d.toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }); }
 function cambio(v) { return v == null ? "" : '<i class="' + (v >= 0 ? "sube" : "baja") + '">' + (v >= 0 ? "+" : "") + v + "% vs semana anterior</i>"; }
+var ultimoContenido = "ideas", vistasContenido = ["ideas", "videos", "carr", "reels"];
 function modo(m) {
-  document.querySelectorAll("#modos button").forEach(function (b) { b.classList.toggle("on", b.dataset.m === m); });
+  if (m === "contenido") m = ultimoContenido;
+  var enContenido = vistasContenido.indexOf(m) >= 0, principal = enContenido ? "contenido" : m;
+  document.querySelectorAll("#modos-main button").forEach(function (b) { b.classList.toggle("on", b.dataset.view === principal); });
+  document.querySelectorAll("#modos-sub button").forEach(function (b) { b.classList.toggle("on", b.dataset.sub === m); });
+  $("#modos-sub").style.display = enContenido ? "" : "none";
   ["resumen", "ideas", "dms", "videos", "carr", "reels", "agente"].forEach(function (x) { $("#m-" + x).style.display = x === m ? "" : "none"; });
+  if (enContenido) ultimoContenido = m;
   if (location.hash.slice(1) !== m) history.replaceState(null, "", "#" + m);
   if (m === "ideas") ideasTipo(IDEAS_K); if (m === "dms") cargarDms(); if (m === "reels") cargarReels(); if (m === "videos") cargarVideos(); if (m === "carr") cargarCarr(); if (m === "agente") pintarHilo();
 }
-document.querySelectorAll("#modos button").forEach(function (b) { b.onclick = function () { modo(b.dataset.m); }; });
+document.querySelectorAll("#modos-main button").forEach(function (b) { b.onclick = function () { modo(b.dataset.view); }; });
+document.querySelectorAll("#modos-sub button").forEach(function (b) { b.onclick = function () { modo(b.dataset.sub); }; });
 
 function cargarResumen() {
   api("resumen").then(function (r) {
@@ -592,7 +603,7 @@ function cargarResumen() {
     $("#sync").textContent = "Datos de Instagram: " + hace(r.sync_ts);
     $("#kpis").innerHTML = [["Alcance 7 días", num(k.alcance7), cambio(k.alcance7_cambio)], ["Seguidores nuevos 7 días", num(k.seguidores7), k.seguidores_total ? "<i>" + num(k.seguidores_total) + " en total</i>" : ""],
       ["Guardados 7 días", num(k.guardados7), cambio(k.guardados7_cambio)], ["DMs sin responder", r.dms_error ? "?" : num(k.dms_pendientes), r.dms_error ? '<i class="baja">falta permiso</i>' : ""]].map(function (x) { return '<div class="kpi"><small>' + x[0] + "</small><b>" + x[1] + "</b>" + x[2] + "</div>"; }).join("");
-    badge("#bIdeas", (r.ideas_nuevas || 0) + (r.historias_nuevas || 0)); $("#bIR").textContent = r.ideas_nuevas || ""; $("#bIH").textContent = r.historias_nuevas || ""; badge("#bDms", r.dms_error ? 0 : k.dms_pendientes);
+    badge("#bIdeas", (r.ideas_nuevas || 0) + (r.historias_nuevas || 0)); $("#bIR").textContent = r.ideas_nuevas || ""; $("#bIH").textContent = r.historias_nuevas || ""; badge("#bDmsMain", r.dms_error ? 0 : k.dms_pendientes);
     if (r.reporte) { $("#reporte").className = "reporte"; $("#reporte").textContent = String(r.reporte.texto || "").replace(/^[\u2600-\u27BF\uD83C-\uDBFF\uDC00-\uDFFF\uFE0F]+\s*/, ""); $("#repFecha").textContent = fecha(r.reporte.ts); }
     var f = r.formatos || [];
     $("#formatos").className = "tabla cards"; $("#formatos").innerHTML = f.length ? "<table><tr><th>Formato</th><th class=\"n\">Reels</th><th class=\"n\">Alcance mediano</th><th class=\"n\">Mejor</th><th class=\"n\">Tiempo visto</th><th class=\"n\">Guardados cada mil</th></tr>" + f.map(function (x) {
@@ -832,8 +843,8 @@ VAPI("estado").then(function (r) { if (r.videos) badge("#bVid", r.videos.filter(
 
 ${CARR_JS}
 cargarResumen();
-api("dms").then(function (r) { badge("#bDms", r.error ? 0 : r.dms.length); }).catch(function () {});
-function desdeHash() { var h = location.hash.slice(1); modo(["resumen", "ideas", "dms", "videos", "carr", "reels", "agente"].indexOf(h) >= 0 ? h : "resumen"); }
+api("dms").then(function (r) { badge("#bDmsMain", r.error ? 0 : r.dms.length); }).catch(function () {});
+function desdeHash() { var h = location.hash.slice(1); modo(["resumen", "ideas", "dms", "videos", "carr", "reels", "agente", "contenido"].indexOf(h) >= 0 ? h : "resumen"); }
 window.addEventListener("hashchange", desdeHash);
 desdeHash();
 </script></body></html>`;
