@@ -2,10 +2,9 @@
 // publicación en Instagram y limpieza. Correr desde cotizador/: node ../tests/sim-carruseles.mjs
 import { DatabaseSync } from "node:sqlite";
 import fs from "fs";
-const dir = fs.mkdtempSync("/tmp/car-");
-fs.mkdirSync(dir + "/co"); fs.mkdirSync(dir + "/ig");
-for (const f of fs.readdirSync(new URL("../cotizador/src/", import.meta.url))) fs.copyFileSync(new URL("../cotizador/src/" + f, import.meta.url), `${dir}/co/${f}`);
-for (const f of fs.readdirSync(new URL("../instagram/src/", import.meta.url))) fs.copyFileSync(new URL("../instagram/src/" + f, import.meta.url), `${dir}/ig/${f}`);
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+const dir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 let ok = 0, mal = 0; const chk = (n, c) => { c ? ok++ : (mal++, console.log("FALLA:", n)); };
 const db = new DatabaseSync(":memory:");
 const stmt = (sql, b = []) => ({ bind: (...x) => stmt(sql, x), run: async () => { db.prepare(sql).run(...b); return {}; }, first: async () => db.prepare(sql).get(...b) ?? null, all: async () => ({ results: db.prepare(sql).all(...b) }) });
@@ -24,8 +23,8 @@ globalThis.fetch = async (u) => { if (String(u).startsWith("https://cdn/perfil")
 const env = { DB, VIDEOS: R2, VERIFY_TOKEN: "k" };
 db.exec("CREATE TABLE kv (k TEXT PRIMARY KEY, v TEXT, exp INTEGER)");
 db.prepare("INSERT INTO kv (k,v) VALUES ('ig_yo', ?)").run(JSON.stringify({ username: "te.importamos.arg", foto: "https://cdn/perfil.jpg" }));
-const C = await import(`${dir}/co/carruseles.js`);
-const P = await import(`${dir}/ig/publicar.js`);
+const C = await import(pathToFileURL(path.join(dir, "cotizador", "src", "carruseles.js")));
+const P = await import(pathToFileURL(path.join(dir, "instagram", "src", "publicar.js")));
 chk("esquema igual en los dos workers", JSON.stringify(C.ESQUEMA_CARR) === JSON.stringify(P.ESQUEMA_CARR));
 
 // Cuentas en código
@@ -40,16 +39,17 @@ chk("slides: descarta tipos raros y recorta a 10", C.limpiarSlides([{ tipo: "x" 
 const prompts = []; let resp = {};
 const ia = async (_e, p) => { prompts.push(p); return typeof resp === "function" ? resp(p) : resp; };
 const T = { fleteKg: 18, handling: 30, honorarios: 80, factor: 1.3, aereoFijo: 950, aereoDesde: 50, aereoHasta: 250, barcoFijo: 100 };
+let iaImgRef = null;
 const api = async (r, body, metodo, headers = {}) => {
   const init = { method: metodo || (body !== undefined ? "POST" : "GET"), headers };
   if (body !== undefined) init.body = body instanceof Uint8Array ? body : JSON.stringify(body);
-  const res = await C.apiCarruseles(env, new Request("https://x/panel/api/carruseles/" + r, init), new URL("https://x/panel/api/carruseles/" + r), "manuel", ia, T);
+  const res = await C.apiCarruseles(env, new Request("https://x/panel/api/carruseles/" + r, init), new URL("https://x/panel/api/carruseles/" + r), "manuel", ia, T, iaImgRef);
   return res.headers.get("content-type")?.includes("json") ? res.json() : res;
 };
-resp = { ideas: [{ titulo: "Ventilador de mano: ML vs China", producto: "ventilador de mano", angulo: "comparacion_ml", por_que: "consultado 5 veces" }, { titulo: "Réplicas baratas", producto: "réplicas", angulo: "otro", por_que: "x" }, { titulo: "Auriculares A9", producto: "auriculares A9", angulo: "comparacion_ml", por_que: "x" }] };
+resp = { ideas: [{ titulo: "Ventilador de mano: ML vs China", gancho: "¿Cuánto cuesta traerlo?", producto: "ventilador de mano", angulo: "comparacion_ml", por_que: "consultado 5 veces" }, { titulo: "Réplicas baratas", gancho: "No propongas esto", producto: "réplicas", angulo: "otro", por_que: "x" }, { titulo: "Errores al cotizar", gancho: "Tres errores al cotizar", producto: "", angulo: "error", por_que: "x" }] };
 const gi = await api("generar-ideas", {});
 chk("ideas: guarda 2 y filtra la prohibida", gi.ok && gi.cantidad === 2);
-chk("ideas: el prompt conoce el estilo ganador", prompts.at(-1).includes("EL ESTILO QUE MEJOR FUNCIONÓ"));
+chk("ideas: el prompt prioriza variedad de formatos", prompts.at(-1).includes("Cada una usa un formato distinto"));
 await api("generar-ideas", {});
 chk("ideas: no repite productos", fila("SELECT COUNT(*) n FROM ig_carruseles").n === 2);
 const lista = await api("lista");
@@ -64,7 +64,7 @@ resp = (p) => { if (p.includes("Escribí 3 VERSIONES")) { pasos.push("v"); retur
 const e = await api("estructura", { id: idA });
 chk("estructura armada", e.ok && e.estado === "estructura" && e.slides.length === 4 && e.chat.length === 1);
 chk("estructura: 3 versiones, editor y corrección de lo genérico", pasos.join("") === "vef" && e.slides[0].titulo.startsWith("En MercadoLibre"));
-chk("estructura: el prompt trae el ganador, el manual y prohíbe números", prompts.some((p) => p.includes("Traído de China, puesto en Argentina") && p.includes("voseo") && p.includes("NUNCA escribas un precio con números")));
+chk("estructura: reserva ejemplo de precios al ángulo correcto", prompts.some((p) => p.includes("EJEMPLO DE PRECIOS") && p.includes("NUNCA escribas un precio con números")));
 chk("detecta texto genérico o de España", C.problemasTexto(GENERICO.slides).length >= 1 && C.problemasTexto(BUENO.slides).length === 0);
 resp = { versiones: [{ slides: [{ tipo: "texto", titulo: "Ganá millonarios", parrafos: ["x"] }, { tipo: "texto", titulo: "b" }, { tipo: "texto", titulo: "c" }] }] };
 const idB = lista.carruseles.find((c) => c.producto !== "ventilador de mano").id;
@@ -88,10 +88,12 @@ chk("borrar regla", (await api("regla-borrar", { i: 0 })).reglas.length === 0);
 
 // Virales de referencia
 const iaImg = async (_e, p, imgs) => (imgs.length ? { cuenta: "@otra.cuenta", tema: "precios de iphone", gancho: "Este iPhone sale $2.000.000 acá", estructura: ["precio local", "precio afuera", "diferencia"], por_que: "comparación que indigna", tecnicas: ["número en portada"] } : null);
-const apiImg = async (r, body) => (await C.apiCarruseles(env, new Request("https://x/panel/api/carruseles/" + r, { method: "POST", body: JSON.stringify(body) }), new URL("https://x/panel/api/carruseles/" + r), "m", ia, T, iaImg)).json();
+iaImgRef = iaImg;
+const apiImg = async (r, body) => { const res = await C.apiCarruseles(env, new Request("https://x/panel/api/carruseles/" + r, { method: "POST", body: JSON.stringify(body) }), new URL("https://x/panel/api/carruseles/" + r), "m", ia, T, iaImg); return res.headers.get("content-type")?.includes("json") ? res.json() : res; };
 chk("referencia sin imágenes: error", !(await apiImg("referencia", { imagenes: [] })).ok);
 const rf = await apiImg("referencia", { imagenes: ["data:image/jpeg;base64,AAAA"], nota: "pegó 1M" });
 chk("referencia analizada y guardada", rf.ok && rf.referencia.cuenta === "otra.cuenta" && (await api("lista")).referencias.length === 1);
+chk("captura de referencia queda servida por id e índice", (await api("referencia-img?id=" + rf.referencia.id + "&n=0")).status === 200);
 resp = (p) => p.includes("VERSIONES") ? { versiones: [BUENO] } : p.includes("EDITOR") ? BUENO : null;
 db.prepare("UPDATE ig_carruseles SET estado='idea' WHERE id=?").run(idB);
 await api("estructura", { id: idB });
@@ -148,17 +150,17 @@ await api(`foto?id=${idB}&n=0`, new Uint8Array([1]), "PUT", { "content-type": "i
 await api("descartar", { id: idB, motivo: "muy genérico, no nombra un producto concreto" });
 chk("descartar borra las imágenes", ![...objs.keys()].some((k) => k.startsWith(`carruseles/${idB}/`)));
 chk("descartar guarda el motivo", JSON.parse(fila("SELECT v FROM kv WHERE k='ig_descartes_carrusel'").v).at(-1).motivo.includes("muy genérico"));
-resp = { ideas: [{ titulo: "Otra idea", gancho: "Sale $X en ML", producto: "mate", angulo: "comparacion_ml", por_que: "x" }] };
+resp = { ideas: [{ titulo: "Otra idea", gancho: "Sale en MercadoLibre", producto: "mate", angulo: "comparacion_ml", por_que: "x" }] };
 await api("generar-ideas", {});
 chk("las ideas nuevas aprenden de lo descartado", prompts.at(-1).includes("POR QUÉ NO: muy genérico") && (await api("lista")).descartes === 1);
 chk("cron de limpieza solo 4:12", (await C.cronCarr(env, Date.UTC(2026, 9, 10, 15, 0))) === false && (await C.cronCarr(env, Date.UTC(2026, 9, 10, 7, 12))) === true);
 
 // Pantalla y conexiones
-const R = await import(`${dir}/co/redes.js`);
+const R = await import(pathToFileURL(path.join(dir, "cotizador", "src", "redes.js")));
 const sc = R.PANEL_REDES.match(/<script>([\s\S]*)<\/script>/)[1];
 try { new Function(sc); chk("js de Redes compila con carruseles", true); } catch (er) { chk("js: " + er.message, false); }
-chk("Redes tiene la pestaña Carruseles y la tipografía", R.PANEL_REDES.includes('id="m-carr"') && R.PANEL_REDES.includes('data-m="carr"') && R.PANEL_REDES.includes("Patrick+Hand"));
-const wk = fs.readFileSync(`${dir}/co/worker.js`, "utf8"), ins = fs.readFileSync(`${dir}/ig/instagram.js`, "utf8");
+chk("Redes tiene el acceso simplificado a Carruseles y la tipografía", R.PANEL_REDES.includes('id="m-carr"') && R.PANEL_REDES.includes('data-sub="carr"') && R.PANEL_REDES.includes("Patrick+Hand"));
+const wk = fs.readFileSync(path.join(dir, "cotizador", "src", "worker.js"), "utf8"), ins = fs.readFileSync(path.join(dir, "instagram", "src", "instagram.js"), "utf8");
 chk("panel monta la API y la limpieza", wk.includes('startsWith("/panel/api/carruseles/")') && wk.includes("cronCarr("));
 chk("instagram publica carruseles y sirve /c/", ins.includes("publicarCarruseles(") && ins.includes("servirSlide("));
 console.log(`sim-carruseles: ${ok} ok, ${mal} fallas`);
