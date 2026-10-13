@@ -3012,11 +3012,7 @@ button{font:inherit;cursor:pointer}
 <div class="vista on" id="v-dash"><div class="dash">
 <div class="filtros" id="filtros"><button data-p="dia" class="on">Hoy</button><button data-p="semana">7 días</button><button data-p="mes">30 días</button></div>
 <div id="waDash"><div class="vacio">Cargando...</div></div>
-<div class="graf"><div class="card"><h3>Chats nuevos por día</h3><div class="alto"><canvas id="g-dias"></canvas></div></div>
-<div class="card"><h3>Temperatura de los leads</h3><div class="alto"><canvas id="g-temp"></canvas></div></div></div>
-<div class="graf3"><div class="card"><h3>Productos más pedidos</h3><div class="medio"><canvas id="g-prod"></canvas></div></div>
-<div class="card"><h3>En qué etapa están los chats</h3><div class="medio"><canvas id="g-etapa"></canvas></div></div>
-<div class="card"><h3>Calidad de los leads (puntaje 1 a 10)</h3><div class="medio"><canvas id="g-punt"></canvas></div></div></div>
+<div id="ventasBox"></div>
 <div class="card reportes"><div class="cab"><h3 id="rep-tit" style="margin:0">Reportes diarios</h3><button class="btn" id="generar">Generar ahora</button></div><div id="reps"></div></div>
 </div></div>
 
@@ -3057,7 +3053,7 @@ function verTab(v) {
 document.querySelectorAll("#filtros button").forEach(function (b) { b.onclick = function () { P = b.dataset.p; document.querySelectorAll("#filtros button").forEach(function (x) { x.classList.toggle("on", x === b); }); cargarDash(); }; });
 var NOMBRES = { nuevo: "Clientes nuevos", cotizacion: "Cotizaciones enviadas", venta: "Ventas cerradas", derivado: "Chats derivados por el agente" };
 function delta(a, b) { if (!b && !a) return '<div class="d igual">sin movimiento</div>'; if (!b) return '<div class="d sube">nuevo en el período</div>'; var p = Math.round((a - b) / b * 100); if (!p) return '<div class="d igual">igual que el período anterior</div>'; return '<div class="d ' + (p > 0 ? "sube" : "baja") + '">' + (p > 0 ? "+" : "") + p + "% vs período anterior</div>"; }
-function grafico(id, cfg) { if (!window.Chart) return; if (graficos[id]) graficos[id].destroy(); graficos[id] = new Chart(document.getElementById(id), cfg); }
+function grafico(id, cfg) { if (!window.Chart || !document.getElementById(id)) return; if (graficos[id]) graficos[id].destroy(); graficos[id] = new Chart(document.getElementById(id), cfg); }
 var WA = null, WA_LISTA = "sin";
 function waFila(c, extra, txt) {
   var sc = c.puntaje ? '<span class="sc ' + ({ caliente: "c", tibio: "t", frio: "f" }[c.temp] || "s") + '">' + c.puntaje + "</span>" : "";
@@ -3102,10 +3098,25 @@ document.addEventListener("click", function (ev) {
   var vb = ev.target.closest("[data-visto]"); if (vb) { ev.stopPropagation(); vb.disabled = true; fetch("/panel/api/805/visto", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conv: vb.dataset.visto, id: vb.dataset.visto, lista: vb.dataset.lista || "sin" }) }).then(function () { var tr = vb.closest("tr"); if (tr) tr.remove(); var k = vb.dataset.visto, ls = vb.dataset.lista || "sin"; if (WA) { if (ls === "sin") WA.sinResponder = (WA.sinResponder || []).filter(function (c) { return c.conv !== k; }); if (ls === "esc") WA.escribiles = (WA.escribiles || []).filter(function (c) { return c.conv !== k; }); if (ls === "cot") WA.cotPend = (WA.cotPend || []).filter(function (c) { return c.conv !== k; }); if (ls === "ven") WA.ventasRec = (WA.ventasRec || []).filter(function (v) { return v.id !== k; }); } }); return; }
   var r = ev.target.closest("[data-wc]"); if (r) location.href = "/panel/805#" + encodeURIComponent(r.dataset.wc);
 });
-function cargarDash() {
-  fetch("/panel/api/805/resumen").then(function (r) { return r.json(); }).then(pintarWA).catch(function () { $("#waDash").innerHTML = '<div class="vacio">No se pudieron cargar las métricas de WhatsApp</div>'; });
-  cargarReportes();
+var NM = { chats_nuevos: "Chats nuevos", chats_ab: "Chats A y B", cotizaciones: "Cotizaciones", chats_cotizados: "Chats cotizados", ventas: "Ventas" }, NP = { dia: "hoy", semana: "7 días", mes: "30 días" };
+var PERF = { A: "A · Mercado Libre", B: "B · Negocio", C: "C · Revendedor chico", D: "D · Consumidor final", E: "E · Curioso", sin: "Sin clasificar" };
+function cargarVentas() {
+  fetch("/panel/api/805/ventas?p=" + P).then(function (r) { return r.json(); }).then(function (d) {
+    var o = d.objetivos || [], s = d.seguimientos || [], pf = (d.perfil || {}).perfiles || [];
+    var hObj = o.length ? o.map(function (x) { var pc = Math.min(100, x.pct || 0); return '<div class="fila"><div class="et"><span>' + esc(NM[x.metrica] || x.metrica) + " (" + (NP[x.periodo] || x.periodo) + ")</span><b>" + x.actual + " / " + x.meta + ' <button class="wlisto" style="display:inline;margin:0 0 0 6px" data-objb="' + x.id + '">Quitar</button></b></div><div class="barra"><i style="width:' + pc + "%;background:" + (pc >= 100 ? "#1FA855" : "#EA5B0C") + '"></i></div></div>'; }).join("") : '<div class="vacio">Sin objetivos. Pedile al agente: "Proponé objetivos para esta semana" y después "Dale, dejalos".</div>';
+    var orden = ["A", "B", "C", "D", "E", "sin"]; pf.sort(function (a, b) { return orden.indexOf(a.perfil) - orden.indexOf(b.perfil); });
+    var hPerf = pf.length ? '<table class="wtab"><tr><td><b>Perfil</b></td><td><b>Chats</b></td><td><b>Cotizados</b></td><td><b>Ventas</b></td><td><b>USD estimado</b></td></tr>' + pf.map(function (x) { var bueno = x.perfil === "A" || x.perfil === "B"; return "<tr" + (bueno ? ' style="background:#FFF4EC"' : "") + "><td>" + (bueno ? "<b>" : "") + esc(PERF[x.perfil] || x.perfil) + (bueno ? "</b>" : "") + "</td><td>" + x.chats + "</td><td>" + x.cotizados + "</td><td>" + x.ventas + "</td><td>" + (x.usd ? "USD " + Math.round(x.usd).toLocaleString("es-AR") : "-") + "</td></tr>"; }).join("") + "</table>" : '<div class="vacio">Todavía no hay chats clasificados por perfil.</div>';
+    var hSeg = s.length ? '<table class="wtab">' + s.map(function (c) { return waFila({ conv: c.conv, nombre: c.nombre, producto: c.producto }, "cotizado hace " + c.dias_cot + ' d<button class="wlisto" data-segl="' + esc(c.conv) + '">Listo</button>', (c.perfil ? "Perfil " + c.perfil + " · " : "") + (c.presup_usd ? "aprox USD " + c.presup_usd + " · " : "") + "sin escribirle hace " + c.dias_sin + " d"); }).join("") + "</table>" : '<div class="vacio">No hay seguimientos pendientes.</div>';
+    $("#ventasBox").innerHTML = '<div class="graf"><div class="card"><h3>Objetivos</h3><div class="embudo">' + hObj + '</div></div><div class="card"><h3>Embudo por perfil (' + NP[P] + ")</h3>" + hPerf + '</div></div><div class="card wcard" style="margin-top:12px"><h3>Seguimientos de hoy <span class="wcnt">' + s.length + '</span></h3><div class="wscroll">' + hSeg + "</div></div>";
+    $("#ventasBox").onclick = function (ev) {
+      var b = ev.target.closest("[data-segl],[data-objb]"); if (!b) return; ev.stopPropagation(); b.disabled = true;
+      var ruta = b.dataset.segl ? "seguimiento-listo" : "objetivo-borrar", body = b.dataset.segl ? { conv: b.dataset.segl } : { id: b.dataset.objb };
+      fetch("/panel/api/805/" + ruta, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then(function () { cargarVentas(); });
+    };
+  }).catch(function () { $("#ventasBox").innerHTML = ""; });
 }
+function cargarDash() {
+  cargarVentas();
 var REPS = [];
 function cargarReportes() {
   $("#rep-tit").textContent = "Reportes de WhatsApp (diario a las 21:00 y semanal los domingos)";
@@ -3118,7 +3129,7 @@ function cargarReportes() {
       var dif = (ia.difusion || []).map(function (x, k) { return '<div class="dif"><div class="dt"><b>' + esc(x.producto) + '</b><button class="btn" data-copiar="' + ix + "-" + k + '">Copiar mensaje</button></div><div class="dpq">' + esc(x.por_que || "") + '</div><pre id="m-' + ix + "-" + k + '">' + esc(x.mensaje || "") + "</pre></div>"; }).join("");
       return '<details class="rep2"' + (ix === 0 ? " open" : "") + '><summary><span class="rt">' + titulo + '</span><span class="rk">' + (m.nuevos || 0) + " nuevos · " + (m.cotizaciones || 0) + " cotizaciones · " + (m.ventas || 0) + ' ventas</span><a class="btn" target="_blank" href="/panel/805/reporte?id=' + encodeURIComponent(r.id) + '">PDF</a><button class="btn rojo" data-borrar="' + esc(r.id) + '">Borrar</button></summary><div class="rb">' +
         '<div class="rkv"><div>Chats nuevos<b>' + (m.nuevos || 0) + "</b></div><div>Cotizaciones<b>" + (m.cotizaciones || 0) + "</b></div><div>Ventas<b>" + (m.ventas || 0) + "</b></div><div>Sin responder<b>" + (m.sinResponder || 0) + "</b></div><div>Respuesta<b>" + (m.respuestaMin == null ? "-" : m.respuestaMin + " min") + "</b></div></div>" +
-        (ia.titular ? "<p><b>" + esc(ia.titular) + "</b></p>" : "") + li("Claves", ia.claves) + li("A quién escribir", ia.oportunidades) + li("A mejorar", ia.problemas) + (ia.grupos ? "<h5>Grupos</h5><p>" + esc(ia.grupos) + "</p>" : "") + (ia.recomendacion ? "<h5>Recomendación</h5><p>" + esc(ia.recomendacion) + "</p>" : "") + (dif ? "<h5>Para mandar en los grupos</h5>" + dif : "") + "</div></details>";
+        (ia.titular ? "<p><b>" + esc(ia.titular) + "</b></p>" : "") + li("Claves", ia.claves) + li("A quién escribir", ia.oportunidades) + li("A mejorar", ia.problemas) + li("Para mañana", ia.manana) + (ia.avance ? "<h5>Objetivos</h5><p>" + esc(ia.avance) + "</p>" : "") + (ia.grupos ? "<h5>Grupos</h5><p>" + esc(ia.grupos) + "</p>" : "") + (ia.recomendacion ? "<h5>Recomendación</h5><p>" + esc(ia.recomendacion) + "</p>" : "") + (dif ? "<h5>Para mandar en los grupos</h5>" + dif : "") + "</div></details>";
     }).join("") : '<div class="vacio">Todavía no hay reportes. Se generan solos a las 21:00.</div>';
   }).catch(function () {});
 }
