@@ -19,6 +19,7 @@ export const CARR_CSS = `
 .slc{display:flex;flex-direction:column;gap:6px}.slc canvas{width:100%;aspect-ratio:4/5;border-radius:10px;border:1px solid var(--borde);background:#F3EFE8}
 .slc .n{font-size:12px;color:var(--gris);font-weight:700}
 .cchat{display:flex;flex-direction:column;height:62vh;min-height:360px}.cchat .hilo{flex:1;height:auto}
+.cajustes summary{cursor:pointer;font-weight:700}.cajustes[open] summary{margin-bottom:12px}.cajuste{padding:8px 0;border-top:1px solid var(--borde)}.cajuste h2{margin:4px 0 8px}.refimgs{display:flex;gap:8px;overflow-x:auto;margin:8px 0}.refimgs img{width:96px;height:120px;object-fit:cover;border:1px solid var(--borde);border-radius:8px}
 .reglasc{display:flex;flex-wrap:wrap;gap:6px}.reglasc span{background:#f1f5f9;border-radius:99px;padding:4px 6px 4px 10px;font-size:12.5px;display:inline-flex;align-items:center;gap:4px}
 .reglasc button{border:0;background:none;cursor:pointer;color:var(--gris);font-size:14px;line-height:1}
 .pasos{display:flex;gap:6px;margin:4px 0 10px;flex-wrap:wrap}.pasos span{font-size:12px;font-weight:700;padding:4px 10px;border-radius:99px;background:#f1f5f9;color:var(--gris)}.pasos span.on{background:#ffedd5;color:#c2410c}
@@ -28,18 +29,18 @@ export const CARR_HTML = `
 <div id="m-carr" style="display:none">
  <div id="c-lista">
   <div class="barraher"><button class="btn p" id="bCarrIdeas">Generar ideas de carruseles</button></div>
-  <p class="estado ayuda">El agente propone; elegís una idea, te arma la estructura, la confirmás, hace los slides con el estilo que mejor funcionó y los aprobás. Se publican a las 12 h (o cuando elijas).</p>
-  <section class="card"><h2>Dirección creativa <span class="estado">decile al agente qué querés probar; lo tiene en cuenta en todo</span></h2>
-   <textarea id="cDir" placeholder="Ej: esta semana quiero probar mitos de la importación y casos reales. Menos precios. Tono más picante." style="width:100%;min-height:80px;border:1px solid var(--borde);border-radius:10px;padding:10px;font:inherit;font-size:14px"></textarea>
-   <div class="fila" style="margin-top:8px"><button class="btn p ch" id="cDirGuardar">Guardar dirección</button></div></section>
+   <p class="estado ayuda">Generá ideas distintas, elegí una y revisá el borrador. Sólo se programa cuando lo aprobás.</p>
   <section class="card"><h2>En armado</h2><div class="cgrid" id="cArmado"></div></section>
   <section class="card"><h2>Ideas</h2><div class="cgrid" id="cIdeas"></div></section>
   <section class="card"><h2>Programados y publicados</h2><div id="cProg"></div></section>
-  <section class="card"><h2>Virales de referencia <span class="estado">subí capturas de los slides de un carrusel que se viralizó (tuyo o de otra cuenta): el agente analiza la mecánica y la usa</span></h2>
-   <div class="fila"><input id="rLink" placeholder="Link del carrusel (Instagram, TikTok...) opcional" style="flex:1;min-width:200px;padding:8px;border:1px solid var(--borde);border-radius:8px;font:inherit"></div>
-   <div class="fila" style="margin-top:6px"><label class="btn ch" style="cursor:pointer">Elegir capturas<input type="file" id="rArch" accept="image/*" multiple style="display:none"></label><input id="rNota" placeholder="Nota opcional (cuenta, cuánto pegó)" style="flex:1;min-width:180px;padding:8px;border:1px solid var(--borde);border-radius:8px;font:inherit"><button class="btn p ch" id="rAnalizar" disabled>Analizar</button></div>
-   <div class="estado" id="rSel" style="margin-top:6px"></div><div id="rLista" style="margin-top:8px"></div></section>
-  <section class="card"><h2>Lo que aprendió <span class="estado">reglas que le enseñaste en los chats; tocá × para borrar una</span></h2><div class="reglasc" id="cReglas"></div></section>
+   <details class="card cajustes"><summary>Ajustes y aprendizaje <span class="estado">opcional</span></summary>
+    <section class="cajuste"><h2>Dirección para esta etapa</h2><textarea id="cDir" placeholder="Ej: más tips y comparaciones; menos contenido comercial." style="width:100%;min-height:64px;border:1px solid var(--borde);border-radius:10px;padding:10px;font:inherit;font-size:14px"></textarea><div class="fila" style="margin-top:8px"><button class="btn ch" id="cDirGuardar">Guardar</button></div></section>
+    <section class="cajuste"><h2>Preferencias aprendidas <span class="estado">editable; las reglas de seguridad no se cambian acá</span></h2><textarea id="cMemoria" placeholder="Todavía no hay preferencias guardadas. Podés escribir qué tono, enfoques o formatos preferís." style="width:100%;min-height:80px;border:1px solid var(--borde);border-radius:10px;padding:10px;font:inherit;font-size:14px"></textarea><div class="fila" style="margin-top:8px"><button class="btn ch" id="cMemoriaGuardar">Guardar preferencias</button></div><div class="reglasc" id="cReglas" style="margin-top:8px"></div></section>
+    <section class="cajuste"><h2>Referencias visuales</h2><p class="estado">Subí capturas para analizar el ritmo y la estructura. El sistema no abre ni extrae publicaciones desde Instagram.</p>
+     <div class="fila"><input id="rLink" placeholder="Link de origen (se guarda como nota; no se abre)" style="flex:1;min-width:200px;padding:8px;border:1px solid var(--borde);border-radius:8px;font:inherit"></div>
+     <div class="fila" style="margin-top:6px"><label class="btn ch" style="cursor:pointer">Elegir capturas<input type="file" id="rArch" accept="image/*" multiple style="display:none"></label><input id="rNota" placeholder="Nota opcional: cuenta, resultado, detalle" style="flex:1;min-width:180px;padding:8px;border:1px solid var(--borde);border-radius:8px;font:inherit"><button class="btn p ch" id="rAnalizar" disabled>Analizar</button></div>
+     <div class="estado" id="rSel" style="margin-top:6px"></div><div id="rLista" style="margin-top:8px"></div></section>
+   </details>
  </div>
  <div id="c-ed" style="display:none">
   <div class="fila" style="justify-content:space-between;margin-bottom:8px"><button class="btn ch" id="cVolver">← Carruseles</button><span class="pasos" id="cPasos"></span></div>
@@ -161,21 +162,25 @@ function pintarCanvas() {
 function cargarCarr() {
   CAPI("lista").then(function (r) {
     CL = r; USUARIO = r.usuario || USUARIO; TIPOS_S = r.tipos || {}; pintarRefs(r.referencias);
-    ESTILOS_S = r.estilos || {}; $("#dEstilo").innerHTML = Object.keys(ESTILOS_S).map(function (k) { return '<option value="' + k + '">' + esc(ESTILOS_S[k].nombre) + "</option>"; }).join(""); if (document.activeElement !== $("#cDir")) $("#cDir").value = r.direccion || "";
+    ESTILOS_S = r.estilos || {}; $("#dEstilo").innerHTML = Object.keys(ESTILOS_S).map(function (k) { return '<option value="' + k + '">' + esc(ESTILOS_S[k].nombre) + "</option>"; }).join(""); if (document.activeElement !== $("#cDir")) $("#cDir").value = r.direccion || ""; if (document.activeElement !== $("#cMemoria")) $("#cMemoria").value = r.memoria || "";
     var tarjeta = function (c) { return '<div class="ccard" data-c="' + c.id + '"><span class="pill n" style="align-self:flex-start">' + (EST_C[c.estado] || c.estado) + "</span><h3>" + esc(c.titulo) + '</h3><div class="pq">' + esc(c.por_que || "") + '</div><div class="fila" style="margin-top:auto"><button class="btn ch" data-desc="' + c.id + '">Descartar</button></div><div class="dform" style="display:none"><textarea placeholder="¿Por qué la descartás? (opcional, cuanto mejor lo expliques, más aprende)" style="width:100%;min-height:70px;border:1px solid var(--borde);border-radius:8px;padding:8px;font:inherit;font-size:13px"></textarea><div class="fila" style="margin-top:6px"><button class="btn p ch" data-descok="' + c.id + '">Descartar</button><button class="btn ch" data-desccancel="1">Cancelar</button></div></div></div>'; };
     var arm = r.carruseles.filter(function (c) { return ["estructura", "slides", "error"].indexOf(c.estado) >= 0; }), ide = r.carruseles.filter(function (c) { return c.estado === "idea"; }), prog = r.carruseles.filter(function (c) { return ["aprobado", "publicando", "publicado"].indexOf(c.estado) >= 0; });
     $("#cArmado").innerHTML = arm.length ? arm.map(tarjeta).join("") : '<div class="vacio">Nada en armado.</div>';
     $("#cIdeas").innerHTML = ide.length ? ide.map(tarjeta).join("") : '<div class="vacio">No hay ideas. Tocá <b>Generar ideas de carruseles</b>.</div>';
     $("#cProg").innerHTML = prog.length ? prog.map(function (c) { return '<div class="clip" data-c="' + c.id + '"><span><b>' + esc(c.titulo) + "</b> " + (c.estado === "publicado" ? '<span class="pill pr">Publicado</span>' : '<span class="pill n">' + (c.estado === "aprobado" ? "Sale el " + cuando(c.programado_ts) : "Publicando...") + "</span>") + '</span><span class="fila">' + (c.link ? '<a class="btn ch" target="_blank" rel="noopener" href="' + esc(c.link) + '">Ver en Instagram</a>' : "") + (c.estado === "aprobado" ? '<button class="btn ch" data-frenar="' + c.id + '">Frenar</button>' : "") + "</span></div>"; }).join("") : '<div class="vacio">Nada programado.</div>';
-    $("#cReglas").innerHTML = (r.descartes ? '<span class="estado" style="background:none">Aprendió de ' + r.descartes + ' idea' + (r.descartes === 1 ? "" : "s") + " descartada" + (r.descartes === 1 ? "" : "s") + ".</span>" : "") + (r.reglas.length ? r.reglas.map(function (x, i) { return "<span>" + esc(x) + '<button data-rb="' + i + '" aria-label="Borrar regla">×</button></span>'; }).join("") : '<span class="estado" style="background:none">Todavía nada. Cuando en un chat le digas "siempre..." o "nunca...", lo guarda acá.</span>');
+    var reglas = r.reglas || [];
+    $("#cReglas").innerHTML = (r.descartes ? '<span class="estado" style="background:none">Aprendió de ' + r.descartes + ' idea' + (r.descartes === 1 ? "" : "s") + " descartada" + (r.descartes === 1 ? "" : "s") + ".</span>" : "") + (reglas.length ? reglas.map(function (x, i) { return "<span>" + esc(x) + '<button data-rb="' + i + '" aria-label="Borrar regla">×</button></span>'; }).join("") : '<span class="estado" style="background:none">Las preferencias de estilo se resumen arriba; acá aparecen las reglas concretas.</span>');
   });
 }
 function pintarRefs(l) {
-  $("#rLista").innerHTML = (l || []).slice().reverse().map(function (x, k) { var i = l.length - 1 - k; return '<div class="idea" style="padding:10px"><div class="tit"><b>' + esc(x.gancho) + '</b><span class="fila"><button class="mini btn ch" data-refidea="' + i + '">Ideas con esta</button><button class="mini btn ch" data-refb="' + i + '">Borrar</button></span></div><div class="pq">' + (x.cuenta ? "@" + esc(x.cuenta) + " · " : "") + esc(x.tema || "") + (x.formato ? " · formato: " + esc(x.formato) : "") + '</div><div class="pq"><b>Estructura:</b> ' + esc((x.estructura || []).join(" → ")) + '</div><div class="pq"><b>Por qué funciona:</b> ' + esc(x.por_que) + '</div><div class="pq"><b>Técnicas:</b> ' + esc((x.tecnicas || []).join(", ")) + '</div>' + (x.adaptacion ? '<div class="pq"><b>Para nosotros:</b> ' + esc(x.adaptacion) + "</div>" : "") + "</div>"; }).join("") || '<div class="vacio">Todavía no analizaste ninguno.</div>';
+  $("#rLista").innerHTML = (l || []).slice().reverse().map(function (x, k) { var i = l.length - 1 - k;
+    var imgs = (x.capturas || []).map(function (_, n) { return '<img loading="lazy" alt="Captura de referencia ' + (n + 1) + '" src="/panel/api/carruseles/referencia-img?id=' + encodeURIComponent(x.id || "") + '&n=' + n + '">'; }).join("");
+    return '<div class="idea" style="padding:10px"><div class="tit"><b>' + esc(x.gancho) + '</b><span class="fila"><button class="mini btn ch" data-refidea="' + i + '">Usar</button><button class="mini btn ch" data-refb="' + i + '">Borrar</button></span></div>' + (imgs ? '<div class="refimgs">' + imgs + '</div>' : "") + '<div class="pq">' + (x.cuenta ? "@" + esc(x.cuenta) + " · " : "") + esc(x.tema || "") + (x.formato ? " · formato: " + esc(x.formato) : "") + '</div><div class="pq"><b>Estructura:</b> ' + esc((x.estructura || []).join(" → ")) + '</div><div class="pq"><b>Por qué funciona:</b> ' + esc(x.por_que) + '</div><div class="pq"><b>Técnicas:</b> ' + esc((x.tecnicas || []).join(", ")) + '</div>' + (x.adaptacion ? '<div class="pq"><b>Para nosotros:</b> ' + esc(x.adaptacion) + "</div>" : "") + "</div>";
+  }).join("") || '<div class="vacio">Todavía no analizaste ninguno.</div>';
 }
 var RFOTOS = [];
 function achicar(f) { return new Promise(function (ok) { var r = new FileReader(); r.onload = function () { var im = new Image(); im.onload = function () { var k = Math.min(1, 1080 / Math.max(im.width, im.height)), c = document.createElement("canvas"); c.width = im.width * k; c.height = im.height * k; c.getContext("2d").drawImage(im, 0, 0, c.width, c.height); ok(c.toDataURL("image/jpeg", 0.85)); }; im.onerror = function () { ok(null); }; im.src = r.result; }; r.readAsDataURL(f); }); }
-function habilitarRef() { $("#rAnalizar").disabled = !(RFOTOS.length || $("#rLink").value.trim()); }
+function habilitarRef() { $("#rAnalizar").disabled = !RFOTOS.length; }
 $("#rArch").addEventListener("change", function () { var fs = Array.prototype.slice.call(this.files || []).slice(0, 6); Promise.all(fs.map(achicar)).then(function (l) { RFOTOS = l.filter(Boolean); $("#rSel").textContent = RFOTOS.length ? RFOTOS.length + " capturas listas para analizar" : ""; habilitarRef(); }); });
 $("#rLink").addEventListener("input", habilitarRef);
 $("#rAnalizar").onclick = function () { var b = this; b.disabled = true; b.textContent = "Analizando..."; CAPI("referencia", { imagenes: RFOTOS, nota: $("#rNota").value, link: $("#rLink").value.trim() }).then(function (r) { b.textContent = "Analizar"; if (!r.ok) { b.disabled = false; return aviso(r.error); } RFOTOS = []; $("#rSel").textContent = ""; $("#rNota").value = ""; $("#rLink").value = ""; pintarRefs(r.referencias); aviso(r.aviso || "Analizado: lo voy a usar en los próximos carruseles"); }); };
@@ -183,6 +188,7 @@ $("#rLista").onclick = function (ev) {
   var b = ev.target.closest("[data-refb]"); if (b) return CAPI("referencia-borrar", { i: +b.dataset.refb }).then(function (r) { pintarRefs(r.referencias); });
   var g = ev.target.closest("[data-refidea]"); if (g) { g.disabled = true; g.textContent = "Pensando..."; CAPI("generar-ideas", { ref: +g.dataset.refidea }).then(function (r) { g.disabled = false; g.textContent = "Ideas con esta"; if (!r.ok) return aviso(r.error); aviso(r.cantidad + " ideas nuevas basadas en esa referencia"); cargarCarr(); }); }
 };
+$("#cMemoriaGuardar").onclick = function () { CAPI("memoria", { texto: $("#cMemoria").value }).then(function (r) { aviso(r.ok ? "Preferencias guardadas" : "No se pudieron guardar"); }); };
 $("#c-lista").onclick = function (ev) {
   if (ev.target.closest("#rLista") || ev.target.closest("#rArch") || ev.target.closest("#rAnalizar") || ev.target.closest("#rNota")) return;
   var dd = ev.target.closest("[data-desc]"); if (dd) { var cd = dd.closest(".ccard"); cd.querySelector(".dform").style.display = ""; dd.style.display = "none"; cd.querySelector("textarea").focus(); return; }
@@ -199,7 +205,7 @@ function abrirCarr(id) {
   CAPI("ver?id=" + encodeURIComponent(id)).then(function (c) {
     if (c.error) return aviso(c.error);
     CC = c; $("#c-lista").style.display = "none"; $("#c-ed").style.display = ""; window.scrollTo(0, 0);
-    if (c.estado === "idea") { CC.chat = [{ r: "a", t: "Armando la estructura..." }]; pintarEd(); CAPI("estructura", { id: id }).then(function (r) { if (!r.ok) { CC.chat = [{ r: "a", t: r.error }]; pintarEd(); return; } CC = r; pintarEd(); }); return; }
+    if (c.estado === "idea") { CC.chat = [{ r: "a", t: "Armando el borrador..." }]; pintarEd(); CAPI("estructura", { id: id }).then(function (r) { if (!r.ok) { CC.chat = [{ r: "a", t: r.error }]; pintarEd(); return; } CC = r; pintarEd(); }); return; }
     pintarEd();
   });
 }
@@ -248,7 +254,7 @@ $("#cFChat").onsubmit = function (e) {
   e.preventDefault(); var m = $("#cMsg").value.trim(); if (!m) return; $("#cMsg").value = "";
   clearTimeout(tGuardar);
   CC.chat = (CC.chat || []).concat({ r: "u", t: m }, { r: "a", t: "Pensando..." }); $("#cHilo").innerHTML = CC.chat.map(function (x) { return '<div class="burb ' + (x.r === "u" ? "u" : "a") + '">' + esc(x.t) + "</div>"; }).join(""); $("#cHilo").scrollTop = 1e9;
-  CAPI("guardar", { id: CC.id, slides: CC.slides, caption: CC.caption, datos: CC.datos }).then(function () { return CAPI("chat", { id: CC.id, mensaje: m }); }).then(function (r) { if (!r.ok) { CC.chat[CC.chat.length - 1] = { r: "a", t: r.error || "No pude." }; pintarEd(); return; } var fv = CC.fv; CC = r; CC.fv = fv; pintarEd(); if (r.regla) cargarCarr(); });
+  CAPI("guardar", { id: CC.id, slides: CC.slides, caption: CC.caption, datos: CC.datos }).then(function () { return CAPI("chat", { id: CC.id, mensaje: m }); }).then(function (r) { if (!r.ok) { CC.chat[CC.chat.length - 1] = { r: "a", t: r.error || "No pude." }; pintarEd(); return; } var fv = CC.fv; CC = r; CC.fv = fv; pintarEd(); if (r.regla || r.memoria) cargarCarr(); });
 };
 function subirSlides() {
   var cs = document.querySelectorAll("#cCanvas canvas"), i = 0;
