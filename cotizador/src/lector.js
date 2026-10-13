@@ -58,7 +58,7 @@ export async function prepararLector(env) {
     env.DB.prepare("CREATE TABLE IF NOT EXISTS reportes (id TEXT PRIMARY KEY, tipo TEXT, desde INTEGER, hasta INTEGER, creado INTEGER, datos TEXT)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT, exp INTEGER)"),
   ]);
-    for (const col of ["resp INTEGER", "visto_ts INTEGER DEFAULT 0", "prov INTEGER DEFAULT 0", "visto_esc INTEGER DEFAULT 0", "visto_cot INTEGER DEFAULT 0", "nuevo_ok INTEGER", "perfil TEXT", "presup_usd INTEGER", "origen TEXT", "motivo TEXT"]) await env.DB.prepare(`ALTER TABLE w_conv ADD COLUMN ${col}`).run().catch(() => {});
+    for (const col of ["resp INTEGER", "visto_ts INTEGER DEFAULT 0", "prov INTEGER DEFAULT 0", "visto_esc INTEGER DEFAULT 0", "visto_cot INTEGER DEFAULT 0", "nuevo_ok INTEGER", "perfil TEXT", "presup_usd INTEGER", "origen TEXT", "motivo TEXT", "seg_visto INTEGER DEFAULT 0"]) await env.DB.prepare(`ALTER TABLE w_conv ADD COLUMN ${col}`).run().catch(() => {});
   await env.DB.batch([
     env.DB.prepare("CREATE TABLE IF NOT EXISTS ag_chat (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, rol TEXT, texto TEXT)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS ag_mem (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, tipo TEXT, texto TEXT)"),
@@ -466,8 +466,8 @@ MÉTRICAS (exactas): ${JSON.stringify(m)}
 PERÍODO ANTERIOR: ${JSON.stringify(prev)}
 PRODUCTOS MÁS CONSULTADOS: ${JSON.stringify(productos)}
 CHATS DEL PERÍODO (resumen de la IA por chat): ${JSON.stringify(chatsDia).slice(0, 20000)}
-MENSAJES EN GRUPOS: ${JSON.stringify(grupos).slice(0, 12000)}
-Devolvé JSON: {"titular":"1 oración con lo más importante","claves":["3-6 hallazgos concretos con números"],"oportunidades":["hasta 6: a quién escribir y por qué, con nombre"],"problemas":["hasta 4: qué se está haciendo mal (ej. demoras, cotizaciones sin mandar)"],"grupos":"2-3 oraciones de qué se pidió/habló en los grupos, o vacío","recomendacion":"1-2 acciones para mañana/la semana","difusion":[{"producto":"producto a empujar en los grupos de leads","por_que":"1 oración con datos: cuántos lo pidieron, tendencia","mensaje":"mensaje LISTO para pegar en el grupo: corto (3-6 líneas), tono Te Importamos (cercano, rioplatense), con gancho, beneficio (importación directa, mejor precio que Mercado Libre, cupos por cantidad) y llamado a la acción (escribime / reservá tu cupo). Sin emojis de más y sin inventar precios que no estén en los datos."}]}
+MENSAJES EN GRUPOS: ${JSON.stringify(grupos).slice(0, 12000)} OBJETIVOS Y AVANCE: ${JSON.stringify((await avanceObjetivos(env).catch(() => [])).map((o) => ({ metrica: o.metrica, periodo: o.periodo, meta: o.meta, actual: o.actual })))} POR PERFIL (A Mercado Libre, B negocio, C revendedor chico, D consumidor, E curioso): ${JSON.stringify(await metricasPerfil(env, desde).catch(() => null))} SEGUIMIENTOS PENDIENTES: ${JSON.stringify((await seguimientos(env).catch(() => [])).slice(0, 15).map((s) => ({ nombre: s.nombre, conv: s.conv, perfil: s.perfil, producto: s.producto, usd: s.presup_usd, dias: s.dias_cot })))}
+Devolvé JSON: {"titular":"1 oración con lo más importante","claves":["3-6 hallazgos concretos con números"],"oportunidades":["hasta 6: a quién escribir y por qué, con nombre"],"problemas":["hasta 4: qué se está haciendo mal (ej. demoras, cotizaciones sin mandar)"],"grupos":"2-3 oraciones de qué se pidió/habló en los grupos, o vacío","recomendacion":"1-2 acciones para mañana/la semana","manana":["3 acciones concretas para mañana, cada una con nombre y número del cliente; prioridad perfil A y B y seguimientos pendientes"],"avance":"1 oración: cómo vamos con los objetivos (o vacío si no hay)","manana":["3 acciones concretas para mañana, cada una con nombre y número del cliente; prioridad perfil A y B y seguimientos pendientes"],"avance":"1 oración: cómo vamos con los objetivos (o vacío si no hay)","manana":["3 acciones concretas para mañana, cada una con nombre y número del cliente; prioridad perfil A y B y seguimientos pendientes"],"avance":"1 oración: cómo vamos con los objetivos (o vacío si no hay)","manana":["3 acciones concretas para mañana, cada una con nombre y número del cliente; prioridad perfil A y B y seguimientos pendientes"],"avance":"1 oración: cómo vamos con los objetivos (o vacío si no hay)","difusion":[{"producto":"producto a empujar en los grupos de leads","por_que":"1 oración con datos: cuántos lo pidieron, tendencia","mensaje":"mensaje LISTO para pegar en el grupo: corto (3-6 líneas), tono Te Importamos (cercano, rioplatense), con gancho, beneficio (importación directa, mejor precio que Mercado Libre, cupos por cantidad) y llamado a la acción (escribime / reservá tu cupo). Sin emojis de más y sin inventar precios que no estén en los datos."}]}
 Para "difusion": 3 a 5 productos, priorizando los MÁS PEDIDOS del período y los que se repiten en grupos. Si hay pocos datos, igual proponé los más pedidos.
 PROHIBIDO en "difusion": vapers, vapes, pods, tabaco, fármacos, medicamentos, skincare/cosmética regulada, armas. Nunca digas "tenemos stock" ni prometas precios, plazos o descuentos que no estén en los datos: hablá de importación por encargo y cupos. Sin emojis.`);
   if (ia && Array.isArray(ia.difusion)) ia.difusion = ia.difusion.filter((x) => !/\bvap\w*|\bpods?\b|\btabac\w*|\bcigarr\w*|\bf[aá]rmac\w*|\bmedicament\w*|\bskincare\b|\barmas?\b/i.test(`${x.producto} ${x.mensaje}`)).map((x) => ({ ...x, mensaje: String(x.mensaje || "").replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}\u{FE0F}]/gu, "").replace(/ {2,}/g, " ").trim() }));
@@ -728,6 +728,13 @@ export async function apiLector(env, req, url, iaJSON) {
     if (r === "preguntar" && req.method === "POST") { const b = await req.json().catch(() => ({})); return json(await preguntarVendedor(env, iaJSON, b.pregunta)); }
   if (r === "seguimiento") return json(await seguimientos(env));
   if (r === "objetivos") return json(await avanceObjetivos(env));
+  if (r === "ventas") {
+    const p = url.searchParams.get("p") || "semana", hoy = inicioDiaAR(), desde = p === "dia" ? hoy : p === "mes" ? hoy - 29 * 86400e3 : hoy - 6 * 86400e3;
+    const [objetivos, segs, perfil] = await Promise.all([avanceObjetivos(env), seguimientos(env), metricasPerfil(env, desde)]);
+    return json({ objetivos, seguimientos: segs, perfil });
+  }
+  if (r === "seguimiento-listo" && req.method === "POST") { const b = await req.json().catch(() => ({})); await env.DB.prepare("UPDATE w_conv SET seg_visto=? WHERE conv=?").bind(Date.now(), String(b.conv || "")).run(); return json({ ok: true }); }
+  if (r === "objetivo-borrar" && req.method === "POST") { const b = await req.json().catch(() => ({})); await env.DB.prepare("UPDATE ag_obj SET activo=0 WHERE id=?").bind(+b.id || 0).run(); return json({ ok: true }); }
   if (r === "reparar" && req.method === "POST") { const corregidos = await repararPropios(env); return json({ ok: true, corregidos, cotizaciones: await recalcularCotizaciones(env) }); }
   if (r === "qr") { const q = JSON.parse((await kvGet(env, "lector_qr")) || "null"); return json(q && Date.now() - q.ts < 90e3 ? q : { qr: "", estado: q?.estado === "paired" ? "paired" : "" }); }
   if (r === "probar-alertas" && req.method === "POST") return json({ ok: true, alertas: await alertasRapidas(env) });
@@ -772,7 +779,7 @@ const METRICAS_OBJ = ["chats_nuevos", "chats_ab", "cotizaciones", "chats_cotizad
 // Cotizados que no respondieron: reglas en código (día 1, después cada 2 días, después cada 3, hasta 12 días)
 export async function seguimientos(env) {
   const ahora = Date.now();
-  const filas = (await env.DB.prepare(`SELECT c.conv, c.nombre, c.perfil, c.presup_usd, c.producto, c.etapa, c.ult_yo_ts, c.ult_texto, MAX(h.ts) cot_ts
+  const filas = (await env.DB.prepare(`SELECT c.conv, c.nombre, c.perfil, c.presup_usd, c.producto, c.etapa, c.ult_yo_ts, c.seg_visto, c.ult_texto, MAX(h.ts) cot_ts
     FROM w_hito h JOIN w_conv c ON c.conv=h.conv
     WHERE h.tipo='cotizacion' AND h.ts>=? AND c.grupo=0 AND c.archivado=0 AND COALESCE(c.prov,0)=0 AND c.ult_yo=1
       AND COALESCE(c.etapa,'') NOT IN ('vendido','perdido','no_cliente')
@@ -780,7 +787,7 @@ export async function seguimientos(env) {
     GROUP BY c.conv LIMIT 200`).bind(ahora - 12 * 86400e3, ahora - 12 * 86400e3).all()).results || [];
   const lista = [];
   for (const f of filas) {
-    const dCot = (ahora - f.cot_ts) / 86400e3, dYo = (ahora - (f.ult_yo_ts || 0)) / 86400e3;
+    const dCot = (ahora - f.cot_ts) / 86400e3, dYo = (ahora - Math.max(f.ult_yo_ts || 0, f.seg_visto || 0)) / 86400e3;
     const espera = dCot < 3 ? 1 : dCot < 7 ? 2 : 3;
     if (dYo < espera) continue;
     lista.push({ ...f, dias_cot: Math.floor(dCot), dias_sin: Math.floor(dYo), pri: { A: 0, B: 0, C: 1, D: 2, E: 3 }[f.perfil] ?? 2 });
