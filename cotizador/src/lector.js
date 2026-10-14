@@ -743,6 +743,7 @@ export async function apiLector(env, req, url, iaJSON) {
     return json({ objetivos, seguimientos: segs, perfil });
   }
   if (r === "seguimiento-listo" && req.method === "POST") { const b = await req.json().catch(() => ({})); await env.DB.prepare("UPDATE w_conv SET seg_visto=? WHERE conv=?").bind(Date.now(), String(b.conv || "")).run(); return json({ ok: true }); }
+  if (r === "equipo") { const p = url.searchParams.get("p") || "semana", hoy = inicioDiaAR(); return json(await metricasEquipo(env, p === "dia" ? hoy : p === "mes" ? hoy - 29 * 86400e3 : hoy - 6 * 86400e3)); }
   if (r === "objetivo-borrar" && req.method === "POST") { const b = await req.json().catch(() => ({})); await env.DB.prepare("UPDATE ag_obj SET activo=0 WHERE id=?").bind(+b.id || 0).run(); return json({ ok: true }); }
   if (r === "reparar" && req.method === "POST") { const corregidos = await repararPropios(env); return json({ ok: true, corregidos, cotizaciones: await recalcularCotizaciones(env) }); }
   if (r === "qr") { const q = JSON.parse((await kvGet(env, "lector_qr")) || "null"); return json(q && Date.now() - q.ts < 90e3 ? q : { qr: "", estado: q?.estado === "paired" ? "paired" : "" }); }
@@ -916,7 +917,9 @@ export async function preguntarVendedor(env, iaJSON, pregunta) {
   }
   const vistos = new Set(); hallados = hallados.filter((h) => { const k = h.conv + h.ts; if (vistos.has(k)) return false; vistos.add(k); return true; }).slice(0, 60);
   const fChat = (c) => `- ${c.nombre || "sin nombre"} (+${c.conv}) · perfil ${c.perfil || "?"}${c.presup_usd ? " · aprox USD " + c.presup_usd : ""} · ${c.puntaje ?? "?"}/10 · ${c.producto || "-"} · ${c.etapa || "-"}${c.cot_pend ? " · ESPERA COTIZACION" : ""}${!c.ult_yo ? " · SIN RESPONDER" : ""}${c.origen ? " · vino de " + c.origen : ""}${c.motivo ? " · se perdió por " + c.motivo : ""} · último ${fechaHora(c.ult_ts)}${c.resumen ? " · " + c.resumen : ""}${c.accion ? " · pendiente: " + String(c.accion).replace(/\|p\d$/, "") : ""}`;
-  const contexto = `MEMORIA (notas guardadas de charlas anteriores, la más nueva primero):
+  const eq = await metricasEquipo(env, hoy - 6 * 86400e3).catch(() => []);
+  const contexto = `EQUIPO ÚLTIMOS 7 DÍAS (quién atiende cada chat, por dispositivo vinculado; se mide desde el 14/10, las horas son aproximadas): ${JSON.stringify(eq)}
+MEMORIA (notas guardadas de charlas anteriores, la más nueva primero):
 ${mem.map((n) => `- [${fechaHora(n.ts)}] (${n.tipo}) ${n.texto}`).join("\n") || "vacía"}
 OBJETIVOS ACTIVOS Y AVANCE (medidos por el código): ${JSON.stringify(objs.map((o) => ({ metrica: o.metrica, periodo: o.periodo, meta: o.meta, actual: o.actual, pct: o.pct })))}
 METRICAS EXACTAS · hoy: ${JSON.stringify(mHoy)} · 7 dias: ${JSON.stringify(m7)} · 30 dias: ${JSON.stringify(m30)}
@@ -970,4 +973,42 @@ Respondé JSON: {"respuesta":"texto","guardar":[{"tipo":"decision|preferencia|ap
     await env.DB.batch(ops);
   }
   return { respuesta, fuentes: { chats: chats.length, mensajes: hallados.length, seguimientos: segs.length } };
+}
+
+// ---------------------------------------------------------------------------
+// 11) Equipo: quién atiende, por dispositivo vinculado del 805 (desde el 14/10/2026)
+// Completá los números cuando sepas de quién es cada dispositivo
+// ---------------------------------------------------------------------------
+const EQUIPO_DISP = { "29": "Manuel (Vera)" };
+const nombreDisp = (autor) => { const d = (String(autor || "").match(/:(\d+)/) || [])[1]; if (d === undefined) return null; return EQUIPO_DISP[d] || (d === "0" ? "Celular del 805" : "Dispositivo " + d); };
+export async function metricasEquipo(env, desde) {
+  const k = "equipo_cache:" + desde, c = JSON.parse((await kvGet(env, k)) || "null");
+  if (c && Date.now() - c.ts < 10 * 60e3) return c.d;
+  const ms = (await env.DB.prepare("SELECT conv, yo, autor, texto, ts FROM w_msg WHERE ts>=? AND grupo=0 AND hist=0 ORDER BY conv, ts LIMIT 40000").bind(desde).all()).results || [];
+  const hitos = (await env.DB.prepare("SELECT conv, tipo, ts FROM w_hito WHERE ts>=? AND tipo IN ('cotizacion','venta') AND COALESCE(oculto,0)=0").bind(desde).all()).results || [];
+  const P = {}, get = (n) => P[n] || (P[n] = { nombre: n, mensajes: 0, chats: new Set(), esperas: [], cot: 0, ven: 0, ts: [] });
+  const porConv = {};
+  let conv = null, espera = null;
+  for (const m of ms) {
+    if (m.conv !== conv) { conv = m.conv; espera = null; }
+    if (!m.yo) { if (espera === null) espera = m.ts; continue; }
+    if (esBot(m.texto)) continue;
+    const n = nombreDisp(m.autor);
+    if (!n) { espera = null; continue; }
+    const p = get(n); p.mensajes++; p.chats.add(m.conv); p.ts.push(m.ts);
+    if (espera !== null) { p.esperas.push((m.ts - espera) / 60000); espera = null; }
+    (porConv[m.conv] || (porConv[m.conv] = [])).push({ ts: m.ts, n });
+  }
+  for (const h of hitos) {
+    const l = (porConv[h.conv] || []).filter((x) => x.ts <= h.ts + 60e3).pop();
+    if (l) get(l.n)[h.tipo === "venta" ? "ven" : "cot"]++;
+  }
+  const d = Object.values(P).map((p) => {
+    p.esperas.sort((a, b) => a - b); p.ts.sort((a, b) => a - b);
+    let activo = p.ts.length ? 2 * 60e3 : 0;
+    for (let i = 1; i < p.ts.length; i++) { const g = p.ts[i] - p.ts[i - 1]; activo += g < 15 * 60e3 ? g : 2 * 60e3; }
+    return { nombre: p.nombre, mensajes: p.mensajes, chats: p.chats.size, respuestaMin: p.esperas.length ? Math.round(p.esperas[Math.floor(p.esperas.length / 2)]) : null, cotizaciones: p.cot, ventas: p.ven, horas: Math.round(activo / 360e3) / 10 };
+  }).sort((a, b) => b.mensajes - a.mensajes);
+  await kvPut(env, k, JSON.stringify({ ts: Date.now(), d }));
+  return d;
 }
