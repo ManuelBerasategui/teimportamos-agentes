@@ -853,7 +853,7 @@ async function iaJSON(env, prompt) {
     const res = parsear((j.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join(""));
     if (res) return res;
   }
-    if (env.AI) { try { const r = await env.AI.run("@cf/meta/llama-3.3-70b-instruct-fp8-fast", { messages: [{ role: "user", content: prompt.length > 24000 ? prompt.slice(0, 11000) + " [...datos recortados...] " + prompt.slice(-13000) : prompt }], max_tokens: 1500, temperature: 0.3 }); return parsear(typeof r.response === "string" ? r.response : JSON.stringify(r.response)); } catch {} } }
+  if (env.AI) { try { const r = await env.AI.run("@cf/meta/llama-3.3-70b-instruct-fp8-fast", { messages: [{ role: "user", content: prompt.length > 24000 ? prompt.slice(0, 11000) + " [...datos recortados...] " + prompt.slice(-13000) : prompt }], max_tokens: 1500, temperature: 0.3 }); return parsear(typeof r.response === "string" ? r.response : JSON.stringify(r.response)); } catch {} }
   return null;
 }
 async function autoaprender(env, forzar) {
