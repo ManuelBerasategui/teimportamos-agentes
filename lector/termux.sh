@@ -31,6 +31,8 @@ cd "$DIR/src" && git checkout -q $COMMIT
 # Se BORRAN las rutas que mandan mensajes o tocan grupos: el puente no puede enviar nada
 sed -i -E '/"POST \/dispatch"|"POST \/groups\/|"PATCH \/groups\/|"DELETE \/groups\//d' server.go
 if grep -qE '"POST /dispatch"|"POST /groups/|"PATCH /groups/|"DELETE /groups/' server.go; then echo "ERROR: no se pudieron quitar las rutas de envío"; exit 1; fi
+sed -i '/^func senderAddressFor/,/^}/ s/return session\.Address$/return fmt.Sprintf("%s:%d", session.Address, source.Sender.Device)/' events.go
+grep -q 'fmt.Sprintf("%s:%d", session.Address, source.Sender.Device)' events.go || { echo "ERROR: no se pudo marcar el dispositivo, no se instala nada"; exit 1; }
 GOTOOLCHAIN=auto CGO_ENABLED=0 go build -o "$DIR/puente" .
 cd "$DIR"
 
