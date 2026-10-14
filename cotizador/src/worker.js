@@ -3012,7 +3012,7 @@ button{font:inherit;cursor:pointer}
 <div class="vista on" id="v-dash"><div class="dash">
 <div class="filtros" id="filtros"><button data-p="dia" class="on">Hoy</button><button data-p="semana">7 días</button><button data-p="mes">30 días</button></div>
 <div id="waDash"><div class="vacio">Cargando...</div></div>
-<div class="card" style="margin-top:12px"><h3>Chats nuevos, cotizados y vendidos por día</h3><div class="alto"><canvas id="g-dias"></canvas></div></div><div id="ventasBox"></div>
+<div class="card" style="margin-top:12px"><h3>Chats nuevos, cotizados y vendidos por día</h3><div class="alto"><canvas id="g-dias"></canvas></div></div><div id="ventasBox"></div><div id="equipoBox"></div>
 <div class="card reportes"><div class="cab"><h3 id="rep-tit" style="margin:0">Reportes diarios</h3><button class="btn" id="generar">Generar ahora</button></div><div id="reps"></div></div>
 </div></div>
 
@@ -3119,8 +3119,15 @@ function cargarVentas() {
     };
   }).catch(function () { $("#ventasBox").innerHTML = ""; });
 }
+function cargarEquipo() {
+  fetch("/panel/api/805/equipo?p=" + P).then(function (r) { return r.json(); }).then(function (eq) {
+    var tot = eq.reduce(function (s, x) { return s + x.chats; }, 0) || 1;
+    $("#equipoBox").innerHTML = '<div class="card" style="margin-top:12px"><h3>Quién atiende (' + NP[P] + ")</h3>" + (eq.length ? eq.map(function (x) { var pc = Math.round(x.chats * 100 / tot); return '<div style="display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:10px;margin:6px 0;background:#F9FAFB;border:1px solid #EEF0F2;flex-wrap:wrap"><div style="flex:1;min-width:160px"><div style="font-weight:700;font-size:13.5px">' + esc(x.nombre) + '</div><div style="height:6px;background:#E5E7EB;border-radius:4px;margin-top:6px;overflow:hidden"><i style="display:block;height:100%;width:' + pc + '%;background:#EA5B0C"></i></div><div style="font-size:11.5px;color:#6B7280;margin-top:3px">' + pc + '% de los chats atendidos</div></div><div style="display:flex;gap:14px;text-align:center;font-size:11px;color:#6B7280">' + [[x.chats, "chats"], [x.mensajes, "mensajes"], [x.respuestaMin == null ? "-" : x.respuestaMin + " min", "respuesta"], [x.cotizaciones, "cotiz."], [x.ventas, "ventas"], [x.horas + " h", "activo"]].map(function (v) { return '<div><b style="display:block;font-size:16px;color:#111827">' + v[0] + "</b>" + v[1] + "</div>"; }).join("") + "</div></div>"; }).join("") : '<div class="vacio">Todavía no hay mensajes con dispositivo registrado.</div>') + '<div style="font-size:11.5px;color:#9CA3AF;margin-top:6px">Se mide desde el 14/10. Las horas activas son aproximadas: se calculan con los mensajes enviados.</div></div>';
+  }).catch(function () { $("#equipoBox").innerHTML = ""; });
+}
 function cargarDash() {
   cargarVentas();
+  cargarEquipo();
   fetch("/panel/api/805/resumen").then(function (r) { return r.json(); }).then(pintarWA).catch(function () { $("#waDash").innerHTML = '<div class="vacio">No se pudieron cargar las métricas de WhatsApp</div>'; });
   cargarReportes();
 }
