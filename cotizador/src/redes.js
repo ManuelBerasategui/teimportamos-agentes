@@ -659,10 +659,7 @@ function cargarIdeas() {
 $("#fIdeas").onchange = cargarIdeas;
 $("#ideas").onclick = function (ev) {
   var b = ev.target.closest("button"); if (!b) return; var card = b.closest(".idea"), idv = card.dataset.id;
-  if (b.dataset.c) { var x = (window.__ideas || []).filter(function (i) { return i.id === idv; })[0]; if (!x) return; navigator.clipboard.writeText((x.ganchos && x.ganchos.length ? x.ganchos.map(function (g, i) { return "GANCHO " + (i + 1) + " (" + g.tipo + "): " + g.texto + (g.como ? " / " + g.como : ""); }).join("
-") : "GANCHO: " + x.gancho) + "
-
-CUERPO:" + "\n\n" + (x.guion || []).map(function (t, i) { return (i + 1) + ". " + t; }).join("\n") + (x.cta ? "\n\nCIERRE: " + x.cta : "")).then(function () { aviso("Guion copiado"); }); return; }
+    if (b.dataset.c) { var x = (window.__ideas || []).filter(function (i) { return i.id === idv; })[0]; if (!x) return; var NL = String.fromCharCode(10); navigator.clipboard.writeText((x.ganchos && x.ganchos.length ? x.ganchos.map(function (g, i) { return "GANCHO " + (i + 1) + " (" + g.tipo + "): " + g.texto + (g.como ? " / " + g.como : ""); }).join(NL) : "GANCHO: " + x.gancho) + NL + NL + "CUERPO:" + NL + (x.guion || []).map(function (t, i) { return (i + 1) + ". " + t; }).join(NL) + (x.cta ? NL + NL + "CIERRE: " + x.cta : "")).then(function () { aviso("Guion copiado"); }); return; }
   var motivo = "";   if (b.dataset.e === "descartada") { motivo = prompt("¿Por qué la descartás? Esto es lo que la hace aprender (ej: gancho genérico, no tiene número, ese producto no lo vendemos)"); if (motivo === null) return; motivo = motivo.trim(); if (!motivo) { aviso("Escribí un motivo, aunque sea corto"); return; } }   api("idea-estado", { id: idv, estado: b.dataset.e, motivo: motivo }).then(function () { card.remove(); cargarResumen(); });
 };
 $("#bIdeasGen").onclick = function () { var b = this; b.disabled = true; b.lastChild.textContent = "Pensando ideas..."; api("generar-ideas", {}).then(function (r) { b.disabled = false; b.lastChild.textContent = "Generar ideas nuevas"; if (!r.ok) return aviso(r.error); $("#fIdeas").value = "nueva"; cargarIdeas(); cargarResumen(); aviso(r.cantidad + " ideas nuevas"); }); };
