@@ -864,6 +864,24 @@ export async function metricasPerfil(env, desde) {
 
 // Objetivos activos con su avance (los mide el código, no la IA)
 export async function avanceObjetivos(env) {
+  const objs = (await env.DB.prepare("SELECT * FROM ag_obj WHERE activo=1 ORDER BY id").all()).results || [];
+  if (!objs.length) return [];
+  const ahora = Date.now(), hoy = inicioDiaAR(), dur = { dia: 1, semana: 7, mes: 30 }, cache = {};
+  for (const o of objs) {
+    const per = dur[o.periodo] ? o.periodo : "semana";
+    const desde = per === "dia" ? hoy : inicioDiaAR(o.ts), fin = desde + dur[per] * 86400e3, hasta = Math.min(ahora, fin);
+    const k = desde + ":" + hasta;
+    if (!cache[k]) {
+      const m = await metricas(env, desde, hasta);
+      const ab = await env.DB.prepare("SELECT COUNT(*) n FROM w_conv WHERE primer_ts>=? AND primer_ts<? AND grupo=0 AND perfil IN ('A','B') AND COALESCE(nuevo_ok,1)=1").bind(desde, hasta).first();
+      cache[k] = { chats_nuevos: m.nuevos, chats_ab: ab?.n || 0, cotizaciones: m.cotizaciones, chats_cotizados: m.chatsCotizados, ventas: m.ventas };
+    }
+    const restan = Math.ceil((fin - ahora) / 86400e3);
+    o.periodo = per; o.actual = cache[k][o.metrica] ?? 0; o.pct = o.meta ? Math.round((o.actual * 100) / o.meta) : 0;
+    o.estado = per === "dia" ? "hoy" : ahora >= fin ? "terminado" : restan <= 1 ? "termina hoy" : "quedan " + restan + " días";
+  }
+  return objs;
+}
 
 // Telegram a las 10 h: seguimientos del día (una vez por día)
 export async function avisoSeguimientos(env) {
