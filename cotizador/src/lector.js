@@ -991,7 +991,7 @@ export async function metricasEquipo(env, desde) {
   if (c && Date.now() - c.ts < 10 * 60e3) return c.d;
   const ms = (await env.DB.prepare("SELECT conv, yo, autor, texto, ts FROM w_msg WHERE ts>=? AND grupo=0 AND hist=0 ORDER BY conv, ts LIMIT 40000").bind(desde).all()).results || [];
   const hitos = (await env.DB.prepare("SELECT conv, tipo, ts FROM w_hito WHERE ts>=? AND tipo IN ('cotizacion','venta') AND COALESCE(oculto,0)=0").bind(desde).all()).results || [];
-  const P = {}, get = (n) => P[n] || (P[n] = { nombre: n, mensajes: 0, chats: new Set(), esperas: [], cot: 0, ven: 0, ts: [] });
+  const P = {}, get = (n) => P[n] || (P[n] = { nombre: n, mensajes: 0, chats: new Set(), esperas: [], cot: 0, ven: 0, ts: [], det: {} });
   const porConv = {};
   let conv = null, espera = null;
   for (const m of ms) {
@@ -1001,6 +1001,7 @@ export async function metricasEquipo(env, desde) {
     const n = nombreDisp(m.autor); if (n === "") continue;
     if (!n) { espera = null; continue; }
     const p = get(n); p.mensajes++; p.chats.add(m.conv); p.ts.push(m.ts);
+    { const dd = p.det[m.conv] || (p.det[m.conv] = { conv: m.conv, msgs: 0, primero: m.ts }); dd.msgs++; dd.ultimo = m.ts; dd.texto = String(m.texto || "").slice(0, 120); }
     if (espera !== null) { p.esperas.push((m.ts - espera) / 60000); espera = null; }
     (porConv[m.conv] || (porConv[m.conv] = [])).push({ ts: m.ts, n });
   }
@@ -1008,11 +1009,12 @@ export async function metricasEquipo(env, desde) {
     const l = (porConv[h.conv] || []).filter((x) => x.ts <= h.ts + 60e3).pop();
     if (l) get(l.n)[h.tipo === "venta" ? "ven" : "cot"]++;
   }
+  const nombres = Object.fromEntries(((await env.DB.prepare("SELECT conv, nombre FROM w_conv WHERE ult_ts>=? AND grupo=0").bind(desde).all()).results || []).map((x) => [x.conv, x.nombre]));
   const d = Object.values(P).map((p) => {
     p.esperas.sort((a, b) => a - b); p.ts.sort((a, b) => a - b);
     let activo = p.ts.length ? 2 * 60e3 : 0;
     for (let i = 1; i < p.ts.length; i++) { const g = p.ts[i] - p.ts[i - 1]; activo += g < 15 * 60e3 ? g : 2 * 60e3; }
-    return { nombre: p.nombre, mensajes: p.mensajes, chats: p.chats.size, respuestaMin: p.esperas.length ? Math.round(p.esperas[Math.floor(p.esperas.length / 2)]) : null, cotizaciones: p.cot, ventas: p.ven, horas: Math.round(activo / 360e3) / 10 };
+    return { nombre: p.nombre, mensajes: p.mensajes, chats: p.chats.size, respuestaMin: p.esperas.length ? Math.round(p.esperas[Math.floor(p.esperas.length / 2)]) : null, cotizaciones: p.cot, ventas: p.ven, horas: Math.round(activo / 360e3) / 10, detalle: Object.values(p.det).sort((a, b) => b.ultimo - a.ultimo).slice(0, 60).map((x) => ({ ...x, nombre: nombres[x.conv] || "" })) };
   }).sort((a, b) => b.mensajes - a.mensajes);
   await kvPut(env, k, JSON.stringify({ ts: Date.now(), d }));
   return d;
