@@ -42,10 +42,26 @@ const APRENDIZAJES_BASE = `- La historia real de un cliente contada a cámara es
 - La serie "Vendí esto por ML" se gastó: los primeros llegaron a 64 mil, después casi todos quedaron en 1.500 o menos.
 - "ML vs China Parte 1" se subió 18 veces sin Parte 2: no funciona. Arrancar con una pantalla tampoco.
 - Carruseles (mediana 828) y fotos (477) no traen gente nueva. Los reels de prueba de ~1.500 cuentas son el piso normal.`;
+const GUIONES_GANADORES = `ESTRUCTURA "BÚSQUEDA FRUSTRADA" (los 2 mejores reels de la cuenta: 428.317 y 35.130 vistas, 2,2% guardados):
+1) Gancho fuerte de frase ("tenía que cerrar el estadio").
+2) Producto concreto + necesidad concreta + cantidad ("un flaco con un pet shop necesitaba 50 o 100 de estos").
+3) Recorrido mostrando precios en pantalla: Mercado Libre carísimo ("17 lucas, son unos ladrones") → Temu y Shein no sirven (4 piezas, no hay cantidad) → Alibaba sí, por cantidad y barato.
+4) Número fuerte: "puesto en Argentina 186 dólares, muchísimo menos que Mercado Libre".
+5) Obstáculo: "no lo puedo traer por cantidad, me lo retiene la aduana".
+6) Solución en una frase: "mandé una foto por WhatsApp, me consiguen precio y proveedor, se encargan de la aduana, pago y me llega a casa".
+7) CTA concreto de una palabra.
+Por qué funcionó: se guarda porque enseña a buscar en Alibaba; el obstáculo de la aduana es exactamente lo que resolvemos.
+
+ESTRUCTURA "CUÁNTO LE GANO" (60.910 y 83.517 vistas; el de 60 mil tuvo 367 comentarios por el CTA de una palabra "comentá WHATSAPP"):
+"Vendí esto por Mercado Libre a 60.000 cada uno. ML se lleva entre 11 y 17%, a mí 15%, quedan 50 lucas, menos 5.000 de envío, 46.000. ¿Por qué gané igual? Porque compro baratísimo en cantidad: mando la foto, me consiguen proveedor y precio, se encargan de la aduana, pago y listo."
+
+LO QUE FRACASÓ (2.039, 849 y 467 vistas, casi solo lo vieron seguidores = el gancho no retuvo):
+- "No puede ser, hace 2 semanas que lo vengo buscando": gancho flojo, sin número, desvío por Paraguay y "pasero" que confunde, final vago ("tenían un catálogo, me volví loco"), vende "grupo mayorista" en vez del servicio. Además se subió dos veces el mismo guion.
+- Testimonio en tercera persona sin producto, sin precios, sin China ni ML, cierre "¿y vos qué esperás?" sin acción concreta.`;
 const NEGOCIO = `"Te Importamos" (Rosario, Argentina): importación por encargo, nos encargamos de todo (buscar proveedor, aduana, envío). No hay stock: todo por encargo. Orígenes: China (principal), EE. UU. (originales de marca), Paraguay, Brasil.
 Tarifa China real: honorarios USD 80 por operación + handling USD 30 + flete aéreo USD 18/kg hasta 50 kg (50 a 250 kg USD 950 fijo) + impuestos aprox. 30%. Aéreo 10 a 15 días, barco 40 a 60. Mínimos: tecnología, bazar y perfumes 5 u.; ropa 10 u.; zapatillas 3 pares. Cupos: varios clientes se juntan para llegar al mínimo.
 Clientes: revendedores chicos y emprendedores (el grueso), negocios que piden insumos, consumidor final que quiere algo original de EE. UU.
-NUNCA: vapes, tabaco, fármacos, suplementos, drogas, armas, réplicas. No prometer ganancias ni "hacerse millonario", ni envío gratis, ni precios no confirmados, ni decir "tenemos stock". CTA siempre a DM o al WhatsApp 341 805-1515.`;
+NUNCA: vapes, tabaco, fármacos, suplementos, drogas, armas, réplicas. No prometer ganancias ni "hacerse millonario", ni envío gratis, ni precios no confirmados, ni decir "tenemos stock". CTA siempre al WhatsApp 341 805-1515 (los DM de Instagram están restringidos).`;
 
 const AR = 3 * 3600e3;
 const json = (o, s = 200) => new Response(JSON.stringify(o), { status: s, headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });
@@ -63,7 +79,7 @@ export function mediana(xs) { const v = xs.filter((x) => x != null).sort((a, b) 
 const listo = new WeakSet();
 export async function prepararRedes(env) {
   if (listo.has(env.DB)) return;
-  await env.DB.batch([...ESQUEMA_REDES, ...ESQUEMA_IG].map((s) => env.DB.prepare(s)));
+  await env.DB.batch([...ESQUEMA_REDES, ...ESQUEMA_IG].map((s) => env.DB.prepare(s)));   for (const s of ["ALTER TABLE ig_ideas ADD COLUMN motivo TEXT", "ALTER TABLE ig_ideas ADD COLUMN ganchos TEXT"]) { try { await env.DB.prepare(s).run(); } catch {} }
   listo.add(env.DB);
 }
 
@@ -119,7 +135,7 @@ function kpis(d) {
 export async function generarIdeas(env, iaJSON, quien = "auto", cantidad = 7, T = null) {
   const d = await datosRedes(env);
   const w = await datosWhatsApp(env, T);
-  const previas = (await env.DB.prepare("SELECT titulo, formato, estado FROM ig_ideas ORDER BY ts DESC LIMIT 25").all()).results || [];
+  const previas = (await env.DB.prepare("SELECT titulo, formato, estado FROM ig_ideas ORDER BY ts DESC LIMIT 25").all()).results || [];   const rechazos = (await env.DB.prepare("SELECT titulo, gancho, motivo FROM ig_ideas WHERE estado='descartada' AND motivo<>'' ORDER BY ts DESC LIMIT 20").all()).results || [];   const aprobadas = (await env.DB.prepare("SELECT titulo, gancho FROM ig_ideas WHERE estado='grabada' ORDER BY ts DESC LIMIT 10").all()).results || [];
   const dmsTxt = d.dms.slice(0, 25).map((x) => String(x.ult_texto || "").slice(0, 120)).filter((t) => t && !t.startsWith("["));
   const r = await iaJSON(env, `Sos el estratega de contenido de Instagram de este negocio:
 ${NEGOCIO}
@@ -128,6 +144,14 @@ El dueño solo se graba; todo lo publica como REEL DE PRUEBA (le llega primero a
 
 LO QUE YA SABEMOS (diagnóstico de 120 publicaciones):
 ${APRENDIZAJES_BASE}
+
+GUIONES REALES DE LA CUENTA (copiá la ESTRUCTURA, no las palabras):
+${GUIONES_GANADORES}
+
+IDEAS QUE EL DUEÑO DESCARTÓ Y POR QUÉ (lo más importante: no repitas estos errores):
+${rechazos.map((x) => `- "${x.titulo}" (gancho: "${x.gancho}") → ${x.motivo}`).join("\n") || "(todavía ninguna)"}
+IDEAS QUE EL DUEÑO APROBÓ Y GRABÓ (este es el nivel que busca):
+${aprobadas.map((x) => `- "${x.titulo}" (gancho: "${x.gancho}")`).join("\n") || "(todavía ninguna)"}
 
 RENDIMIENTO POR FORMATO, ÚLTIMOS 60 DÍAS (datos reales de la API):
 ${d.formatos.map((f) => `- ${f.nombre}: ${f.reels} reels, alcance mediano ${n0(f.alcance_mediano)}, mejor ${n0(f.mejor)}, tiempo visto mediano ${f.tiempo_s ? Math.round(f.tiempo_s) + " s" : "-"}, guardados cada mil ${f.guardados_mil ?? "-"}`).join("\n") || "sin datos todavía"}
@@ -146,20 +170,27 @@ IDEAS QUE YA SE DIERON (no repetir el mismo título; si una "grabada" funcionó,
 ${previas.map((x) => `- ${x.titulo} [${x.formato}] (${x.estado})`).join("\n") || "(ninguna)"}
 
 Reglas para los guiones:
-- Mezcla: al menos 2 historias de cliente a cámara (sacadas de lo que piden por WhatsApp o DM), al menos 2 con un número o pregunta concreta en el primer segundo, y al menos 1 de un producto de los más pedidos. Nada de "Parte 1" ni de arrancar con una pantalla.
+- CADA IDEA ES UN CUERPO + 3 o 4 GANCHOS. El cuerpo es el guion que se graba una vez; los ganchos son aperturas distintas del primer segundo que se graban aparte y se pegan al mismo cuerpo, para testear cuál rinde.
+- Los ganchos de una idea tienen que ser de TIPO VISUAL DISTINTO, sin repetir, de esta lista: reaccion (cara tapada o indignado a cámara), pantalla (precio de ML en grande), lejos (plano lejano, se ve el lugar), mano (producto en mano o caja abriéndose), split (ML vs China lado a lado), cartel (texto grande sobre fondo liso). El texto también cambia de tipo: número, queja, POV, pregunta, afirmación polémica. "Me tapo la cara" y "me agarro la cara" NO son ganchos distintos.
+- Cuerpos: la mayoría con la estructura BÚSQUEDA FRUSTRADA (formato "ml_vs_china") y algunos CUÁNTO LE GANO (formato "ml_vendi"). Siempre producto concreto, cantidad concreta y al menos un número en pantalla en los primeros 5 segundos.
+- MARCO: nunca el dueño haciéndose pasar por un cliente que "encontró" a Te Importamos (Instagram ya restringió la cuenta por eso). Usá "pov" (escena dramatizada, el gancho arranca con "POV:") o "importador" (el dueño cuenta: "un cliente con un pet shop me pidió 100 de estos, mirá lo que encontré"). Misma energía y lenguaje que los ganadores.
+- Productos: los que piden de verdad por WhatsApp (datos de arriba). Nada de "Parte 1".
+- CTA: una sola palabra clave para escribir al WhatsApp del perfil ("escribime CARGADOR al WhatsApp del perfil"). La palabra cambia por idea: sirve para medir de qué video vino el chat.
 - El gancho es el texto que va en pantalla en el primer segundo: corto, en minúscula o como habla un pibe de Rosario, que obligue a quedarse.
-- Guion: 3 a 6 frases cortas tal como se dicen a cámara, español rioplatense, sin emojis. Duración 20 a 40 segundos.
+- Cuerpo: 6 a 10 frases cortas tal como se dicen a cámara, español rioplatense, sin emojis. Duración 35 a 60 segundos.
 - Números: solo de la tarifa real de arriba. Si hace falta un precio de producto que no sabés, escribí [precio real] para que lo complete el dueño. No inventes casos con datos falsos: si la historia es un ejemplo, que sea creíble y genérico ("un cliente de Córdoba que revende auriculares").
 - "por_que": el dato concreto de arriba en el que te basás (con su número).
 - "hipotesis": qué estamos probando con este reel, medible ("gancho con precio en pesos retiene más de 18 s").
-Respondé SOLO JSON: {"ideas":[{"titulo":"...","formato":"${Object.keys(FORMATOS).join("|")}","gancho":"...","guion":["...","..."],"cta":"...","por_que":"...","producto":"... o vacío","hipotesis":"..."}]}`);
-  const ideas = (r?.ideas || []).filter((x) => x?.titulo && x?.gancho && !PROHIBIDO.test(JSON.stringify(x))).slice(0, cantidad);
+Respondé SOLO JSON: {"ideas":[{"titulo":"...","formato":"ml_vs_china|ml_vendi|producto|historia","marco":"pov|importador","ganchos":[{"tipo":"reaccion|pantalla|lejos|mano|split|cartel","texto":"texto en pantalla","como":"qué se ve y qué se dice en el primer segundo"}],"guion":["...","..."],"cta":"...","por_que":"...","producto":"...","hipotesis":"qué gancho creés que gana y por qué"}]}`);
+  const ideas = (r?.ideas || []).filter((x) => x?.titulo && (x?.gancho || x?.ganchos?.length) && !PROHIBIDO.test(JSON.stringify(x))).slice(0, cantidad);
   if (!ideas.length) return { ok: false, error: "La IA no respondió o no dio ideas válidas. Probá de nuevo en un minuto." };
   const lote = id();
-  await env.DB.batch(ideas.map((x) => env.DB.prepare("INSERT INTO ig_ideas (id, ts, lote, titulo, formato, gancho, guion, cta, por_que, producto, hipotesis, estado, pedido_por) VALUES (?,?,?,?,?,?,?,?,?,?,?,'nueva',?)")
-    .bind(id(), Date.now(), lote, String(x.titulo).slice(0, 140), FORMATOS[x.formato] ? x.formato : "otro", String(x.gancho).slice(0, 160), JSON.stringify((Array.isArray(x.guion) ? x.guion : [String(x.guion || "")]).map((t) => String(t).slice(0, 300)).slice(0, 8)),
-      String(x.cta || "").slice(0, 160), String(x.por_que || "").slice(0, 300), String(x.producto || "").slice(0, 80), String(x.hipotesis || "").slice(0, 240), quien)));
-  return { ok: true, lote, cantidad: ideas.length };
+    await env.DB.batch(ideas.map((x) => {
+    const gs = (Array.isArray(x.ganchos) ? x.ganchos : []).filter((g) => g && g.texto).slice(0, 4).map((g) => ({ tipo: String(g.tipo || "").slice(0, 20), texto: String(g.texto).slice(0, 160), como: String(g.como || "").slice(0, 200) }));
+    return env.DB.prepare("INSERT INTO ig_ideas (id, ts, lote, titulo, formato, gancho, ganchos, guion, cta, por_que, producto, hipotesis, estado, pedido_por) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'nueva',?)")
+      .bind(id(), Date.now(), lote, String(x.titulo).slice(0, 140), FORMATOS[x.formato] ? x.formato : "otro", String(x.gancho || gs[0]?.texto || "").slice(0, 160), JSON.stringify(gs), JSON.stringify((Array.isArray(x.guion) ? x.guion : [String(x.guion || "")]).map((t) => String(t).slice(0, 300)).slice(0, 10)),
+        String(x.cta || "").slice(0, 160), String(x.por_que || "").slice(0, 300), String(x.producto || "").slice(0, 80), String((x.marco ? "[" + x.marco + "] " : "") + (x.hipotesis || "")).slice(0, 260), quien);
+  }));
 }
 
 // ---------- Lo que pasa en el WhatsApp 805 (para historias, ideas y el agente) ----------
@@ -357,7 +388,7 @@ export async function apiRedes(env, req, url, quien, iaJSON, base = "", T = null
   if (r === "ideas") {
     const est = ["nueva", "grabada", "descartada"].includes(url.searchParams.get("estado")) ? url.searchParams.get("estado") : "nueva";
     const l = (await env.DB.prepare("SELECT * FROM ig_ideas WHERE estado=? ORDER BY ts DESC LIMIT 60").bind(est).all()).results || [];
-    return json(l.map((x) => ({ ...x, guion: JSON.parse(x.guion || "[]") })));
+    return json(l.map((x) => ({ ...x, guion: JSON.parse(x.guion || "[]"), ganchos: JSON.parse(x.ganchos || "[]") })));
   }
   if (r === "generar-ideas" && req.method === "POST") return json(await generarIdeas(env, iaJSON, quien || "panel", 7, T));
   if (r === "historias") {
@@ -375,7 +406,7 @@ export async function apiRedes(env, req, url, quien, iaJSON, base = "", T = null
   }
   if (r === "idea-estado" && req.method === "POST") {
     if (!["nueva", "grabada", "descartada"].includes(body.estado)) return json({ error: "estado inválido" }, 400);
-    await env.DB.prepare("UPDATE ig_ideas SET estado=? WHERE id=?").bind(body.estado, String(body.id || "")).run();
+    await env.DB.prepare("UPDATE ig_ideas SET estado=?, motivo=? WHERE id=?").bind(body.estado, body.estado === "descartada" ? String(body.motivo || "").slice(0, 300) : null, String(body.id || "")).run();
     return json({ ok: true });
   }
   if (r === "dms") { const d = await dmsPendientes(env); return json({ dms: d, error: (await kvGet(env, "ig_dms_error")) || "", ts: +(await kvGet(env, "ig_dms_sync")) || null }); }
@@ -618,8 +649,8 @@ function cargarIdeas() {
   api("ideas?estado=" + $("#fIdeas").value).then(function (l) {
     $("#ideas").innerHTML = l.length ? l.map(function (x) {
       return '<div class="idea" data-id="' + esc(x.id) + '"><div class="fila" style="justify-content:space-between"><h3>' + esc(x.titulo) + '</h3><span class="fila"><span class="pill n">' + esc(FORMATOS[x.formato] || x.formato) + "</span>" + (x.producto ? '<span class="pill">' + esc(x.producto) + "</span>" : "") + "</span></div>" +
-        '<div class="gancho"><small>TEXTO EN PANTALLA, PRIMER SEGUNDO</small>' + esc(x.gancho) + "</div><ol>" + (x.guion || []).map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ol>" +
-        (x.cta ? "<div><b>Cierre:</b> " + esc(x.cta) + "</div>" : "") + '<div class="pq"><b>Por qué:</b> ' + esc(x.por_que) + "</div>" + (x.hipotesis ? '<div class="pq"><b>Qué probamos:</b> ' + esc(x.hipotesis) + "</div>" : "") +
+        (x.ganchos && x.ganchos.length ? x.ganchos.map(function (g, i) { return '<div class="gancho"><small>GANCHO ' + (i + 1) + " · " + esc(g.tipo).toUpperCase() + "</small>" + esc(g.texto) + (g.como ? '<div style="font-size:13px;font-weight:400;opacity:.8;margin-top:4px">' + esc(g.como) + "</div>" : "") + "</div>"; }).join("") : '<div class="gancho"><small>TEXTO EN PANTALLA, PRIMER SEGUNDO</small>' + esc(x.gancho) + "</div>") + '<div class="pq"><b>Cuerpo (se graba una vez):</b></div><ol>' + (x.guion || []).map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ol>" +
+        (x.cta ? "<div><b>Cierre:</b> " + esc(x.cta) + "</div>" : "") + '<div class="pq"><b>Por qué:</b> ' + esc(x.por_que) + "</div>" + (x.hipotesis ? '<div class="pq"><b>Qué probamos:</b> ' + esc(x.hipotesis) + "</div>" : "") + (x.motivo ? '<div class="pq"><b>Por qué la descartaste:</b> ' + esc(x.motivo) + "</div>" : "") +
         '<div class="fila" style="margin-top:10px">' + (x.estado !== "grabada" ? '<button class="btn p ch" data-e="grabada">Ya lo grabé</button>' : "") + (x.estado !== "descartada" ? '<button class="btn ch" data-e="descartada">Descartar</button>' : "") + (x.estado !== "nueva" ? '<button class="btn ch" data-e="nueva">Volver a pendientes</button>' : "") + '<button class="btn ch" data-c="1">Copiar guion</button></div></div>';
     }).join("") : '<div class="vacio">No hay ideas acá. Tocá <b>Generar ideas nuevas</b>.</div>';
     window.__ideas = l;
@@ -628,8 +659,11 @@ function cargarIdeas() {
 $("#fIdeas").onchange = cargarIdeas;
 $("#ideas").onclick = function (ev) {
   var b = ev.target.closest("button"); if (!b) return; var card = b.closest(".idea"), idv = card.dataset.id;
-  if (b.dataset.c) { var x = (window.__ideas || []).filter(function (i) { return i.id === idv; })[0]; if (!x) return; navigator.clipboard.writeText("GANCHO: " + x.gancho + "\n\n" + (x.guion || []).map(function (t, i) { return (i + 1) + ". " + t; }).join("\n") + (x.cta ? "\n\nCIERRE: " + x.cta : "")).then(function () { aviso("Guion copiado"); }); return; }
-  api("idea-estado", { id: idv, estado: b.dataset.e }).then(function () { card.remove(); cargarResumen(); });
+  if (b.dataset.c) { var x = (window.__ideas || []).filter(function (i) { return i.id === idv; })[0]; if (!x) return; navigator.clipboard.writeText((x.ganchos && x.ganchos.length ? x.ganchos.map(function (g, i) { return "GANCHO " + (i + 1) + " (" + g.tipo + "): " + g.texto + (g.como ? " / " + g.como : ""); }).join("
+") : "GANCHO: " + x.gancho) + "
+
+CUERPO:" + "\n\n" + (x.guion || []).map(function (t, i) { return (i + 1) + ". " + t; }).join("\n") + (x.cta ? "\n\nCIERRE: " + x.cta : "")).then(function () { aviso("Guion copiado"); }); return; }
+  var motivo = "";   if (b.dataset.e === "descartada") { motivo = prompt("¿Por qué la descartás? Esto es lo que la hace aprender (ej: gancho genérico, no tiene número, ese producto no lo vendemos)"); if (motivo === null) return; motivo = motivo.trim(); if (!motivo) { aviso("Escribí un motivo, aunque sea corto"); return; } }   api("idea-estado", { id: idv, estado: b.dataset.e, motivo: motivo }).then(function () { card.remove(); cargarResumen(); });
 };
 $("#bIdeasGen").onclick = function () { var b = this; b.disabled = true; b.lastChild.textContent = "Pensando ideas..."; api("generar-ideas", {}).then(function (r) { b.disabled = false; b.lastChild.textContent = "Generar ideas nuevas"; if (!r.ok) return aviso(r.error); $("#fIdeas").value = "nueva"; cargarIdeas(); cargarResumen(); aviso(r.cantidad + " ideas nuevas"); }); };
 
