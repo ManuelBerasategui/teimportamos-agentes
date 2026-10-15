@@ -290,7 +290,7 @@ ${bloques.join("\n\n")}`);
       const motivo = ["caro", "minimo", "plazo", "desconfianza", "sin_respuesta", "sin_seguimiento", "otro"].includes(a.motivo_perdida) ? a.motivo_perdida : null;
       ops.push(env.DB.prepare("UPDATE w_conv SET analizado_ts=?, puntaje=?, temp=?, producto=?, etapa=?, accion=?, resumen=?, cot_pend=?, resp=?, prov=?, perfil=?, presup_usd=?, origen=COALESCE(?, origen), motivo=? WHERE conv=?")
         .bind(Date.now(), Math.max(1, Math.min(10, parseInt(a.puntaje) || 1)), String(a.temp || ""), String(a.producto || "").slice(0, 80), String(a.etapa || ""), String(a.accion || "").slice(0, 300) + (a.prioridad ? `|p${a.prioridad}` : ""), String(a.resumen || "").slice(0, 400), a.cot_pend ? 1 : 0, a.necesita_respuesta === false ? 0 : 1, a.es_proveedor ? 1 : 0, perfil, presup, origen, motivo, c.conv));      if (a.es_proveedor) ops.push(env.DB.prepare("UPDATE w_hito SET oculto=1 WHERE conv=? AND tipo='venta'").bind(c.conv));
-      ops.push(...pendienteOps(env, c, a.es_proveedor || a.etapa === "no_cliente" ? null : a.pendiente));
+        ops.push(...pendienteOps(env, c, a.es_proveedor || a.etapa === "no_cliente" || (perfil === "E" && !presup && !String(a.producto || "").trim()) ? null : a.pendiente));
       hechos++;
     }
     // Los que la IA no devolvió quedan para la próxima vuelta (no se marcan como analizados)
@@ -864,20 +864,6 @@ export async function metricasPerfil(env, desde) {
 
 // Objetivos activos con su avance (los mide el código, no la IA)
 export async function avanceObjetivos(env) {
-  const objs = (await env.DB.prepare("SELECT * FROM ag_obj WHERE activo=1 ORDER BY id").all()).results || [];
-  if (!objs.length) return [];
-  const hoy = inicioDiaAR(), desdes = { dia: hoy, semana: hoy - 6 * 86400e3, mes: hoy - 29 * 86400e3 }, cache = {};
-  for (const o of objs) {
-    const per = desdes[o.periodo] ? o.periodo : "semana";
-    if (!cache[per]) {
-      const m = await metricas(env, desdes[per]);
-      const ab = await env.DB.prepare("SELECT COUNT(*) n FROM w_conv WHERE primer_ts>=? AND grupo=0 AND perfil IN ('A','B') AND COALESCE(nuevo_ok,1)=1").bind(desdes[per]).first();
-      cache[per] = { chats_nuevos: m.nuevos, chats_ab: ab?.n || 0, cotizaciones: m.cotizaciones, chats_cotizados: m.chatsCotizados, ventas: m.ventas };
-    }
-    o.periodo = per; o.actual = cache[per][o.metrica] ?? 0; o.pct = o.meta ? Math.round((o.actual * 100) / o.meta) : 0;
-  }
-  return objs;
-}
 
 // Telegram a las 10 h: seguimientos del día (una vez por día)
 export async function avisoSeguimientos(env) {
