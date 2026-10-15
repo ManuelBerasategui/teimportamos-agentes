@@ -257,7 +257,7 @@ Para cada chat devolvé:
 - prioridad: 1 (urgente) a 3 (puede esperar)
 - necesita_respuesta: true si el ÚLTIMO mensaje del chat es del CLIENTE y espera algo de nosotros (una pregunta, un pedido, datos, una foto, una duda). false si el último mensaje del cliente es un cierre o acuse ("dale", "ok", "gracias", "perfecto", "lo pienso", "te aviso", "cuando tenga todo te hago el pedido", un sticker o emoji), o si el último mensaje es nuestro. EXCEPCIÓN IMPORTANTE: si el último mensaje del cliente es un acuse (dale, gracias, ok) pero el mensaje nuestro anterior es un (archivo) sin texto que respondía a una consulta de precio, ese (archivo) puede ser un AUDIO donde prometimos consultar el precio. En ese caso poné necesita_respuesta true y en accion escribí: Revisar si ya se le pasó el precio, el (archivo) puede ser un audio.
 REGLAS DEL DUEÑO (mandan por encima de todo lo anterior):${REGLAS_DUENO}
-- es_proveedor: true si el chat es con un PROVEEDOR, mayorista, fábrica o tienda a la que NOSOTROS le compramos (nosotros pedimos precios, nosotros pagamos/transferimos, ellos nos venden). false si es un cliente que nos compra a nosotros.
+- es_proveedor: true si el chat es con un PROVEEDOR o alguien que nos presta un servicio y a quien NOSOTROS le pagamos: mayorista, fábrica, tienda a la que le compramos, forwarder o agente de carga, despachante de aduana, transportista, courier o la importadora (nosotros pedimos precios, nosotros pagamos/transferimos, ellos nos venden). false si es un cliente que nos compra a nosotros.
 - venta_real: true solo si en este chat un CLIENTE nos compró: nos pagó una seña o el total (mandó comprobante, confirmamos su pago). false si fuimos nosotros los que pagamos a un proveedor, o si todavía no pagó.
 - pendiente: lo que NOSOTROS tenemos pendiente con este cliente AHORA, o null si no hay nada. {"tipo": uno de
     "cotizacion" (pidió precio/cotización y todavía no se la mandamos),
@@ -280,7 +280,7 @@ ${bloques.join("\n\n")}`);
     const lista = Array.isArray(r?.chats) ? r.chats : [];
     const ops = [];
     for (const a of lista) {
-      const c = tanda.find((x) => x.conv === String(a.conv));
+      const c = tanda.find((x) => x.conv === String(a.conv)); if (c && NO_CLIENTES.has(c.conv)) a.es_proveedor = true;
       if (!c) continue;
       let perfil = ["A", "B", "C", "D", "E"].includes(String(a.perfil || "").toUpperCase()) ? String(a.perfil).toUpperCase() : null;
       const presup = Number.isFinite(+a.presup_usd) && +a.presup_usd > 0 ? Math.min(500000, Math.round(+a.presup_usd)) : null;
@@ -352,7 +352,7 @@ Varios archivos seguidos del mismo producto = UNA cotización. Una cotización n
 NO cuentan: catálogos o listas generales de precios ("PRECIOS MAYORISTA DE ZAPATILLAS", PDF de catálogo), fotos de productos de ejemplo, datos de pago o envío, mensajes automáticos, chats con proveedores (cuando NOSOTROS le compramos a ellos) ni charlas internas del equipo.
 VENTAS: marcá "venta" SOLO si ESE DÍA (mensajes sin "(día anterior)") el cliente nos PAGÓ por primera vez esa compra: mandó el comprobante de la seña o del total, o le confirmamos que recibimos su pago. NO es venta del día: pasarle el código de seguimiento, avisar que salió o llegó el pedido, datos de envío, reclamos, el saldo de una compra ya señada antes, pedir el alias sin pagar todavía, ni pagos que NOSOTROS le hacemos a un proveedor.
 CHAT NUEVO: "primer_contacto" true solo si este día es la primera vez que esta persona nos escribe (consulta inicial, sin señales de que ya nos conocía: compras anteriores, pedidos en curso, "como te dije", etc.).
-Devolvé JSON: {"chats":[{"chat":"id exacto","interno":true SOLO si es una charla entre socios del equipo o con un proveedor al que le compramos (si no, false),"primer_contacto":true|false,"cotizaciones":[{"msg":número del mensaje (#) donde se mandó,"producto":"2-5 palabras"}],"venta":null o {"msg":número del mensaje del pago o la confirmación,"producto":"2-5 palabras","monto":"si se ve, si no \"\""}}]}
+Devolvé JSON: {"chats":[{"chat":"id exacto","interno":true SOLO si es una charla entre socios del equipo o con un proveedor, forwarder, agente de carga, despachante o transportista (gente a la que NOSOTROS le pagamos) (si no, false),"primer_contacto":true|false,"cotizaciones":[{"msg":número del mensaje (#) donde se mandó,"producto":"2-5 palabras"}],"venta":null o {"msg":número del mensaje del pago o la confirmación,"producto":"2-5 palabras","monto":"si se ve, si no \"\""}}]}
 
 ${bloques.join("\n\n")}`);
     if (debug) return { r, prompt: bloques.join("\n\n").slice(0, 6000) };
@@ -574,6 +574,7 @@ export async function cronLector(env, iaJSON, scheduledTime) {
     }
   }
   if (m % 30 === 3) await alertasRapidas(env).catch((e) => console.log("lector alertas", e?.stack || e));
+  { const lista = [...NO_CLIENTES], kf = "no_clientes:" + lista.join(","); if (lista.length && !(await kvGet(env, kf))) { const q = lista.map(() => "?").join(","); await env.DB.batch([env.DB.prepare(`UPDATE w_conv SET prov=1, perfil=NULL, etapa='no_cliente' WHERE conv IN (${q})`).bind(...lista), env.DB.prepare(`UPDATE w_hito SET oculto=1 WHERE tipo='venta' AND conv IN (${q})`).bind(...lista), env.DB.prepare(`UPDATE tareas SET estado='resuelta' WHERE estado='abierta' AND tel IN (${q})`).bind(...lista), env.DB.prepare("DELETE FROM kv WHERE k='lector_resumen'")]); await kvPut(env, kf, Date.now()); } }
   if (!(await kvGet(env, "perfil_v1"))) { await env.DB.prepare("UPDATE w_conv SET analizado_ts=0 WHERE grupo=0 AND ult_ts>=?").bind(Date.now() - 14 * 86400e3).run(); await kvPut(env, "perfil_v1", Date.now()); }
   if (hAR === 10 && m >= 5 && m < 20) await avisoSeguimientos(env).catch((e) => console.log("lector seguimientos", e?.stack || e));
   // Reporte diario: desde las 21 h; si falla o se saltea, reintenta cada 10 min y se recupera durante todo el día siguiente
@@ -1016,3 +1017,11 @@ export async function metricasEquipo(env, desde) {
   await kvPut(env, k, JSON.stringify({ ts: Date.now(), d }));
   return d;
 }
+
+
+// Números que NUNCA son clientes: forwarders, despachantes, proveedores y números del equipo.
+// Lo que está acá no cuenta como venta, cliente ni pendiente. Agregá los que hagan falta.
+const NO_CLIENTES = new Set([
+  "5491152577925",   // Pedro Aguirre, forwarder de China
+  "5493413084113",   // Manuel personal
+]);
