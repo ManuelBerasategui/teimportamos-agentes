@@ -92,7 +92,8 @@ const tel=c=>/^\\d+$/.test(c)?'+'+c:c;
 const sc=c=>c.puntaje?'<span class="sc '+({caliente:'c',tibio:'t',frio:'f'}[c.temp]||'s')+'">'+c.puntaje+'</span>':'<span class="sc s">-</span>';
 const acc=a=>a?String(a).replace(/\\|p\\d$/,''):'';
 const nom=c=>esc(c.nombre||tel(c.conv));
-const wa=c=>/^\\d{8,15}$/.test(String(c.conv))?' <a class="wa" href="https://wa.me/'+c.conv+'" target="_blank" rel="noopener" title="Abrir este chat en WhatsApp">WhatsApp</a>':'';
+const waNum=c=>{const x=String(c.conv||'');if(/g\\.us|-/.test(x)||c.grupo)return '';const n=x.split('@')[0].split(':')[0].replace(/\\D/g,'');return n.length>=10&&n.length<=13?n:''};
+const wa=c=>waNum(c)?' <a class="wa" href="https://wa.me/'+waNum(c)+'" target="_blank" rel="noopener" title="Abrir este chat en WhatsApp">WhatsApp</a>':'';
 let datos=null,per='dia',lista='sin';
 async function cargar(){datos=await api('resumen');pintar()}
 function fila(c,extra,txt){return '<tr data-c="'+esc(c.conv)+'"><td class="n"><b>'+nom(c)+'</b>'+(c.nombre?'<small>'+tel(c.conv)+'</small> ':'')+sc(c)+wa(c)+'</td><td class="p">'+esc(c.producto||'')+'</td><td class="a">'+esc(txt!==undefined?txt:(acc(c.accion)||c.resumen||c.ult_texto||''))+'</td><td class="h">'+extra+'</td></tr>'}
