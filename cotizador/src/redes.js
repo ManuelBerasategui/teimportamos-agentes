@@ -412,7 +412,7 @@ export async function apiRedes(env, req, url, quien, iaJSON, base = "", T = null
   }
   if (r === "idea-estado" && req.method === "POST") {
     if (!["nueva", "grabada", "descartada"].includes(body.estado)) return json({ error: "estado inválido" }, 400);
-    await env.DB.prepare("UPDATE ig_ideas SET estado=?, motivo=?, hecho_ts=? WHERE id=?").bind(body.estado, body.estado === "descartada" ? String(body.motivo || "").slice(0, 300) : null, body.estado === "grabada" ? Date.now() : null, String(body.id || "")).run();
+    <section class="card"><div class="fila" style="justify-content:space-between"><h2>Constancia <span class="estado">lo que marcaste como grabado o subido</span></h2><span class="fila"><button class="btn" id="calAnt">&lt;</button><b id="calMes"></b><button class="btn" id="calSig">&gt;</button></span></div><div class="cal" id="cal"></div></section>   <section class="card"><h2>Qué formato funciona <span class="estado">reels de los últimos 60 días</span></h2><div class="tabla" id="formatos"></div></section>.bind(body.estado, body.estado === "descartada" ? String(body.motivo || "").slice(0, 300) : null, body.estado === "grabada" ? Date.now() : null, String(body.id || "")).run();
     return json({ ok: true });
   }
     if (r === "calendario") {
