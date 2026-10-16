@@ -412,7 +412,7 @@ export async function apiRedes(env, req, url, quien, iaJSON, base = "", T = null
   }
   if (r === "idea-estado" && req.method === "POST") {
     if (!["nueva", "grabada", "descartada"].includes(body.estado)) return json({ error: "estado inválido" }, 400);
-    <section class="card"><div class="fila" style="justify-content:space-between"><h2>Constancia <span class="estado">lo que marcaste como grabado o subido</span></h2><span class="fila"><button class="btn" id="calAnt">&lt;</button><b id="calMes"></b><button class="btn" id="calSig">&gt;</button></span></div><div class="cal" id="cal"></div></section>   <section class="card"><h2>Qué formato funciona <span class="estado">reels de los últimos 60 días</span></h2><div class="tabla" id="formatos"></div></section>.bind(body.estado, body.estado === "descartada" ? String(body.motivo || "").slice(0, 300) : null, body.estado === "grabada" ? Date.now() : null, String(body.id || "")).run();
+        await env.DB.prepare("UPDATE ig_ideas SET estado=?, motivo=?, hecho_ts=? WHERE id=?").bind(body.estado, body.estado === "descartada" ? String(body.motivo || "").slice(0, 300) : null, body.estado === "grabada" ? Date.now() : null, String(body.id || "")).run();
     return json({ ok: true });
   }
     if (r === "calendario") {
@@ -566,7 +566,8 @@ ${CARR_CSS}
   <div class="kpis" id="kpis"></div>
   <section class="card"><div class="fila" style="justify-content:space-between"><h2>Reporte semanal <span class="estado" id="repFecha"></span></h2><span class="fila acciones"><button class="btn" id="bTraer"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16M20 20v-4h-4"/></svg>Traer datos ahora</button><button class="btn p" id="bReporte"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>Generar reporte</button></span></div>
     <div id="reporte" class="vacio">Sale solo los lunes a las 9 y te llega por Telegram.</div></section>
-  await env.DB.prepare("UPDATE ig_ideas SET estado=?, motivo=?, hecho_ts=? WHERE id=?").bind(body.estado, body.estado === "descartada" ? String(body.motivo || "").slice(0, 300) : null, body.estado === "grabada" ? Date.now() : null, String(body.id || "")).run(); <span class="estado">reels de los últimos 60 días</span></h2><div class="tabla" id="formatos"></div></section>
+    <section class="card"><div class="fila" style="justify-content:space-between"><h2>Constancia <span class="estado">lo que marcaste como grabado o subido</span></h2><span class="fila"><button class="btn" id="calAnt">&lt;</button><b id="calMes"></b><button class="btn" id="calSig">&gt;</button></span></div><div class="cal" id="cal"></div></section>
+  <section class="card"><h2>Qué formato funciona <span class="estado">reels de los últimos 60 días</span></h2><div class="tabla" id="formatos"></div></section>
 </div>
 
 <div id="m-ideas" style="display:none">
