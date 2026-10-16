@@ -58,6 +58,12 @@ ESTRUCTURA "CUÁNTO LE GANO" (60.910 y 83.517 vistas; el de 60 mil tuvo 367 come
 LO QUE FRACASÓ (2.039, 849 y 467 vistas, casi solo lo vieron seguidores = el gancho no retuvo):
 - "No puede ser, hace 2 semanas que lo vengo buscando": gancho flojo, sin número, desvío por Paraguay y "pasero" que confunde, final vago ("tenían un catálogo, me volví loco"), vende "grupo mayorista" en vez del servicio. Además se subió dos veces el mismo guion.
 - Testimonio en tercera persona sin producto, sin precios, sin China ni ML, cierre "¿y vos qué esperás?" sin acción concreta.`;
+const UTILERIA = `UTILERÍA QUE EL DUEÑO TIENE A MANO (usala en ganchos y en "mostrar"; no inventes lugares ni cosas que no tiene: NO hay depósito, NO hay local, NO hay mercadería en stock):
+- Varias botellas y termos distintos (tipo Stanley, botellas con tapa): ideal para "un cliente me pidió esto, mirá lo que encontré en China".
+- Parlantes JBL y cajitas de AirPods (tecnología). Las cajas de iPhone NO se usan: iPhone no lo importamos más.
+- Cajas de cartón: para armar una pila tipo "pedido que llegó", abrir una caja en cámara o tapar el fondo.
+- Zapatillas propias usadas: solo para hablar del rubro, nunca como si fueran mercadería nueva.
+Si se muestra un producto en mano, es una muestra del tipo de producto: nunca decir que esa unidad la importó un cliente.`;
 const NEGOCIO = `"Te Importamos" (Rosario, Argentina): importación por encargo, nos encargamos de todo (buscar proveedor, aduana, envío). No hay stock: todo por encargo. Orígenes: China (principal), EE. UU. (originales de marca), Paraguay, Brasil.
 Tarifa China real: honorarios USD 80 por operación + handling USD 30 + flete aéreo USD 18/kg hasta 50 kg (50 a 250 kg USD 950 fijo) + impuestos aprox. 30%. Aéreo 10 a 15 días, barco 40 a 60. Mínimos: tecnología, bazar y perfumes 5 u.; ropa 10 u.; zapatillas 3 pares. Cupos: varios clientes se juntan para llegar al mínimo.
 Clientes: revendedores chicos y emprendedores (el grueso), negocios que piden insumos, consumidor final que quiere algo original de EE. UU.
@@ -79,7 +85,7 @@ export function mediana(xs) { const v = xs.filter((x) => x != null).sort((a, b) 
 const listo = new WeakSet();
 export async function prepararRedes(env) {
   if (listo.has(env.DB)) return;
-  await env.DB.batch([...ESQUEMA_REDES, ...ESQUEMA_IG].map((s) => env.DB.prepare(s)));   for (const s of ["ALTER TABLE ig_ideas ADD COLUMN motivo TEXT", "ALTER TABLE ig_ideas ADD COLUMN ganchos TEXT"]) { try { await env.DB.prepare(s).run(); } catch {} }
+  await env.DB.batch([...ESQUEMA_REDES, ...ESQUEMA_IG].map((s) => env.DB.prepare(s)));   for (const s of ["ALTER TABLE ig_ideas ADD COLUMN motivo TEXT", "ALTER TABLE ig_ideas ADD COLUMN ganchos TEXT", "ALTER TABLE ig_ideas ADD COLUMN hecho_ts INTEGER", "ALTER TABLE ig_historias ADD COLUMN hecho_ts INTEGER"]) { try { await env.DB.prepare(s).run(); } catch {} }
   listo.add(env.DB);
 }
 
@@ -146,7 +152,7 @@ LO QUE YA SABEMOS (diagnóstico de 120 publicaciones):
 ${APRENDIZAJES_BASE}
 
 GUIONES REALES DE LA CUENTA (copiá la ESTRUCTURA, no las palabras):
-${GUIONES_GANADORES}
+${GUIONES_GANADORES}  ${UTILERIA}
 
 IDEAS QUE EL DUEÑO DESCARTÓ Y POR QUÉ (lo más importante: no repitas estos errores):
 ${rechazos.map((x) => `- "${x.titulo}" (gancho: "${x.gancho}") → ${x.motivo}`).join("\n") || "(todavía ninguna)"}
@@ -174,7 +180,7 @@ Reglas para los guiones:
 - Los ganchos de una idea tienen que ser de TIPO VISUAL DISTINTO, sin repetir, de esta lista: reaccion (cara tapada o indignado a cámara), pantalla (precio de ML en grande), lejos (plano lejano, se ve el lugar), mano (producto en mano o caja abriéndose), split (ML vs China lado a lado), cartel (texto grande sobre fondo liso). El texto también cambia de tipo: número, queja, POV, pregunta, afirmación polémica. "Me tapo la cara" y "me agarro la cara" NO son ganchos distintos.
 - Cuerpos: la mayoría con la estructura BÚSQUEDA FRUSTRADA (formato "ml_vs_china") y algunos CUÁNTO LE GANO (formato "ml_vendi"). Siempre producto concreto, cantidad concreta y al menos un número en pantalla en los primeros 5 segundos.
 - MARCO: nunca el dueño haciéndose pasar por un cliente que "encontró" a Te Importamos (Instagram ya restringió la cuenta por eso). Usá "pov" (escena dramatizada, el gancho arranca con "POV:") o "importador" (el dueño cuenta: "un cliente con un pet shop me pidió 100 de estos, mirá lo que encontré"). Misma energía y lenguaje que los ganadores.
-- Productos: los que piden de verdad por WhatsApp (datos de arriba). Nada de "Parte 1".
+- Productos: los que piden de verdad por WhatsApp (datos de arriba). Nada de "Parte 1". - Por lo menos la mitad de las ideas siguen la BÚSQUEDA FRUSTRADA completa: precio de Mercado Libre en pantalla → Temu o Shein no sirven → Alibaba por cantidad → número puesto en Argentina. Sin contraste de precios no hay idea. - Ganchos: solo con lo que hay en la UTILERÍA o con la pantalla del celu o la compu. Nada de "plano del depósito", "señala la pantalla" ni gestos vacíos: cada gancho muestra algo concreto (un producto, un precio, una caja abriéndose). - No expliques la tarifa (80 de honorarios, 30 de handling, flete por kilo) dentro del guion: aburre. Alcanza con el número final puesto en Argentina.
 - CTA: una sola palabra clave para escribir al WhatsApp del perfil ("escribime CARGADOR al WhatsApp del perfil"). La palabra cambia por idea: sirve para medir de qué video vino el chat.
 - El gancho es el texto que va en pantalla en el primer segundo: corto, en minúscula o como habla un pibe de Rosario, que obligue a quedarse.
 - Cuerpo: 6 a 10 frases cortas tal como se dicen a cámara, español rioplatense, sin emojis. Duración 35 a 60 segundos.
@@ -242,7 +248,7 @@ export async function generarHistorias(env, iaJSON, { T, quien = "auto", cantida
   const r = await iaJSON(env, `Sos quien maneja las HISTORIAS de Instagram de este negocio:
 ${NEGOCIO}
 ${bloqueReglas(await reglasDe(env, "ig_reglas_ideas"))}
-Proponé ${cantidad} historias para subir HOY, sacadas de lo que pasa de verdad en el WhatsApp y en Instagram. Las historias son para gente que ya te sigue: generan confianza y llevan al DM o al WhatsApp.
+${UTILERIA} Proponé ${cantidad} historias para subir HOY, sacadas de lo que pasa de verdad en el WhatsApp y en Instagram. Las historias son para gente que ya te sigue: generan confianza y llevan al DM o al WhatsApp.
 
 DATOS REALES:
 ${resumenWA({ ...w, cotizaciones: cotLibres })}
@@ -256,7 +262,7 @@ Tipos posibles: ${Object.entries(TIPOS_HISTORIA).map(([k, v]) => `"${k}" (${v})`
 Reglas:
 - Variá los tipos. Si hay cotizaciones armadas, una historia "cotizaciones" que muestre varias juntas (captura del PDF o lista), con los ids en "cotizaciones". Si hay un producto que se consultó mucho, una "producto" o una "encuesta" sobre eso.
 - Para encuesta o quiz: pregunta corta y 2 opciones (hasta 4 en quiz). Para caja de preguntas: la pregunta del sticker.
-- "mostrar": qué grabar o capturar, concreto y que se haga en 2 minutos con el celular.
+- "mostrar": qué grabar o capturar, concreto y que se haga en 2 minutos con el celular, solo con cosas de la UTILERÍA, la pantalla o capturas reales.
 - "texto": lo que va escrito en la historia, corto, como habla un pibe de Rosario, sin emojis.
 - NUNCA nombres, teléfonos ni usuarios de clientes. En capturas de cotizaciones, tapar nombre y número del cliente.
 - Precios: solo los de las cotizaciones de arriba (son "puesto en Argentina", del día). No inventes precios ni prometas ganancias.
@@ -401,13 +407,26 @@ export async function apiRedes(env, req, url, quien, iaJSON, base = "", T = null
   if (r === "generar-historias" && req.method === "POST") return json(await generarHistorias(env, iaJSON, { T, quien: quien || "panel" }));
   if (r === "historia-estado" && req.method === "POST") {
     if (!["nueva", "subida", "descartada"].includes(body.estado)) return json({ error: "estado inválido" }, 400);
-    await env.DB.prepare("UPDATE ig_historias SET estado=? WHERE id=?").bind(body.estado, String(body.id || "")).run();
+    await env.DB.prepare("UPDATE ig_historias SET estado=?, hecho_ts=? WHERE id=?").bind(body.estado, body.estado === "subida" ? Date.now() : null, String(body.id || "")).run();
     return json({ ok: true });
   }
   if (r === "idea-estado" && req.method === "POST") {
     if (!["nueva", "grabada", "descartada"].includes(body.estado)) return json({ error: "estado inválido" }, 400);
-    await env.DB.prepare("UPDATE ig_ideas SET estado=?, motivo=? WHERE id=?").bind(body.estado, body.estado === "descartada" ? String(body.motivo || "").slice(0, 300) : null, String(body.id || "")).run();
+    await env.DB.prepare("UPDATE ig_ideas SET estado=?, motivo=?, hecho_ts=? WHERE id=?").bind(body.estado, body.estado === "descartada" ? String(body.motivo || "").slice(0, 300) : null, body.estado === "grabada" ? Date.now() : null, String(body.id || "")).run();
     return json({ ok: true });
+  }
+    if (r === "calendario") {
+    const mp = url.searchParams.get("mes") || "", m = /^\d{4}-\d{2}$/.test(mp) ? mp : new Date(Date.now() - AR).toISOString().slice(0, 7);
+    const [y, mm] = m.split("-").map(Number), ini = Date.UTC(y, mm - 1, 1) + AR, fin = Date.UTC(y, mm, 1) + AR;
+    const q = async (sql) => { try { return (await env.DB.prepare(sql).bind(ini, fin).all()).results || []; } catch { return []; } };
+    const [v, h, c] = await Promise.all([
+      q("SELECT hecho_ts ts, titulo, gancho detalle FROM ig_ideas WHERE estado='grabada' AND hecho_ts>=? AND hecho_ts<?"),
+      q("SELECT hecho_ts ts, titulo, texto detalle FROM ig_historias WHERE estado='subida' AND hecho_ts>=? AND hecho_ts<?"),
+      q("SELECT publicado_ts ts, titulo, caption detalle FROM ig_carruseles WHERE estado='publicado' AND borrado=0 AND publicado_ts>=? AND publicado_ts<?"),
+    ]);
+    const dias = {};
+    for (const [tipo, l] of [["video", v], ["historia", h], ["carrusel", c]]) for (const x of l) (dias[new Date(x.ts - AR).toISOString().slice(0, 10)] ||= []).push({ tipo, ts: x.ts, titulo: x.titulo || "", detalle: String(x.detalle || "").slice(0, 300) });
+    return json({ mes: m, dias });
   }
   if (r === "dms") { const d = await dmsPendientes(env); return json({ dms: d, error: (await kvGet(env, "ig_dms_error")) || "", ts: +(await kvGet(env, "ig_dms_sync")) || null }); }
   if (r === "actualizar" && req.method === "POST") return json(await llamarIG(env, body.todo ? "/sync" : "/sync-dms"));
@@ -467,7 +486,7 @@ header b{color:#fff;font-size:17px;white-space:nowrap}header b span{color:var(--
 details.reglas summary{cursor:pointer;font-weight:700}details.reglas[open] summary{margin-bottom:6px}
 
 main{padding:16px;max-width:1100px;margin:0 auto}
-.card{background:#fff;border:1px solid var(--borde);border-radius:12px;padding:14px;margin-bottom:12px;min-width:0}
+.cal{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:4px;margin-top:8px}.cal .cab{font-size:11px;color:var(--gris);text-align:center;font-weight:700}.cal .d{border:1px solid var(--borde);border-radius:8px;min-height:62px;padding:4px 5px;font-size:11px;background:#fff;cursor:pointer;overflow:hidden}.cal .d.vac{border:0;background:none;cursor:default}.cal .d.hoy{border-color:var(--nar);border-width:2px}.cal .d b{display:block;font-size:12px;margin-bottom:2px}.cal .d span{display:block;line-height:1.35;white-space:nowrap}.cal .d.cero{color:#B9BEC6;cursor:default} .calpop{position:fixed;inset:0;background:rgba(0,0,0,.45);display:flex;align-items:center;justify-content:center;z-index:50;padding:16px}.calpop>div{background:#fff;border-radius:14px;max-width:520px;width:100%;max-height:80vh;overflow:auto;padding:16px}.calpop .it{border-top:1px solid var(--borde);padding:8px 0;font-size:14px;line-height:1.4}.calpop .it small{color:var(--gris);display:block}
 h2{font-size:16px;margin:0 0 10px}.estado{font-size:13px;color:var(--gris);font-weight:400}
 .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:12px}.kpi{background:#fff;border:1px solid var(--borde);border-radius:12px;padding:12px}
 .kpi small{display:block;color:var(--gris);font-size:12px;font-weight:600}.kpi b{display:block;font-size:24px;margin-top:4px}.kpi i{font-style:normal;font-size:12px;font-weight:700}.sube{color:var(--verde)}.baja{color:var(--rojo)}
@@ -547,7 +566,7 @@ ${CARR_CSS}
   <div class="kpis" id="kpis"></div>
   <section class="card"><div class="fila" style="justify-content:space-between"><h2>Reporte semanal <span class="estado" id="repFecha"></span></h2><span class="fila acciones"><button class="btn" id="bTraer"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16M20 20v-4h-4"/></svg>Traer datos ahora</button><button class="btn p" id="bReporte"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>Generar reporte</button></span></div>
     <div id="reporte" class="vacio">Sale solo los lunes a las 9 y te llega por Telegram.</div></section>
-  <section class="card"><h2>Qué formato funciona <span class="estado">reels de los últimos 60 días</span></h2><div class="tabla" id="formatos"></div></section>
+  await env.DB.prepare("UPDATE ig_ideas SET estado=?, motivo=?, hecho_ts=? WHERE id=?").bind(body.estado, body.estado === "descartada" ? String(body.motivo || "").slice(0, 300) : null, body.estado === "grabada" ? Date.now() : null, String(body.id || "")).run(); <span class="estado">reels de los últimos 60 días</span></h2><div class="tabla" id="formatos"></div></section>
 </div>
 
 <div id="m-ideas" style="display:none">
@@ -627,7 +646,7 @@ function modo(m) {
 document.querySelectorAll("#modos-main button").forEach(function (b) { b.onclick = function () { modo(b.dataset.view); }; });
 document.querySelectorAll("#modos-sub button").forEach(function (b) { b.onclick = function () { modo(b.dataset.sub); }; });
 
-function cargarResumen() {
+function cargarResumen() {   cargarCal();
   api("resumen").then(function (r) {
     var k = r.kpis || {};
     $("#sinDatos").style.display = r.hay_datos ? "none" : "";
@@ -657,6 +676,37 @@ function cargarIdeas() {
   });
 }
 $("#fIdeas").onchange = cargarIdeas;
+var CAL_M = "", CAL = {};
+function hoyAR() { return new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10); }
+function cargarCal() {
+  if (!CAL_M) CAL_M = hoyAR().slice(0, 7);
+  var p = CAL_M.split("-"), y = +p[0], m = +p[1], MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+  $("#calMes").textContent = MESES[m - 1] + " " + y;
+  api("calendario?mes=" + CAL_M).then(function (r) {
+    CAL = r.dias || {};
+    var dias = new Date(Date.UTC(y, m, 0)).getUTCDate(), off = (new Date(Date.UTC(y, m - 1, 1)).getUTCDay() + 6) % 7, hoy = hoyAR();
+    var h = ["Lu", "Ma", "Mi", "Ju", "Vi", "Sa", "Do"].map(function (d) { return '<div class="cab">' + d + "</div>"; }).join("");
+    for (var i = 0; i < off; i++) h += '<div class="d vac"></div>';
+    for (var d = 1; d <= dias; d++) {
+      var k = CAL_M + "-" + (d < 10 ? "0" : "") + d, l = CAL[k] || [], n = { video: 0, historia: 0, carrusel: 0 };
+      l.forEach(function (x) { n[x.tipo]++; });
+      h += '<div class="d' + (l.length ? "" : " cero") + (k === hoy ? " hoy" : "") + '" data-k="' + k + '"><b>' + d + "</b>" + (n.video ? "<span>" + n.video + (n.video > 1 ? " videos" : " video") + "</span>" : "") + (n.historia ? "<span>" + n.historia + " hist.</span>" : "") + (n.carrusel ? "<span>" + n.carrusel + " carr.</span>" : "") + "</div>";
+    }
+    $("#cal").innerHTML = h;
+  });
+}
+function movCal(s) { var p = CAL_M.split("-"), y = +p[0], m = +p[1] + s; if (m < 1) { m = 12; y--; } if (m > 12) { m = 1; y++; } CAL_M = y + "-" + (m < 10 ? "0" : "") + m; cargarCal(); }
+$("#calAnt").onclick = function () { movCal(-1); };
+$("#calSig").onclick = function () { movCal(1); };
+$("#cal").onclick = function (ev) {
+  var c = ev.target.closest(".d[data-k]"); if (!c) return;
+  var l = (CAL[c.dataset.k] || []).slice().sort(function (a, b) { return a.ts - b.ts; }); if (!l.length) return;
+  var NOM = { video: "Video", historia: "Historia", carrusel: "Carrusel" };
+  var pop = document.createElement("div"); pop.className = "calpop";
+  pop.innerHTML = '<div><div class="fila" style="justify-content:space-between"><h2>' + esc(c.dataset.k.split("-").reverse().join("/")) + '</h2><button class="btn" data-x="1">Cerrar</button></div>' + l.map(function (x) { return '<div class="it"><small>' + NOM[x.tipo] + " · " + new Date(x.ts - 3 * 3600e3).toISOString().slice(11, 16) + " h</small><b>" + esc(x.titulo) + "</b>" + (x.detalle ? "<div>" + esc(x.detalle) + "</div>" : "") + "</div>"; }).join("") + "</div>";
+  pop.onclick = function (e) { if (e.target === pop || e.target.closest("[data-x]")) pop.remove(); };
+  document.body.appendChild(pop);
+};
 $("#ideas").onclick = function (ev) {
   var b = ev.target.closest("button"); if (!b) return; var card = b.closest(".idea"), idv = card.dataset.id;
     if (b.dataset.c) { var x = (window.__ideas || []).filter(function (i) { return i.id === idv; })[0]; if (!x) return; var NL = String.fromCharCode(10); navigator.clipboard.writeText((x.ganchos && x.ganchos.length ? x.ganchos.map(function (g, i) { return "GANCHO " + (i + 1) + " (" + g.tipo + "): " + g.texto + (g.como ? " / " + g.como : ""); }).join(NL) : "GANCHO: " + x.gancho) + NL + NL + "CUERPO:" + NL + (x.guion || []).map(function (t, i) { return (i + 1) + ". " + t; }).join(NL) + (x.cta ? NL + NL + "CIERRE: " + x.cta : "")).then(function () { aviso("Guion copiado"); }); return; }
