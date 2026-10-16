@@ -85,7 +85,7 @@ export function mediana(xs) { const v = xs.filter((x) => x != null).sort((a, b) 
 const listo = new WeakSet();
 export async function prepararRedes(env) {
   if (listo.has(env.DB)) return;
-  await env.DB.batch([...ESQUEMA_REDES, ...ESQUEMA_IG].map((s) => env.DB.prepare(s)));   for (const s of ["ALTER TABLE ig_ideas ADD COLUMN motivo TEXT", "ALTER TABLE ig_ideas ADD COLUMN ganchos TEXT", "ALTER TABLE ig_ideas ADD COLUMN hecho_ts INTEGER", "ALTER TABLE ig_historias ADD COLUMN hecho_ts INTEGER"]) { try { await env.DB.prepare(s).run(); } catch {} }
+  await env.DB.batch([...ESQUEMA_REDES, ...ESQUEMA_IG].map((s) => env.DB.prepare(s)));   for (const s of ["ALTER TABLE ig_ideas ADD COLUMN motivo TEXT", "ALTER TABLE ig_ideas ADD COLUMN ganchos TEXT", "ALTER TABLE ig_ideas ADD COLUMN hecho_ts INTEGER", "ALTER TABLE ig_historias ADD COLUMN hecho_ts INTEGER", "ALTER TABLE ig_ideas ADD COLUMN n_videos INTEGER"]) { try { await env.DB.prepare(s).run(); } catch {} }
   listo.add(env.DB);
 }
 
@@ -412,7 +412,7 @@ export async function apiRedes(env, req, url, quien, iaJSON, base = "", T = null
   }
   if (r === "idea-estado" && req.method === "POST") {
     if (!["nueva", "grabada", "descartada"].includes(body.estado)) return json({ error: "estado inválido" }, 400);
-        await env.DB.prepare("UPDATE ig_ideas SET estado=?, motivo=?, hecho_ts=? WHERE id=?").bind(body.estado, body.estado === "descartada" ? String(body.motivo || "").slice(0, 300) : null, body.estado === "grabada" ? Date.now() : null, String(body.id || "")).run();
+        await env.DB.prepare("UPDATE ig_ideas SET estado=?, motivo=?, hecho_ts=?, n_videos=? WHERE id=?").bind(body.estado, body.estado === "descartada" ? String(body.motivo || "").slice(0, 300) : null, body.estado === "grabada" ? Date.now() : null, body.estado === "grabada" ? Math.max(1, Math.min(10, parseInt(body.n) || 1)) : null, String(body.id || "")).run();
     return json({ ok: true });
   }
     if (r === "calendario") {
@@ -420,7 +420,7 @@ export async function apiRedes(env, req, url, quien, iaJSON, base = "", T = null
     const [y, mm] = m.split("-").map(Number), ini = Date.UTC(y, mm - 1, 1) + AR, fin = Date.UTC(y, mm, 1) + AR;
     const q = async (sql) => { try { return (await env.DB.prepare(sql).bind(ini, fin).all()).results || []; } catch { return []; } };
     const [v, h, c] = await Promise.all([
-      q("SELECT hecho_ts ts, titulo, gancho detalle FROM ig_ideas WHERE estado='grabada' AND hecho_ts>=? AND hecho_ts<?"),
+            (async () => { try { return (await env.DB.prepare("SELECT hecho_ts, titulo, gancho, ganchos, n_videos FROM ig_ideas WHERE estado='grabada' AND hecho_ts>=? AND hecho_ts<?").bind(ini - 10 * 86400e3, fin).all()).results || []; } catch { return []; } })().then((l) => l.flatMap((x) => { let gs = []; try { gs = JSON.parse(x.ganchos || "[]"); } catch {} const n = x.n_videos || 1; return Array.from({ length: n }, (_, i) => ({ ts: x.hecho_ts + i * 86400e3, titulo: (x.titulo || "") + (n > 1 ? " · video " + (i + 1) + " de " + n : ""), detalle: (gs[i] && gs[i].texto) || x.gancho || "" })).filter((e) => e.ts >= ini && e.ts < fin); })),
       q("SELECT hecho_ts ts, titulo, texto detalle FROM ig_historias WHERE estado='subida' AND hecho_ts>=? AND hecho_ts<?"),
       q("SELECT publicado_ts ts, titulo, caption detalle FROM ig_carruseles WHERE estado='publicado' AND borrado=0 AND publicado_ts>=? AND publicado_ts<?"),
     ]);
@@ -711,7 +711,7 @@ $("#cal").onclick = function (ev) {
 $("#ideas").onclick = function (ev) {
   var b = ev.target.closest("button"); if (!b) return; var card = b.closest(".idea"), idv = card.dataset.id;
     if (b.dataset.c) { var x = (window.__ideas || []).filter(function (i) { return i.id === idv; })[0]; if (!x) return; var NL = String.fromCharCode(10); navigator.clipboard.writeText((x.ganchos && x.ganchos.length ? x.ganchos.map(function (g, i) { return "GANCHO " + (i + 1) + " (" + g.tipo + "): " + g.texto + (g.como ? " / " + g.como : ""); }).join(NL) : "GANCHO: " + x.gancho) + NL + NL + "CUERPO:" + NL + (x.guion || []).map(function (t, i) { return (i + 1) + ". " + t; }).join(NL) + (x.cta ? NL + NL + "CIERRE: " + x.cta : "")).then(function () { aviso("Guion copiado"); }); return; }
-  var motivo = "";   if (b.dataset.e === "descartada") { motivo = prompt("¿Por qué la descartás? Esto es lo que la hace aprender (ej: gancho genérico, no tiene número, ese producto no lo vendemos)"); if (motivo === null) return; motivo = motivo.trim(); if (!motivo) { aviso("Escribí un motivo, aunque sea corto"); return; } }   api("idea-estado", { id: idv, estado: b.dataset.e, motivo: motivo }).then(function () { card.remove(); cargarResumen(); });
+  var motivo = "";   if (b.dataset.e === "descartada") { motivo = prompt("¿Por qué la descartás? Esto es lo que la hace aprender (ej: gancho genérico, no tiene número, ese producto no lo vendemos)"); if (motivo === null) return; motivo = motivo.trim(); if (!motivo) { aviso("Escribí un motivo, aunque sea corto"); return; } }   var nv = 1; if (b.dataset.e === "grabada") { var xi = (window.__ideas || []).filter(function (i) { return i.id === idv; })[0], def = xi && xi.ganchos && xi.ganchos.length ? xi.ganchos.length : 1; var rv = prompt("¿Cuántos videos salieron de esta idea? Se reparten uno por día en el calendario", def); if (rv === null) return; nv = Math.max(1, Math.min(10, parseInt(rv) || def)); }   api("idea-estado", { id: idv, estado: b.dataset.e, motivo: motivo, n: nv }).then(function () { card.remove(); cargarResumen(); });
 };
 $("#bIdeasGen").onclick = function () { var b = this; b.disabled = true; b.lastChild.textContent = "Pensando ideas..."; api("generar-ideas", {}).then(function (r) { b.disabled = false; b.lastChild.textContent = "Generar ideas nuevas"; if (!r.ok) return aviso(r.error); $("#fIdeas").value = "nueva"; cargarIdeas(); cargarResumen(); aviso(r.cantidad + " ideas nuevas"); }); };
 
