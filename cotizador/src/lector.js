@@ -693,8 +693,8 @@ export async function apiLector(env, req, url, iaJSON) {
   }
   if (r === "chats") {
     const q = (url.searchParams.get("q") || "").trim(), f = url.searchParams.get("f") || "todos";
-    const cond = { todos: "1=1", calientes: "puntaje>=7", sin: "ult_yo=0", cotizar: "cot_pend=1", grupos: "grupo=1", archivados: "archivado=1" }[f] || "1=1";
-    const filas = (await env.DB.prepare(`SELECT * FROM w_conv WHERE ${cond} ${f === "archivados" ? "" : "AND archivado=0"} ${f === "grupos" ? "" : "AND grupo=0"} ${q ? "AND (nombre LIKE ? OR conv LIKE ? OR producto LIKE ?)" : ""} ORDER BY ult_ts DESC LIMIT 200`)
+    const cond = { todos: "1=1", calientes: "puntaje>=7", sin: "ult_yo=0", cotizar: "cot_pend=1", grupos: "grupo=1", archivados: "archivado=1", urgentes: "COALESCE(prov,0)=0 AND ult_ts>=" + (Date.now() - 3 * 86400e3) + " AND etapa NOT IN ('vendido','perdido','no_cliente') AND (accion LIKE '%|p1' OR (resp=1 AND ult_yo=0 AND puntaje>=7) OR (cot_pend=1 AND puntaje>=6))" }[f] || "1=1";
+    const filas = (await env.DB.prepare(`SELECT * FROM w_conv WHERE ${cond} ${f === "archivados" ? "" : "AND archivado=0"} ${f === "grupos" ? "" : "AND grupo=0"} ${q ? "AND (nombre LIKE ? OR conv LIKE ? OR producto LIKE ?)" : ""} ORDER BY ${f === "urgentes" ? "puntaje DESC, ult_ts DESC" : "ult_ts DESC"} LIMIT 200`)
       .bind(...(q ? [`%${q}%`, `%${q}%`, `%${q}%`] : [])).all()).results || [];
     return json(filas);
   }
