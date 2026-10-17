@@ -130,7 +130,7 @@ def armar_linea_tiempo(partes):
     lista, palabras_finales, t, fin_primero = [], [], 0.0, None
     for k, palabras, dur in partes:
         if lista and fin_primero is None:
-        fin_primero = t
+            fin_primero = t
         for a, b in tramos(palabras, dur):
             for p in palabras:
                 if p["ini"] >= a - 1e-6 and p["fin"] <= b + 1e-6:
@@ -189,7 +189,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         texto = " ".join(re.sub(r"[.,;:!?¡¿…\"]", "", limpiar(x["w"])).lower() for x in g).strip()
         if texto:
             ev.append(f"Dialogue: 0,{tiempo_ass(g[0]['ini'])},{tiempo_ass(min(fin, total))},Sub,,0,0,0,,{texto}")
-            return cab + "\n".join(ev) + "\n"
+    return cab + "\n".join(ev) + "\n"
 
 
 # ---------------------------------------------------------------- Render
