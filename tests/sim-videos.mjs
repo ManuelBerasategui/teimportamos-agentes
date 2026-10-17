@@ -96,11 +96,11 @@ chk("editor no puede bajar otra cosa", (await editor("archivo?key=" + encodeURIC
 const dec = await editor("decidir", { lote: L, clips: [{ n: 0, tipo: "gancho", frases: [{ i: 0, texto: "me escribió un flaco" }] }, { n: 1, tipo: "gancho", frases: [{ i: 0, texto: "nadie te cuenta esto" }] }, { n: 2, tipo: "cuerpo", frases: [{ i: 0, texto: "quería traer veinte" }, { i: 1, texto: "quería traer veinte camisetas" }, { i: 2, texto: "escribime al dm" }] }] });
 chk("2 ganchos × 1 cuerpo = 2 videos", dec.videos.length === 2 && dec.videos[0].partes.join() === "0,2" && dec.videos[1].partes.join() === "1,2");
 chk("saca la toma repetida", dec.clips.find((c) => c.n === 2).mantener.join() === "1,2" && dec.clips.find((c) => c.n === 0).mantener.join() === "0");
-chk("caption con CTA", /DM/.test(dec.videos[0].caption));
+chk("caption con hashtags fijos", /#importaciones #mercadolibre #pormayor #proveedores/.test(dec.videos[0].caption));
 iaResp = null; const d0 = iaResp;
 iaResp = { videos: [{ j: 0, texto: "réplicas baratas", caption: "réplicas de zapatillas" }] };
 const decMal = await editor("decidir", { lote: L, clips: [{ n: 0, tipo: "completo", frases: [{ i: 0, texto: "Hola cómo andan hoy les cuento algo" }] }] });
-chk("texto prohibido se reemplaza", !/r[eé]plica/i.test(decMal.videos[0].texto + decMal.videos[0].caption) && /805/.test(decMal.videos[0].caption));
+chk("texto prohibido se reemplaza", !/r[eé]plica/i.test(decMal.videos[0].texto + decMal.videos[0].caption) && /#importaciones/.test(decMal.videos[0].caption));
 iaResp = { nada: 1 };
 const decCaida = await editor("decidir", { lote: L, clips: [{ n: 0, tipo: "completo", frases: [{ i: 0, texto: "Hola" }, { i: 1, texto: "chau" }] }] });
 chk("IA caída: deja todo y arma texto", decCaida.clips[0].mantener.join() === "0,1" && decCaida.videos[0].texto === "hola chau");

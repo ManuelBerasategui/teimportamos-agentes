@@ -58,15 +58,23 @@ export async function espacioUsado(env, forzar = false) {
 const sumarUsado = async (env, b) => { const c = JSON.parse((await kvGet(env, "videos_bytes")) || "null"); if (c) await kvPut(env, "videos_bytes", JSON.stringify({ ts: c.ts, bytes: Math.max(0, c.bytes + b) })); };
 
 // ---------- Próximo horario libre (uno por día a las 19 h) ----------
+// Horarios de publicación (hora Argentina). Se cambian desde Redes > Videos ("Cambiar horarios"); por defecto 19 h.
+export async function horasPub(env) {
+  const l = String((await kvGet(env, "videos_horas")) || VIDEOS.horaAR).split(/[^0-9]+/).filter(Boolean).map(Number).filter((h) => h >= 8 && h <= 23);
+  return [...new Set(l.length ? l : [VIDEOS.horaAR])].sort((a, b) => a - b).slice(0, 4);
+}
 export async function proximoHorario(env, ahora = Date.now()) {
+  const horas = await horasPub(env);
   const ocupados = new Set(((await env.DB.prepare("SELECT programado_ts FROM ig_videos WHERE estado IN ('aprobado','publicando','publicado') AND programado_ts >= ?").bind(ahora - 86400e3).all()).results || [])
-    .map((x) => new Date(x.programado_ts - AR).toISOString().slice(0, 10)));
+    .map((x) => new Date(x.programado_ts - AR).toISOString().slice(0, 13)));
   const d = new Date(ahora - AR);
   let dia = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
-  if (d.getUTCHours() * 60 + d.getUTCMinutes() > VIDEOS.horaAR * 60 - 15) dia += 86400e3;   // si ya pasaron las 18:45, mañana
   for (let i = 0; i < 365; i++, dia += 86400e3) {
-    const k = new Date(dia).toISOString().slice(0, 10);
-    if (!ocupados.has(k)) return dia + VIDEOS.horaAR * 3600e3 + AR;
+    for (const h of horas) {
+      const ts = dia + h * 3600e3 + AR;
+      if (ts < ahora + 15 * 60e3) continue;   // ese horario ya pasó (o falta menos de 15 min)
+      if (!ocupados.has(new Date(ts - AR).toISOString().slice(0, 13))) return ts;
+    }
   }
   return null;
 }
@@ -243,7 +251,14 @@ export async function apiVideos(env, req, url, quien) {
     const usado = await espacioUsado(env);
     const lotes = (await env.DB.prepare("SELECT id, ts, estado, clips, error, intentos FROM ig_lotes WHERE estado IN ('subiendo','en_cola','procesando','error') AND ts > ? ORDER BY ts DESC LIMIT 20").bind(Date.now() - 7 * 86400e3).all()).results || [];
     const vids = (await env.DB.prepare("SELECT id, lote, ts, duracion, texto, caption, estado, programado_ts, link, error, publicado_ts, bytes, borrado FROM ig_videos WHERE estado IN ('revision','aprobado','publicando','error') OR (estado='publicado' AND publicado_ts > ?) ORDER BY COALESCE(programado_ts, ts) DESC LIMIT 60").bind(Date.now() - 14 * 86400e3).all()).results || [];
-    return json({ usado, tope: VIDEOS.tope, parte: VIDEOS.parte, hora: VIDEOS.horaAR, lotes: lotes.map((l) => ({ ...l, clips: JSON.parse(l.clips || "[]").map((c) => ({ n: c.n, tipo: c.tipo, nombre: c.nombre, subido: !!c.subido })) })), videos: vids });
+    return json({ usado, tope: VIDEOS.tope, parte: VIDEOS.parte, hora: (await horasPub(env)).join(" y "), lotes: lotes.map((l) => ({ ...l, clips: JSON.parse(l.clips || "[]").map((c) => ({ n: c.n, tipo: c.tipo, nombre: c.nombre, subido: !!c.subido })) })), videos: vids });
+  }
+  if (r === "horas" && req.method === "POST") {
+    const b = await req.json().catch(() => ({}));
+    const l = String(b.horas || "").split(/[^0-9]+/).filter(Boolean).map(Number).filter((h) => h >= 8 && h <= 23);
+    if (!l.length) return json({ error: "Poné horas entre 8 y 23, separadas por coma (ej: 12, 19)" }, 400);
+    await kvPut(env, "videos_horas", [...new Set(l)].sort((a, b) => a - b).slice(0, 4).join(","));
+    return json({ ok: true, horas: (await horasPub(env)).join(" y ") });
   }
   if (r === "lote-nuevo" && req.method === "POST") {
     const b = await req.json().catch(() => ({}));

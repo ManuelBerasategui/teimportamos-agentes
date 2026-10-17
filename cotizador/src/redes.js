@@ -593,6 +593,7 @@ ${CARR_CSS}
 <div id="m-videos" style="display:none">
   <section class="card"><h2>Subir clips <span class="estado">se editan solos y te llegan acá para aprobar</span></h2>
     <div class="espacio"><span class="estado" id="vEspacio">Espacio</span><div class="barra" id="vBarra"><i style="width:0"></i></div></div>
+    <div class="estado" style="margin:6px 0 10px">Los aprobados se publican uno por horario, a las <b id="vHoras">19</b> h. <button class="btn ch" id="vHorasBtn" type="button">Cambiar horarios</button></div>
     <div class="drop" id="vDrop"><input type="file" id="vArch" accept="video/*,.mov,.mp4,.m4v" multiple><input type="file" id="vRes" accept="video/*,.mov,.mp4,.m4v" multiple style="display:none">
       <span class="drop-ic"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V4M7.5 8.5L12 4l4.5 4.5"/><path d="M4 14.5V18a2.5 2.5 0 0 0 2.5 2.5h11A2.5 2.5 0 0 0 20 18v-3.5"/></svg></span>
       <b>Elegí tus clips</b><span class="estado"><span class="sololg">o arrastralos acá · </span>podés elegir varios a la vez</span></div>
@@ -881,9 +882,14 @@ $("#vRes").onchange = function () {
   }).catch(function (e) { SUBIENDO = false; despierto(false); $("#vProg").textContent = "Se cortó otra vez (" + (e && e.message ? e.message : "error") + "). Podés tocar Continuar de nuevo."; cargarVideos(); });
 };
 var ESTL = { subiendo: "Subida sin terminar", en_cola: "En cola para editar", procesando: "Editando...", error: "Error" };
+$("#vHorasBtn").onclick = function () {
+  var h = prompt("¿A qué horas se publican los videos aprobados? Hasta 4, separadas por coma (ej: 12, 19 o 12, 16, 20)", (VEST && VEST.hora ? VEST.hora : "19").replace(/ y /g, ", "));
+  if (h === null) return;
+  VAPI("horas", { horas: h }).then(function (r) { if (r.error) { aviso(r.error); return; } aviso("Horarios: " + r.horas + " h"); cargarVideos(); });
+};
 function cargarVideos() {
   VAPI("estado").then(function (r) {
-    VEST = r; if (r.error) { $("#vRev").innerHTML = '<div class="vacio">' + esc(r.error) + "</div>"; return; }
+    VEST = r; if (r.hora) $("#vHoras").textContent = r.hora; if (r.error) { $("#vRev").innerHTML = '<div class="vacio">' + esc(r.error) + "</div>"; return; }
     var pc = Math.min(100, Math.round((r.usado / r.tope) * 100));
     $("#vEspacio").textContent = "Espacio: " + gbs(r.usado) + " de " + gbs(r.tope);
     $("#vBarra").className = "barra" + (pc < 70 ? " ok" : ""); $("#vBarra").firstChild.style.width = pc + "%";

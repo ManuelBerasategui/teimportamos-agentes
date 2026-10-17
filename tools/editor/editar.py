@@ -19,7 +19,7 @@ PAUSA_CORTE = 0.35      # silencios más largos que esto se cortan (segundos)
 MARGEN = 0.08           # aire antes y después de cada palabra
 PAUSA_FRASE = 0.6       # pausa que separa una frase de otra (para detectar tomas repetidas)
 # Ajustes que el Agente de Redes puede cambiar desde el panel (kv ig_config_videos)
-CFG = {"sub_tam": 58, "sub_alto": 800, "gancho_tam": 82, "gancho_alto": 300}
+CFG = {"sub_tam": 58, "sub_alto": 800, "gancho_tam": 94, "gancho_alto": 300}
 NARANJA_ASS = "&H000C5BEA"   # #EA5B0C en formato ASS (AABBGGRR)
 
 
