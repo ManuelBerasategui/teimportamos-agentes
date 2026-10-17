@@ -89,7 +89,7 @@ function partir(ctx, txt, maxW, sz) {
 function medir(ctx, b) {
   if (b.k === "t") { var mw = b.al === "c" ? 900 : 860; b.lines = partir(ctx, b.t, mw, b.sz); ctx.font = fnt(b.sz); var anch = Math.max.apply(null, b.lines.map(function (l) { return ctx.measureText(sinMarca(l)).width; })); if (anch > mw) { b.sz = Math.floor(b.sz * mw / anch); b.lines = partir(ctx, b.t, mw, b.sz); } b.h = b.lines.length * b.sz * LH + (b.sub ? 26 : 0) + (b.box ? b.lines.length * 30 : 0); }
   else if (b.k === "img") { if (!b.img) { b.w = b.mw * 0.8; b.h = b.mh * 0.55; } else { var r = Math.min(b.mw / b.img.width, b.mh / b.img.height); b.w = b.img.width * r; b.h = b.img.height * r; } }
-  else if (b.k === "av") b.h = 80; else if (b.k === "bar") b.h = 330; else if (b.k === "hr") b.h = 26; else if (b.k === "esp") b.h = b.h || 30;
+  else if (b.k === "av") b.h = b.oculto ? 0 : 80 * (b.sc || 1); else if (b.k === "bar") b.h = 330; else if (b.k === "hr") b.h = 26; else if (b.k === "esp") b.h = b.h || 30;
   return b.h + (b.gap == null ? 22 : b.gap);
 }
 function dibujar(ctx, b, y, d) {
@@ -121,6 +121,8 @@ function dibujar(ctx, b, y, d) {
     else ctx.drawImage(b.img, x, y, b.w, b.h);
     ctx.restore();
   } else if (b.k === "av") {
+    if (b.oculto) return;
+    if ((b.sc && b.sc !== 1) || b.dy) { var bb = Object.assign({}, b, { sc: 1, dy: 0 }); ctx.save(); ctx.translate(W / 2, y + (b.dy || 0)); ctx.scale(b.sc || 1, b.sc || 1); ctx.translate(-W / 2, 0); dibujar(ctx, bb, 0, d); ctx.restore(); return; }
     ctx.font = fnt(56); var t = "@" + USUARIO, tw = ctx.measureText(t).width, tot = 72 + 18 + tw + 14 + 34, x = W / 2 - tot / 2, cy = y + 40;
     ctx.save(); ctx.beginPath(); ctx.arc(x + 36, cy, 36, 0, 7); ctx.fillStyle = "#fff"; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = "#D6D9EA"; ctx.stroke(); ctx.clip(); if (d.logo) ctx.drawImage(d.logo, x, cy - 36, 72, 72); ctx.restore();
     ctx.fillStyle = AZUL; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText(t, x + 90, cy + 2);
@@ -137,8 +139,8 @@ function dibujar(ctx, b, y, d) {
 function numC(t) { var m = String(t || "").replace(/\./g, "").match(/\d+/); return m ? +m[0] : 0; }
 function rr(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
 function bloques(s, i, d) {
-  var disp = /display/.test(EST.fuente || ""), izq = EST.al === "l" && s.tipo !== "cta";
-  var T = function (t, sz, al, ex) { if (disp && sz >= 90) sz = sz * 1.22; return Object.assign({ k: "t", t: rell(t),sz: Math.round(sz * (sz < 90 ? 1.16 : 1.08) * KS), al: izq ? "l" : (al || "c") }, ex || {}); }, out = [];
+  var disp = /display/.test(EST.fuente || ""), izq = EST.al === "l" && s.tipo !== "cta", dis = (CC.datos && CC.datos.dis && CC.datos.dis[i]) || {};
+  var T = function (t, sz, al, ex) { if (disp && sz >= 90) sz = sz * 1.22; return Object.assign({ k: "t", t: rell(t),sz: Math.round(sz * (sz < 90 ? 1.16 : 1.08) * KS * (dis.texto || 1)), al: dis.al || (izq ? "l" : (al || "c")) }, ex || {}); }, out = [];
   var foto = d.fotos[i], fx = (CC.datos && CC.datos.fx && CC.datos.fx[i]) || null;
   if (EST.etiquetas) {   // estilo con etiquetas: títulos en caja naranja y listas en cajas con borde
     var tit = function (t, sz) { return T(t, sz || 74, "c", { box: "fill", gap: 34 }); }, pill = function (t) { return T(t, 50, "c", { box: "line", gap: 18 }); };
@@ -178,8 +180,12 @@ function render(canvas, s, i, d) {
   var fondoFoto = EST.fotoFondo && fotoF;
   if (fondoFoto) { var im = fotoF, rz = Math.max(W / im.width, H / im.height); ctx.drawImage(im, (W - im.width * rz) / 2, (H - im.height * rz) / 2, im.width * rz, im.height * rz); var gr = ctx.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, "rgba(0,0,0,.35)"); gr.addColorStop(1, "rgba(0,0,0,.72)"); ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H); }
   if (EST.grano) grano(ctx);
-  var y = EST.abajo ? Math.max(70, H - tot - 110) : Math.max(70, (H - tot) / 2 + 10);
+  var dis0 = (CC.datos && CC.datos.dis && CC.datos.dis[i]) || {};
+  bl.forEach(function (b) { if (b.k === "av") { b.sc = dis0.usuario_escala || 1; b.dy = dis0.usuario_dy || 0; b.oculto = dis0.usuario === 0; } });
+  if (dis0.usuario_escala || dis0.usuario === 0) { tot = 0; bl.forEach(function (b) { tot += medir(ctx, b); }); }
+  var y = (EST.abajo ? Math.max(70, H - tot - 110) : Math.max(70, (H - tot) / 2 + 10)) + (dis0.dy || 0);
   bl.forEach(function (b) { dibujar(ctx, b, y, d); y += b.h + (b.gap == null ? 22 : b.gap); });
+  var dis = (CC.datos && CC.datos.dis && CC.datos.dis[i]) || {};
   if (EST.fondo2 && s.tipo === "versus") { ctx.font = fnt(92); ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = EST.acento || "#fff"; ctx.fillText("vs", W / 2, H / 2); ctx.textBaseline = "top"; }
 }
 function recursos() {
