@@ -144,6 +144,7 @@ export function limpiarDatos(d = {}, previo = {}) {
     fotos: { ...(previo.fotos || {}), ...(d.fotos || {}) },
     fx: limpiarFx({ ...(previo.fx || {}), ...(d.fx || {}) }),
     dis: limpiarDis({ ...(previo.dis || {}), ...(d.dis || {}) }),
+    colores: (() => { const o = {}, src = d.colores === null ? {} : { ...(previo.colores || {}), ...(d.colores || {}) }; for (const k of ["fondo", "tinta", "acento"]) if (/^#[0-9a-f]{6}$/i.test(String(src[k] || ""))) o[k] = String(src[k]).toUpperCase(); return o; })(),
   };
 }
 // Retoques de las fotos de cada slide (los aplica el dibujo del panel, así se ven en el preview y en lo publicado)
@@ -325,14 +326,15 @@ Si pide retocar una foto (rotar, sombra, más grande, moverla, más brillo, etc.
 AJUSTES DE DISEÑO ACTUALES (por número de slide): ${JSON.stringify(Object.fromEntries(Object.entries(c.datos?.dis || {}).map(([i, v]) => [+i + 1, v])))}
 Si pide mover, centrar, alinear, agrandar o achicar textos o el @usuario de un slide, devolvé en "diseno" SOLO los slides que cambian, con TODOS sus valores finales. Valores: al ("c" = centrado, "l" = alineado a la izquierda); ${Object.entries(DIS).map(([k, v]) => `${k} (${v[0]} a ${v[1]}): ${v[2]}`).join("; ")}. "Un poco" = cambios chicos (texto 0.9, dy 60 a 120, usuario_dy 80 a 150).
 CIERRE ("cta"): "palabra" es lo que va en grande. Si es UNA palabra se dibuja como Comentá "PALABRA". Si el dueño quiere otro llamado (link en bio, escribinos por WhatsApp, etc.), poné en "palabra" la frase completa (ej. "Link en bio" o "Escribinos al WhatsApp") y así NO aparece "Comentá". Sacá del "texto" y del "abajo" cualquier mención a comentar que contradiga el pedido.
-LO ÚNICO QUE PODÉS CAMBIAR: textos de los slides, texto del posteo, estilo, datos de precios, retoques de fotos ("fotos_fx") y ajustes de diseño ("diseno"). Si pide algo que no está en esa lista (otro color puntual, otra letra, mover un solo renglón, un ícono), decile claramente que eso todavía no lo podés hacer. NUNCA digas que hiciste un cambio que no devolviste en el JSON.
+COLORES: en este estilo el texto normal es ${(c.datos?.colores?.tinta) || ESTILOS[c.datos?.estilo || "manuscrito"]?.tinta}, el fondo ${(c.datos?.colores?.fondo) || ESTILOS[c.datos?.estilo || "manuscrito"]?.fondo} y lo que va entre *asteriscos* se pinta de ${(c.datos?.colores?.acento) || ESTILOS[c.datos?.estilo || "manuscrito"]?.acento}. Para que una palabra quede del color del texto normal, sacale los asteriscos; para que quede del color de acento, ponésela entre asteriscos. Si pide un color que no está, cambiá el color en "colores" (hex: {"tinta":"#FFD400","acento":"#FFFFFF","fondo":"#111111"}, vale para todo el carrusel; para volver a los del estilo mandá "colores_estilo": true). Revisá el texto real antes de decir que algo "ya estaba" de un color.
+LO ÚNICO QUE PODÉS CAMBIAR: textos de los slides (incluido qué palabras van entre asteriscos), texto del posteo, estilo, colores, datos de precios, retoques de fotos ("fotos_fx") y ajustes de diseño ("diseno"). Si pide algo que no está en esa lista (otro color puntual, otra letra, mover un solo renglón, un ícono), decile claramente que eso todavía no lo podés hacer. NUNCA digas que hiciste un cambio que no devolviste en el JSON.
 TEXTO DEL POSTEO: ${JSON.stringify(c.caption || "")}
 REGLAS QUE YA SABÉS: ${rg.map((x, i) => `${i + 1}. ${x}`).join(" ") || "ninguna"}
 CHARLA PREVIA: ${c.chat.slice(-8).map((m) => `${m.r === "u" ? "DUEÑO" : "VOS"}: ${m.t}`).join(" | ") || "-"}
 EL DUEÑO DICE: "${String(mensaje).slice(0, 800)}"
 Hacé lo que pide con criterio de editor viral: si te dice que algo es aburrido o no engancha, no lo maquilles; cambiá el enfoque (tensión, número concreto, comparación, pregunta que obliga a pasar). Si cambia slides, devolvé TODOS los slides (completos, en orden). Si pide cambiar los datos (precio, costo, cantidad), devolvelos en "datos" con números.
 Si el dueño expresa una preferencia DURADERA o confirma un resultado (por ejemplo "me gustan más los mitos que las comparaciones", "este tono sí", "menos venta directa"), actualizá la memoria editorial en "memoria" como un resumen corto y legible de las preferencias vigentes (máx. 1500 caracteres), integrando la memoria previa y evitando duplicados. No guardes instrucciones de un solo carrusel. Si formula una regla concreta que debe cumplirse siempre, devolvela también en "regla".
-Respondé SOLO JSON: {"respuesta":"corta, qué cambiaste","slides":[...] o null,"caption":"..." o null,"datos":{...} o null,"fotos_fx":{"1":{"rot":-5,"sombra":1}} o null,"diseno":{"3":{"al":"c"},"1":{"usuario_dy":150,"usuario_escala":0.7}} o null,"regla":"..." o "","memoria":"resumen editorial actualizado o null"}`);
+Respondé SOLO JSON: {"respuesta":"corta, qué cambiaste","slides":[...] o null,"caption":"..." o null,"datos":{...} o null,"fotos_fx":{"1":{"rot":-5,"sombra":1}} o null,"diseno":{"3":{"al":"c"},"1":{"usuario_dy":150,"usuario_escala":0.7}} o null,"colores":{"acento":"#FFD400"} o null,"colores_estilo":false,"regla":"..." o "","memoria":"resumen editorial actualizado o null"}`);
   if (!r) return { ok: false, error: "La IA no respondió. Probá de nuevo." };
   const cambios = {};
   if (Array.isArray(r.slides)) {
@@ -352,6 +354,12 @@ Respondé SOLO JSON: {"respuesta":"corta, qué cambiaste","slides":[...] o null,
     const base = cambios.datos || c.datos || {};
     cambios.datos = limpiarDatos({ fx: { ...(base.fx || {}), ...fx } }, base);
     cambios.nota_fx = Object.keys(fx).map((i) => `slide ${+i + 1}: ${Object.entries(cambios.datos.fx[i] || {}).map(([k, v]) => k + " " + v).join(", ") || "sin retoques"}`).join(" · ");
+  }
+  if (r.colores_estilo === true || (r.colores && typeof r.colores === "object" && Object.keys(r.colores).length)) {
+    const base = cambios.datos || c.datos || {};
+    cambios.datos = limpiarDatos({ colores: r.colores_estilo === true ? null : r.colores }, base);
+    const col = Object.entries(cambios.datos.colores || {}).map(([k, v]) => k + " " + v).join(", ");
+    cambios.nota_fx = (cambios.nota_fx ? cambios.nota_fx + " · " : "") + "colores: " + (col || "los del estilo");
   }
   if (r.diseno && typeof r.diseno === "object") {
     const ds = {}; for (const [n, v] of Object.entries(r.diseno)) if (+n >= 1) ds[+n - 1] = v;
