@@ -588,8 +588,19 @@ export async function apiCarruseles(env, req, url, quien, iaJSON, T = null, iaIm
     if (!["estructura", "slides", "error"].includes(c.estado)) return json({ error: "Primero armá la estructura" }, 400);
     const m = String(body.mensaje || "").trim();
     if (!m) return json({ error: "Escribí algo" }, 400);
+    // Deshacer: "volvé para atrás", "deshacé", "undo"... restaura cómo estaba antes del último cambio
+    const kh = "carr_hist:" + c.id, hist = JSON.parse((await kvGet(env, kh)) || "[]");
+    if (/^\s*(volv[eé](lo)?\s*(para|a)?\s*atr[aá]s|volv[eé]\s+(a\s+)?(como|lo)\s+(estaba|anterior)|deshac[eé](lo)?|undo|ctrl\s*\+?\s*z|atr[aá]s|revert[ií]|como\s+estaba(\s+antes)?)(?=[\s.,!?]|$)/i.test(m)) {
+      const prev = hist.pop();
+      const t = prev ? "Listo, volví al estado anterior a tu último cambio." + (hist.length ? ` (Podés volver ${hist.length} paso${hist.length === 1 ? "" : "s"} más.)` : " (Ya no hay más pasos para atrás.)") : "No tengo cambios anteriores para deshacer.";
+      const chat = c.chat.concat({ r: "u", t: m.slice(0, 800) }, { r: "a", t }).slice(-40);
+      await kvPut(env, kh, JSON.stringify(hist));
+      await guardar(c, { chat, ...(prev ? { slides: prev.slides, caption: prev.caption, datos: prev.datos } : {}) });
+      return json({ ok: true, ...(await uno()) });
+    }
     const res = await chatCarrusel(env, iaJSON, c, m);
     if (!res.ok) return json(res);
+    if (res.slides || res.caption || res.datos) await kvPut(env, kh, JSON.stringify(hist.concat({ slides: c.slides, caption: c.caption, datos: c.datos }).slice(-15)));
     const chat = c.chat.concat({ r: "u", t: m.slice(0, 800) }, { r: "a", t: res.respuesta + (res.regla ? `\n(Lo guardo para los próximos: "${res.regla}")` : "") }).slice(-40);
     await guardar(c, { chat, ...(res.slides ? { slides: res.slides } : {}), ...(res.caption ? { caption: res.caption } : {}), ...(res.datos ? { datos: res.datos } : {}) });
     return json({ ok: true, regla: res.regla, memoria: res.memoria, ...(await uno()) });
