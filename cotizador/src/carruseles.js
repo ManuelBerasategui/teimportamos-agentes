@@ -348,8 +348,26 @@ function colorDirecto(c, mensaje) {
   if (!hechos) return null;
   return { ok: true, respuesta: `Listo: "${frase}" quedó en ${color}${ns ? " en el slide " + ns[1] : ""}.`, regla: "", memoria: "", slides };
 }
+// "bajá / subí / corré a la izquierda la flecha (el ícono)" → se resuelve en código, sin IA
+function iconoDirecto(c, mensaje) {
+  const t = sinTildes(mensaje);
+  if (!/\b(flecha|icono|iconito)\b/.test(t) || !/\b(baj|sub|corr|move|mov|acerc|mas abajo|mas arriba|izquierda|derecha)/.test(t)) return null;
+  if (/\b(agreg|pon[eé]?\s+un|sum[aá]|cambi[aá]\s+(el|la)\s+(icono|flecha)\s+por|sac[aá])/.test(t)) return null;   // agregar o cambiar ícono: lo hace la IA
+  const dis = JSON.parse(JSON.stringify(c.datos?.dis || {})), con = Object.keys(dis).filter((k) => dis[k].icono);
+  const ns = t.match(/(?:slide|diapositiva)\s*(\d+)/), i = ns ? String(+ns[1] - 1) : con.length === 1 ? con[0] : null;
+  if (i === null || !dis[i]?.icono) return null;
+  const paso = /\bun poco|apenas|un toque|levemente\b/.test(t) ? 60 : /\bbastante|mucho\b/.test(t) ? 220 : 120;
+  const d = dis[i]; let dx = 0, dy = 0;
+  if (/\b(baj|mas abajo)/.test(t)) dy += paso; if (/\b(sub|mas arriba)/.test(t)) dy -= paso;
+  if (/izquierda/.test(t)) dx -= paso; if (/derecha/.test(t) && !/flecha (a la |hacia la )?derecha/.test(t)) dx += paso;
+  if (/acerc/.test(t) && !dx && !dy) dy -= paso;
+  if (!dx && !dy) return null;
+  d.icono_dx = Math.max(-500, Math.min(500, (d.icono_dx || 0) + dx)); d.icono_dy = Math.max(-500, Math.min(500, (d.icono_dy || 0) + dy));
+  const datos = limpiarDatos({ dis }, c.datos);
+  return { ok: true, respuesta: `Listo, moví el ícono del slide ${+i + 1}${dy > 0 ? " más abajo" : dy < 0 ? " más arriba" : ""}${dx < 0 ? " a la izquierda" : dx > 0 ? " a la derecha" : ""}. Si no te gusta, decime "volvé para atrás".`, regla: "", memoria: "", datos };
+}
 export async function chatCarrusel(env, iaJSON, c, mensaje) {
-  const directo = colorDirecto(c, mensaje);
+  const directo = colorDirecto(c, mensaje) || iconoDirecto(c, mensaje);
   if (directo) return directo;
   const rg = await reglas(env);
   const memoriaAntes = await memoriaCarr(env);
@@ -367,6 +385,7 @@ RETOQUES DE FOTOS ACTUALES (por número de slide): ${JSON.stringify(Object.fromE
 Fotos subidas en los slides: ${Object.keys(c.datos?.fotos || {}).map((i) => +i + 1).join(", ") || "ninguna"}.
 Si pide retocar una foto (rotar, sombra, más grande, moverla, más brillo, etc.), devolvé en "fotos_fx" SOLO el slide que cambia, con TODOS sus valores finales (los actuales + el cambio). Valores posibles: ${Object.entries(FX).map(([k, v]) => `${k} (${v[0]} a ${v[1]}): ${v[2]}`).join("; ")}. "Ligeramente" = valores chicos (rot 4 a 6, sombra 1, piso 1 o 2). Para quitar un retoque poné su valor normal. No podés recortar el fondo ni dibujar sobre la foto: si lo pide, decíselo. Si la foto tiene fondo blanco o liso, para "sombra" usá sobre todo "piso" (la de "sombra" queda alrededor del rectángulo). NUNCA digas que cambiaste algo que no devolviste en el JSON.
 AJUSTES DE DISEÑO ACTUALES (por número de slide): ${JSON.stringify(Object.fromEntries(Object.entries(c.datos?.dis || {}).map(([i, v]) => [+i + 1, v])))}
+CAMBIÁ SOLO LO QUE PIDE: si nombra un slide, tocá únicamente ese slide; si pide mover, agrandar, achicar o poner un ícono, NO toques los textos (devolvé "slides": null). "Bajá la flecha" = icono_dy positivo (más 80 a 150 sobre el valor actual); "subila" = icono_dy negativo.
 Si pide mover, centrar, alinear, agrandar o achicar textos o el @usuario de un slide, devolvé en "diseno" SOLO los slides que cambian, con TODOS sus valores finales. Valores: al ("c" = centrado, "l" = alineado a la izquierda); icono (uno de: ${ICONOS.join(", ")}; "" para sacarlo); icono_pos (${POS_ICONO.join(", ")}; "debajo" = justo abajo del último texto, alineado como el texto, es el que hay que usar cuando dice "abajo del texto" o "pegado al texto"; las demás son posiciones fijas del slide); para acercarlo o correrlo un poco usá icono_dx / icono_dy (50 a 150 px = "un poco", sumá o restá sobre el valor actual); ${Object.entries(DIS).map(([k, v]) => `${k} (${v[0]} a ${v[1]}): ${v[2]}`).join("; ")}. "Un poco" = cambios chicos (texto 0.9, dy 60 a 120, usuario_dy 80 a 150).
 CIERRE ("cta"): "palabra" es lo que va en grande. Si es UNA palabra se dibuja como Comentá "PALABRA". Si el dueño quiere otro llamado (link en bio, escribinos por WhatsApp, etc.), poné en "palabra" la frase completa (ej. "Link en bio" o "Escribinos al WhatsApp") y así NO aparece "Comentá". Sacá del "texto" y del "abajo" cualquier mención a comentar que contradiga el pedido.
 COLORES: en este estilo el texto normal es ${nombreColor((c.datos?.colores?.tinta) || ESTILOS[c.datos?.estilo || "manuscrito"]?.tinta).toUpperCase()}, el fondo ${nombreColor((c.datos?.colores?.fondo) || ESTILOS[c.datos?.estilo || "manuscrito"]?.fondo).toUpperCase()} y lo que va entre *asteriscos* se pinta de ${nombreColor((c.datos?.colores?.acento) || ESTILOS[c.datos?.estilo || "manuscrito"]?.acento).toUpperCase()}. OJO: los asteriscos NO significan "amarillo", significan el color de acento. Para que una palabra quede del color del texto normal, sacale los asteriscos; para que quede del color de acento, ponésela entre asteriscos. Si pide un color que no está, cambiá el color en "colores" (hex: {"tinta":"#FFD400","acento":"#FFFFFF","fondo":"#111111"}, vale para todo el carrusel; para volver a los del estilo mandá "colores_estilo": true). Revisá el texto real antes de decir que algo "ya estaba" de un color.
@@ -379,6 +398,15 @@ Hacé lo que pide con criterio de editor viral: si te dice que algo es aburrido 
 Si el dueño expresa una preferencia DURADERA o confirma un resultado (por ejemplo "me gustan más los mitos que las comparaciones", "este tono sí", "menos venta directa"), actualizá la memoria editorial en "memoria" como un resumen corto y legible de las preferencias vigentes (máx. 1500 caracteres), integrando la memoria previa y evitando duplicados. No guardes instrucciones de un solo carrusel. Si formula una regla concreta que debe cumplirse siempre, devolvela también en "regla".
 Respondé SOLO JSON: {"respuesta":"corta, qué cambiaste","slides":[...] o null,"caption":"..." o null,"datos":{...} o null,"fotos_fx":{"1":{"rot":-5,"sombra":1}} o null,"diseno":{"3":{"al":"c"},"1":{"usuario_dy":150,"usuario_escala":0.7}} o null,"colores":{"acento":"#FFD400"} o null,"colores_estilo":false,"regla":"..." o "","memoria":"resumen editorial actualizado o null"}`);
   if (!r) return { ok: false, error: "La IA no respondió. Probá de nuevo." };
+  // Candados: si nombra slides, solo se tocan esos; si es un pedido de diseño (mover, ícono, tamaño), no se tocan los textos
+  const nums = new Set([...String(mensaje).matchAll(/(?:slides?|diapositivas?)\s*((?:\d+\s*(?:,|y|e)?\s*)+)/gi)].flatMap((m) => m[1].match(/\d+/g) || []).map(Number));
+  const pideTexto = /\b(textos?|dig[ao]|diga|escrib|palabras?|frases?|t[ií]tulos?|reemplaz|ortograf|tildes?|amarillo|blanco|naranja|rojo|azul|negro|colou?r|caption|posteo|gancho|cierre|redact|acort|alarg|cambi[aá]\s+(el|la|lo)\s+que\s+dice|sac[aá]\s+(la|el|lo)|agreg[aá]\s+(la|el|una?)\s+(palabra|frase|texto)|reescrib)/i.test(mensaje);
+  if (!pideTexto) { delete r.slides; delete r.caption; }
+  if (nums.size) {
+    const soloEstos = (o) => (o && typeof o === "object" ? Object.fromEntries(Object.entries(o).filter(([k]) => nums.has(+k))) : o);
+    r.diseno = soloEstos(r.diseno); r.fotos_fx = soloEstos(r.fotos_fx);
+    if (Array.isArray(r.slides) && r.slides.length === (c.slides || []).length) r.slides = c.slides.map((s0, i) => (nums.has(i + 1) ? r.slides[i] : s0));
+  }
   const cambios = {};
   if (Array.isArray(r.slides)) {
     let s = limpiarSlides(r.slides);

@@ -143,7 +143,7 @@ function dibujar0(ctx, b, y, d) {
 // Íconos dibujados a mano (gratis, sin imágenes): trazos simples en el color de acento
 function icono(ctx, n, pos, sc, xy, dx, dy) {
   var t = 150 * sc, m = 70, P = xy || { abajo_der: [W - m - t, H - m - t], abajo_izq: [m, H - m - t], abajo_centro: [(W - t) / 2, H - m - t], arriba_der: [W - m - t, m], arriba_izq: [m, m], centro: [(W - t) / 2, (H - t) / 2], derecha: [W - m - t, (H - t) / 2], izquierda: [m, (H - t) / 2] }[pos] || [W - m - t, H - m - t];
-  ctx.save(); ctx.translate(P[0] + (dx || 0), P[1] + (dy || 0)); ctx.scale(t / 100, t / 100); ctx.strokeStyle = ACENTO; ctx.fillStyle = ACENTO; ctx.lineWidth = 9; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  ctx.save(); ctx.translate(Math.max(10, Math.min(W - t - 10, P[0] + (dx || 0))), Math.max(10, Math.min(H - t - 10, P[1] + (dy || 0)))); ctx.scale(t / 100, t / 100); ctx.strokeStyle = ACENTO; ctx.fillStyle = ACENTO; ctx.lineWidth = 9; ctx.lineCap = "round"; ctx.lineJoin = "round";
   var L = function (pts) { ctx.beginPath(); pts.forEach(function (p, k) { if (k) ctx.lineTo(p[0], p[1]); else ctx.moveTo(p[0], p[1]); }); ctx.stroke(); };
   var C = function (x, y, r, f) { ctx.beginPath(); ctx.arc(x, y, r, 0, 7); if (f) ctx.fill(); else ctx.stroke(); };
   var R = function (x, y, w, h, r) { rr(ctx, x, y, w, h, r); ctx.stroke(); };
