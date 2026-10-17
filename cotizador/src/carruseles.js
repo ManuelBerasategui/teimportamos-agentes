@@ -688,12 +688,21 @@ export async function apiCarruseles(env, req, url, quien, iaJSON, T = null, iaIm
     const estC = ESTILOS[c.datos?.estilo || "manuscrito"] || {};
     for (let i = 0; i < n; i++) { const t = c.slides[i].tipo; if (TIPOS_SLIDE[t]?.foto && !c.datos.fotos?.[i] && (t === "captura" || !estC.fotoFondo)) return json({ error: `Falta la foto del slide ${i + 1}` }, 400); }
     let cuando = +body.cuando || 0;
-    if (!cuando || cuando < Date.now() + 5 * 60e3) cuando = await proximoHorarioCarr(env);
+    // Si elegiste un horario que ya pasó o está por pasar (mientras se subían las imágenes), sale en 2 minutos en vez de saltar al día siguiente
+    if (!cuando) cuando = await proximoHorarioCarr(env);
+    else if (cuando < Date.now() + 2 * 60e3) cuando = Date.now() + 2 * 60e3;
     const caption = typeof body.caption === "string" ? body.caption.slice(0, 2200) : c.caption;
     await guardar(c, { estado: "aprobado", n_slides: n, programado_ts: cuando, caption, aprobado_por: quien || "", error: null, contenedor: null, token: null });
     return json({ ok: true, programado_ts: cuando });
   }
   if (r === "sugerir-hora") return json({ ts: await proximoHorarioCarr(env) });
+  if (r === "reprogramar" && req.method === "POST") {
+    if (c.estado !== "aprobado") return json({ error: "Solo se puede cambiar el horario de uno programado que todavía no salió" }, 400);
+    const ts = +body.cuando || 0;
+    if (!ts || ts < Date.now() - 60e3) return json({ error: "Elegí una fecha y hora que todavía no pasó" }, 400);
+    await guardar(c, { programado_ts: Math.max(ts, Date.now() + 2 * 60e3) });
+    return json({ ok: true, ...(await uno()) });
+  }
   if (r === "frenar" && req.method === "POST") {
     if (c.estado !== "aprobado") return json({ error: "Solo se puede frenar uno programado que no salió" }, 400);
     await guardar(c, { estado: "slides", programado_ts: null });
