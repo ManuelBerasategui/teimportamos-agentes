@@ -112,11 +112,14 @@ export async function decidir(env, iaJSON, body) {
   const clips = (body.clips || []).map((c) => ({ n: +c.n, tipo: c.tipo, frases: (c.frases || []).slice(0, 200).map((f) => ({ i: +f.i, texto: String(f.texto || "").slice(0, 300) })) }));
   const combos = combinaciones(clips);
   let rv = []; try { rv = JSON.parse((await kvGet(env, "ig_reglas_videos")) || "[]"); } catch {}
+  let previos = []; try { previos = (await env.DB.prepare("SELECT gancho, alcance FROM ig_posts WHERE tipo='REELS' AND gancho IS NOT NULL AND gancho<>'' ORDER BY ts DESC LIMIT 30").all()).results || []; } catch {}
   const r = await iaJSON(env, `Sos el editor de reels de "Te Importamos" (importación por encargo, Rosario). Te paso la transcripción de clips grabados a cámara, frase por frase.
 ${rv.length ? "REGLAS QUE TE ENSEÑÓ EL DUEÑO (obligatorias):\n" + rv.map((x, i) => `${i + 1}. ${x}`).join("\n") + "\n" : ""}1) Para cada clip, decidí qué frases quedan. Regla: si una frase se repite (entera o empezada y cortada) porque se volvió a grabar, quedate SOLO con la última versión completa. Sacá frases que sean solo muletillas ("eh", "bueno", "a ver") o pruebas ("¿se escucha?", "arranco"). No saques nada que no esté repetido. No cambies el orden.
 2) Para cada video (combinación de clips), escribí:
-- "texto": el texto que va arriba en pantalla todo el video, de 3 a 7 palabras, en minúscula, como hablan en Rosario, que obligue a quedarse (ej: "es tremendo esto", "no me quedó nada"). Sin emojis. Sin precios.
-- "caption": 1 o 2 frases cortas sobre el video + "${CTA}" + 3 hashtags (#importaciones #pormayor #proveedores u otros del tema). Sin precios, sin prometer ganancias, sin "tenemos stock".
+- "texto": el texto que va arriba en pantalla mientras dura el gancho, de 3 a 7 palabras, en minúscula, como hablan en Rosario, que obligue a quedarse. Tiene que sonar como los textos que el dueño YA usó en sus reels (abajo), sobre todo los de más alcance: mismo tono, mismo largo, misma forma. Que tenga que ver con lo que se dice en el gancho. Sin emojis. Sin precios.
+TEXTOS QUE EL DUEÑO USÓ EN SUS ÚLTIMOS REELS (alcance entre paréntesis):
+${previos.map((x) => `- "${x.gancho}" (${x.alcance ?? "?"})`).join("\n") || "(todavía no hay)"}
+- "caption": MÁXIMO 5 palabras, pensadas para que el video aparezca en búsquedas: el producto y la intención (ej: "tarjetas nfc por mayor china", "importar perfumes árabes por mayor"). Sin hashtags (se agregan solos), sin emojis, sin precios.
 CLIPS:
 ${clips.map((c) => `Clip ${c.n} (${c.tipo}):\n${c.frases.map((f) => `  [${f.i}] ${f.texto}`).join("\n")}`).join("\n")}
 VIDEOS: ${combos.map((p, j) => `video ${j} = clips ${p.join(" + ")}`).join("; ")}
@@ -130,8 +133,9 @@ Respondé SOLO JSON: {"clips":[{"n":0,"mantener":[0,2]}],"videos":[{"j":0,"texto
       const t = textos.get(j) || {};
       let texto = String(t.texto || "").slice(0, 60), caption = String(t.caption || "").slice(0, 1500);
       if (!texto || PROHIBIDO.test(texto)) texto = primeras(partes[0]);
-      if (!caption || PROHIBIDO.test(caption)) caption = `${CTA}\n#importaciones #pormayor #proveedores`;
-      else if (!/805|dm/i.test(caption)) caption += `\n${CTA}`;
+            caption = caption.replace(/#\S+/g, "").replace(/\s+/g, " ").trim().split(" ").slice(0, 5).join(" ");
+      if (PROHIBIDO.test(caption)) caption = "";
+      caption = (caption ? caption + "\n\n" : "") + "#importaciones #mercadolibre #pormayor #proveedores";
       return { j, partes, texto, caption };
     }),
   };
