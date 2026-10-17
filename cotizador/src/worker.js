@@ -3013,7 +3013,7 @@ button{font:inherit;cursor:pointer}
 <div class="vista on" id="v-dash"><div class="dash">
 <div class="filtros" id="filtros"><button data-p="dia" class="on">Hoy</button><button data-p="semana">7 días</button><button data-p="mes">30 días</button></div>
 <div id="waDash"><div class="vacio">Cargando...</div></div>
-<div class="card" style="margin-top:12px"><h3>Chats nuevos, cotizados y vendidos por día</h3><div class="alto"><canvas id="g-dias"></canvas></div></div><div id="ventasBox"></div><div id="equipoBox"></div>
+<div class="card" style="margin-top:12px"><h3>Chats nuevos, cotizados y vendidos por día</h3><div class="alto"><canvas id="g-dias"></canvas></div><div id="ventasDia" style="margin-top:10px"></div><div style="font-size:11.5px;color:#9CA3AF;margin-top:6px">Tocá un día del gráfico para ver qué se vendió y a quién.</div></div><div id="ventasBox"></div><div id="equipoBox"></div>
 <div class="card reportes"><div class="cab"><h3 id="rep-tit" style="margin:0">Reportes diarios</h3><button class="btn" id="generar">Generar ahora</button></div><div id="reps"></div></div>
 </div></div>
 
@@ -3054,6 +3054,15 @@ function verTab(v) {
 document.querySelectorAll("#filtros button").forEach(function (b) { b.onclick = function () { P = b.dataset.p; document.querySelectorAll("#filtros button").forEach(function (x) { x.classList.toggle("on", x === b); }); cargarDash(); }; });
 var NOMBRES = { nuevo: "Clientes nuevos", cotizacion: "Cotizaciones enviadas", venta: "Ventas cerradas", derivado: "Chats derivados por el agente" };
 function delta(a, b) { if (!b && !a) return '<div class="d igual">sin movimiento</div>'; if (!b) return '<div class="d sube">nuevo en el período</div>'; var p = Math.round((a - b) / b * 100); if (!p) return '<div class="d igual">igual que el período anterior</div>'; return '<div class="d ' + (p > 0 ? "sube" : "baja") + '">' + (p > 0 ? "+" : "") + p + "% vs período anterior</div>"; }
+function verVentasDia(dia, nombre) {
+  var box = $("#ventasDia"); box.innerHTML = '<div class="vacio">Cargando ventas del ' + esc(nombre || dia) + "...</div>";
+  fetch("/panel/api/805/ventas-dia?d=" + encodeURIComponent(dia)).then(function (r) { return r.json(); }).then(function (r) {
+    var l = r.ventas || [];
+    box.innerHTML = '<div style="border:1px solid #DBEAFE;background:#F5F9FF;border-radius:10px;padding:10px 12px"><div style="display:flex;justify-content:space-between;align-items:center;gap:8px"><b style="font-size:13.5px">Ventas del ' + esc(nombre || dia) + " (" + l.length + ')</b><button class="btn" style="padding:3px 10px" id="vdCerrar">Cerrar</button></div>' +
+      (l.length ? l.map(function (v) { var n = String(v.conv || "").replace(/\D/g, ""); return '<div style="display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;padding:8px 0;border-top:1px solid #E5EDFB;font-size:13px"><span style="min-width:150px;font-weight:600">' + esc(v.nombre || "+" + v.conv) + (v.perfil ? ' <small style="color:#6B7280">(' + esc(v.perfil) + ")</small>" : "") + '</span><span style="flex:1;min-width:160px">' + esc(v.producto || "producto sin detalle") + (v.detalle && v.detalle !== v.producto ? '<small style="display:block;color:#6B7280">' + esc(v.detalle) + "</small>" : "") + '</span><span style="color:#6B7280;white-space:nowrap">' + new Date(v.ts).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) + "</span>" + (n.length >= 10 ? '<a class="btn" style="padding:3px 8px" target="_blank" rel="noopener" href="https://wa.me/' + n + '">WhatsApp</a>' : "") + '<a class="btn" style="padding:3px 8px" href="/panel/805#' + encodeURIComponent(v.conv) + '">Ver chat</a></div>'; }).join("") : '<div class="vacio" style="padding-top:8px">Ese día no se registró ninguna venta.</div>') + "</div>";
+    var bc = document.getElementById("vdCerrar"); if (bc) bc.onclick = function () { box.innerHTML = ""; };
+  }).catch(function () { box.innerHTML = '<div class="vacio">No se pudieron cargar las ventas.</div>'; });
+}
 function grafico(id, cfg) { if (!window.Chart || !document.getElementById(id)) return; if (graficos[id]) graficos[id].destroy(); graficos[id] = new Chart(document.getElementById(id), cfg); }
 var WA = null, WA_LISTA = "sin";
 function waFila(c, extra, txt) {
@@ -3087,7 +3096,7 @@ function pintarWA(d) {
     { type: "bar", label: "Chats nuevos", data: dias.map(function (x) { return d.nuevosPorDia[x]; }), backgroundColor: "#9FDDB4", borderRadius: 4, order: 3, yAxisID: "y" },
     { type: "line", label: "Cotizados", data: dias.map(function (x) { return (d.cotPorDia || {})[x] || 0; }), borderColor: "#EA5B0C", backgroundColor: "#EA5B0C", tension: 0.3, pointRadius: 3, borderWidth: 2, order: 1, yAxisID: "y1" },
     { type: "line", label: "Vendidos", data: dias.map(function (x) { return (d.venPorDia || {})[x] || 0; }), borderColor: "#2563EB", backgroundColor: "#2563EB", tension: 0.3, pointRadius: 4, borderWidth: 2, order: 0, yAxisID: "y1" }
-  ] }, options: Object.assign({}, base, { interaction: { mode: "index", intersect: false }, plugins: { legend: { position: "bottom", labels: { boxWidth: 12, font: { size: 12 } } }, tooltip: { callbacks: { title: function (it) { return nombreDia[it[0].dataIndex]; } } } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 }, title: { display: true, text: "Chats nuevos" } }, y1: { position: "right", beginAtZero: true, ticks: { precision: 0 }, grid: { drawOnChartArea: false }, title: { display: true, text: "Cotizados y ventas" } } } }) });
+  ] }, options: Object.assign({}, base, { interaction: { mode: "index", intersect: false }, onClick: function (ev, els, ch) { var e = ch.getElementsAtEventForMode(ev, "index", { intersect: false }, true); if (e.length) verVentasDia(dias[e[0].index], nombreDia[e[0].index]); }, plugins: { legend: { position: "bottom", labels: { boxWidth: 12, font: { size: 12 } } }, tooltip: { callbacks: { title: function (it) { return nombreDia[it[0].dataIndex]; } } } }, scales: { y: { beginAtZero: true, ticks: { precision: 0 }, title: { display: true, text: "Chats nuevos" } }, y1: { position: "right", beginAtZero: true, ticks: { precision: 0 }, grid: { drawOnChartArea: false }, title: { display: true, text: "Cotizados y ventas" } } } }) });
   var t = dd.temp || {};
   grafico("g-temp", { type: "doughnut", data: { labels: ["Caliente", "Tibio", "Frío", "Sin analizar"], datasets: [{ data: [t.caliente || 0, t.tibio || 0, t.frio || 0, t.sin || 0], backgroundColor: ["#DC2626", "#EA5B0C", "#2563EB", "#E5E7EB"], borderWidth: 0 }] }, options: Object.assign({}, base, { cutout: "62%" }) });
   var pr = dd.productos || [];
