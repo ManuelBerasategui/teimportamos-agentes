@@ -155,6 +155,7 @@ function bloques(s, i, d) {
     else if (s.tipo === "grande") out = [T(s.texto, 96, "c", { gap: 30 }), s.abajo ? tit(s.abajo, 54) : { k: "esp", h: 1 }];
     if (out.length) return out;
   }
+  if (EST.etiqueta && (s.tipo === "portada" || s.tipo === "grande")) { var tx = s.tipo === "portada" ? s.titulo : s.texto; out = [T(EST.etiqueta, 44, "c", { box: "fill", gap: 22 }), T(tx, 104, "c", { gap: 20 })]; if (s.tipo === "portada" && s.subtitulo) out.push(T(s.subtitulo, 52, "c", { gap: 10 })); return out; }
   if (s.tipo === "portada" && EST.fotoSoloPortada) { out = [T(s.titulo, 92, "c", { gap: 24, peso: "bold " }), T(s.subtitulo, 54, "c", { gap: 20 })]; }
   else if (s.tipo === "portada" && EST.fotoFondo) out = [T(s.titulo, 128, "l", { sub: false, gap: 40 }), T(s.subtitulo, 60, "c", { gap: 60 }), { k: "av" }];
   else if (s.tipo === "portada") out = [{ k: "img", img: foto, fx: fx, mw: 640, mh: 560, gap: 50 }, T(s.titulo, 96), T(s.subtitulo, 60, "c", { gap: 70 }), { k: "av" }];
@@ -184,6 +185,7 @@ function render(canvas, s, i, d) {
   var fondoFoto = EST.fotoFondo && fotoF;
   if (fondoFoto) { var im = fotoF, rz = Math.max(W / im.width, H / im.height); ctx.drawImage(im, (W - im.width * rz) / 2, (H - im.height * rz) / 2, im.width * rz, im.height * rz); var gr = ctx.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, "rgba(0,0,0,.35)"); gr.addColorStop(1, "rgba(0,0,0,.72)"); ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H); }
   if (EST.grano) grano(ctx);
+  if (EST.marcaArriba) { ctx.save(); ctx.font = PESO + "30px " + FAM; ctx.textAlign = "center"; ctx.textBaseline = "top"; ctx.fillStyle = "rgba(255,255,255,.75)"; ctx.fillText(USUARIO.toUpperCase(), W / 2, 42); ctx.restore(); }
   var dis0 = (CC.datos && CC.datos.dis && CC.datos.dis[i]) || {};
   bl.forEach(function (b) { if (b.k === "av") { b.sc = dis0.usuario_escala || 1; b.dy = dis0.usuario_dy || 0; b.oculto = dis0.usuario === 0; } });
   if (dis0.usuario_escala || dis0.usuario === 0) { tot = 0; bl.forEach(function (b) { tot += medir(ctx, b); }); }
