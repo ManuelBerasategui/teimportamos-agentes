@@ -87,7 +87,7 @@ function partir(ctx, txt, maxW, sz) {
 }
 // Bloques: texto {t, sz, al:"c"|"l", sub:bool, gap}, img {img, mw, mh, card}, avatar, barras {...}, hr, esp
 function medir(ctx, b) {
-  if (b.k === "t") { b.lines = partir(ctx, b.t, b.al === "c" ? 900 : 860, b.sz); b.h = b.lines.length * b.sz * LH + (b.sub ? 26 : 0) + (b.box ? b.lines.length * 30 : 0); }
+  if (b.k === "t") { var mw = b.al === "c" ? 900 : 860; b.lines = partir(ctx, b.t, mw, b.sz); ctx.font = fnt(b.sz); var anch = Math.max.apply(null, b.lines.map(function (l) { return ctx.measureText(sinMarca(l)).width; })); if (anch > mw) { b.sz = Math.floor(b.sz * mw / anch); b.lines = partir(ctx, b.t, mw, b.sz); } b.h = b.lines.length * b.sz * LH + (b.sub ? 26 : 0) + (b.box ? b.lines.length * 30 : 0); }
   else if (b.k === "img") { if (!b.img) { b.w = b.mw * 0.8; b.h = b.mh * 0.55; } else { var r = Math.min(b.mw / b.img.width, b.mh / b.img.height); b.w = b.img.width * r; b.h = b.img.height * r; } }
   else if (b.k === "av") b.h = 80; else if (b.k === "bar") b.h = 330; else if (b.k === "hr") b.h = 26; else if (b.k === "esp") b.h = b.h || 30;
   return b.h + (b.gap == null ? 22 : b.gap);
