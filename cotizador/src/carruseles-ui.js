@@ -138,6 +138,35 @@ function dibujar0(ctx, b, y, d) {
     ctx.fillText(b.bv_, 110 + wb + 26, y + 256);
   } else if (b.k === "hr") { ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(110, y + 12); ctx.lineTo(W - 150, y + 12); ctx.stroke(); }
 }
+// Íconos dibujados a mano (gratis, sin imágenes): trazos simples en el color de acento
+function icono(ctx, n, pos, sc) {
+  var t = 150 * sc, m = 70, P = { abajo_der: [W - m - t, H - m - t], abajo_izq: [m, H - m - t], abajo_centro: [(W - t) / 2, H - m - t], arriba_der: [W - m - t, m], arriba_izq: [m, m], centro: [(W - t) / 2, (H - t) / 2], derecha: [W - m - t, (H - t) / 2], izquierda: [m, (H - t) / 2] }[pos] || [W - m - t, H - m - t];
+  ctx.save(); ctx.translate(P[0], P[1]); ctx.scale(t / 100, t / 100); ctx.strokeStyle = ACENTO; ctx.fillStyle = ACENTO; ctx.lineWidth = 9; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  var L = function (pts) { ctx.beginPath(); pts.forEach(function (p, k) { if (k) ctx.lineTo(p[0], p[1]); else ctx.moveTo(p[0], p[1]); }); ctx.stroke(); };
+  var C = function (x, y, r, f) { ctx.beginPath(); ctx.arc(x, y, r, 0, 7); if (f) ctx.fill(); else ctx.stroke(); };
+  var R = function (x, y, w, h, r) { rr(ctx, x, y, w, h, r); ctx.stroke(); };
+  if (n === "flecha_der") { L([[10, 50], [88, 50]]); L([[60, 22], [88, 50], [60, 78]]); }
+  else if (n === "flecha_izq") { L([[90, 50], [12, 50]]); L([[40, 22], [12, 50], [40, 78]]); }
+  else if (n === "flecha_abajo") { L([[50, 10], [50, 88]]); L([[22, 60], [50, 88], [78, 60]]); }
+  else if (n === "flecha_arriba") { L([[50, 90], [50, 12]]); L([[22, 40], [50, 12], [78, 40]]); }
+  else if (n === "check") { C(50, 50, 44); L([[28, 52], [44, 68], [74, 36]]); }
+  else if (n === "cruz") { C(50, 50, 44); L([[32, 32], [68, 68]]); L([[68, 32], [32, 68]]); }
+  else if (n === "alerta") { L([[50, 8], [94, 88], [6, 88], [50, 8]]); L([[50, 38], [50, 62]]); C(50, 75, 4, true); }
+  else if (n === "dolar") { C(50, 50, 44); L([[50, 18], [50, 82]]); ctx.beginPath(); ctx.moveTo(66, 34); ctx.bezierCurveTo(60, 24, 32, 24, 34, 40); ctx.bezierCurveTo(36, 54, 66, 46, 66, 62); ctx.bezierCurveTo(66, 76, 38, 76, 33, 66); ctx.stroke(); }
+  else if (n === "caja") { L([[10, 30], [50, 12], [90, 30], [90, 74], [50, 92], [10, 74], [10, 30]]); L([[10, 30], [50, 48], [90, 30]]); L([[50, 48], [50, 92]]); }
+  else if (n === "avion") { L([[8, 58], [92, 30], [70, 84], [52, 62], [8, 58]]); L([[52, 62], [92, 30]]); }
+  else if (n === "camion") { R(6, 30, 56, 40, 4); L([[62, 42], [80, 42], [94, 56], [94, 70], [62, 70]]); C(26, 76, 9); C(76, 76, 9); }
+  else if (n === "barco") { L([[6, 60], [94, 60], [80, 86], [20, 86], [6, 60]]); R(26, 34, 22, 26, 2); R(52, 24, 22, 36, 2); }
+  else if (n === "celular") { R(26, 6, 48, 88, 10); L([[42, 80], [58, 80]]); }
+  else if (n === "whatsapp") { C(52, 48, 40); L([[22, 74], [14, 94], [36, 86]]); ctx.beginPath(); ctx.moveTo(38, 34); ctx.quadraticCurveTo(40, 64, 68, 64); ctx.stroke(); }
+  else if (n === "carrito") { L([[6, 16], [22, 16], [32, 66], [84, 66], [94, 30], [26, 30]]); C(38, 84, 7, true); C(78, 84, 7, true); }
+  else if (n === "candado") { R(18, 44, 64, 50, 8); ctx.beginPath(); ctx.arc(50, 44, 22, Math.PI, 0); ctx.stroke(); C(50, 68, 6, true); }
+  else if (n === "estrella") { var pt = []; for (var k = 0; k < 11; k++) { var a = -Math.PI / 2 + k * Math.PI / 5, r2 = k % 2 ? 20 : 46; pt.push([50 + r2 * Math.cos(a), 52 + r2 * Math.sin(a)]); } L(pt); }
+  else if (n === "fuego") { ctx.beginPath(); ctx.moveTo(50, 94); ctx.bezierCurveTo(16, 92, 12, 60, 30, 40); ctx.bezierCurveTo(30, 54, 40, 58, 44, 54); ctx.bezierCurveTo(36, 30, 52, 14, 56, 6); ctx.bezierCurveTo(60, 30, 90, 44, 84, 70); ctx.bezierCurveTo(80, 88, 64, 94, 50, 94); ctx.stroke(); }
+  else if (n === "reloj") { C(50, 50, 44); L([[50, 24], [50, 50], [70, 62]]); }
+  else if (n === "mano") { L([[30, 92], [30, 40], [30, 18]]); ctx.beginPath(); ctx.arc(38, 18, 8, Math.PI, 0); ctx.stroke(); L([[46, 18], [46, 48]]); L([[46, 44], [46, 36], [58, 36], [58, 50]]); L([[58, 42], [70, 42], [70, 54]]); L([[70, 48], [80, 48], [80, 74], [66, 92], [30, 92]]); }
+  ctx.restore();
+}
 function numC(t) { var m = String(t || "").replace(/\./g, "").match(/\d+/); return m ? +m[0] : 0; }
 function rr(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
 function bloques(s, i, d) {
@@ -192,6 +221,7 @@ function render(canvas, s, i, d) {
   var y = (EST.abajo || (EST.fotoSoloPortada && s.tipo === "portada") ? Math.max(70, H - tot - 110) : Math.max(70, (H - tot) / 2 + 10)) + (dis0.dy || 0);
   bl.forEach(function (b) { dibujar(ctx, b, y, d); y += b.h + (b.gap == null ? 22 : b.gap); });
   var dis = (CC.datos && CC.datos.dis && CC.datos.dis[i]) || {};
+  if (dis.icono) icono(ctx, dis.icono, dis.icono_pos || "abajo_der", dis.icono_escala || 1);
   if (EST.fondo2 && s.tipo === "versus") { ctx.font = fnt(92); ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = EST.acento || "#fff"; ctx.fillText("vs", W / 2, H / 2); ctx.textBaseline = "top"; }
 }
 function recursos() {

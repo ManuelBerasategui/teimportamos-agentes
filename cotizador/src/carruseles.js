@@ -150,13 +150,17 @@ export function limpiarDatos(d = {}, previo = {}) {
 // Retoques de las fotos de cada slide (los aplica el dibujo del panel, así se ven en el preview y en lo publicado)
 export const FX = { rot: [-20, 20, "grados de rotación (negativo = a la izquierda)"], escala: [0.5, 1.4, "tamaño (1 = normal)"], dx: [-300, 300, "mover a la derecha (+) o izquierda (-), px"], dy: [-300, 300, "mover abajo (+) o arriba (-), px"], sombra: [0, 3, "sombra que sigue la forma del producto: 0 nada, 1 suave, 2 media, 3 fuerte"], piso: [0, 3, "sombra difusa en el piso, debajo del producto: 0 a 3"], brillo: [60, 150, "brillo en % (100 normal)"], contraste: [60, 150, "contraste en % (100 normal)"], saturacion: [0, 180, "saturación en % (100 normal, 0 blanco y negro)"], redondeo: [0, 80, "esquinas redondeadas en px"] };
 // Ajustes de diseño por slide (los aplica el dibujo del panel)
-export const DIS = { texto: [0.5, 1.5, "tamaño de TODOS los textos del slide (1 = normal)"], dy: [-500, 500, "mover todo el contenido abajo (+) o arriba (-), px (el slide mide 1350 de alto)"], usuario_escala: [0.4, 1.5, "tamaño del @usuario con la foto de perfil (1 = normal)"], usuario_dy: [-600, 600, "mover SOLO el @usuario abajo (+) o arriba (-), px"], usuario: [0, 1, "mostrar el @usuario (1) o esconderlo (0)"] };
+export const DIS = { texto: [0.5, 1.5, "tamaño de TODOS los textos del slide (1 = normal)"], dy: [-500, 500, "mover todo el contenido abajo (+) o arriba (-), px (el slide mide 1350 de alto)"], usuario_escala: [0.4, 1.5, "tamaño del @usuario con la foto de perfil (1 = normal)"], usuario_dy: [-600, 600, "mover SOLO el @usuario abajo (+) o arriba (-), px"], usuario: [0, 1, "mostrar el @usuario (1) o esconderlo (0)"], icono_escala: [0.4, 2.5, "tamaño del ícono (1 = normal)"] };
+export const ICONOS = ["flecha_der", "flecha_izq", "flecha_abajo", "flecha_arriba", "check", "cruz", "alerta", "dolar", "caja", "avion", "camion", "barco", "celular", "whatsapp", "carrito", "candado", "estrella", "fuego", "reloj", "mano"];
+export const POS_ICONO = ["abajo_der", "abajo_izq", "abajo_centro", "arriba_der", "arriba_izq", "centro", "derecha", "izquierda"];
 export function limpiarDis(dis) {
   const out = {};
   for (const [i, v] of Object.entries(dis || {})) {
     if (!/^\d+$/.test(i) || !v || typeof v !== "object") continue;
     const o = {};
     if (v.al === "c" || v.al === "l") o.al = v.al;
+    if (ICONOS.includes(v.icono)) o.icono = v.icono; else if (v.icono === "") o.icono = "";
+    if (POS_ICONO.includes(v.icono_pos)) o.icono_pos = v.icono_pos;
     for (const [k, [mn, mx]] of Object.entries(DIS)) if (v[k] !== undefined && v[k] !== null && Number.isFinite(+v[k])) o[k] = Math.min(mx, Math.max(mn, +v[k]));
     if (Object.keys(o).length) out[i] = o;
   }
@@ -307,7 +311,46 @@ Respondé SOLO JSON: {"slides":[...],"caption":"..."}`);
 }
 
 // ---------- Chat dentro del carrusel ----------
+// ---------- Colores por nombre y "palabra X en color Y" resuelto en código (sin depender de la IA) ----------
+const PALETA = { amarillo: "#FFD400", blanco: "#FFFFFF", negro: "#111111", naranja: "#EA5B0C", rojo: "#E8231E", azul: "#2F6BFF", verde: "#22C55E", gris: "#9CA3AF" };
+export function nombreColor(hex) {
+  const h = String(hex || "").replace("#", ""); if (h.length !== 6) return "";
+  const rgb = (x) => [0, 2, 4].map((i) => parseInt(x.slice(i, i + 2), 16));
+  const [r, g, b] = rgb(h); let mejor = "", d = 1e9;
+  for (const [n, v] of Object.entries(PALETA)) { const [r2, g2, b2] = rgb(v.slice(1)); const dd = (r - r2) ** 2 + (g - g2) ** 2 + (b - b2) ** 2; if (dd < d) { d = dd; mejor = n; } }
+  return mejor;
+}
+const sinTildes = (t) => String(t).toLowerCase().replace(/[áàä]/g, "a").replace(/[éèë]/g, "e").replace(/[íìï]/g, "i").replace(/[óòö]/g, "o").replace(/[úùü]/g, "u");
+// Prende (on=true) o apaga el resaltado *...* de una frase dentro de un texto, sin tocar el resto
+export function marcarFrase(texto, frase, on) {
+  const chars = []; let est = false;
+  for (const ch of String(texto)) { if (ch === "*") { est = !est; continue; } chars.push({ ch, on: est }); }
+  const plano = sinTildes(chars.map((x) => x.ch).join("")), f = sinTildes(frase).trim();
+  const i = f ? plano.indexOf(f) : -1;
+  if (i < 0) return null;
+  for (let k = i; k < i + f.length; k++) chars[k].on = on;
+  let out = "", prev = false;
+  for (const x of chars) { if (x.on !== prev) { out += "*"; prev = x.on; } out += x.ch; }
+  if (prev) out += "*";
+  return out.replace(/\*(\s+)\*/g, "$1");
+}
+function colorDirecto(c, mensaje) {
+  const m = String(mensaje).match(/^\s*(?:pon[eé]\s+|pint[aá]\s+|hac[eé]\s+)?["“'«]?(.+?)["”'»]?\s+(?:del?\s+(?:slide|diapositiva)\s*\d+\s+)?(?:hacelo\s+|ponelo\s+|que\s+(?:est[eé]|sea|quede)\s+)?(?:en|de)\s+(?:color\s+)?(amarillo|blanco|negro|naranja|rojo|azul|verde|gris)\b/i);
+  if (!m) return null;
+  const frase = m[1].replace(/\s+del?\s+(?:slide|diapositiva)\s*\d+.*$/i, "").replace(/^(?:el|la|los|las|que)\s+/i, "").trim();
+  const color = m[2].toLowerCase(), ns = String(mensaje).match(/(?:slide|diapositiva)\s*(\d+)/i);
+  const est = { ...(ESTILOS[c.datos?.estilo || "manuscrito"] || {}), ...(c.datos?.colores || {}) };
+  let on = null;
+  if (nombreColor(est.tinta) === color) on = false; else if (nombreColor(est.acento) === color) on = true; else return null;
+  const slides = JSON.parse(JSON.stringify(c.slides || [])), idx = ns ? [+ns[1] - 1] : slides.map((_, i) => i);
+  let hechos = 0;
+  for (const i of idx) { const s = slides[i]; if (!s) continue; for (const k of Object.keys(s)) { if (k === "tipo") continue; if (Array.isArray(s[k])) s[k] = s[k].map((v) => { const n = marcarFrase(v, frase, on); if (n !== null) { hechos++; return n; } return v; }); else if (typeof s[k] === "string") { const n = marcarFrase(s[k], frase, on); if (n !== null) { s[k] = n; hechos++; } } } }
+  if (!hechos) return null;
+  return { ok: true, respuesta: `Listo: "${frase}" quedó en ${color}${ns ? " en el slide " + ns[1] : ""}.`, regla: "", memoria: "", slides };
+}
 export async function chatCarrusel(env, iaJSON, c, mensaje) {
+  const directo = colorDirecto(c, mensaje);
+  if (directo) return directo;
   const rg = await reglas(env);
   const memoriaAntes = await memoriaCarr(env);
   const datos = calcularDatos(c.datos);
@@ -324,10 +367,10 @@ RETOQUES DE FOTOS ACTUALES (por número de slide): ${JSON.stringify(Object.fromE
 Fotos subidas en los slides: ${Object.keys(c.datos?.fotos || {}).map((i) => +i + 1).join(", ") || "ninguna"}.
 Si pide retocar una foto (rotar, sombra, más grande, moverla, más brillo, etc.), devolvé en "fotos_fx" SOLO el slide que cambia, con TODOS sus valores finales (los actuales + el cambio). Valores posibles: ${Object.entries(FX).map(([k, v]) => `${k} (${v[0]} a ${v[1]}): ${v[2]}`).join("; ")}. "Ligeramente" = valores chicos (rot 4 a 6, sombra 1, piso 1 o 2). Para quitar un retoque poné su valor normal. No podés recortar el fondo ni dibujar sobre la foto: si lo pide, decíselo. Si la foto tiene fondo blanco o liso, para "sombra" usá sobre todo "piso" (la de "sombra" queda alrededor del rectángulo). NUNCA digas que cambiaste algo que no devolviste en el JSON.
 AJUSTES DE DISEÑO ACTUALES (por número de slide): ${JSON.stringify(Object.fromEntries(Object.entries(c.datos?.dis || {}).map(([i, v]) => [+i + 1, v])))}
-Si pide mover, centrar, alinear, agrandar o achicar textos o el @usuario de un slide, devolvé en "diseno" SOLO los slides que cambian, con TODOS sus valores finales. Valores: al ("c" = centrado, "l" = alineado a la izquierda); ${Object.entries(DIS).map(([k, v]) => `${k} (${v[0]} a ${v[1]}): ${v[2]}`).join("; ")}. "Un poco" = cambios chicos (texto 0.9, dy 60 a 120, usuario_dy 80 a 150).
+Si pide mover, centrar, alinear, agrandar o achicar textos o el @usuario de un slide, devolvé en "diseno" SOLO los slides que cambian, con TODOS sus valores finales. Valores: al ("c" = centrado, "l" = alineado a la izquierda); icono (uno de: ${ICONOS.join(", ")}; "" para sacarlo); icono_pos (${POS_ICONO.join(", ")}; por defecto abajo_der); ${Object.entries(DIS).map(([k, v]) => `${k} (${v[0]} a ${v[1]}): ${v[2]}`).join("; ")}. "Un poco" = cambios chicos (texto 0.9, dy 60 a 120, usuario_dy 80 a 150).
 CIERRE ("cta"): "palabra" es lo que va en grande. Si es UNA palabra se dibuja como Comentá "PALABRA". Si el dueño quiere otro llamado (link en bio, escribinos por WhatsApp, etc.), poné en "palabra" la frase completa (ej. "Link en bio" o "Escribinos al WhatsApp") y así NO aparece "Comentá". Sacá del "texto" y del "abajo" cualquier mención a comentar que contradiga el pedido.
-COLORES: en este estilo el texto normal es ${(c.datos?.colores?.tinta) || ESTILOS[c.datos?.estilo || "manuscrito"]?.tinta}, el fondo ${(c.datos?.colores?.fondo) || ESTILOS[c.datos?.estilo || "manuscrito"]?.fondo} y lo que va entre *asteriscos* se pinta de ${(c.datos?.colores?.acento) || ESTILOS[c.datos?.estilo || "manuscrito"]?.acento}. Para que una palabra quede del color del texto normal, sacale los asteriscos; para que quede del color de acento, ponésela entre asteriscos. Si pide un color que no está, cambiá el color en "colores" (hex: {"tinta":"#FFD400","acento":"#FFFFFF","fondo":"#111111"}, vale para todo el carrusel; para volver a los del estilo mandá "colores_estilo": true). Revisá el texto real antes de decir que algo "ya estaba" de un color.
-LO ÚNICO QUE PODÉS CAMBIAR: textos de los slides (incluido qué palabras van entre asteriscos), texto del posteo, estilo, colores, datos de precios, retoques de fotos ("fotos_fx") y ajustes de diseño ("diseno"). Si pide algo que no está en esa lista (otro color puntual, otra letra, mover un solo renglón, un ícono), decile claramente que eso todavía no lo podés hacer. NUNCA digas que hiciste un cambio que no devolviste en el JSON.
+COLORES: en este estilo el texto normal es ${nombreColor((c.datos?.colores?.tinta) || ESTILOS[c.datos?.estilo || "manuscrito"]?.tinta).toUpperCase()}, el fondo ${nombreColor((c.datos?.colores?.fondo) || ESTILOS[c.datos?.estilo || "manuscrito"]?.fondo).toUpperCase()} y lo que va entre *asteriscos* se pinta de ${nombreColor((c.datos?.colores?.acento) || ESTILOS[c.datos?.estilo || "manuscrito"]?.acento).toUpperCase()}. OJO: los asteriscos NO significan "amarillo", significan el color de acento. Para que una palabra quede del color del texto normal, sacale los asteriscos; para que quede del color de acento, ponésela entre asteriscos. Si pide un color que no está, cambiá el color en "colores" (hex: {"tinta":"#FFD400","acento":"#FFFFFF","fondo":"#111111"}, vale para todo el carrusel; para volver a los del estilo mandá "colores_estilo": true). Revisá el texto real antes de decir que algo "ya estaba" de un color.
+LO ÚNICO QUE PODÉS CAMBIAR: textos de los slides (incluido qué palabras van entre asteriscos), texto del posteo, estilo, colores, datos de precios, retoques de fotos ("fotos_fx") y ajustes de diseño ("diseno"). Los íconos se agregan con "icono" en "diseno" (uno por slide, en el color de acento). Si pide algo que no está en esa lista (un tercer color para una sola palabra, otra letra, mover un solo renglón, un ícono que no existe), decile claramente que eso todavía no lo podés hacer. NUNCA digas que hiciste un cambio que no devolviste en el JSON.
 TEXTO DEL POSTEO: ${JSON.stringify(c.caption || "")}
 REGLAS QUE YA SABÉS: ${rg.map((x, i) => `${i + 1}. ${x}`).join(" ") || "ninguna"}
 CHARLA PREVIA: ${c.chat.slice(-8).map((m) => `${m.r === "u" ? "DUEÑO" : "VOS"}: ${m.t}`).join(" | ") || "-"}
