@@ -28,13 +28,20 @@ export const ESTILOS = {
   naranja: { nombre: "Naranja fuerte", fondo: "#EA5B0C", tinta: "#FFFFFF", acento: "#0B0B0B", fuente: "sans" },
   editorial: { nombre: "Editorial blanco y negro", fondo: "#FFFFFF", tinta: "#111111", acento: "#EA5B0C", fuente: "serif" },
   nota: { nombre: "Nota amarilla", fondo: "#FFF3B0", tinta: "#1F2937", acento: "#DC2626", fuente: "mano" },
+  // Estilos "de tendencia" (letra gruesa, alineado a la izquierda, palabras clave resaltadas con *asteriscos*)
+  impacto: { nombre: "Impacto: letra gigante amarilla sobre foto", fondo: "#121212", tinta: "#FFD400", acento: "#FFFFFF", fuente: "display", al: "l", fotoFondo: true },
+  resaltado: { nombre: "Resaltado: blanco con palabras naranjas subrayadas", fondo: "#151515", tinta: "#FFFFFF", acento: "#FF6A1A", fuente: "display2", al: "l", minus: true, subrayar: true, fotoFondo: true },
+  dividido: { nombre: "Dividido rojo y negro (A vs B)", fondo: "#E8231E", fondo2: "#141414", tinta: "#141414", tinta2: "#E8231E", acento: "#FFFFFF", fuente: "display2", minus: true, grano: true },
+  grano: { nombre: "Negro texturado con título rojo", fondo: "#161616", tinta: "#F2F2F2", acento: "#E8231E", fuente: "display2", al: "l", minus: true, grano: true, tituloAcento: true },
+  bloque: { nombre: "Marca bold: negro, blanco y naranja", fondo: "#0B0B0B", tinta: "#FFFFFF", acento: "#EA5B0C", fuente: "display", al: "l", grano: true },
 };
+const ESTILOS_NUEVOS = ["impacto", "resaltado", "dividido", "grano", "bloque"];
 const direccion = async (env) => (await kvGet(env, "ig_direccion_carrusel")) || "";
 const memoriaCarr = async (env) => (await kvGet(env, "ig_memoria_carrusel")) || "";
 const guardarMemoriaCarr = (env, texto) => kvPut(env, "ig_memoria_carrusel", String(texto || "").trim().slice(0, 1500));
 const textoDireccion = (d) => (d ? `DIRECCIÓN CREATIVA DEL DUEÑO (manda sobre todo lo demás): ${d}` : "");
 const textoMemoria = (m) => (m ? `MEMORIA EDITORIAL (preferencias creativas del dueño; no reemplaza las reglas del negocio):\n${m}` : "");
-const ANGULOS_CARR = new Set(["mito", "error", "caso_real", "paso_a_paso", "que_pasa_si", "detras_de_escena", "lista_productos", "opinion", "pregunta_respuesta", "comparacion_ml", "otro"]);
+const ANGULOS_CARR = new Set(["mito", "error", "caso_real", "paso_a_paso", "que_pasa_si", "detras_de_escena", "lista_productos", "opinion", "pregunta_respuesta", "comparacion_ml", "ensayo", "vs", "otro"]);
 const normalizarIdea = (s) => String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 const FORMATOS = `FORMATOS POSIBLES (usá variedad real, no te quedes en precios):
 - mito: "Mito: ..." → por qué es falso → cómo es en realidad
@@ -47,6 +54,8 @@ const FORMATOS = `FORMATOS POSIBLES (usá variedad real, no te quedes en precios
 - opinion: una postura fuerte que genere debate
 - pregunta_respuesta: la pregunta que más nos hacen, contestada
 - comparacion_ml: precio en MercadoLibre vs puesto en Argentina (solo uno de varios formatos)
+- ensayo: una idea fuerte contada como hilo, frase por frase, tipo "por qué casi nadie le compra directo a China (y vos sí podés)": portada con pregunta polémica, slides de "frase grande" que avanzan la historia, giro, cierre. Funciona mucho con letra gigante.
+- vs: dos caminos enfrentados ("comprar en ML para revender vs traer de China", "revendedor que gana vs el que no"): portada A vs B, después una slide por lado con sus puntos, conclusión.
 - otro: lo que se te ocurra a partir de las referencias`;
 // ---------- Manual de viralidad (lo aprendido del carrusel ganador y de lo que no funcionó) ----------
 const MANUAL = `CÓMO ESCRIBIMOS (obligatorio):
@@ -57,7 +66,8 @@ const MANUAL = `CÓMO ESCRIBIMOS (obligatorio):
 - Cada slide deja algo abierto para el siguiente ("Y se vende. Mucho." → "Traído de China, puesto en Argentina:" → el número).
 - Ritmo: gancho que genera tensión → cada slide abre curiosidad para el siguiente → un giro o dato que sorprende → cierre claro. El orden depende del formato; no uses siempre el mismo.
 - Honestidad que da confianza: mencionar comisiones, que hay mínimos, que el precio es del día. Nunca prometer ganancias.
-- El cierre pide comentar UNA palabra en mayúsculas relacionada al tema (COSTO, LISTA, CUPO, PRECIO).`;
+- El cierre pide comentar UNA palabra en mayúsculas relacionada al tema (COSTO, LISTA, CUPO, PRECIO).
+- Resaltá con *asteriscos* de 1 a 4 palabras clave por slide (ej: "la gente *perdió la paciencia* para ver contenido largo"). Se pintan con el color de acento: usalo en lo que sorprende o duele, no en palabras de relleno. No resaltes en el caption.`;
 const MAL = /\b(descubr\w*|debes|deber[aá]s|puedes|tienes|evita\w*|aprende\w*|conoce\w*|vosotros|os\s|secreto\w*|esconde\w*|sin riesgos?|errores costosos|gu[ií]a definitiva|incre[ií]ble|nadie te cuenta)\b/i;
 export function problemasTexto(slides, caption = "") {
   const out = [];
@@ -195,11 +205,12 @@ ${foco ? `Esta tanda toma como base la referencia elegida: ${JSON.stringify(foco
 Ideas descartadas (no repitas tema ni errores): ${textoDescartes(await descartes(env))}
 Generá ${cantidad} ideas distintas de carrusel como experimentos variados para viralizar. Cada una usa un formato distinto. Buscá mitos, errores, decisiones, operaciones, opinión, comunidad, casos sin datos inventados y preguntas; no fuerces producto ni precio. Máximo una comparación de precios. Cada idea tiene hipótesis sobre guardados, compartidos o comentarios.
 ${await rendimiento(env)}
+Público principal: gente que vende o quiere vender en Mercado Libre y revendedores. Hablales como colega que los entiende (las comisiones, el envío, la competencia), no como alguien que los critica. En cada tanda incluí al menos una idea "ensayo" (hilo con una idea fuerte) y una "vs" (dos caminos enfrentados).
 LO QUE PASA EN WHATSAPP: cotizaciones ${w.cotizaciones.map((c) => c.items.map((i) => `${i.cantidad} × ${i.nombre}`).join(" + ")).join(" | ") || "ninguna"}; productos por chat ${w.cotizados.map((x) => `${x.producto} (${x.n})`).join(", ") || "sin datos"}; más consultado (14 días) ${w.demanda14.map((x) => `${x.producto} (${x.n})`).join(", ") || "sin datos"}.
 Reglas del dueño: ${rg.join("; ") || "ninguna"}.
 Ideas recientes (evitá repetir producto o ángulo): ${previas.map((x) => `${x.titulo} [${x.estado}]`).join(" | ") || "ninguna"}.
 Gancho exacto de portada, voseo y concreto; no inventes hechos ni precios.
-Respondé SOLO JSON: {"ideas":[{"titulo":"nombre corto","gancho":"texto exacto de la portada","producto":"... o vacío","angulo":"mito|error|caso_real|paso_a_paso|que_pasa_si|detras_de_escena|lista_productos|opinion|pregunta_respuesta|comparacion_ml|otro","pilar":"educacion|operaciones|caso|decision|comunidad|opinion|producto|detras_de_escena","hipotesis":"qué testeamos","inspirado_en":"id de referencia o vacío","por_que":"razón concreta"}]}`;
+Respondé SOLO JSON: {"ideas":[{"titulo":"nombre corto","gancho":"texto exacto de la portada","producto":"... o vacío","angulo":"mito|error|caso_real|paso_a_paso|que_pasa_si|detras_de_escena|lista_productos|opinion|pregunta_respuesta|comparacion_ml|ensayo|vs|otro","pilar":"educacion|operaciones|caso|decision|comunidad|opinion|producto|detras_de_escena","hipotesis":"qué testeamos","inspirado_en":"id de referencia o vacío","por_que":"razón concreta"}]}`;
   const r = foco && imgsRef.length && iaImg ? await iaImg(env, pIdeas, imgsRef) : await iaJSON(env, pIdeas);
   const ya = new Set(previas.map((x) => normalizarIdea(x.titulo)));
   const tandas = new Set(), tandasAngulos = new Set();
@@ -248,6 +259,7 @@ LO QUE EL DUEÑO DESCARTÓ Y POR QUÉ (no repitas esos errores): ${textoDescarte
 Cotizaciones reales recientes: ${w.cotizaciones.map((q) => q.items.map((i) => i.nombre).join(" + ")).join(" | ") || "ninguna"}.`;  // 1) tres versiones distintas
   const r1 = await pedirIA(`${base}
 Escribí 3 VERSIONES distintas del carrusel completo (6 a 10 slides según el formato; la última "cta"). Que cambien el gancho de la portada, la estructura y el orden de la tensión, no solo las palabras.
+Para portadas de tendencia sirve mucho: pregunta con paréntesis que provoca ("por qué esta letra gigante funciona tanto (y tu diseño bonito no)"), contraste A vs B, o un número que duele. Portada de 5 a 12 palabras.
 Respondé SOLO JSON: {"versiones":[{"slides":[...],"caption":"2 o 3 frases + comentá la PALABRA + 3 hashtags"}]}`);
   const versiones = (r1?.versiones || []).map((v) => ({ slides: limpiarSlides(v.slides), caption: String(v.caption || "") })).filter((v) => v.slides.length >= 3 && !PROHIBIDO.test(JSON.stringify(v)));
   if (!versiones.length) return { ok: false, error: "La IA no armó una estructura válida. Probá de nuevo." };
@@ -256,7 +268,8 @@ Respondé SOLO JSON: {"versiones":[{"slides":[...],"caption":"2 o 3 frases + com
 Sos el EDITOR más exigente de contenido viral de Argentina. Estas son 3 versiones:
 ${versiones.map((v, i) => `VERSIÓN ${i + 1}: ${JSON.stringify(v)}`).join("\n")}
 Puntuá cada una de 1 a 10 en: gancho (¿frena el scroll en 2 segundos?), curiosidad (¿cada slide obliga a pasar?), concreción (producto y números reales), voz (voseo, cero folleto). Elegí la mejor y MEJORALA: reescribí cada slide que no sea un 9. Compará contra las referencias virales: tiene que ser igual o mejor.
-Respondé SOLO JSON: {"puntajes":[{"version":1,"gancho":0,"curiosidad":0,"concrecion":0,"voz":0}],"elegida":1,"slides":[...],"caption":"..."}`);
+Elegí también el ESTILO VISUAL que mejor le queda (clave): ${Object.entries(ESTILOS).map(([k, v]) => `${k} = ${v.nombre}`).join("; ")}. Preferí los de tendencia (${ESTILOS_NUEVOS.join(", ")}): "dividido" para formatos vs, "impacto" o "resaltado" para ensayo/opinión/mito, "grano" para listas y pasos, "bloque" para casos y números; "manuscrito" solo si el contenido es una cuenta con precios.
+Respondé SOLO JSON: {"puntajes":[{"version":1,"gancho":0,"curiosidad":0,"concrecion":0,"voz":0}],"elegida":1,"estilo":"clave","slides":[...],"caption":"..."}`);
   let slides = limpiarSlides(r2?.slides), caption = String(r2?.caption || "");
   if (slides.length < 3 || PROHIBIDO.test(JSON.stringify(slides) + caption)) { slides = versiones[0].slides; caption = versiones[0].caption; }
   // 3) control final: si quedó algo genérico o de España, una reescritura más
@@ -269,7 +282,8 @@ Respondé SOLO JSON: {"slides":[...],"caption":"..."}`);
     const s3 = limpiarSlides(r3?.slides);
     if (s3.length >= 3 && !PROHIBIDO.test(JSON.stringify(s3))) { slides = s3; caption = String(r3.caption || caption); prob = problemasTexto(slides, caption); }
   }
-  return { ok: true, slides, caption: caption.slice(0, 2200), avisos: prob };
+  const estilo = ESTILOS[r2?.estilo] ? r2.estilo : (c.angulo === "vs" ? "dividido" : c.angulo === "comparacion_ml" ? "manuscrito" : ESTILOS_NUEVOS[Math.floor(Math.random() * ESTILOS_NUEVOS.length)]);
+  return { ok: true, slides, caption: caption.replace(/\*/g, "").slice(0, 2200), avisos: prob, estilo };
 }
 
 // ---------- Chat dentro del carrusel ----------
@@ -477,7 +491,7 @@ export async function apiCarruseles(env, req, url, quien, iaJSON, T = null, iaIm
     const e = await armarEstructura(env, iaJSON, c, T, iaImg);
     if (!e.ok) return json(e);
     const chat = c.chat.concat({ r: "a", t: "Escribí 3 versiones, me quedé con la mejor y la pulí. Revisala, cargá los números reales arriba y decime qué cambiar. Cuando te cierre, tocá \"Confirmar estructura\"." + (e.avisos?.length ? "\nOjo: " + e.avisos.join("; ") : "") });
-    await guardar(c, { estado: "estructura", slides: e.slides, caption: e.caption, chat });
+    await guardar(c, { estado: "estructura", slides: e.slides, caption: e.caption, chat, datos: limpiarDatos({ estilo: e.estilo }, c.datos) });
     return json({ ok: true, ...(await uno()) });
   }
   if (r === "guardar" && req.method === "POST") {

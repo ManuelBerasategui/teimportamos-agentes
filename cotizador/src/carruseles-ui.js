@@ -66,33 +66,45 @@ export const CARR_JS = String.raw`
 var CAPI = function (r, body, metodo, extra) { return fetch("/panel/api/carruseles/" + r, { method: metodo || (body ? "POST" : "GET"), headers: Object.assign(body && !(body instanceof Blob) ? { "Content-Type": "application/json" } : {}, extra || {}), body: body instanceof Blob ? body : body ? JSON.stringify(body) : undefined }).then(function (x) { if (x.status === 401) { location.href = "/login?volver=/panel/redes%23carr"; throw 0; } return x.json(); }); };
 var CL = null, CC = null, USUARIO = "te.importamos.arg", TIPOS_S = {}, IMGS = {}, FUENTE = null;
 var EST_C = { idea: "Idea", estructura: "Estructura", slides: "Slides", aprobado: "Programado", publicando: "Publicando", publicado: "Publicado", error: "Error" };
-var W = 1080, H = 1350, AZUL = "#3B4796", CREMA = "#F3EFE8", ACENTO = "#3B4796", FAM = '"Patrick Hand", "Comic Sans MS", cursive', PESO = "", KS = 1, ESTILOS_S = {};
-var FAMS = { mano: ['"Patrick Hand", "Comic Sans MS", cursive', ""], sans: ['system-ui, "Segoe UI", Arial, sans-serif', "bold "], serif: ['Georgia, "Times New Roman", serif', "bold "] };
-function fuente() { if (FUENTE) return FUENTE; FUENTE = (document.fonts && document.fonts.load ? Promise.all([document.fonts.load('64px "Patrick Hand"'), document.fonts.ready]) : Promise.resolve()).catch(function () {}); return FUENTE; }
+var W = 1080, H = 1350, AZUL = "#3B4796", CREMA = "#F3EFE8", ACENTO = "#3B4796", FAM = '"Patrick Hand", "Comic Sans MS", cursive', PESO = "", KS = 1, ESTILOS_S = {}, EST = {}, LH = 1.16;
+var FAMS = { mano: ['"Patrick Hand", "Comic Sans MS", cursive', ""], sans: ['system-ui, "Segoe UI", Arial, sans-serif', "bold "], serif: ['Georgia, "Times New Roman", serif', "bold "], display: ['"Anton", Impact, "Arial Narrow", sans-serif', ""], display2: ['"Archivo Black", "Arial Black", sans-serif', ""] };
+function fuente() { if (FUENTE) return FUENTE; FUENTE = (document.fonts && document.fonts.load ? Promise.all([document.fonts.load('64px "Patrick Hand"'), document.fonts.load('64px "Anton"'), document.fonts.load('64px "Archivo Black"'), document.fonts.ready]) : Promise.resolve()).catch(function () {}); return FUENTE; }
 function pesos(n) { return n == null ? null : "$" + Math.round(n).toLocaleString("es-AR"); }
 function datosC() { var d = CC.datos || {}; var dif = d.precio_ml && d.costo ? d.precio_ml - d.costo : null; return { producto: d.producto || "", precio_ml: pesos(d.precio_ml), costo: pesos(d.costo), diferencia: pesos(dif), total: dif != null && d.cantidad ? pesos(dif * d.cantidad) : null, cantidad: d.cantidad ? String(d.cantidad) : null }; }
-function rell(t) { var v = datosC(); return String(t || "").replace(/\{(producto|precio_ml|costo|diferencia|total|cantidad)\}/g, function (m, k) { return v[k] || "[" + k.replace("_", " ") + "]"; }); }
+function rell(t) { var v = datosC(); var r = String(t || ""); if (EST.minus) r = r.toLowerCase(); return r.replace(/\{(producto|precio_ml|costo|diferencia|total|cantidad)\}/g, function (m, k) { return v[k] || "[" + k.replace("_", " ") + "]"; }); }
 function cargarImg(src) { if (!src) return Promise.resolve(null); if (IMGS[src]) return IMGS[src]; IMGS[src] = new Promise(function (ok) { var i = new Image(); i.onload = function () { ok(i); }; i.onerror = function () { ok(null); }; i.src = src; }); return IMGS[src]; }
-function aplicarEstilo() { var s = ESTILOS_S[(CC && CC.datos && CC.datos.estilo) || "manuscrito"] || ESTILOS_S.manuscrito || { fondo: CREMA, tinta: AZUL, acento: AZUL, fuente: "mano" }; CREMA = s.fondo; AZUL = s.tinta; ACENTO = s.acento || s.tinta; var f = FAMS[s.fuente] || FAMS.mano; FAM = f[0]; PESO = f[1]; }
+function aplicarEstilo() { var s = ESTILOS_S[(CC && CC.datos && CC.datos.estilo) || "manuscrito"] || ESTILOS_S.manuscrito || { fondo: CREMA, tinta: AZUL, acento: AZUL, fuente: "mano" }; CREMA = s.fondo; AZUL = s.tinta; ACENTO = s.acento || s.tinta; var f = FAMS[s.fuente] || FAMS.mano; FAM = f[0]; PESO = f[1]; EST = s; LH = /display/.test(s.fuente || "") ? 1.02 : 1.16; }
+// Texto con *resaltado*: los asteriscos prenden y apagan el color de acento (no se dibujan ni se miden)
+function sinMarca(t) { return String(t).replace(/\*/g, ""); }
+function segs(l, on) { var out = [], cur = ""; for (var k = 0; k < l.length; k++) { if (l[k] === "*") { if (cur) out.push({ t: cur, on: on }); cur = ""; on = !on; } else cur += l[k]; } if (cur) out.push({ t: cur, on: on }); return { s: out, on: on }; }
+var GRANO = null;
+function grano(ctx) { if (!GRANO) { GRANO = document.createElement("canvas"); GRANO.width = GRANO.height = 256; var g = GRANO.getContext("2d"), im = g.createImageData(256, 256); for (var p = 0; p < im.data.length; p += 4) { var v = Math.random() * 255; im.data[p] = im.data[p + 1] = im.data[p + 2] = v; im.data[p + 3] = 22; } g.putImageData(im, 0, 0); } ctx.save(); ctx.fillStyle = ctx.createPattern(GRANO, "repeat"); ctx.fillRect(0, 0, W, H); ctx.restore(); }
 function fnt(sz) { return PESO + sz + "px " + FAM; }
 function partir(ctx, txt, maxW, sz) {
   ctx.font = fnt(sz); var out = [];
-  String(txt).split("\n").forEach(function (par) { var pal = par.split(" "), l = ""; pal.forEach(function (p) { var t = l ? l + " " + p : p; if (ctx.measureText(t).width > maxW && l) { out.push(l); l = p; } else l = t; }); out.push(l); });
+  String(txt).split("\n").forEach(function (par) { var pal = par.split(" "), l = ""; pal.forEach(function (p) { var t = l ? l + " " + p : p; if (ctx.measureText(sinMarca(t)).width > maxW && l) { out.push(l); l = p; } else l = t; }); out.push(l); });
   return out;
 }
 // Bloques: texto {t, sz, al:"c"|"l", sub:bool, gap}, img {img, mw, mh, card}, avatar, barras {...}, hr, esp
 function medir(ctx, b) {
-  if (b.k === "t") { b.lines = partir(ctx, b.t, b.al === "c" ? 900 : 860, b.sz); b.h = b.lines.length * b.sz * 1.16 + (b.sub ? 26 : 0); }
+  if (b.k === "t") { b.lines = partir(ctx, b.t, b.al === "c" ? 900 : 860, b.sz); b.h = b.lines.length * b.sz * LH + (b.sub ? 26 : 0); }
   else if (b.k === "img") { if (!b.img) { b.w = b.mw * 0.8; b.h = b.mh * 0.55; } else { var r = Math.min(b.mw / b.img.width, b.mh / b.img.height); b.w = b.img.width * r; b.h = b.img.height * r; } }
   else if (b.k === "av") b.h = 80; else if (b.k === "bar") b.h = 330; else if (b.k === "hr") b.h = 26; else if (b.k === "esp") b.h = b.h || 30;
   return b.h + (b.gap == null ? 22 : b.gap);
 }
 function dibujar(ctx, b, y, d) {
-  ctx.fillStyle = AZUL; ctx.strokeStyle = AZUL; ctx.textBaseline = "top";
+  var tinta = b.color || (EST.fondo2 ? (y + (b.h || 0) / 2 < H / 2 ? AZUL : (EST.tinta2 || ACENTO)) : AZUL);
+  ctx.fillStyle = tinta; ctx.strokeStyle = tinta; ctx.textBaseline = "top";
   if (b.k === "t") {
-    ctx.font = fnt(b.sz); ctx.textAlign = b.al === "c" ? "center" : "left"; var x = b.al === "c" ? W / 2 : 110, maxw = 0;
-    b.lines.forEach(function (l, i) { ctx.fillText(l, x, y + i * b.sz * 1.16); maxw = Math.max(maxw, ctx.measureText(l).width); });
-    if (b.sub) { var yy = y + b.lines.length * b.sz * 1.16 + 6, x0 = b.al === "c" ? W / 2 - maxw / 2 - 10 : x - 6, x1 = x0 + maxw + 20; ctx.strokeStyle = ACENTO; ctx.lineWidth = 6; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(x0, yy + 4); ctx.quadraticCurveTo((x0 + x1) / 2, yy - 4, x1, yy + 2); ctx.stroke(); }
+    ctx.font = fnt(b.sz); ctx.textAlign = "left"; var x = b.al === "c" ? W / 2 : 110, maxw = 0, on = false;
+    if (EST.fotoFondo || EST.fuente === "display" || EST.fuente === "display2") { ctx.shadowColor = EST.fotoFondo ? "rgba(0,0,0,.55)" : "rgba(0,0,0,0)"; ctx.shadowBlur = EST.fotoFondo ? 18 : 0; }
+    b.lines.forEach(function (l, i) {
+      var r = segs(l, on), ancho = ctx.measureText(sinMarca(l)).width, xx = b.al === "c" ? x - ancho / 2 : x, yl = y + i * b.sz * LH;
+      r.s.forEach(function (sg) { var w = ctx.measureText(sg.t).width; ctx.fillStyle = sg.on ? ACENTO : tinta; ctx.fillText(sg.t, xx, yl); if (sg.on && EST.subrayar && sg.t.trim()) { ctx.fillRect(xx, yl + b.sz * 0.98, w - (/ $/.test(sg.t) ? ctx.measureText(" ").width : 0), Math.max(4, b.sz * 0.06)); } xx += w; });
+      on = r.on; maxw = Math.max(maxw, ancho);
+    });
+    ctx.shadowBlur = 0; ctx.fillStyle = tinta;
+    if (b.sub) { var yy = y + b.lines.length * b.sz * LH + 6, x0 = b.al === "c" ? W / 2 - maxw / 2 - 10 : x - 6, x1 = x0 + maxw + 20; ctx.strokeStyle = ACENTO; ctx.lineWidth = 6; ctx.lineCap = "round"; ctx.beginPath(); ctx.moveTo(x0, yy + 4); ctx.quadraticCurveTo((x0 + x1) / 2, yy - 4, x1, yy + 2); ctx.stroke(); }
   } else if (b.k === "img") {
     var x = (W - b.w) / 2;
     if (!b.img) { ctx.save(); ctx.setLineDash([14, 12]); ctx.lineWidth = 4; ctx.strokeStyle = "#B8BEDC"; ctx.strokeRect(x, y, b.w, b.h); ctx.restore(); ctx.font = fnt(46); ctx.textAlign = "center"; ctx.fillStyle = "#8C94C4"; ctx.fillText("Subí la foto de este slide", W / 2, y + b.h / 2 - 24); return; }
@@ -124,18 +136,21 @@ function dibujar(ctx, b, y, d) {
 function numC(t) { var m = String(t || "").replace(/\./g, "").match(/\d+/); return m ? +m[0] : 0; }
 function rr(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
 function bloques(s, i, d) {
-  var T = function (t, sz, al, ex) { return Object.assign({ k: "t", t: rell(t),sz: Math.round(sz * (sz < 90 ? 1.16 : 1.08) * KS), al: al || "c" }, ex || {}); }, out = [];
+  var disp = /display/.test(EST.fuente || ""), izq = EST.al === "l" && s.tipo !== "cta";
+  var T = function (t, sz, al, ex) { if (disp && sz >= 90) sz = sz * 1.22; return Object.assign({ k: "t", t: rell(t),sz: Math.round(sz * (sz < 90 ? 1.16 : 1.08) * KS), al: izq ? "l" : (al || "c") }, ex || {}); }, out = [];
   var foto = d.fotos[i], fx = (CC.datos && CC.datos.fx && CC.datos.fx[i]) || null;
-  if (s.tipo === "portada") out = [{ k: "img", img: foto, fx: fx, mw: 640, mh: 560, gap: 50 }, T(s.titulo, 96), T(s.subtitulo, 60, "c", { gap: 70 }), { k: "av" }];
+  if (s.tipo === "portada" && EST.fotoFondo) out = [T(s.titulo, 128, "l", { sub: false, gap: 40 }), T(s.subtitulo, 60, "c", { gap: 60 }), { k: "av" }];
+  else if (s.tipo === "portada") out = [{ k: "img", img: foto, fx: fx, mw: 640, mh: 560, gap: 50 }, T(s.titulo, 96), T(s.subtitulo, 60, "c", { gap: 70 }), { k: "av" }];
   else if (s.tipo === "captura") out = [T(s.arriba, 100, "c", { gap: 50 }), { k: "img", img: foto, fx: fx, mw: 860, mh: 520, card: true, gap: 70 }, T(s.abajo, 64)];
   else if (s.tipo === "numero") out = [T(s.arriba, 70, "c", { gap: 30 }), T(s.numero, 200, "c", { sub: true, gap: 40 }), T(s.abajo, 64)];
   else if (s.tipo === "suma") { out = [T(s.titulo, 100, "l", { gap: 50 })]; (s.items || []).forEach(function (it, k) { out.push(T((k ? "+ " : "   ") + it, 62, "l", { gap: 10 })); }); out.push({ k: "hr", gap: 20 }, T(s.total, 92, "l")); }
   else if (s.tipo === "barras") out = [T(s.titulo, 100, "l", { gap: 50 }), { k: "bar", al_: rell(s.a_label), av_: rell(s.a_valor), av: rell(s.a_valor), bl_: rell(s.b_label), bv_: rell(s.b_valor), bv: rell(s.b_valor), gap: 50 }, T(s.conclusion, 84, "l")];
   else if (s.tipo === "texto") { out = [T(s.titulo, 100, "l", { gap: 40 })]; (s.parrafos || []).forEach(function (p) { out.push(T(p, 62, "l", { gap: 28 })); }); }
   else if (s.tipo === "multiplicacion") out = [T(s.arriba, 66, "c", { gap: 30 }), T(s.linea, 96, "c", { sub: true, gap: 40 }), T(s.numero, 150, "c", { gap: 26 }), T(s.abajo, 62)];
-  else if (s.tipo === "lista") { out = [T(s.titulo, 104, "l", { gap: 44 })]; (s.items || []).forEach(function (it, k) { out.push(T((k + 1) + ". " + it, 62, "l", { gap: 22 })); }); }
+  else if (s.tipo === "lista") { out = [T(s.titulo, 104, "l", { gap: 44, color: EST.tituloAcento ? ACENTO : null })]; (s.items || []).forEach(function (it, k) { out.push(T((EST.tituloAcento ? "• " : (k + 1) + ". ") + it, 62, "l", { gap: 22 })); }); }
   else if (s.tipo === "cta") out = [{ k: "av", gap: 40 }, T(s.texto, 66, "c", { gap: 30 }), T("Comentá “" + String(s.palabra || "").toUpperCase() + "”", 112, "c", { gap: 20 }), T(s.abajo, 66)];
   else if (s.tipo === "grande") out = [T(s.texto, 150, "c", { sub: true, gap: 50 }), T(s.abajo, 66)];
+  else if (s.tipo === "versus" && EST.fondo2) out = [T(s.a_label, 130, "c", { gap: 16 }), T(s.a_texto, 58, "c", { gap: 150 }), T(s.b_label, 130, "c", { gap: 16 }), T(s.b_texto, 58, "c")];
   else if (s.tipo === "versus") out = [T(s.titulo, 96, "l", { gap: 40 }), T(s.a_label, 78, "l", { sub: true, gap: 8 }), T(s.a_texto, 60, "l", { gap: 50 }), T(s.b_label, 78, "l", { sub: true, gap: 8 }), T(s.b_texto, 60, "l")];
   return out;
 }
@@ -145,6 +160,10 @@ function render(canvas, s, i, d) {
   for (KS = 1; ; KS -= 0.08) { bl = bloques(s, i, d); tot = 0; bl.forEach(function (b) { tot += medir(ctx, b); }); if (tot <= H - 140 || KS <= 0.5) break; }
   KS = 1;
   ctx.fillStyle = CREMA; ctx.fillRect(0, 0, W, H);
+  if (EST.fondo2) { ctx.fillStyle = EST.fondo2; ctx.fillRect(0, H / 2, W, H / 2); }
+  var fondoFoto = EST.fotoFondo && d.fotos[i];
+  if (fondoFoto) { var im = d.fotos[i], rz = Math.max(W / im.width, H / im.height); ctx.drawImage(im, (W - im.width * rz) / 2, (H - im.height * rz) / 2, im.width * rz, im.height * rz); var gr = ctx.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, "rgba(0,0,0,.35)"); gr.addColorStop(1, "rgba(0,0,0,.72)"); ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H); }
+  if (EST.grano) grano(ctx);
   var y = Math.max(70, (H - tot) / 2 + 10);
   bl.forEach(function (b) { dibujar(ctx, b, y, d); y += b.h + (b.gap == null ? 22 : b.gap); });
 }
