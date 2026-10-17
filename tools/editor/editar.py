@@ -103,6 +103,27 @@ def tramos(palabras, dur):
             out.append([a, b])
     return [(round(a, 3), round(b, 3)) for a, b in out if b - a > 0.05]
 
+def _norm(w):
+    return re.sub(r"[^a-z0-9ñ]", "", w.lower().translate(str.maketrans("áéíóúü", "aeiouu")))
+
+
+def quitar_repeticiones(palabras, n=3, ventana=40):
+    """Si me trabo y vuelvo a arrancar la frase sin cortar, las primeras n palabras aparecen de nuevo
+    poco después: se borra desde la primera vez hasta donde arranca la toma buena."""
+    w = [_norm(p["w"]) for p in palabras]
+    out, i = [], 0
+    while i < len(palabras):
+        clave = w[i:i + n]
+        salto = None
+        if len(clave) == n and all(clave):
+            for j in range(i + n, min(len(palabras) - n + 1, i + ventana)):
+                if w[j:j + n] == clave and palabras[j]["ini"] - palabras[i]["ini"] < 20:
+                    salto = j
+        if salto is not None:
+            i = salto
+            continue
+        out.append(palabras[i]); i += 1
+    return out
 
 def armar_linea_tiempo(partes):
     """partes: [(indice_input, palabras, dur)] → tramos [(input, a, b)] y palabras con el tiempo final del video."""
@@ -114,7 +135,7 @@ def armar_linea_tiempo(partes):
                     palabras_finales.append({"w": p["w"], "ini": round(t + p["ini"] - a, 3), "fin": round(t + p["fin"] - a, 3)})
             lista.append((k, a, b))
             t += b - a
-    return lista, palabras_finales, round(t, 3)
+    return lista, palabras_finales, round(t, 3), round(fin_primero if fin_primero is not None else t, 3)
 
 
 # ---------------------------------------------------------------- Subtítulos (ASS)
@@ -140,7 +161,7 @@ def grupos(palabras, max_palabras=3, max_letras=18):
     return gs
 
 
-def ass(palabras, gancho, total):
+def ass(palabras, gancho, total, fin_gancho=None):
     cab = f"""[Script Info]
 ScriptType: v4.00+
 PlayResX: {ANCHO}
@@ -157,7 +178,7 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
     ev = []
     if gancho:
-        ev.append(f"Dialogue: 1,{tiempo_ass(0)},{tiempo_ass(total)},Gancho,,0,0,0,,{limpiar(gancho)}")
+        ev.append(f"Dialogue: 1,{tiempo_ass(0)},{tiempo_ass(fin_gancho or total)},Gancho,,0,0,0,,{limpiar(gancho)}")
     gs = grupos(palabras)
     for k, g in enumerate(gs):
         limite = gs[k + 1][0]["ini"] if k + 1 < len(gs) else total
@@ -170,10 +191,10 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 
 
 # ---------------------------------------------------------------- Render
-def render(entradas, lista, palabras, gancho, total, salida, dir_tmp):
+def render(entradas, lista, palabras, gancho, total, salida, dir_tmp, fin_gancho=None):
     arch_ass = os.path.join(dir_tmp, "subs.ass")
     with open(arch_ass, "w", encoding="utf-8") as f:
-        f.write(ass(palabras, gancho, total))
+        f.write(ass(palabras, gancho, total, fin_gancho))
     filtros, pares = [], []
     for i, (k, a, b) in enumerate(lista):
         filtros.append(f"[{k}:v]trim={a}:{b},setpts=PTS-STARTPTS,scale={ANCHO}:{ALTO}:force_original_aspect_ratio=increase,crop={ANCHO}:{ALTO},fps={FPS},setsar=1[v{i}]")
@@ -186,8 +207,8 @@ def render(entradas, lista, palabras, gancho, total, salida, dir_tmp):
     cmd = ["ffmpeg", "-y", "-loglevel", "error"]
     for e in entradas:
         cmd += ["-i", e]
-    cmd += ["-filter_complex", ";".join(filtros), "-map", "[vo]", "-map", "[ao]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "21",
-            "-pix_fmt", "yuv420p", "-profile:v", "high", "-c:a", "aac", "-b:a", "128k", "-ar", "48000", "-movflags", "+faststart", salida]
+    cmd += ["-filter_complex", ";".join(filtros), "-map", "[vo]", "-map", "[ao]", "-c:v", "libx264", "-preset", "slow", "-crf", "17",
+            "-pix_fmt", "yuv420p", "-profile:v", "high", "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-movflags", "+faststart", salida]
     subprocess.run(cmd, check=True)
     portada = salida.replace(".mp4", ".jpg")
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-ss", "0.4", "-i", salida, "-frames:v", "1", "-q:v", "3", "-vf", "scale=540:-2", portada], check=True)
@@ -204,14 +225,14 @@ def armar_videos(clips, decision, dir_tmp):
             c = clips[n]
             keep = mantener.get(n)
             frases = [f for f in c["frases"] if keep is None or f["i"] in keep] or c["frases"]
-            pal = [p for f in frases for p in f["palabras"]]
+            pal = quitar_repeticiones([p for f in frases for p in f["palabras"]])
             entradas.append(c["archivo"])
             partes.append((len(entradas) - 1, pal, c["dur"]))
-        lista, palabras, total = armar_linea_tiempo(partes)
+        lista, palabras, total, fin_primero = armar_linea_tiempo(partes)
         if not lista:
             continue
         salida = os.path.join(dir_tmp, f"final-{j}.mp4")
-        portada = render(entradas, lista, palabras, v.get("texto", ""), total, salida, dir_tmp)
+        portada = render(entradas, lista, palabras, v.get("texto", ""), total, salida, dir_tmp, fin_primero)
         hechos.append({"j": j, "archivo": salida, "portada": portada, "duracion": total, "texto": v.get("texto", ""),
                        "caption": v.get("caption", ""), "transcripcion": " ".join(p["w"] for p in palabras)})
     return hechos
