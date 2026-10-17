@@ -90,7 +90,8 @@ function medir(ctx, b) { var pv = PESO; if (b.peso) PESO = b.peso; try { return 
 function medir0(ctx, b) {
   if (b.k === "t") { var mw = b.al === "c" ? 900 : 860; b.lines = partir(ctx, b.t, mw, b.sz); ctx.font = fnt(b.sz); var anch = Math.max.apply(null, b.lines.map(function (l) { return ctx.measureText(sinMarca(l)).width; })); if (anch > mw) { b.sz = Math.floor(b.sz * mw / anch); b.lines = partir(ctx, b.t, mw, b.sz); } b.h = b.lines.length * b.sz * LH + (b.sub ? 26 : 0) + (b.box ? b.lines.length * 30 : 0); }
   else if (b.k === "img") { if (!b.img) { b.w = b.mw * 0.8; b.h = b.mh * 0.55; } else { var r = Math.min(b.mw / b.img.width, b.mh / b.img.height); b.w = b.img.width * r; b.h = b.img.height * r; } }
-  else if (b.k === "av") b.h = b.oculto ? 0 : 80 * (b.sc || 1); else if (b.k === "bar") b.h = 330; else if (b.k === "hr") b.h = 26; else if (b.k === "esp") b.h = b.h || 30;
+  else if (b.k === "av") b.h = b.oculto ? 0 : 80 * (b.sc || 1);
+  else if (b.k === "ico") b.h = 130 * b.sc; else if (b.k === "bar") b.h = 330; else if (b.k === "hr") b.h = 26; else if (b.k === "esp") b.h = b.h || 30;
   return b.h + (b.gap == null ? 22 : b.gap);
 }
 function dibujar(ctx, b, y, d) { var pv = PESO; if (b.peso) PESO = b.peso; try { return dibujar0(ctx, b, y, d); } finally { PESO = pv; } }
@@ -122,6 +123,7 @@ function dibujar0(ctx, b, y, d) {
     if (b.card) { ctx.save(); ctx.shadowColor = "rgba(30,40,90,.22)"; ctx.shadowBlur = 40; ctx.shadowOffsetY = 14; rr(ctx, x - 14, y - 14, b.w + 28, b.h + 28, 26); ctx.fillStyle = "#fff"; ctx.fill(); ctx.restore(); ctx.save(); rr(ctx, x, y, b.w, b.h, 16); ctx.clip(); ctx.drawImage(b.img, x, y, b.w, b.h); ctx.restore(); }
     else ctx.drawImage(b.img, x, y, b.w, b.h);
     ctx.restore();
+  } else if (b.k === "ico") { var tt = 130 * b.sc; icono(ctx, b.n, null, b.sc * 130 / 150, [(b.al === "l" ? 104 : (W - tt) / 2) + b.dx, y + b.dy]);
   } else if (b.k === "av") {
     if (b.oculto) return;
     if ((b.sc && b.sc !== 1) || b.dy) { var bb = Object.assign({}, b, { sc: 1, dy: 0 }); ctx.save(); ctx.translate(W / 2, y + (b.dy || 0)); ctx.scale(b.sc || 1, b.sc || 1); ctx.translate(-W / 2, 0); dibujar(ctx, bb, 0, d); ctx.restore(); return; }
@@ -139,9 +141,9 @@ function dibujar0(ctx, b, y, d) {
   } else if (b.k === "hr") { ctx.lineWidth = 5; ctx.beginPath(); ctx.moveTo(110, y + 12); ctx.lineTo(W - 150, y + 12); ctx.stroke(); }
 }
 // Íconos dibujados a mano (gratis, sin imágenes): trazos simples en el color de acento
-function icono(ctx, n, pos, sc) {
-  var t = 150 * sc, m = 70, P = { abajo_der: [W - m - t, H - m - t], abajo_izq: [m, H - m - t], abajo_centro: [(W - t) / 2, H - m - t], arriba_der: [W - m - t, m], arriba_izq: [m, m], centro: [(W - t) / 2, (H - t) / 2], derecha: [W - m - t, (H - t) / 2], izquierda: [m, (H - t) / 2] }[pos] || [W - m - t, H - m - t];
-  ctx.save(); ctx.translate(P[0], P[1]); ctx.scale(t / 100, t / 100); ctx.strokeStyle = ACENTO; ctx.fillStyle = ACENTO; ctx.lineWidth = 9; ctx.lineCap = "round"; ctx.lineJoin = "round";
+function icono(ctx, n, pos, sc, xy, dx, dy) {
+  var t = 150 * sc, m = 70, P = xy || { abajo_der: [W - m - t, H - m - t], abajo_izq: [m, H - m - t], abajo_centro: [(W - t) / 2, H - m - t], arriba_der: [W - m - t, m], arriba_izq: [m, m], centro: [(W - t) / 2, (H - t) / 2], derecha: [W - m - t, (H - t) / 2], izquierda: [m, (H - t) / 2] }[pos] || [W - m - t, H - m - t];
+  ctx.save(); ctx.translate(P[0] + (dx || 0), P[1] + (dy || 0)); ctx.scale(t / 100, t / 100); ctx.strokeStyle = ACENTO; ctx.fillStyle = ACENTO; ctx.lineWidth = 9; ctx.lineCap = "round"; ctx.lineJoin = "round";
   var L = function (pts) { ctx.beginPath(); pts.forEach(function (p, k) { if (k) ctx.lineTo(p[0], p[1]); else ctx.moveTo(p[0], p[1]); }); ctx.stroke(); };
   var C = function (x, y, r, f) { ctx.beginPath(); ctx.arc(x, y, r, 0, 7); if (f) ctx.fill(); else ctx.stroke(); };
   var R = function (x, y, w, h, r) { rr(ctx, x, y, w, h, r); ctx.stroke(); };
@@ -170,6 +172,11 @@ function icono(ctx, n, pos, sc) {
 function numC(t) { var m = String(t || "").replace(/\./g, "").match(/\d+/); return m ? +m[0] : 0; }
 function rr(ctx, x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
 function bloques(s, i, d) {
+  var out = bloques0(s, i, d), ds = (CC.datos && CC.datos.dis && CC.datos.dis[i]) || {};
+  if (ds.icono && (ds.icono_pos || "debajo") === "debajo") { var alx = ds.al || (EST.al === "l" && s.tipo !== "cta" ? "l" : "c"); out = out.concat({ k: "ico", n: ds.icono, sc: ds.icono_escala || 1, al: alx, dx: ds.icono_dx || 0, dy: ds.icono_dy || 0, gap: 0 }); }
+  return out;
+}
+function bloques0(s, i, d) {
   RSL = s.tipo;
   var disp = /display/.test(EST.fuente || ""), izq = EST.al === "l" && s.tipo !== "cta", dis = (CC.datos && CC.datos.dis && CC.datos.dis[i]) || {};
   var T = function (t, sz, al, ex) { if (disp && sz >= 90) sz = sz * 1.22; return Object.assign({ k: "t", t: rell(t),sz: Math.round(sz * (sz < 90 ? 1.16 : 1.08) * KS * (dis.texto || 1)), al: dis.al || (izq ? "l" : (al || "c")) }, ex || {}); }, out = [];
@@ -221,7 +228,7 @@ function render(canvas, s, i, d) {
   var y = (EST.abajo || (EST.fotoSoloPortada && s.tipo === "portada") ? Math.max(70, H - tot - 110) : Math.max(70, (H - tot) / 2 + 10)) + (dis0.dy || 0);
   bl.forEach(function (b) { dibujar(ctx, b, y, d); y += b.h + (b.gap == null ? 22 : b.gap); });
   var dis = (CC.datos && CC.datos.dis && CC.datos.dis[i]) || {};
-  if (dis.icono) icono(ctx, dis.icono, dis.icono_pos || "abajo_der", dis.icono_escala || 1);
+  if (dis.icono && (dis.icono_pos || "debajo") !== "debajo") icono(ctx, dis.icono, dis.icono_pos, dis.icono_escala || 1, null, dis.icono_dx || 0, dis.icono_dy || 0);
   if (EST.fondo2 && s.tipo === "versus") { ctx.font = fnt(92); ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = EST.acento || "#fff"; ctx.fillText("vs", W / 2, H / 2); ctx.textBaseline = "top"; }
 }
 function recursos() {
