@@ -684,7 +684,9 @@ export async function apiCarruseles(env, req, url, quien, iaJSON, T = null, iaIm
     const d = calcularDatos(c.datos);
     const texto = c.slides.map((s) => JSON.stringify(s)).join(" ");
     for (const k of ["precio_ml", "costo", "diferencia", "total", "cantidad"]) if (texto.includes("{" + k + "}") && d[k] == null) return json({ error: `Falta cargar ${k === "precio_ml" ? "el precio en MercadoLibre" : k === "costo" ? "el costo puesto" : k === "cantidad" ? "la cantidad" : "el precio y el costo"}` }, 400);
-    for (let i = 0; i < n; i++) if (TIPOS_SLIDE[c.slides[i].tipo]?.foto && !c.datos.fotos?.[i]) return json({ error: `Falta la foto del slide ${i + 1}` }, 400);
+    // La foto es obligatoria solo donde el diseño deja un hueco para ella: capturas siempre; portadas solo en estilos que no usan foto de fondo
+    const estC = ESTILOS[c.datos?.estilo || "manuscrito"] || {};
+    for (let i = 0; i < n; i++) { const t = c.slides[i].tipo; if (TIPOS_SLIDE[t]?.foto && !c.datos.fotos?.[i] && (t === "captura" || !estC.fotoFondo)) return json({ error: `Falta la foto del slide ${i + 1}` }, 400); }
     let cuando = +body.cuando || 0;
     if (!cuando || cuando < Date.now() + 5 * 60e3) cuando = await proximoHorarioCarr(env);
     const caption = typeof body.caption === "string" ? body.caption.slice(0, 2200) : c.caption;
