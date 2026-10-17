@@ -34,8 +34,10 @@ export const ESTILOS = {
   dividido: { nombre: "Dividido rojo y negro (A vs B)", fondo: "#E8231E", fondo2: "#141414", tinta: "#141414", tinta2: "#E8231E", acento: "#FFFFFF", fuente: "display2", minus: true, grano: true },
   grano: { nombre: "Negro texturado con título rojo", fondo: "#161616", tinta: "#F2F2F2", acento: "#E8231E", fuente: "display2", al: "l", minus: true, grano: true, tituloAcento: true },
   bloque: { nombre: "Marca bold: negro, blanco y naranja", fondo: "#0B0B0B", tinta: "#FFFFFF", acento: "#EA5B0C", fuente: "display", al: "l", grano: true },
+  creador: { nombre: "Creador: tu foto de fondo, mayúsculas y etiquetas naranjas", fondo: "#111111", tinta: "#FFFFFF", acento: "#EA5B0C", fuente: "display2", mayus: true, fotoFondo: true, abajo: true, etiquetas: true },
+  producto: { nombre: "Producto: foto al centro y precio gigante", fondo: "#141414", fondo3: "#3A1A08", tinta: "#FFFFFF", acento: "#EA5B0C", fuente: "display2", mayus: true, etiquetas: true },
 };
-const ESTILOS_NUEVOS = ["impacto", "resaltado", "dividido", "grano", "bloque"];
+const ESTILOS_NUEVOS = ["impacto", "resaltado", "dividido", "grano", "bloque", "creador", "producto"];
 const direccion = async (env) => (await kvGet(env, "ig_direccion_carrusel")) || "";
 const memoriaCarr = async (env) => (await kvGet(env, "ig_memoria_carrusel")) || "";
 const guardarMemoriaCarr = (env, texto) => kvPut(env, "ig_memoria_carrusel", String(texto || "").trim().slice(0, 1500));
@@ -268,7 +270,7 @@ Respondé SOLO JSON: {"versiones":[{"slides":[...],"caption":"2 o 3 frases + com
 Sos el EDITOR más exigente de contenido viral de Argentina. Estas son 3 versiones:
 ${versiones.map((v, i) => `VERSIÓN ${i + 1}: ${JSON.stringify(v)}`).join("\n")}
 Puntuá cada una de 1 a 10 en: gancho (¿frena el scroll en 2 segundos?), curiosidad (¿cada slide obliga a pasar?), concreción (producto y números reales), voz (voseo, cero folleto). Elegí la mejor y MEJORALA: reescribí cada slide que no sea un 9. Compará contra las referencias virales: tiene que ser igual o mejor.
-Elegí también el ESTILO VISUAL que mejor le queda (clave): ${Object.entries(ESTILOS).map(([k, v]) => `${k} = ${v.nombre}`).join("; ")}. Preferí los de tendencia (${ESTILOS_NUEVOS.join(", ")}): "dividido" para formatos vs, "impacto" o "resaltado" para ensayo/opinión/mito, "grano" para listas y pasos, "bloque" para casos y números; "manuscrito" solo si el contenido es una cuenta con precios.
+Elegí también el ESTILO VISUAL que mejor le queda (clave): ${Object.entries(ESTILOS).map(([k, v]) => `${k} = ${v.nombre}`).join("; ")}. Preferí los de tendencia (${ESTILOS_NUEVOS.join(", ")}): "dividido" para formatos vs, "impacto" o "resaltado" para ensayo/opinión/mito, "grano" para listas y pasos, "bloque" para casos y números, "creador" para explicaciones paso a paso o requisitos (lleva la foto del dueño de fondo), "producto" para comparaciones de precio de UN producto; "manuscrito" solo si el contenido es una cuenta con precios.
 Respondé SOLO JSON: {"puntajes":[{"version":1,"gancho":0,"curiosidad":0,"concrecion":0,"voz":0}],"elegida":1,"estilo":"clave","slides":[...],"caption":"..."}`);
   let slides = limpiarSlides(r2?.slides), caption = String(r2?.caption || "");
   if (slides.length < 3 || PROHIBIDO.test(JSON.stringify(slides) + caption)) { slides = versiones[0].slides; caption = versiones[0].caption; }

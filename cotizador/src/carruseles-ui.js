@@ -71,7 +71,7 @@ var FAMS = { mano: ['"Patrick Hand", "Comic Sans MS", cursive', ""], sans: ['sys
 function fuente() { if (FUENTE) return FUENTE; FUENTE = (document.fonts && document.fonts.load ? Promise.all([document.fonts.load('64px "Patrick Hand"'), document.fonts.load('64px "Anton"'), document.fonts.load('64px "Archivo Black"'), document.fonts.ready]) : Promise.resolve()).catch(function () {}); return FUENTE; }
 function pesos(n) { return n == null ? null : "$" + Math.round(n).toLocaleString("es-AR"); }
 function datosC() { var d = CC.datos || {}; var dif = d.precio_ml && d.costo ? d.precio_ml - d.costo : null; return { producto: d.producto || "", precio_ml: pesos(d.precio_ml), costo: pesos(d.costo), diferencia: pesos(dif), total: dif != null && d.cantidad ? pesos(dif * d.cantidad) : null, cantidad: d.cantidad ? String(d.cantidad) : null }; }
-function rell(t) { var v = datosC(); var r = String(t || ""); if (EST.minus) r = r.toLowerCase(); return r.replace(/\{(producto|precio_ml|costo|diferencia|total|cantidad)\}/g, function (m, k) { return v[k] || "[" + k.replace("_", " ") + "]"; }); }
+function rell(t) { var v = datosC(); var r = String(t || ""); if (EST.minus) r = r.toLowerCase(); if (EST.mayus) r = r.toUpperCase(); return r.replace(/\{(producto|precio_ml|costo|diferencia|total|cantidad)\}/g, function (m, k) { return v[k] || "[" + k.replace("_", " ") + "]"; }); }
 function cargarImg(src) { if (!src) return Promise.resolve(null); if (IMGS[src]) return IMGS[src]; IMGS[src] = new Promise(function (ok) { var i = new Image(); i.onload = function () { ok(i); }; i.onerror = function () { ok(null); }; i.src = src; }); return IMGS[src]; }
 function aplicarEstilo() { var s = ESTILOS_S[(CC && CC.datos && CC.datos.estilo) || "manuscrito"] || ESTILOS_S.manuscrito || { fondo: CREMA, tinta: AZUL, acento: AZUL, fuente: "mano" }; CREMA = s.fondo; AZUL = s.tinta; ACENTO = s.acento || s.tinta; var f = FAMS[s.fuente] || FAMS.mano; FAM = f[0]; PESO = f[1]; EST = s; LH = /display/.test(s.fuente || "") ? 1.02 : 1.16; }
 // Texto con *resaltado*: los asteriscos prenden y apagan el color de acento (no se dibujan ni se miden)
@@ -87,7 +87,7 @@ function partir(ctx, txt, maxW, sz) {
 }
 // Bloques: texto {t, sz, al:"c"|"l", sub:bool, gap}, img {img, mw, mh, card}, avatar, barras {...}, hr, esp
 function medir(ctx, b) {
-  if (b.k === "t") { b.lines = partir(ctx, b.t, b.al === "c" ? 900 : 860, b.sz); b.h = b.lines.length * b.sz * LH + (b.sub ? 26 : 0); }
+  if (b.k === "t") { b.lines = partir(ctx, b.t, b.al === "c" ? 900 : 860, b.sz); b.h = b.lines.length * b.sz * LH + (b.sub ? 26 : 0) + (b.box ? b.lines.length * 30 : 0); }
   else if (b.k === "img") { if (!b.img) { b.w = b.mw * 0.8; b.h = b.mh * 0.55; } else { var r = Math.min(b.mw / b.img.width, b.mh / b.img.height); b.w = b.img.width * r; b.h = b.img.height * r; } }
   else if (b.k === "av") b.h = 80; else if (b.k === "bar") b.h = 330; else if (b.k === "hr") b.h = 26; else if (b.k === "esp") b.h = b.h || 30;
   return b.h + (b.gap == null ? 22 : b.gap);
@@ -99,7 +99,8 @@ function dibujar(ctx, b, y, d) {
     ctx.font = fnt(b.sz); ctx.textAlign = "left"; var x = b.al === "c" ? W / 2 : 110, maxw = 0, on = false;
     if (EST.fotoFondo || EST.fuente === "display" || EST.fuente === "display2") { ctx.shadowColor = EST.fotoFondo ? "rgba(0,0,0,.55)" : "rgba(0,0,0,0)"; ctx.shadowBlur = EST.fotoFondo ? 18 : 0; }
     b.lines.forEach(function (l, i) {
-      var r = segs(l, on), ancho = ctx.measureText(sinMarca(l)).width, xx = b.al === "c" ? x - ancho / 2 : x, yl = y + i * b.sz * LH;
+      var r = segs(l, on), ancho = ctx.measureText(sinMarca(l)).width, xx = b.al === "c" ? x - ancho / 2 : x, yl = y + i * (b.sz * LH + (b.box ? 30 : 0)) + (b.box ? 15 : 0);
+      if (b.box) { ctx.save(); ctx.shadowBlur = 0; rr(ctx, xx - 22, yl - 14, ancho + 44, b.sz * 1.02 + 24, 8); if (b.box === "fill") { ctx.fillStyle = ACENTO; ctx.fill(); } else { ctx.fillStyle = "rgba(0,0,0,.35)"; ctx.fill(); ctx.lineWidth = 4; ctx.strokeStyle = ACENTO; ctx.stroke(); } ctx.restore(); }
       r.s.forEach(function (sg) { var w = ctx.measureText(sg.t).width; ctx.fillStyle = sg.on ? ACENTO : tinta; ctx.fillText(sg.t, xx, yl); if (sg.on && EST.subrayar && sg.t.trim()) { ctx.fillRect(xx, yl + b.sz * 0.98, w - (/ $/.test(sg.t) ? ctx.measureText(" ").width : 0), Math.max(4, b.sz * 0.06)); } xx += w; });
       on = r.on; maxw = Math.max(maxw, ancho);
     });
@@ -139,6 +140,16 @@ function bloques(s, i, d) {
   var disp = /display/.test(EST.fuente || ""), izq = EST.al === "l" && s.tipo !== "cta";
   var T = function (t, sz, al, ex) { if (disp && sz >= 90) sz = sz * 1.22; return Object.assign({ k: "t", t: rell(t),sz: Math.round(sz * (sz < 90 ? 1.16 : 1.08) * KS), al: izq ? "l" : (al || "c") }, ex || {}); }, out = [];
   var foto = d.fotos[i], fx = (CC.datos && CC.datos.fx && CC.datos.fx[i]) || null;
+  if (EST.etiquetas) {   // estilo con etiquetas: títulos en caja naranja y listas en cajas con borde
+    var tit = function (t, sz) { return T(t, sz || 74, "c", { box: "fill", gap: 34 }); }, pill = function (t) { return T(t, 50, "c", { box: "line", gap: 18 }); };
+    if (s.tipo === "portada" && !EST.fotoFondo) out = [{ k: "img", img: foto, fx: fx, mw: 760, mh: 640, gap: 40 }, T(s.titulo, 88, "c", { gap: 20 }), tit(s.subtitulo, 60)];
+    else if (s.tipo === "portada") out = [T(s.titulo, 104, "c", { gap: 24 }), s.subtitulo ? tit(s.subtitulo, 56) : { k: "esp", h: 1 }];
+    else if (s.tipo === "lista") { out = [tit(s.titulo)]; (s.items || []).forEach(function (it) { out.push(pill(it)); }); }
+    else if (s.tipo === "texto") { out = [tit(s.titulo)]; (s.parrafos || []).forEach(function (p) { out.push(pill(p)); }); }
+    else if (s.tipo === "numero") out = [s.arriba ? tit(s.arriba, 60) : { k: "esp", h: 1 }, T(s.numero, 210, "c", { gap: 24 }), T(s.abajo, 64)];
+    else if (s.tipo === "grande") out = [T(s.texto, 96, "c", { gap: 30 }), s.abajo ? tit(s.abajo, 54) : { k: "esp", h: 1 }];
+    if (out.length) return out;
+  }
   if (s.tipo === "portada" && EST.fotoFondo) out = [T(s.titulo, 128, "l", { sub: false, gap: 40 }), T(s.subtitulo, 60, "c", { gap: 60 }), { k: "av" }];
   else if (s.tipo === "portada") out = [{ k: "img", img: foto, fx: fx, mw: 640, mh: 560, gap: 50 }, T(s.titulo, 96), T(s.subtitulo, 60, "c", { gap: 70 }), { k: "av" }];
   else if (s.tipo === "captura") out = [T(s.arriba, 100, "c", { gap: 50 }), { k: "img", img: foto, fx: fx, mw: 860, mh: 520, card: true, gap: 70 }, T(s.abajo, 64)];
@@ -161,10 +172,13 @@ function render(canvas, s, i, d) {
   KS = 1;
   ctx.fillStyle = CREMA; ctx.fillRect(0, 0, W, H);
   if (EST.fondo2) { ctx.fillStyle = EST.fondo2; ctx.fillRect(0, H / 2, W, H / 2); }
-  var fondoFoto = EST.fotoFondo && d.fotos[i];
-  if (fondoFoto) { var im = d.fotos[i], rz = Math.max(W / im.width, H / im.height); ctx.drawImage(im, (W - im.width * rz) / 2, (H - im.height * rz) / 2, im.width * rz, im.height * rz); var gr = ctx.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, "rgba(0,0,0,.35)"); gr.addColorStop(1, "rgba(0,0,0,.72)"); ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H); }
+  if (EST.fondo3) { var rg = ctx.createRadialGradient(W / 2, H * 0.42, 60, W / 2, H * 0.42, W * 0.9); rg.addColorStop(0, EST.fondo3); rg.addColorStop(1, CREMA); ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H); }
+  // con foto de fondo, los slides sin foto propia usan la última foto cargada antes (o la primera del carrusel)
+  var fotoF = null; if (EST.fotoFondo) { for (var q = i; q >= 0 && !fotoF; q--) fotoF = d.fotos[q]; if (!fotoF) Object.keys(d.fotos).forEach(function (k) { fotoF = fotoF || d.fotos[k]; }); }
+  var fondoFoto = EST.fotoFondo && fotoF;
+  if (fondoFoto) { var im = fotoF, rz = Math.max(W / im.width, H / im.height); ctx.drawImage(im, (W - im.width * rz) / 2, (H - im.height * rz) / 2, im.width * rz, im.height * rz); var gr = ctx.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, "rgba(0,0,0,.35)"); gr.addColorStop(1, "rgba(0,0,0,.72)"); ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H); }
   if (EST.grano) grano(ctx);
-  var y = Math.max(70, (H - tot) / 2 + 10);
+  var y = EST.abajo ? Math.max(70, H - tot - 110) : Math.max(70, (H - tot) / 2 + 10);
   bl.forEach(function (b) { dibujar(ctx, b, y, d); y += b.h + (b.gap == null ? 22 : b.gap); });
   if (EST.fondo2 && s.tipo === "versus") { ctx.font = fnt(92); ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = EST.acento || "#fff"; ctx.fillText("vs", W / 2, H / 2); ctx.textBaseline = "top"; }
 }
@@ -174,8 +188,9 @@ function recursos() {
   return Promise.all(ps).then(function (r) { var d = { logo: r[1], fotos: {} }, i = 2; Object.keys(f).forEach(function (k) { d.fotos[k] = r[i++]; }); return d; });
 }
 function pintarCanvas() {
+  aplicarEstilo();
   return recursos().then(function (d) {
-    $("#cCanvas").innerHTML = CC.slides.map(function (s, i) { return '<div class="slc"><span class="n">' + (i + 1) + " · " + esc((TIPOS_S[s.tipo] || {}).nombre || s.tipo) + '</span><canvas data-i="' + i + '"></canvas>' + ((TIPOS_S[s.tipo] || {}).foto ? '<label class="btn ch" style="text-align:center;cursor:pointer">' + (CC.datos.fotos && CC.datos.fotos[i] ? "Cambiar foto" : "Subir foto de este slide") + '<input type="file" accept="image/*" data-foto="' + i + '" style="display:none"></label>' : "") + "</div>"; }).join("");
+    $("#cCanvas").innerHTML = CC.slides.map(function (s, i) { return '<div class="slc"><span class="n">' + (i + 1) + " · " + esc((TIPOS_S[s.tipo] || {}).nombre || s.tipo) + '</span><canvas data-i="' + i + '"></canvas>' + ((TIPOS_S[s.tipo] || {}).foto || EST.fotoFondo ? '<label class="btn ch" style="text-align:center;cursor:pointer">' + (CC.datos.fotos && CC.datos.fotos[i] ? "Cambiar foto" : "Subir foto de este slide") + '<input type="file" accept="image/*" data-foto="' + i + '" style="display:none"></label>' : "") + "</div>"; }).join("");
     document.querySelectorAll("#cCanvas canvas").forEach(function (cv) { render(cv, CC.slides[+cv.dataset.i], +cv.dataset.i, d); var inp = cv.parentNode.querySelector("input[data-foto]"); if (inp) { cv.style.cursor = "pointer"; cv.title = "Tocá para subir la foto"; cv.onclick = function () { inp.click(); }; } });
   });
 }
