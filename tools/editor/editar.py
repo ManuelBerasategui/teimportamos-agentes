@@ -127,8 +127,10 @@ def quitar_repeticiones(palabras, n=3, ventana=40):
 
 def armar_linea_tiempo(partes):
     """partes: [(indice_input, palabras, dur)] → tramos [(input, a, b)] y palabras con el tiempo final del video."""
-    lista, palabras_finales, t = [], [], 0.0
+    lista, palabras_finales, t, fin_primero = [], [], 0.0, None
     for k, palabras, dur in partes:
+        if lista and fin_primero is None:
+        fin_primero = t
         for a, b in tramos(palabras, dur):
             for p in palabras:
                 if p["ini"] >= a - 1e-6 and p["fin"] <= b + 1e-6:
@@ -177,7 +179,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
     ev = []
     if gancho:
-        g0 = limpiar(gancho).strip()         ev.append(f"Dialogue: 1,{tiempo_ass(0)},{tiempo_ass(fin_gancho or total)},Gancho,,0,0,0,,{g0[:1].upper() + g0[1:]}")
+        g0 = limpiar(gancho).strip()
+        ev.append(f"Dialogue: 1,{tiempo_ass(0)},{tiempo_ass(fin_gancho or total)},Gancho,,0,0,0,,{g0[:1].upper() + g0[1:]}")
     gs = grupos(palabras)
     for k, g in enumerate(gs):
         limite = gs[k + 1][0]["ini"] if k + 1 < len(gs) else total
@@ -185,7 +188,8 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         fin = min(g[-1]["fin"] + 0.25, limite)
         texto = " ".join(re.sub(r"[.,;:!?¡¿…\"]", "", limpiar(x["w"])).lower() for x in g).strip()
         if texto:
-            ev.append(f"Dialogue: 0,{tiempo_ass(g[0]['ini'])},{tiempo_ass(min(fin, total))},Sub,,0,0,0,,{texto}")    return cab + "\n".join(ev) + "\n"
+            ev.append(f"Dialogue: 0,{tiempo_ass(g[0]['ini'])},{tiempo_ass(min(fin, total))},Sub,,0,0,0,,{texto}")
+            return cab + "\n".join(ev) + "\n"
 
 
 # ---------------------------------------------------------------- Render
@@ -252,7 +256,7 @@ def procesar(trabajo):
             chico = os.path.join(d, f"clip{c['n']}_1080.mp4")
             subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-threads", "2", "-i", arch,
                             "-vf", "scale='if(gt(iw,ih),-2,min(1080,iw))':'if(gt(iw,ih),min(1080,ih),-2)',fps=30",
-                            "-c:v", "libx264", "-preset", "veryfast", "-crf", "18", "-pix_fmt", "yuv420p",
+                            "-c:v", "libx264", "-preset", "veryfast", "-crf", "15", "-pix_fmt", "yuv420p",
                             "-c:a", "aac", "-b:a", "192k", chico], check=True)
             os.remove(arch)
             arch = chico
