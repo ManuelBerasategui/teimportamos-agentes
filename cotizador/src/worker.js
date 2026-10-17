@@ -3129,9 +3129,22 @@ function cargarEquipo() {
       var det = (x.detalle || []).map(function (c) { return '<a href="/panel/805#' + encodeURIComponent(c.conv) + '" style="display:flex;gap:10px;align-items:baseline;padding:8px 10px;border-top:1px solid #EEF0F2;color:inherit;text-decoration:none;font-size:13px;flex-wrap:wrap"><span style="width:28%;min-width:120px;font-weight:600">' + esc(c.nombre || "+" + c.conv) + '<small style="display:block;color:#9CA3AF;font-weight:400">' + esc(c.conv) + '</small></span><span style="width:120px;color:#6B7280;white-space:nowrap">' + hora(c.primero) + " a " + hora(c.ultimo) + '<small style="display:block">' + c.msgs + " mensaje" + (c.msgs > 1 ? "s" : "") + '</small></span><span style="flex:1;min-width:160px;color:#374151">' + esc(c.texto) + "</span></a>"; }).join("");
       return '<details data-eqn="' + esc(x.nombre) + '"' + (EQ_ABIERTO[x.nombre] ? " open" : "") + ' style="border-radius:10px;margin:6px 0;background:#F9FAFB;border:1px solid #EEF0F2"><summary style="list-style:none;cursor:pointer;display:flex;align-items:center;gap:12px;padding:10px 12px;flex-wrap:wrap"><div style="flex:1;min-width:160px"><div style="font-weight:700;font-size:13.5px">' + esc(x.nombre) + ' <span style="font-weight:400;color:#9CA3AF;font-size:12px">· tocá para ver los chats</span></div><div style="height:6px;background:#E5E7EB;border-radius:4px;margin-top:6px;overflow:hidden"><i style="display:block;height:100%;width:' + pc + '%;background:#EA5B0C"></i></div><div style="font-size:11.5px;color:#6B7280;margin-top:3px">' + pc + '% de los chats atendidos</div></div><div style="display:flex;gap:14px;text-align:center;font-size:11px;color:#6B7280">' + nums + '</div></summary><div style="background:#fff;border-radius:0 0 10px 10px">' + (det || '<div class="vacio" style="padding:10px">Sin chats.</div>') + "</div></details>";
     }).join("");
-    $("#equipoBox").innerHTML = '<div class="card" style="margin-top:12px"><h3>Quién atiende (' + NP[P] + ")</h3>" + (filas || '<div class="vacio">Todavía no hay mensajes con dispositivo registrado.</div>') + '<div style="font-size:11.5px;color:#9CA3AF;margin-top:6px">Se mide desde el 14/10. Las horas activas son aproximadas: se calculan con los mensajes enviados. Se muestran los últimos 60 chats de cada uno.</div></div>';
+    $("#equipoBox").innerHTML = '<div class="card" style="margin-top:12px"><h3>Quién atiende (' + NP[P] + ")</h3>" + (filas || '<div class="vacio">Todavía no hay mensajes con dispositivo registrado.</div>') + registroEq(eq) + '<div style="font-size:11.5px;color:#9CA3AF;margin-top:6px">Se mide desde el 14/10. Las horas activas son aproximadas: se calculan con los mensajes enviados. Se muestran los últimos 60 chats de cada uno.</div></div>';
     $("#equipoBox").querySelectorAll("details").forEach(function (d) { d.ontoggle = function () { EQ_ABIERTO[d.dataset.eqn] = d.open; }; });
   }).catch(function () { $("#equipoBox").innerHTML = ""; });
+}
+function registroEq(eq) {
+  var dias = {};
+  eq.forEach(function (x) { Object.keys(x.dias || {}).forEach(function (d) { dias[d] = 1; }); });
+  var l = Object.keys(dias).sort().reverse();
+  if (!l.length) return "";
+  var cab = '<tr><th style="text-align:left;padding:6px 8px">Día</th>' + eq.map(function (x) { return '<th style="text-align:right;padding:6px 8px">' + esc(x.nombre) + "</th>"; }).join("") + '<th style="text-align:right;padding:6px 8px">Total</th></tr>';
+  var fil = l.map(function (d) {
+    var t = 0, cs = eq.map(function (x) { var n = (x.dias || {})[d] || 0; t += n; return '<td style="text-align:right;padding:6px 8px">' + (n || "-") + "</td>"; }).join("");
+    var p = d.split("-");
+    return '<tr style="border-top:1px solid #EEF0F2"><td style="padding:6px 8px">' + p[2] + "/" + p[1] + "</td>" + cs + '<td style="text-align:right;padding:6px 8px;font-weight:700">' + t + "</td></tr>";
+  }).join("");
+  return '<details style="border-radius:10px;margin:6px 0;background:#F9FAFB;border:1px solid #EEF0F2"><summary style="cursor:pointer;padding:10px 12px;font-weight:700;font-size:13.5px">Registro diario <span style="font-weight:400;color:#9CA3AF;font-size:12px">· chats que contestó cada uno por día</span></summary><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">' + cab + fil + "</table></div></details>";
 }
 function cargarDash() {
   cargarVentas();
