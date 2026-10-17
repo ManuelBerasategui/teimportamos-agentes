@@ -50,7 +50,7 @@ const FORMATOS = `FORMATOS POSIBLES (usá variedad real, no te quedes en precios
 - paso_a_paso: cómo se hace una cosa en N pasos
 - que_pasa_si: "¿Qué pasa si ...?" y la respuesta honesta
 - detras_de_escena: lo que no se ve de una importación
-- lista_productos: N productos que la gente pide mucho y por qué
+- lista_productos: N productos que la gente pide mucho y por qué. En el rubro lo que más se viraliza es la portada con número + promesa concreta: "5 productos que se venden solos y casi nadie trae de China", "3 páginas para comprar en China que no son Alibaba", "te ahorro el viaje a China: así encontrás proveedor"
 - opinion: una postura fuerte que genere debate
 - pregunta_respuesta: la pregunta que más nos hacen, contestada
 - comparacion_ml: precio en MercadoLibre vs puesto en Argentina (solo uno de varios formatos)

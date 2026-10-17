@@ -149,7 +149,7 @@ function bloques(s, i, d) {
   else if (s.tipo === "multiplicacion") out = [T(s.arriba, 66, "c", { gap: 30 }), T(s.linea, 96, "c", { sub: true, gap: 40 }), T(s.numero, 150, "c", { gap: 26 }), T(s.abajo, 62)];
   else if (s.tipo === "lista") { out = [T(s.titulo, 104, "l", { gap: 44, color: EST.tituloAcento ? ACENTO : null })]; (s.items || []).forEach(function (it, k) { out.push(T((EST.tituloAcento ? "• " : (k + 1) + ". ") + it, 62, "l", { gap: 22 })); }); }
   else if (s.tipo === "cta") out = [{ k: "av", gap: 40 }, T(s.texto, 66, "c", { gap: 30 }), T("Comentá “" + String(s.palabra || "").toUpperCase() + "”", 112, "c", { gap: 20 }), T(s.abajo, 66)];
-  else if (s.tipo === "grande") out = [T(s.texto, 150, "c", { sub: true, gap: 50 }), T(s.abajo, 66)];
+  else if (s.tipo === "grande") out = [T(s.texto, disp ? 104 : 150, "c", { sub: !disp, gap: 50 }), T(s.abajo, 66)];
   else if (s.tipo === "versus" && EST.fondo2) out = [T(s.a_label, 130, "c", { gap: 16 }), T(s.a_texto, 58, "c", { gap: 150 }), T(s.b_label, 130, "c", { gap: 16 }), T(s.b_texto, 58, "c")];
   else if (s.tipo === "versus") out = [T(s.titulo, 96, "l", { gap: 40 }), T(s.a_label, 78, "l", { sub: true, gap: 8 }), T(s.a_texto, 60, "l", { gap: 50 }), T(s.b_label, 78, "l", { sub: true, gap: 8 }), T(s.b_texto, 60, "l")];
   return out;
@@ -166,6 +166,7 @@ function render(canvas, s, i, d) {
   if (EST.grano) grano(ctx);
   var y = Math.max(70, (H - tot) / 2 + 10);
   bl.forEach(function (b) { dibujar(ctx, b, y, d); y += b.h + (b.gap == null ? 22 : b.gap); });
+  if (EST.fondo2 && s.tipo === "versus") { ctx.font = fnt(92); ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = EST.acento || "#fff"; ctx.fillText("vs", W / 2, H / 2); ctx.textBaseline = "top"; }
 }
 function recursos() {
   var f = (CC.datos && CC.datos.fotos) || {}, ps = [fuente(), cargarImg("/panel/api/carruseles/logo")];
