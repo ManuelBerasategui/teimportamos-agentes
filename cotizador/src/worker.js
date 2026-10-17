@@ -2,7 +2,7 @@ import { rutaLector, apiLector, cronLector, paginaReporte } from "./lector.js";
 import { PANEL_805 } from "./lector-panel.js";
 import { apiCotizar, paginaCotizacion, PANEL_COTIZAR, cotizarAuto } from "./cotizar.js";
 import { apiBusquedas, PANEL_BUSQUEDAS, rutaInformes, rutaImagen } from "./busquedas.js";
-import { apiRedes, PANEL_REDES, cronRedes } from "./redes.js";
+import { apiRedes, PANEL_REDES, cronRedes, contextoRedes } from "./redes.js";
 import { apiVideos, rutaVideosEditor, cronVideos, despertarEditor } from "./videos.js";
 import { apiCarruseles, cronCarr } from "./carruseles.js";
 import { conApp, rutaApp } from "./app.js";
@@ -2602,7 +2602,8 @@ const AGENTES = {
 };
 // El Agente de Redes guarda lo que aprende separado por área; cada parte del sistema lee la suya
 const AREAS_REDES = { comentarios: "ig_reglas", ideas: "ig_reglas_ideas", carruseles: "ig_reglas_carrusel", videos: "ig_reglas_videos" };
-const CONFIG_VIDEO = { sub_tam: [82, "tamaño de los subtítulos (60 a 110)"], sub_alto: [620, "distancia de los subtítulos al borde de abajo, en px (300 a 1100)"], gancho_tam: [76, "tamaño del texto de arriba (50 a 100)"], gancho_alto: [250, "distancia del texto de arriba al borde de arriba, en px (120 a 700)"] };
+const CONFIG_VIDEO = { sub_tam: [58, "tamaño de los subtítulos (40 a 110)"], sub_alto: [800, "distancia de los subtítulos al borde de abajo, en px (300 a 1300)"], gancho_tam: [94, "tamaño del texto de arriba (50 a 130)"], gancho_alto: [300, "distancia del texto de arriba al borde de arriba, en px (120 a 700)"], pausa_ms: [350, "silencio más largo que se deja sin cortar, en milisegundos (150 a 1200): más chico = cortes más agresivos, más grande = más aire"], margen_ms: [80, "aire que se deja antes y después de cada palabra, en milisegundos (0 a 300): si se comen el principio o el final de las palabras, subilo"] };
+const LIM_VIDEO = { sub_tam: [40, 110], sub_alto: [300, 1300], gancho_tam: [50, 130], gancho_alto: [120, 700], pausa_ms: [150, 1200], margen_ms: [0, 300] };
 const nombreAg = (a) => (a === "instagram" ? "redes" : AGENTES[a] ? a : "whatsapp");
 async function reglasPlanas(env, a) {
   if (a !== "redes") return JSON.parse((await env.ESTADO.get(AGENTES[a].clave)) || "[]").map((t, i) => ({ t, clave: AGENTES[a].clave, i }));
@@ -2703,7 +2704,7 @@ async function hablarConAgente(env, { agente, texto, imagenes }, quien) {
     }
     datos = `\nDATOS REALES DE LAS ÚLTIMAS ${horas} H (C=cliente, A=agente/vos, E=equipo humano):\nEventos: ${ev.map((x) => x.tipo + " " + x.n).join(", ") || "-"}\n${txt || "(no hay chats en ese período)"}`;
   }
-  const estado = a === "redes" ? await estadoRedes(env) : "";
+  const estado = a === "redes" ? (await estadoRedes(env)) + "\n" + (await contextoRedes(env, T)) : "";
   const contexto = a === "whatsapp"
     ? `Sos el agente de WhatsApp de "Te Importamos" (atendés clientes que quieren importar). Te habla ${quien || "el equipo"}, tu jefe, para enseñarte, corregirte o pedirte acciones. También manejás los PENDIENTES del panel (tareas que se abren y cierran según lo que pasa en cada chat): si el jefe dice que un pendiente está mal, proponé la acción para corregir ese chat y una regla para que no vuelva a pasar; si es un error de cómo se sincronizan, armá el pedido "para_claude".`
     : `Sos el Agente de Redes de "Te Importamos" (Instagram). Manejás TODO: respuestas a comentarios (frases muy cortas, 1 a 4 palabras, invitando al DM), ideas de reels, historias, carruseles y la edición automática de videos. Te habla ${quien || "el equipo"}, tu jefe, para enseñarte, corregirte o preguntarte por qué algo falla.
@@ -2780,7 +2781,7 @@ async function aplicarAgente(env, { agente, tipo, regla, n, accion }, quien) {
   }
   if (tipo === "accion" && accion && a === "redes") {
     if (accion.tipo === "ajustar_video") {
-      const act = JSON.parse((await env.ESTADO.get("ig_config_videos")) || "{}"), lim = { sub_tam: [60, 110], sub_alto: [300, 1100], gancho_tam: [50, 100], gancho_alto: [120, 700] };
+      const act = JSON.parse((await env.ESTADO.get("ig_config_videos")) || "{}"), lim = LIM_VIDEO;
       for (const [k, v] of Object.entries(accion.config || {})) if (lim[k] && Number.isFinite(+v)) act[k] = Math.min(lim[k][1], Math.max(lim[k][0], Math.round(+v)));
       await env.ESTADO.put("ig_config_videos", JSON.stringify(act));
       return { ok: true, res: "Ajuste guardado: se usa en el próximo lote que edite" };
@@ -3453,6 +3454,7 @@ function arrancar() {
   api("importar-viejos").then(function (r) { if (r.n) { aviso("Pasé " + r.n + " pendiente(s) viejos al panel"); contarPend(); } }).catch(function () {});
   contarPend(); setInterval(function () { if (!document.hidden) contarPend(); }, 30000);
   if (q.get("tab") === "pend") verTab("pend");
+  if (q.get("tab") === "agentes") { var bAg = q.get("ag") && document.querySelector('#agLista button[data-a="' + q.get("ag") + '"]'); if (bAg) { AG = bAg.dataset.a; document.querySelectorAll("#agLista button").forEach(function (x) { x.classList.toggle("on", x === bAg); }); } verTab("agentes"); }
 }
 api("estado").then(function (s) {
   $("#usuario").textContent = s.usuario || "";

@@ -341,6 +341,27 @@ export async function cronRedes(env, iaJSON, scheduledTime = Date.now(), base = 
 }
 
 // ---------- Charla con el agente de Instagram ----------
+// Datos de Instagram para el Agente de Redes unificado (pestaña Agentes del panel)
+export async function contextoRedes(env, T = null) {
+  try {
+    const d = await datosRedes(env), w = await datosWhatsApp(env, T);
+    const hist = (await env.DB.prepare("SELECT tipo, titulo, estado FROM ig_historias ORDER BY ts DESC LIMIT 15").all()).results || [];
+    const ideas = (await env.DB.prepare("SELECT titulo, formato, gancho, estado, motivo FROM ig_ideas ORDER BY ts DESC LIMIT 25").all()).results || [];
+    const rep = await env.DB.prepare("SELECT texto, ts FROM ig_reportes ORDER BY ts DESC LIMIT 1").first();
+    return `DATOS DE INSTAGRAM (reales, ${fecha(Date.now())}):
+CUENTA: ${JSON.stringify(kpis(d))}
+LO QUE YA SABEMOS: ${APRENDIZAJES_BASE}
+FORMATOS (60 días): ${d.formatos.map((f) => `${f.nombre}: ${f.reels} reels, mediana ${n0(f.alcance_mediano)}, mejor ${n0(f.mejor)}`).join(" | ")}
+MEJORES REELS: ${d.top.map(resumenPost).join("\n")}
+PEORES REELS: ${d.peores.map(resumenPost).join("\n")}
+ÚLTIMOS REELS: ${d.reels.slice(0, 8).map(resumenPost).join("\n")}
+DMS SIN RESPONDER: ${d.dms.length}
+${resumenWA(w)}
+HISTORIAS PROPUESTAS: ${hist.map((x) => `[${x.tipo}] ${x.titulo} (${x.estado})`).join(" | ") || "ninguna"}
+IDEAS DE REELS: ${ideas.map((x) => `${x.titulo} [${x.estado}]${x.motivo ? " descartada porque: " + x.motivo : ""}`).join(" | ") || "ninguna"}
+ÚLTIMO REPORTE: ${String(rep?.texto || "todavía no hay").slice(0, 1500)}`;
+  } catch (e) { return "DATOS DE INSTAGRAM: no se pudieron leer ahora."; }
+}
 export async function preguntarRedes(env, iaJSON, pregunta, historial = [], T = null) {
   const q = String(pregunta || "").slice(0, 600);
   const d = await datosRedes(env);
@@ -557,7 +578,7 @@ ${CARR_CSS}
 </style></head><body>
 <header><a class="volver" href="/panel" aria-label="Volver al panel"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg><span>Panel</span></a><b>Te Importamos · <span>Redes</span></b><span class="sync" id="sync"></span></header>
 <main>
-<nav class="modos" id="modos-main"><button data-view="resumen" class="on">Inicio</button><button data-view="contenido">Contenido</button><button data-view="dms">Mensajes <span class="bd" id="bDmsMain" style="display:none"></span></button><button data-view="agente">Agente</button></nav>
+<nav class="modos" id="modos-main"><button data-view="resumen" class="on">Inicio</button><button data-view="contenido">Contenido</button><button data-view="dms">Mensajes <span class="bd" id="bDmsMain" style="display:none"></span></button><button data-view="agente" onclick="location.href='/panel?tab=agentes&amp;ag=redes'">Agente</button></nav>
 <nav class="modos-sub" id="modos-sub" style="display:none"><button data-sub="ideas">Ideas e historias</button><button data-sub="videos">Videos</button><button data-sub="carr">Carruseles</button><button data-sub="reels">Rendimiento</button></nav>
 <nav class="modos" id="modos" style="display:none!important"><button data-m="resumen" class="on"><span class="ico"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 20h18"/><rect x="5" y="11" width="3" height="6" rx="1"/><rect x="10.5" y="7" width="3" height="10" rx="1"/><rect x="16" y="4" width="3" height="13" rx="1"/></svg></span><span class="lg">Resumen</span><span class="ct">Resumen</span></button><button data-m="ideas"><span class="ico"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18h6M10 21.5h4"/><path d="M12 2.5a6.5 6.5 0 0 0-3.9 11.7c.6.5.9 1.2.9 1.9V17h6v-.9c0-.7.3-1.4.9-1.9A6.5 6.5 0 0 0 12 2.5z"/></svg><span class="bd" id="bIdeas" style="display:none"></span></span><span class="lg">Ideas para grabar</span><span class="ct">Ideas</span></button><button data-m="dms"><span class="ico"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20.5 12a8.5 8.5 0 0 1-12.3 7.6L3.5 21l1.4-4.6A8.5 8.5 0 1 1 20.5 12z"/></svg><span class="bd" id="bDms" style="display:none"></span></span><span class="lg">DMs sin responder</span><span class="ct">DMs</span></button><button data-m="videos"><span class="ico"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="13" height="12" rx="2.5"/><path d="M15.5 10.2l6-3.2v10l-6-3.2z"/></svg><span class="bd" id="bVid" style="display:none"></span></span><span class="lg">Videos</span><span class="ct">Videos</span></button><button data-m="carr"><span class="ico"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="4" width="11" height="16" rx="2.5"/><path d="M3 7v10M21 7v10"/></svg></span><span class="lg">Carruseles</span><span class="ct">Carrusel</span></button><button data-m="reels"><span class="ico"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="4.5"/><path d="M3 8.5h18M8.5 3l2.5 5.5M14 3l2.5 5.5"/><path d="M10.2 12.2v5.6l4.8-2.8z"/></svg></span><span class="lg">Reels</span><span class="ct">Reels</span></button><button data-m="agente"><span class="ico"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="8" width="16" height="12" rx="3.5"/><path d="M12 8V4.5"/><circle cx="12" cy="3.5" r="1"/><path d="M9 13.5v1.5M15 13.5v1.5M1.5 13v3M22.5 13v3"/></svg></span><span class="lg">Preguntale al agente</span><span class="ct">Agente</span></button></nav>
 
@@ -635,6 +656,7 @@ function fecha(ts) { var d = new Date(ts); return d.toLocaleDateString("es-AR", 
 function cambio(v) { return v == null ? "" : '<i class="' + (v >= 0 ? "sube" : "baja") + '">' + (v >= 0 ? "+" : "") + v + "% vs semana anterior</i>"; }
 var ultimoContenido = "ideas", vistasContenido = ["ideas", "videos", "carr", "reels"];
 function modo(m) {
+  if (m === "agente") { location.href = "/panel?tab=agentes&ag=redes"; return; }
   if (m === "contenido") m = ultimoContenido;
   var enContenido = vistasContenido.indexOf(m) >= 0, principal = enContenido ? "contenido" : m;
   document.querySelectorAll("#modos-main button").forEach(function (b) { b.classList.toggle("on", b.dataset.view === principal); });

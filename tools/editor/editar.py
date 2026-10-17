@@ -19,7 +19,7 @@ PAUSA_CORTE = 0.35      # silencios más largos que esto se cortan (segundos)
 MARGEN = 0.08           # aire antes y después de cada palabra
 PAUSA_FRASE = 0.6       # pausa que separa una frase de otra (para detectar tomas repetidas)
 # Ajustes que el Agente de Redes puede cambiar desde el panel (kv ig_config_videos)
-CFG = {"sub_tam": 58, "sub_alto": 800, "gancho_tam": 94, "gancho_alto": 300}
+CFG = {"sub_tam": 58, "sub_alto": 800, "gancho_tam": 94, "gancho_alto": 300, "pausa_ms": 350, "margen_ms": 80}
 NARANJA_ASS = "&H000C5BEA"   # #EA5B0C en formato ASS (AABBGGRR)
 
 
@@ -96,8 +96,9 @@ def tramos(palabras, dur):
     """Une palabras en tramos continuos; corta los silencios de más de PAUSA_CORTE."""
     out = []
     for p in palabras:
-        a, b = max(0.0, p["ini"] - MARGEN), min(dur, p["fin"] + MARGEN)
-        if out and a - out[-1][1] <= PAUSA_CORTE:
+        mg, pausa = CFG["margen_ms"] / 1000, CFG["pausa_ms"] / 1000
+        a, b = max(0.0, p["ini"] - mg), min(dur, p["fin"] + mg)
+        if out and a - out[-1][1] <= pausa:
             out[-1][1] = max(out[-1][1], b)
         else:
             out.append([a, b])
@@ -244,7 +245,7 @@ def armar_videos(clips, decision, dir_tmp):
 def procesar(trabajo):
     lote = trabajo["lote"]
     for k, v in (trabajo.get("config") or {}).items():
-        if k in CFG and isinstance(v, (int, float)) and 20 <= v <= 1700:
+        if k in CFG and isinstance(v, (int, float)) and 0 <= v <= 1700:
             CFG[k] = int(v)
     with tempfile.TemporaryDirectory() as d:
         clips = {}
