@@ -19,7 +19,7 @@ PAUSA_CORTE = 0.35      # silencios más largos que esto se cortan (segundos)
 MARGEN = 0.08           # aire antes y después de cada palabra
 PAUSA_FRASE = 0.6       # pausa que separa una frase de otra (para detectar tomas repetidas)
 # Ajustes que el Agente de Redes puede cambiar desde el panel (kv ig_config_videos)
-CFG = {"sub_tam": 82, "sub_alto": 620, "gancho_tam": 76, "gancho_alto": 250}
+CFG = {"sub_tam": 58, "sub_alto": 800, "gancho_tam": 82, "gancho_alto": 300}
 NARANJA_ASS = "&H000C5BEA"   # #EA5B0C en formato ASS (AABBGGRR)
 
 
@@ -149,11 +149,11 @@ def limpiar(t):
     return t.replace("{", "(").replace("}", ")").replace("\\", "").replace("\n", " ")
 
 
-def grupos(palabras, max_palabras=3, max_letras=18):
+def grupos(palabras, max_palabras=9, max_letras=58):
     gs, g = [], []
     for p in palabras:
         largo = len(" ".join(x["w"] for x in g + [p]))
-        if g and (len(g) >= max_palabras or largo > max_letras or p["ini"] - g[-1]["fin"] > 0.4):
+        if g and (len(g) >= max_palabras or largo > max_letras or p["ini"] - g[-1]["fin"] > 0.6 or re.search(r"[.!?…]$", g[-1]["w"])):
             gs.append(g); g = []
         g.append(p)
     if g:
@@ -166,28 +166,26 @@ def ass(palabras, gancho, total, fin_gancho=None):
 ScriptType: v4.00+
 PlayResX: {ANCHO}
 PlayResY: {ALTO}
-WrapStyle: 2
+WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: Sub,Montserrat,{CFG['sub_tam']},&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,7,2,2,80,80,{CFG['sub_alto']},1
-Style: Gancho,Montserrat,{CFG['gancho_tam']},&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,-1,0,0,0,100,100,0,0,1,7,2,8,90,90,{CFG['gancho_alto']},1
-
+Style: Sub,Montserrat SemiBold,{CFG['sub_tam']},&H00FFFFFF,&H00FFFFFF,&H00000000,&H96000000,0,0,0,0,100,100,0,0,1,2.5,1.5,2,250,250,{CFG['sub_alto']},1
+Style: Gancho,Montserrat,{CFG['gancho_tam']},&H00FFFFFF,&H00FFFFFF,&H00000000,&H96000000,-1,0,0,0,100,100,-1,0,1,3,2,8,90,90,{CFG['gancho_alto']},1
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
 """
     ev = []
     if gancho:
-        ev.append(f"Dialogue: 1,{tiempo_ass(0)},{tiempo_ass(fin_gancho or total)},Gancho,,0,0,0,,{limpiar(gancho)}")
+        g0 = limpiar(gancho).strip()         ev.append(f"Dialogue: 1,{tiempo_ass(0)},{tiempo_ass(fin_gancho or total)},Gancho,,0,0,0,,{g0[:1].upper() + g0[1:]}")
     gs = grupos(palabras)
     for k, g in enumerate(gs):
         limite = gs[k + 1][0]["ini"] if k + 1 < len(gs) else total
-        for j, p in enumerate(g):
-            ini = p["ini"]
-            fin = g[j + 1]["ini"] if j + 1 < len(g) else min(p["fin"] + 0.15, limite)
-            texto = " ".join(("{\\c" + NARANJA_ASS + "&}" + limpiar(x["w"]) + "{\\c&H00FFFFFF&}") if x is p else limpiar(x["w"]) for x in g)
-            ev.append(f"Dialogue: 0,{tiempo_ass(ini)},{tiempo_ass(min(fin, total))},Sub,,0,0,0,,{texto}")
-    return cab + "\n".join(ev) + "\n"
+        # bloque fijo de 2-3 renglones, en minúscula y sin puntuación, como los subtítulos de Edits/CapCut
+        fin = min(g[-1]["fin"] + 0.25, limite)
+        texto = " ".join(re.sub(r"[.,;:!?¡¿…\"]", "", limpiar(x["w"])).lower() for x in g).strip()
+        if texto:
+            ev.append(f"Dialogue: 0,{tiempo_ass(g[0]['ini'])},{tiempo_ass(min(fin, total))},Sub,,0,0,0,,{texto}")    return cab + "\n".join(ev) + "\n"
 
 
 # ---------------------------------------------------------------- Render
