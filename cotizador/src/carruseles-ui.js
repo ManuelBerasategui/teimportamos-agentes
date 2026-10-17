@@ -280,6 +280,7 @@ $("#c-lista").onclick = function (ev) {
   var dk = ev.target.closest("[data-descok]"); if (dk) { dk.disabled = true; CAPI("descartar", { id: dk.dataset.descok, motivo: dk.closest(".ccard").querySelector("textarea").value }).then(function (r) { if (!r.ok) { dk.disabled = false; return aviso(r.error || "No se pudo"); } aviso("Descartada: lo tengo en cuenta para las próximas"); cargarCarr(); }); return; }
   if (ev.target.closest(".dform")) return;
   var rb = ev.target.closest("[data-rb]"); if (rb) { CAPI("regla-borrar", { i: +rb.dataset.rb }).then(cargarCarr); return; }
+  if (ev.target.closest("[data-cuando]")) { ev.stopPropagation(); return; }   // tocar el calendario no abre el carrusel
   var rp = ev.target.closest("[data-reprog]"); if (rp) { var inp = document.querySelector('[data-cuando="' + rp.dataset.reprog + '"]'), ts = inp && inp.value ? new Date(inp.value).getTime() : 0; if (!ts) return aviso("Elegí fecha y hora"); CAPI("reprogramar", { id: rp.dataset.reprog, cuando: ts }).then(function (r) { if (!r.ok) return aviso(r.error || "No se pudo"); aviso("Listo: sale el " + cuando(r.programado_ts)); cargarCarr(); }); return; }
   var fr = ev.target.closest("[data-frenar]"); if (fr) { CAPI("frenar", { id: fr.dataset.frenar }).then(function (r) { if (!r.ok) return aviso(r.error); cargarCarr(); }); return; }
   if (ev.target.closest("a")) return;
