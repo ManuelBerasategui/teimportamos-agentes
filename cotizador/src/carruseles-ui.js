@@ -161,7 +161,7 @@ function bloques(s, i, d) {
   else if (s.tipo === "texto") { out = [T(s.titulo, 100, "l", { gap: 40 })]; (s.parrafos || []).forEach(function (p) { out.push(T(p, 62, "l", { gap: 28 })); }); }
   else if (s.tipo === "multiplicacion") out = [T(s.arriba, 66, "c", { gap: 30 }), T(s.linea, 96, "c", { sub: true, gap: 40 }), T(s.numero, 150, "c", { gap: 26 }), T(s.abajo, 62)];
   else if (s.tipo === "lista") { out = [T(s.titulo, 104, "l", { gap: 44, color: EST.tituloAcento ? ACENTO : null })]; (s.items || []).forEach(function (it, k) { out.push(T((EST.tituloAcento ? "• " : (k + 1) + ". ") + it, 62, "l", { gap: 22 })); }); }
-  else if (s.tipo === "cta") out = [{ k: "av", gap: 40 }, T(s.texto, 66, "c", { gap: 30 }), T("Comentá “" + String(s.palabra || "").toUpperCase() + "”", 112, "c", { gap: 20 }), T(s.abajo, 66)];
+  else if (s.tipo === "cta") out = [{ k: "av", gap: 40 }, T(s.texto, 66, "c", { gap: 30 }), (function () { var p = String(s.palabra || "").trim(); if (!p) return { k: "esp", h: 1 }; var frase = /\s/.test(p) || /^(link|bio|whatsapp|dm|perfil)/i.test(p); return T(frase ? p.toUpperCase() : "Comentá “" + p.toUpperCase() + "”", 112, "c", { gap: 20 }); })(), T(s.abajo, 66)];
   else if (s.tipo === "grande") out = [T(s.texto, disp ? 104 : 150, "c", { sub: !disp, gap: 50 }), T(s.abajo, 66)];
   else if (s.tipo === "versus" && EST.fondo2) out = [T(s.a_label, 130, "c", { gap: 16 }), T(s.a_texto, 58, "c", { gap: 150 }), T(s.b_label, 130, "c", { gap: 16 }), T(s.b_texto, 58, "c")];
   else if (s.tipo === "versus") out = [T(s.titulo, 96, "l", { gap: 40 }), T(s.a_label, 78, "l", { sub: true, gap: 8 }), T(s.a_texto, 60, "l", { gap: 50 }), T(s.b_label, 78, "l", { sub: true, gap: 8 }), T(s.b_texto, 60, "l")];

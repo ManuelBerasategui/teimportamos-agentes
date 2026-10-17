@@ -96,7 +96,7 @@ export const TIPOS_SLIDE = {
   texto: { nombre: "Título y párrafos", campos: ["titulo", "parrafos"] },
   multiplicacion: { nombre: "Multiplicación", campos: ["arriba", "linea", "numero", "abajo"] },
   lista: { nombre: "Lista numerada", campos: ["titulo", "items"] },
-  cta: { nombre: "Cierre (comentá)", campos: ["texto", "palabra", "abajo"] },
+  cta: { nombre: "Cierre (llamado a la acción)", campos: ["texto", "palabra", "abajo"] },
   grande: { nombre: "Frase grande", campos: ["texto", "abajo"] },
   versus: { nombre: "Uno contra otro", campos: ["titulo", "a_label", "a_texto", "b_label", "b_texto"] },
 };
@@ -321,6 +321,7 @@ Fotos subidas en los slides: ${Object.keys(c.datos?.fotos || {}).map((i) => +i +
 Si pide retocar una foto (rotar, sombra, más grande, moverla, más brillo, etc.), devolvé en "fotos_fx" SOLO el slide que cambia, con TODOS sus valores finales (los actuales + el cambio). Valores posibles: ${Object.entries(FX).map(([k, v]) => `${k} (${v[0]} a ${v[1]}): ${v[2]}`).join("; ")}. "Ligeramente" = valores chicos (rot 4 a 6, sombra 1, piso 1 o 2). Para quitar un retoque poné su valor normal. No podés recortar el fondo ni dibujar sobre la foto: si lo pide, decíselo. Si la foto tiene fondo blanco o liso, para "sombra" usá sobre todo "piso" (la de "sombra" queda alrededor del rectángulo). NUNCA digas que cambiaste algo que no devolviste en el JSON.
 AJUSTES DE DISEÑO ACTUALES (por número de slide): ${JSON.stringify(Object.fromEntries(Object.entries(c.datos?.dis || {}).map(([i, v]) => [+i + 1, v])))}
 Si pide mover, centrar, alinear, agrandar o achicar textos o el @usuario de un slide, devolvé en "diseno" SOLO los slides que cambian, con TODOS sus valores finales. Valores: al ("c" = centrado, "l" = alineado a la izquierda); ${Object.entries(DIS).map(([k, v]) => `${k} (${v[0]} a ${v[1]}): ${v[2]}`).join("; ")}. "Un poco" = cambios chicos (texto 0.9, dy 60 a 120, usuario_dy 80 a 150).
+CIERRE ("cta"): "palabra" es lo que va en grande. Si es UNA palabra se dibuja como Comentá "PALABRA". Si el dueño quiere otro llamado (link en bio, escribinos por WhatsApp, etc.), poné en "palabra" la frase completa (ej. "Link en bio" o "Escribinos al WhatsApp") y así NO aparece "Comentá". Sacá del "texto" y del "abajo" cualquier mención a comentar que contradiga el pedido.
 LO ÚNICO QUE PODÉS CAMBIAR: textos de los slides, texto del posteo, estilo, datos de precios, retoques de fotos ("fotos_fx") y ajustes de diseño ("diseno"). Si pide algo que no está en esa lista (otro color puntual, otra letra, mover un solo renglón, un ícono), decile claramente que eso todavía no lo podés hacer. NUNCA digas que hiciste un cambio que no devolviste en el JSON.
 TEXTO DEL POSTEO: ${JSON.stringify(c.caption || "")}
 REGLAS QUE YA SABÉS: ${rg.map((x, i) => `${i + 1}. ${x}`).join(" ") || "ninguna"}
