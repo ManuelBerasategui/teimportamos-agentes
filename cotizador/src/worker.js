@@ -634,7 +634,7 @@ async function transcribir(env, id) {
     } catch (e) { console.log("Whisper falló:", String(e).slice(0, 120)); }
   }
   for (const m of await modelosDisponibles(env)) {
-    if (await env.ESTADO.get(`agotado:${m}`)) continue;
+    { const ag = await env.ESTADO.get(`agotado:${m}`); if (ag === "1") await env.ESTADO.delete(`agotado:${m}`); else if (ag) continue; }   // "1" = bloqueo viejo de 6 h: se libera
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, {
       method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_KEY },
       body: JSON.stringify({ contents: [{ parts: [{ text: "Transcribí este audio en español, textual, sin agregar nada." }, { inline_data: { mime_type: a.mime.split(";")[0], data: a.data } }] }] }) });
@@ -674,6 +674,17 @@ async function leerPagina(link) {
 }
 
 // ---------------- IA ----------------
+// Un 429 de Gemini puede ser "por minuto" (se libera en segundos) o "por día" (hasta la medianoche del Pacífico).
+// Antes todo 429 bloqueaba el modelo 6 horas y por eso la IA quedaba "sin responder" de golpe.
+async function marcarAgotado(env, m, j) {
+  const txt = JSON.stringify(j?.error || {});
+  const porDia = /PerDay|per_day|daily/i.test(txt);
+  const rd = +((txt.match(/"retryDelay"\s*:\s*"(\d+)/) || [])[1] || 0);
+  let ttl;
+  if (porDia) { const ahora = new Date(), reset = Date.UTC(ahora.getUTCFullYear(), ahora.getUTCMonth(), ahora.getUTCDate(), 8, 0, 0); ttl = Math.round(((reset > ahora.getTime() ? reset : reset + 86400e3) - ahora.getTime()) / 1000); }
+  else ttl = Math.min(300, Math.max(60, rd + 5));
+  await env.ESTADO.put(`agotado:${m}`, porDia ? "dia" : "minuto", { expirationTtl: ttl });
+}
 async function modelosDisponibles(env) {
   if (env.GEMINI_MODEL) return [env.GEMINI_MODEL];
   const g = await env.ESTADO.get("modelos");
@@ -810,7 +821,7 @@ async function cerebro(env, e, texto, imagen, pagina, extra = {}) {
   let intentos = 0;
   for (const m of await modelosDisponibles(env)) {
     if (intentos >= 3) break;
-    if (await env.ESTADO.get(`agotado:${m}`)) continue;
+    { const ag = await env.ESTADO.get(`agotado:${m}`); if (ag === "1") await env.ESTADO.delete(`agotado:${m}`); else if (ag) continue; }   // "1" = bloqueo viejo de 6 h: se libera
     intentos++;
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, {
       method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_KEY },
@@ -818,7 +829,7 @@ async function cerebro(env, e, texto, imagen, pagina, extra = {}) {
     const j = await r.json().catch(() => ({}));
     if (!r.ok || j.error) {
       console.log("Gemini", m, r.status, (j.error?.message || "").slice(0, 60));
-      if (r.status === 429) await env.ESTADO.put(`agotado:${m}`, "1", { expirationTtl: 6 * 3600 });
+      if (r.status === 429) await marcarAgotado(env, m, j);
       if (r.status === 404) await env.ESTADO.delete("modelos");
       continue;
     }
@@ -844,12 +855,12 @@ async function cerebro(env, e, texto, imagen, pagina, extra = {}) {
 const APRENDIZAJE = { horaUTC: 12, minuto: 30, maxChats: 40, maxReglas: 60 };   // 12:30 UTC = 9:30 Rosario
 async function iaJSON(env, prompt) {
   const parsear = (t) => { const m = (t || "").match(/\{[\s\S]*\}/); try { return m ? JSON.parse(m[0]) : null; } catch { return null; } };
-  for (const m of (await modelosDisponibles(env)).slice(0, 3)) {
-    if (await env.ESTADO.get(`agotado:${m}`)) continue;
+  for (const m of (await modelosDisponibles(env)).slice(0, 6)) {
+    { const ag = await env.ESTADO.get(`agotado:${m}`); if (ag === "1") await env.ESTADO.delete(`agotado:${m}`); else if (ag) continue; }   // "1" = bloqueo viejo de 6 h: se libera
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_KEY },
       body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json", temperature: 0.3 } }) }).catch(() => null);
     const j = r ? await r.json().catch(() => ({})) : {};
-    if (!r?.ok || j.error) { if (r?.status === 429) await env.ESTADO.put(`agotado:${m}`, "1", { expirationTtl: 6 * 3600 }); continue; }
+    if (!r?.ok || j.error) { if (r?.status === 429) await marcarAgotado(env, m, j); continue; }
     const res = parsear((j.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join(""));
     if (res) return res;
   }
