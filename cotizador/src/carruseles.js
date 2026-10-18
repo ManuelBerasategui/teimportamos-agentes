@@ -287,15 +287,17 @@ Cotizaciones reales recientes: ${w.cotizaciones.map((q) => q.items.map((i) => i.
 Escribí 3 VERSIONES distintas del carrusel completo (6 a 10 slides según el formato; la última "cta"). Que cambien el gancho de la portada, la estructura y el orden de la tensión, no solo las palabras.
 Para portadas de tendencia sirve mucho: pregunta con paréntesis que provoca ("por qué esta letra gigante funciona tanto (y tu diseño bonito no)"), contraste A vs B, o un número que duele. Portada de 5 a 12 palabras.
 Respondé SOLO JSON: {"versiones":[{"slides":[...],"caption":"2 o 3 frases + comentá la PALABRA + 3 hashtags"}]}`);
+  let rb_dbg = null;
   let versiones = (r1?.versiones || (Array.isArray(r1?.slides) ? [r1] : [])).map((v) => ({ slides: limpiarSlides(v.slides), caption: String(v.caption || "") })).filter((v) => v.slides.length >= 3 && !PROHIBIDO.test(JSON.stringify(v)));
   if (!versiones.length) {
     // Plan B: pedir UNA sola versión (respuesta más corta, la IA se corta menos)
     const rb = await iaJSON(env, `${base}
 Escribí el carrusel completo (6 a 9 slides; el último de tipo "cta"). Cada slide con su "tipo" y los campos de ese tipo.
 Respondé SOLO JSON: {"slides":[{"tipo":"portada","titulo":"...","subtitulo":"..."}],"caption":"2 o 3 frases + comentá la PALABRA + 3 hashtags"}`);
+    rb_dbg = rb ? { k: Object.keys(rb), s: (rb.slides || []).slice(0, 2) } : null;
     versiones = [{ slides: limpiarSlides(rb?.slides), caption: String(rb?.caption || "") }].filter((v) => v.slides.length >= 3 && !PROHIBIDO.test(JSON.stringify(v)));
   }
-  if (!versiones.length) return { ok: false, error: "La IA no armó una estructura válida (puede ser el límite de uso de la IA). Esperá un minuto y probá de nuevo." };
+  if (!versiones.length) return { ok: false, error: "La IA no armó una estructura válida (puede ser el límite de uso de la IA). Esperá un minuto y probá de nuevo.", debug: JSON.stringify({ r1: r1 ? Object.keys(r1) : null, v0: r1?.versiones?.[0]?.slides?.slice?.(0, 2) || r1?.slides?.slice?.(0, 2) || null, rb: typeof rb_dbg !== "undefined" ? rb_dbg : null }).slice(0, 1500) };
   // 2) editor exigente: elige y mejora
   const r2 = await pedirIA(`${base}
 Sos el EDITOR más exigente de contenido viral de Argentina. Estas son 3 versiones:
