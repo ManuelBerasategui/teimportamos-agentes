@@ -2581,6 +2581,13 @@ async function panelAPI(env, req, url, quien) {
     return new Response(txt, { headers: { "Content-Type": "text/plain; charset=utf-8", "Content-Disposition": `attachment; filename="chats-${new Date().toISOString().slice(0, 10)}.txt"` } });
   }
   if (ruta === "fallos") return json(JSON.parse((await env.ESTADO.get("fallos_envio")) || "[]").map((x) => ({ ...x, cuando: new Date(x.ts).toLocaleString("es-AR", { timeZone: "America/Argentina/Buenos_Aires" }) })));
+  if (ruta === "ia-estado") {   // diagnóstico: qué modelos de IA están pausados y si anda el respaldo de Cloudflare
+    const ms = await modelosDisponibles(env), out = [];
+    for (const m of ms) out.push({ modelo: m, pausa: (await env.ESTADO.get(`agotado:${m}`)) || "" });
+    let cf = "sin probar";
+    if (env.AI) { try { const r = await env.AI.run("@cf/meta/llama-3.3-70b-instruct-fp8-fast", { messages: [{ role: "user", content: 'Respondé SOLO {"ok":true}' }], max_tokens: 20 }); cf = "ok: " + JSON.stringify(r.response ?? r).slice(0, 80); } catch (e) { cf = "error: " + String(e?.message || e).slice(0, 200); } }
+    return json({ gemini: out, cloudflare: cf });
+  }
   if (ruta === "agente-hilo") return json(await hiloAgente(env, url.searchParams.get("a") || "whatsapp"));
   if (ruta === "agente" && req.method === "POST") return json(await hablarConAgente(env, await req.json(), quien));
   if (ruta === "agente-aplicar" && req.method === "POST") return json(await aplicarAgente(env, await req.json(), quien));
