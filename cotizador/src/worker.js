@@ -685,8 +685,14 @@ async function marcarAgotado(env, m, j) {
   else ttl = Math.min(300, Math.max(60, rd + 5));
   await env.ESTADO.put(`agotado:${m}`, porDia ? "dia" : "minuto", { expirationTtl: ttl });
 }
+// Cada modelo gratis de Gemini tiene su propia cuota diaria: probar varios multiplica lo que se puede usar por día
+const MODELOS_RESPALDO = ["gemini-flash-latest", "gemini-flash-lite-latest", "gemini-2.5-flash", "gemini-2.5-flash-lite", "gemini-2.0-flash", "gemini-2.0-flash-lite"];
 async function modelosDisponibles(env) {
-  if (env.GEMINI_MODEL) return [env.GEMINI_MODEL];
+  const base = await modelosDisponibles0(env), out = [];
+  for (const m of [...(env.GEMINI_MODEL ? [env.GEMINI_MODEL] : []), ...base, ...MODELOS_RESPALDO]) if (!out.includes(m)) out.push(m);
+  return out.slice(0, 8);
+}
+async function modelosDisponibles0(env) {
   const g = await env.ESTADO.get("modelos");
   if (g) return JSON.parse(g);
   const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=200", { headers: { "x-goog-api-key": env.GEMINI_KEY } });
@@ -830,7 +836,7 @@ async function cerebro(env, e, texto, imagen, pagina, extra = {}) {
     if (!r.ok || j.error) {
       console.log("Gemini", m, r.status, (j.error?.message || "").slice(0, 60));
       if (r.status === 429) await marcarAgotado(env, m, j);
-      if (r.status === 404) await env.ESTADO.delete("modelos");
+      if (r.status === 404) await env.ESTADO.put(`agotado:${m}`, "no existe", { expirationTtl: 86400 });
       continue;
     }
     const res = parsear((j.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join(""));
@@ -855,12 +861,12 @@ async function cerebro(env, e, texto, imagen, pagina, extra = {}) {
 const APRENDIZAJE = { horaUTC: 12, minuto: 30, maxChats: 40, maxReglas: 60 };   // 12:30 UTC = 9:30 Rosario
 async function iaJSON(env, prompt) {
   const parsear = (t) => { const m = (t || "").match(/\{[\s\S]*\}/); try { return m ? JSON.parse(m[0]) : null; } catch { return null; } };
-  for (const m of (await modelosDisponibles(env)).slice(0, 6)) {
+  for (const m of (await modelosDisponibles(env)).slice(0, 8)) {
     { const ag = await env.ESTADO.get(`agotado:${m}`); if (ag === "1") await env.ESTADO.delete(`agotado:${m}`); else if (ag) continue; }   // "1" = bloqueo viejo de 6 h: se libera
     const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_KEY },
       body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: "application/json", temperature: 0.3 } }) }).catch(() => null);
     const j = r ? await r.json().catch(() => ({})) : {};
-    if (!r?.ok || j.error) { if (r?.status === 429) await marcarAgotado(env, m, j); continue; }
+    if (!r?.ok || j.error) { if (r?.status === 429) await marcarAgotado(env, m, j); else if (r?.status === 404) await env.ESTADO.put(`agotado:${m}`, "no existe", { expirationTtl: 86400 }); continue; }
     const res = parsear((j.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join(""));
     if (res) return res;
   }
