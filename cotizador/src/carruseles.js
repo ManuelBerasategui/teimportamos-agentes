@@ -265,7 +265,8 @@ export async function armarEstructura(env, iaJSON, c, T, iaImg = null) {
   const ref = refs.find((x) => x.id === refBase) || refs.find((x) => normalizarIdea(c.por_que).includes(normalizarIdea(x.gancho)));
   const imgsRef = ref ? await imagenesDeReferencia(env, [ref], 3) : [];
   const conImagen = Boolean(iaImg && imgsRef.length);
-  const pedirIA = (p) => conImagen ? iaImg(env, p, imgsRef) : iaJSON(env, p);
+  // Si la IA con imágenes falla, se reintenta solo con texto (las capturas de referencia son un extra, no un requisito)
+  const pedirIA = async (p) => (conImagen ? (await iaImg(env, p, imgsRef).catch(() => null)) : null) || (await iaJSON(env, p));
   const base = `Negocio:
 ${NEGOCIO}
 ${MANUAL}
@@ -286,8 +287,15 @@ Cotizaciones reales recientes: ${w.cotizaciones.map((q) => q.items.map((i) => i.
 Escribí 3 VERSIONES distintas del carrusel completo (6 a 10 slides según el formato; la última "cta"). Que cambien el gancho de la portada, la estructura y el orden de la tensión, no solo las palabras.
 Para portadas de tendencia sirve mucho: pregunta con paréntesis que provoca ("por qué esta letra gigante funciona tanto (y tu diseño bonito no)"), contraste A vs B, o un número que duele. Portada de 5 a 12 palabras.
 Respondé SOLO JSON: {"versiones":[{"slides":[...],"caption":"2 o 3 frases + comentá la PALABRA + 3 hashtags"}]}`);
-  const versiones = (r1?.versiones || []).map((v) => ({ slides: limpiarSlides(v.slides), caption: String(v.caption || "") })).filter((v) => v.slides.length >= 3 && !PROHIBIDO.test(JSON.stringify(v)));
-  if (!versiones.length) return { ok: false, error: "La IA no armó una estructura válida. Probá de nuevo." };
+  let versiones = (r1?.versiones || (Array.isArray(r1?.slides) ? [r1] : [])).map((v) => ({ slides: limpiarSlides(v.slides), caption: String(v.caption || "") })).filter((v) => v.slides.length >= 3 && !PROHIBIDO.test(JSON.stringify(v)));
+  if (!versiones.length) {
+    // Plan B: pedir UNA sola versión (respuesta más corta, la IA se corta menos)
+    const rb = await iaJSON(env, `${base}
+Escribí el carrusel completo (6 a 9 slides; el último de tipo "cta"). Cada slide con su "tipo" y los campos de ese tipo.
+Respondé SOLO JSON: {"slides":[{"tipo":"portada","titulo":"...","subtitulo":"..."}],"caption":"2 o 3 frases + comentá la PALABRA + 3 hashtags"}`);
+    versiones = [{ slides: limpiarSlides(rb?.slides), caption: String(rb?.caption || "") }].filter((v) => v.slides.length >= 3 && !PROHIBIDO.test(JSON.stringify(v)));
+  }
+  if (!versiones.length) return { ok: false, error: "La IA no armó una estructura válida (puede ser el límite de uso de la IA). Esperá un minuto y probá de nuevo." };
   // 2) editor exigente: elige y mejora
   const r2 = await pedirIA(`${base}
 Sos el EDITOR más exigente de contenido viral de Argentina. Estas son 3 versiones:
