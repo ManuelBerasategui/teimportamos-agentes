@@ -21,6 +21,7 @@ const ESQUEMA_REDES = [
   "CREATE TABLE IF NOT EXISTS ig_historias (id TEXT PRIMARY KEY, ts INTEGER, lote TEXT, tipo TEXT, titulo TEXT, mostrar TEXT, texto TEXT, sticker TEXT, por_que TEXT, producto TEXT, refs TEXT, clave TEXT, estado TEXT DEFAULT 'nueva', pedido_por TEXT)",
   "CREATE INDEX IF NOT EXISTS ig_historias_estado ON ig_historias(estado, ts)",
   "CREATE INDEX IF NOT EXISTS ig_reportes_ts ON ig_reportes(ts)",
+  "CREATE TABLE IF NOT EXISTS ig_refs (id TEXT PRIMARY KEY, ts INTEGER, link TEXT, nicho TEXT, que_pasa TEXT, por_que TEXT, usos INTEGER DEFAULT 0, quien TEXT)",
 ];
 // Copia de instagram/src/sync.js
 export const FORMATOS = {
@@ -85,7 +86,7 @@ export function mediana(xs) { const v = xs.filter((x) => x != null).sort((a, b) 
 const listo = new WeakSet();
 export async function prepararRedes(env) {
   if (listo.has(env.DB)) return;
-  await env.DB.batch([...ESQUEMA_REDES, ...ESQUEMA_IG].map((s) => env.DB.prepare(s)));   for (const s of ["ALTER TABLE ig_ideas ADD COLUMN motivo TEXT", "ALTER TABLE ig_ideas ADD COLUMN ganchos TEXT", "ALTER TABLE ig_ideas ADD COLUMN hecho_ts INTEGER", "ALTER TABLE ig_historias ADD COLUMN hecho_ts INTEGER", "ALTER TABLE ig_ideas ADD COLUMN n_videos INTEGER"]) { try { await env.DB.prepare(s).run(); } catch {} }
+  await env.DB.batch([...ESQUEMA_REDES, ...ESQUEMA_IG].map((s) => env.DB.prepare(s)));   for (const s of ["ALTER TABLE ig_ideas ADD COLUMN motivo TEXT", "ALTER TABLE ig_ideas ADD COLUMN ganchos TEXT", "ALTER TABLE ig_ideas ADD COLUMN hecho_ts INTEGER", "ALTER TABLE ig_historias ADD COLUMN hecho_ts INTEGER", "ALTER TABLE ig_ideas ADD COLUMN n_videos INTEGER", "ALTER TABLE ig_ideas ADD COLUMN origen TEXT", "ALTER TABLE ig_ideas ADD COLUMN escena TEXT", "ALTER TABLE ig_ideas ADD COLUMN mostrar TEXT", "ALTER TABLE ig_ideas ADD COLUMN reels TEXT"]) { try { await env.DB.prepare(s).run(); } catch {} }
   listo.add(env.DB);
 }
 
@@ -142,6 +143,9 @@ export async function generarIdeas(env, iaJSON, quien = "auto", cantidad = 7, T 
   const d = await datosRedes(env);
   const w = await datosWhatsApp(env, T);
   const previas = (await env.DB.prepare("SELECT titulo, formato, estado FROM ig_ideas ORDER BY ts DESC LIMIT 25").all()).results || [];   const rechazos = (await env.DB.prepare("SELECT titulo, gancho, motivo FROM ig_ideas WHERE estado='descartada' AND motivo<>'' ORDER BY ts DESC LIMIT 20").all()).results || [];   const aprobadas = (await env.DB.prepare("SELECT titulo, gancho FROM ig_ideas WHERE estado='grabada' ORDER BY ts DESC LIMIT 10").all()).results || [];
+  const refs = (await env.DB.prepare("SELECT id, link, nicho, que_pasa, por_que, usos FROM ig_refs ORDER BY usos ASC, ts DESC LIMIT 25").all()).results || [];
+  const propias = ((await env.DB.prepare("SELECT titulo, ganchos, guion, origen FROM ig_ideas WHERE origen LIKE 'propia%' ORDER BY ts DESC LIMIT 8").all()).results || []).map((x) => ({ ...x, ganchos: jparse(x.ganchos), guion: jparse(x.guion) }));
+  const ganadoras = await ideasGanadoras(env);
   const dmsTxt = d.dms.slice(0, 25).map((x) => String(x.ult_texto || "").slice(0, 120)).filter((t) => t && !t.startsWith("["));
   const r = await iaJSON(env, `Sos el estratega de contenido de Instagram de este negocio:
 ${NEGOCIO}
@@ -153,6 +157,15 @@ ${APRENDIZAJES_BASE}
 
 GUIONES REALES DE LA CUENTA (copiá la ESTRUCTURA, no las palabras):
 ${GUIONES_GANADORES}  ${UTILERIA}
+
+REFERENCIAS QUE EL DUEÑO JUNTÓ SCROLLEANDO (videos que le están funcionando a otros, de nuestro nicho o de otros; ESTA ES LA FUENTE PRINCIPAL DE IDEAS):
+${refs.map((x) => `- [ref:${x.id}] nicho ${x.nicho || "?"}: ${x.que_pasa}${x.por_que ? ` | por qué engancha: ${x.por_que}` : ""} (usada ${x.usos || 0} veces)`).join("\n") || "(todavía ninguna: basate en nuestros reels que mejor anduvieron y en las ideas propias del dueño)"}
+
+IDEAS QUE ARMÓ EL DUEÑO A MANO (este es el tono y el nivel de estímulo que busca: imperfecto, momento real, sorpresa, muy orgánico):
+${propias.map((x) => `- "${x.titulo}"${x.origen ? ` (${x.origen})` : ""}: ganchos ${x.ganchos.map((g) => `"${g.texto}"`).join(" / ")} | cuerpo: ${x.guion.join(" ")}`).join("\n") || "(ninguna todavía)"}
+
+RESULTADO REAL POR GANCHO DE NUESTRAS IDEAS GRABADAS Y SUBIDAS (qué apertura retuvo; repetí la MECÁNICA de lo que ganó con otro giro, nunca el mismo video):
+${ganadoras.slice(0, 8).map(({ x }) => `- "${x.titulo}": ${x.vinculos.map((v) => `gancho "${(x.ganchos[v.gancho] || {}).texto || x.gancho}" [${(x.ganchos[v.gancho] || {}).tipo || "?"}] alcance ${n0(v.alcance)}, visto ${v.tiempo_s ?? "-"} s, guardados ${n0(v.guardados)}`).join(" | ")}`).join("\n") || "(todavía sin reels vinculados)"}
 
 IDEAS QUE EL DUEÑO DESCARTÓ Y POR QUÉ (lo más importante: no repitas estos errores):
 ${rechazos.map((x) => `- "${x.titulo}" (gancho: "${x.gancho}") → ${x.motivo}`).join("\n") || "(todavía ninguna)"}
@@ -176,6 +189,9 @@ IDEAS QUE YA SE DIERON (no repetir el mismo título; si una "grabada" funcionó,
 ${previas.map((x) => `- ${x.titulo} [${x.formato}] (${x.estado})`).join("\n") || "(ninguna)"}
 
 Reglas para los guiones:
+- ORIGEN OBLIGATORIO. Ninguna idea sale de la nada. Si hay REFERENCIAS, al menos 2 de cada 3 ideas adaptan UNA referencia concreta: tomá su mecánica (lo que la hace enganchar: la sorpresa, el momento real, el giro, el formato) y trasladala a importación con nuestra utilería; en "origen" poné "ref:<id>". El resto son versiones RENOVADAS de lo que mejor nos anduvo (gancho ganador de arriba o mejores reels): misma mecánica, otro producto, otra situación, otro giro; en "origen" poné "reel: <cuál>". El mismo chiste no da risa dos veces: nunca la misma idea con otras palabras.
+- PROHIBIDO lo genérico y el cliché: "5 errores al importar", "tips para", "sabías que", "la verdad que nadie te cuenta", "el secreto de", listas, consejos sueltos, frases motivacionales. Cada idea es una SITUACIÓN concreta con estímulo (algo que pasa, se ve y sorprende), no un tema.
+- "escena": qué tipo de video es (camara = yo hablando a cámara, mano = producto en mano, pantalla = grabación de pantalla, calle = caminando y hablando, mixto). "mostrar": qué se ve durante el cuerpo, concreto (ej: "caja de AirPods arrugada en la mano, después pantalla con el precio en ML").
 - CADA IDEA ES UN CUERPO + 3 o 4 GANCHOS. El cuerpo es el guion que se graba una vez; los ganchos son aperturas distintas del primer segundo que se graban aparte y se pegan al mismo cuerpo, para testear cuál rinde.
 - Los ganchos de una idea tienen que ser de TIPO VISUAL DISTINTO, sin repetir, de esta lista: reaccion (cara tapada o indignado a cámara), pantalla (precio de ML en grande), lejos (plano lejano, se ve el lugar), mano (producto en mano o caja abriéndose), split (ML vs China lado a lado), cartel (texto grande sobre fondo liso). El texto también cambia de tipo: número, queja, POV, pregunta, afirmación polémica. "Me tapo la cara" y "me agarro la cara" NO son ganchos distintos.
 - Cuerpos: la mayoría con la estructura BÚSQUEDA FRUSTRADA (formato "ml_vs_china") y algunos CUÁNTO LE GANO (formato "ml_vendi"). Siempre producto concreto, cantidad concreta y al menos un número en pantalla en los primeros 5 segundos.
@@ -187,16 +203,106 @@ Reglas para los guiones:
 - Números: solo de la tarifa real de arriba. Si hace falta un precio de producto que no sabés, escribí [precio real] para que lo complete el dueño. No inventes casos con datos falsos: si la historia es un ejemplo, que sea creíble y genérico ("un cliente de Córdoba que revende auriculares").
 - "por_que": el dato concreto de arriba en el que te basás (con su número).
 - "hipotesis": qué estamos probando con este reel, medible ("gancho con precio en pesos retiene más de 18 s").
-Respondé SOLO JSON: {"ideas":[{"titulo":"...","formato":"ml_vs_china|ml_vendi|producto|historia","marco":"pov|importador","ganchos":[{"tipo":"reaccion|pantalla|lejos|mano|split|cartel","texto":"texto en pantalla","como":"qué se ve y qué se dice en el primer segundo"}],"guion":["...","..."],"cta":"...","por_que":"...","producto":"...","hipotesis":"qué gancho creés que gana y por qué"}]}`);
+Respondé SOLO JSON: {"ideas":[{"titulo":"...","formato":"ml_vs_china|ml_vendi|producto|historia|reaccion|otro","marco":"pov|importador","origen":"ref:<id> o reel: <cuál>","escena":"camara|mano|pantalla|calle|mixto","mostrar":"qué se ve en el cuerpo","ganchos":[{"tipo":"reaccion|pantalla|lejos|mano|split|cartel","texto":"texto en pantalla","como":"qué se ve y qué se dice en el primer segundo"}],"guion":["...","..."],"cta":"...","por_que":"...","producto":"...","hipotesis":"qué gancho creés que gana y por qué"}]}`);
   const ideas = (r?.ideas || []).filter((x) => x?.titulo && (x?.gancho || x?.ganchos?.length) && !PROHIBIDO.test(JSON.stringify(x))).slice(0, cantidad);
   if (!ideas.length) return { ok: false, error: "La IA no respondió o no dio ideas válidas. Probá de nuevo en un minuto." };
   const lote = id();
-    await env.DB.batch(ideas.map((x) => {
-    const gs = (Array.isArray(x.ganchos) ? x.ganchos : []).filter((g) => g && g.texto).slice(0, 4).map((g) => ({ tipo: String(g.tipo || "").slice(0, 20), texto: String(g.texto).slice(0, 160), como: String(g.como || "").slice(0, 200) }));
-    return env.DB.prepare("INSERT INTO ig_ideas (id, ts, lote, titulo, formato, gancho, ganchos, guion, cta, por_que, producto, hipotesis, estado, pedido_por) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'nueva',?)")
-      .bind(id(), Date.now(), lote, String(x.titulo).slice(0, 140), FORMATOS[x.formato] ? x.formato : "otro", String(x.gancho || gs[0]?.texto || "").slice(0, 160), JSON.stringify(gs), JSON.stringify((Array.isArray(x.guion) ? x.guion : [String(x.guion || "")]).map((t) => String(t).slice(0, 300)).slice(0, 10)),
-        String(x.cta || "").slice(0, 160), String(x.por_que || "").slice(0, 300), String(x.producto || "").slice(0, 80), String((x.marco ? "[" + x.marco + "] " : "") + (x.hipotesis || "")).slice(0, 260), quien);
-  }));
+  await env.DB.batch(ideas.map((x) => stmtIdea(env, x, { lote, quien })));
+  const usadas = [...new Set(ideas.map((x) => (String(x.origen || "").match(/ref:([a-z0-9]+)/i) || [])[1]).filter(Boolean))];
+  if (usadas.length) await env.DB.batch(usadas.map((r) => env.DB.prepare("UPDATE ig_refs SET usos = COALESCE(usos,0) + 1 WHERE id=?").bind(r)));
+  return { ok: true, cantidad: ideas.length };
+}
+
+// ---------- Ideas: guardar, ideas propias, variantes, referencias y reels vinculados ----------
+const jparse = (t, d = []) => { try { return JSON.parse(t || "") ?? d; } catch { return d; } };
+export const ESCENAS = { camara: "Yo a cámara", mano: "Producto en mano", pantalla: "Pantalla", calle: "Caminando en la calle", mixto: "Mixto" };
+function stmtIdea(env, x, { lote, quien, origen, estado = "nueva" }) {
+  const gs = (Array.isArray(x.ganchos) ? x.ganchos : []).filter((g) => g && g.texto).slice(0, 5).map((g) => ({ tipo: String(g.tipo || "").slice(0, 20), texto: String(g.texto).slice(0, 160), como: String(g.como || "").slice(0, 200) }));
+  const nid = id(), ahora = Date.now();
+  return env.DB.prepare("INSERT INTO ig_ideas (id, ts, lote, titulo, formato, gancho, ganchos, guion, cta, por_que, producto, hipotesis, estado, pedido_por, origen, escena, mostrar, hecho_ts, n_videos) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)")
+    .bind(nid, ahora, lote, String(x.titulo).slice(0, 140), FORMATOS[x.formato] ? x.formato : "otro", String(x.gancho || gs[0]?.texto || "").slice(0, 160), JSON.stringify(gs),
+      JSON.stringify((Array.isArray(x.guion) ? x.guion : [String(x.guion || "")]).map((t) => String(t).slice(0, 300)).slice(0, 12)), String(x.cta || "").slice(0, 160), String(x.por_que || "").slice(0, 300),
+      String(x.producto || "").slice(0, 80), String((x.marco ? "[" + x.marco + "] " : "") + (x.hipotesis || "")).slice(0, 260), estado, quien, String(origen ?? x.origen ?? "").slice(0, 200),
+      ESCENAS[x.escena] ? x.escena : "", String(x.mostrar || "").slice(0, 300), estado === "grabada" ? ahora : null, estado === "grabada" ? Math.max(1, gs.length) : null);
+}
+const FORMA_IDEA = `{"titulo":"corto","formato":"${Object.keys(FORMATOS).join("|")}","marco":"pov|importador","escena":"camara|mano|pantalla|calle|mixto","mostrar":"qué se ve en el cuerpo","producto":"...","ganchos":[{"tipo":"reaccion|pantalla|lejos|mano|split|cartel","texto":"texto en pantalla / lo que se dice","como":"qué se ve en esa toma"}],"guion":["frase tal como se dice","..."],"cta":"...","por_que":"...","hipotesis":"qué probamos, medible"}`;
+
+export async function ideaPropia(env, iaJSON, texto, grabada, quien) {
+  texto = String(texto || "").trim().slice(0, 4000);
+  if (texto.length < 15) return { ok: false, error: "Pegá la idea: ganchos y cuerpo" };
+  const r = await iaJSON(env, `Ordená esta idea de reel que escribió el dueño de "Te Importamos" (importación por encargo desde Rosario). NO la mejores ni la reescribas: respetá SUS PALABRAS EXACTAS en ganchos y cuerpo (podés corregir solo tildes y puntuación). Separá los ganchos (cada apertura distinta es un gancho), el cuerpo en frases, y completá lo que falte: tipo de cada gancho, qué se ve en cada toma (si lo dice entre paréntesis, usalo), escena, qué se muestra, producto. Si no tiene cierre, proponé un CTA de una palabra al WhatsApp del perfil.
+${UTILERIA}
+NOTAS DEL DUEÑO:
+"""${texto}"""
+En "origen" poné de dónde salió la idea si lo dice (ej: "video de TikTok de AirPods arrugados"), si no, vacío. En "por_que" poné qué estímulo usa (sorpresa, momento real, queja, etc.).
+Respondé SOLO JSON: ${FORMA_IDEA.slice(0, -1)},"origen":"..."}`);
+  if (!r?.titulo || !(r.ganchos || []).length) return { ok: false, error: "La IA no respondió. Probá de nuevo en un minuto." };
+  await stmtIdea(env, r, { lote: id(), quien, origen: "propia" + (r.origen ? ": " + r.origen : ""), estado: grabada ? "grabada" : "nueva" }).run();
+  return { ok: true };
+}
+
+export async function ideaVariantes(env, iaJSON, ideaId, quien) {
+  const x = await env.DB.prepare("SELECT * FROM ig_ideas WHERE id=?").bind(String(ideaId || "")).first();
+  if (!x) return { ok: false, error: "No encontré la idea" };
+  x.ganchos = jparse(x.ganchos); x.guion = jparse(x.guion); await vincularReels(env, [x]);
+  const res = (x.vinculos || []).map((v) => `gancho ${v.gancho + 1} "${(x.ganchos[v.gancho] || {}).texto || x.gancho}": alcance ${n0(v.alcance)}, tiempo visto ${v.tiempo_s ?? "-"} s, guardados ${n0(v.guardados)}, compartidos ${n0(v.compartidos)}`).join("\n") || "todavía sin métricas (no hay reel vinculado)";
+  const r = await iaJSON(env, `Sos el estratega de reels de este negocio:
+${NEGOCIO}
+${UTILERIA}
+IDEA ORIGINAL (ya grabada):
+Título: ${x.titulo}
+Ganchos: ${x.ganchos.map((g, i) => `${i + 1}) [${g.tipo}] ${g.texto}`).join(" | ") || x.gancho}
+Cuerpo: ${x.guion.join(" ")}
+Cierre: ${x.cta || "-"}
+RESULTADOS REALES:
+${res}
+Hacé 3 VARIANTES NUEVAS para seguir testeando. Mantené la MECÁNICA que hace funcionar la original (si un gancho ganó, su tipo y su estímulo), pero cambiá el producto, la situación o el giro: el mismo chiste no da risa dos veces. Nada genérico ni de consejos: situaciones concretas con estímulo. Cada variante: 3 o 4 ganchos de tipo visual distinto, cuerpo de 6 a 10 frases en rioplatense como se dicen a cámara, CTA de una palabra al WhatsApp del perfil (distinta en cada una). Solo utilería real. Precios que no sepas: [precio real].
+Respondé SOLO JSON: {"ideas":[${FORMA_IDEA}]}`);
+  const ideas = (r?.ideas || []).filter((y) => y?.titulo && (y.ganchos || []).length && !PROHIBIDO.test(JSON.stringify(y))).slice(0, 3);
+  if (!ideas.length) return { ok: false, error: "La IA no respondió. Probá de nuevo en un minuto." };
+  const lote = id();
+  await env.DB.batch(ideas.map((y) => stmtIdea(env, y, { lote, quien, origen: "variante de: " + x.titulo })));
+  return { ok: true, cantidad: ideas.length };
+}
+
+function parecido(a, b) {
+  const pal = (t) => new Set(normal(t).split(" ").filter((w) => w.length > 2));
+  const A = pal(a), B = pal(b); if (!A.size || !B.size) return 0;
+  let n = 0; for (const w of A) if (B.has(w)) n++;
+  return n / Math.min(A.size, B.size);
+}
+const metr = (p) => ({ post: p.id, ts: p.ts, link: p.link, alcance: p.alcance, vistas: p.vistas, guardados: p.guardados, compartidos: p.compartidos, comentarios: p.comentarios, tiempo_s: p.tiempo_ms ? Math.round(p.tiempo_ms / 100) / 10 : null });
+// Para cada idea grabada busca los reels subidos de cada gancho: primero los que vinculó el dueño, después por parecido del texto.
+async function vincularReels(env, ideas) {
+  const gr = ideas.filter((x) => x.estado === "grabada"); if (!gr.length) return ideas;
+  const desde = Math.min(...gr.map((x) => x.hecho_ts || x.ts || Date.now())) - 3 * 86400e3;
+  const ps = (await env.DB.prepare("SELECT id, ts, link, gancho, texto, alcance, vistas, guardados, compartidos, comentarios, tiempo_ms FROM ig_posts WHERE tipo='REELS' AND ts > ? ORDER BY ts ASC LIMIT 400").bind(desde).all()).results || [];
+  const txtVid = {};
+  try { for (const v of (await env.DB.prepare("SELECT media_id, texto FROM ig_videos WHERE media_id IS NOT NULL AND media_id<>'' AND ts > ?").bind(desde).all()).results || []) txtVid[v.media_id] = v.texto || ""; } catch {}
+  const usados = new Set();
+  for (const x of gr) for (const m of jparse(x.reels)) usados.add(m.post);
+  for (const x of gr) {
+    const out = [];
+    for (const m of jparse(x.reels)) { const p = ps.find((q) => q.id === m.post); if (p) out.push({ ...metr(p), gancho: m.gancho || 0, manual: true }); }
+    const gs = x.ganchos && x.ganchos.length ? x.ganchos : [{ texto: x.gancho }];
+    gs.forEach((g, i) => {
+      if (out.some((o) => o.gancho === i)) return;
+      let mejor = null, ms = 0;
+      for (const p of ps) {
+        if (usados.has(p.id) || p.ts < (x.hecho_ts || x.ts || 0) - 2 * 86400e3) continue;
+        const sc = Math.max(parecido(g.texto, txtVid[p.id] || ""), parecido(g.texto, p.gancho || ""), parecido(g.texto, p.texto || "") * 0.8);
+        if (sc > ms) { ms = sc; mejor = p; }
+      }
+      if (mejor && ms >= 0.5) { usados.add(mejor.id); out.push({ ...metr(mejor), gancho: i }); }
+    });
+    x.vinculos = out.sort((a, b) => a.gancho - b.gancho);
+  }
+  return ideas;
+}
+async function ideasGanadoras(env) {
+  const l = ((await env.DB.prepare("SELECT * FROM ig_ideas WHERE estado='grabada' ORDER BY hecho_ts DESC LIMIT 40").all()).results || []).map((x) => ({ ...x, ganchos: jparse(x.ganchos), guion: jparse(x.guion) }));
+  await vincularReels(env, l);
+  return l.filter((x) => x.vinculos && x.vinculos.length).map((x) => ({ x, mejor: Math.max(...x.vinculos.map((v) => v.alcance || 0)) })).sort((a, b) => b.mejor - a.mejor);
 }
 
 // ---------- Lo que pasa en el WhatsApp 805 (para historias, ideas y el agente) ----------
@@ -415,9 +521,27 @@ export async function apiRedes(env, req, url, quien, iaJSON, base = "", T = null
   if (r === "ideas") {
     const est = ["nueva", "grabada", "descartada"].includes(url.searchParams.get("estado")) ? url.searchParams.get("estado") : "nueva";
     const l = (await env.DB.prepare("SELECT * FROM ig_ideas WHERE estado=? ORDER BY ts DESC LIMIT 60").bind(est).all()).results || [];
-    return json(l.map((x) => ({ ...x, guion: JSON.parse(x.guion || "[]"), ganchos: JSON.parse(x.ganchos || "[]") })));
+    return json(await vincularReels(env, l.map((x) => ({ ...x, guion: jparse(x.guion), ganchos: jparse(x.ganchos) }))));
   }
-  if (r === "generar-ideas" && req.method === "POST") return json(await generarIdeas(env, iaJSON, quien || "panel", 7, T));
+  if (r === "idea-propia" && req.method === "POST") return json(await ideaPropia(env, iaJSON, body.texto, !!body.grabada, quien || "panel"));
+  if (r === "idea-variantes" && req.method === "POST") return json(await ideaVariantes(env, iaJSON, body.id, quien || "panel"));
+  if (r === "idea-vincular" && req.method === "POST") {
+    const x = await env.DB.prepare("SELECT reels FROM ig_ideas WHERE id=?").bind(String(body.id || "")).first();
+    if (!x) return json({ error: "No encontré la idea" }, 404);
+    const l = jparse(x.reels).filter((m) => m.post !== body.post && m.gancho !== +body.gancho);
+    if (body.post) l.push({ post: String(body.post), gancho: Math.max(0, parseInt(body.gancho) || 0) });
+    await env.DB.prepare("UPDATE ig_ideas SET reels=? WHERE id=?").bind(JSON.stringify(l.slice(-10)), String(body.id)).run();
+    return json({ ok: true });
+  }
+  if (r === "refs") return json(((await env.DB.prepare("SELECT * FROM ig_refs ORDER BY ts DESC LIMIT 100").all()).results || []));
+  if (r === "ref-agregar" && req.method === "POST") {
+    const q = String(body.que_pasa || "").trim();
+    if (q.length < 10) return json({ ok: false, error: "Contá qué pasa en el video" });
+    await env.DB.prepare("INSERT INTO ig_refs (id, ts, link, nicho, que_pasa, por_que, usos, quien) VALUES (?,?,?,?,?,?,0,?)").bind(id(), Date.now(), String(body.link || "").trim().slice(0, 300), String(body.nicho || "").trim().slice(0, 60), q.slice(0, 800), String(body.por_que || "").trim().slice(0, 400), quien || "panel").run();
+    return json({ ok: true });
+  }
+  if (r === "ref-borrar" && req.method === "POST") { await env.DB.prepare("DELETE FROM ig_refs WHERE id=?").bind(String(body.id || "")).run(); return json({ ok: true }); }
+  if (r === "generar-ideas" && req.method === "POST") return json(await generarIdeas(env, iaJSON, quien || "panel", 8, T));
   if (r === "historias") {
     const est = ["nueva", "subida", "descartada"].includes(url.searchParams.get("estado")) ? url.searchParams.get("estado") : "nueva";
     const l = (await env.DB.prepare("SELECT * FROM ig_historias WHERE estado=? ORDER BY ts DESC LIMIT 40").bind(est).all()).results || [];
@@ -521,6 +645,7 @@ td{padding:8px;border-bottom:1px solid #f0f2f6;vertical-align:top}th.n,td.n{text
 .idea{border:1px solid var(--borde);border-radius:12px;padding:14px;margin-bottom:10px;background:#fff}
 .idea h3{margin:0 0 6px;font-size:16px}.gancho{background:#0B0B0B;color:#fff;border-radius:10px;padding:12px 14px;font-size:18px;font-weight:800;margin:8px 0;line-height:1.3}
 .gancho small{display:block;color:var(--nar);font-size:11px;font-weight:700;letter-spacing:.04em;margin-bottom:4px}
+.campo{width:100%;box-sizing:border-box;border:1px solid var(--borde);border-radius:8px;padding:8px;font:inherit;font-size:14px;margin:4px 0}.metg{font-size:12px;font-weight:600;color:#fff;opacity:.9;margin-top:6px}.metg b{color:var(--nar)}
 .idea ol{margin:6px 0 8px;padding-left:22px;line-height:1.5;font-size:15px}.idea .pq{font-size:13px;color:var(--gris);margin-top:4px;line-height:1.4}
 .dm{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid #f0f2f6}.dm:last-child{border-bottom:0}
 .dm b{font-size:15px}.dm .t{font-size:14px;color:#334155;margin-top:2px;overflow-wrap:anywhere}.dm .h{font-size:12px;color:var(--gris)}
@@ -594,8 +719,10 @@ ${CARR_CSS}
 <div id="m-ideas" style="display:none">
   <div class="seg tabs2" id="ideasTipo"><button data-k="reels" class="on">Reels para grabar<span class="bd2" id="bIR"></span></button><button data-k="hist">Historias de hoy<span class="bd2" id="bIH"></span></button></div>
   <div id="i-reels">
-  <div class="barraher"><button class="btn p" id="bIdeasGen"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>Generar ideas nuevas</button><select id="fIdeas"><option value="nueva">Para grabar</option><option value="grabada">Ya grabadas</option><option value="descartada">Descartadas</option></select></div>
-  <p class="estado ayuda">Salen solas cada lunes a las 9, cruzando métricas, formatos y lo que piden por WhatsApp, comentarios y DMs.</p>
+  <div class="barraher"><button class="btn p" id="bIdeasGen"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>Generar ideas nuevas</button><select id="fIdeas"><option value="nueva">Para grabar</option><option value="grabada">Ya grabadas</option><option value="descartada">Descartadas</option></select><button class="btn" id="bPropia">Cargar mi idea</button><button class="btn" id="bRefs">Referencias</button><button class="btn" id="bDescSel">Descartar marcadas</button></div>
+  <p class="estado ayuda">Salen de tus <b>Referencias</b> (videos que les funcionan a otros) y de tus reels que mejor anduvieron, gancho por gancho. Cuantas más referencias cargues, mejores ideas. También salen solas cada lunes a las 9.</p>
+  <div id="pPropia" class="idea" style="display:none"><h3>Cargar mi idea</h3><p class="pq">Pegala como la anotaste: ganchos, cuerpo, de dónde salió. La IA solo la ordena, no te cambia las palabras.</p><textarea id="tPropia" class="campo" style="min-height:170px"></textarea><label class="pq"><input type="checkbox" id="cPropiaG"> Ya la grabé</label><div class="fila" style="margin-top:8px"><button class="btn p" id="bPropiaOk">Guardar idea</button></div></div>
+  <div id="pRefs" class="idea" style="display:none"><h3>Referencias</h3><p class="pq">Cada video que te pegue mientras scrolleás (de importación o de cualquier nicho): el link y en una línea qué pasa y por qué engancha. Con eso el generador adapta la mecánica a lo nuestro en vez de inventar.</p><input id="rLink" class="campo" placeholder="Link (TikTok o Instagram, opcional)"><input id="rNicho" class="campo" placeholder="Nicho (ej: importación, humor, otro rubro)"><textarea id="rQue" class="campo" placeholder="Qué pasa en el video: gancho, qué muestra, cómo sigue"></textarea><textarea id="rPor" class="campo" placeholder="Por qué engancha: sorpresa, momento real, número, queja..."></textarea><div class="fila"><button class="btn p" id="bRefOk">Agregar referencia</button></div><div id="lRefs"></div></div>
   <div id="ideas"><div class="vacio">Cargando...</div></div>
 </div>
   <div id="i-hist" style="display:none">
@@ -688,13 +815,20 @@ function badge(s, n) { var b = $(s); b.style.display = n ? "" : "none"; b.textCo
 $("#bReporte").onclick = function () { var b = this; b.disabled = true; b.lastChild.textContent = "Generando..."; api("reporte", { telegram: confirm("¿Mandarlo también por Telegram?") }).then(function (r) { b.disabled = false; b.lastChild.textContent = "Generar reporte"; if (!r.ok) return aviso(r.error || "No se pudo"); cargarResumen(); aviso("Reporte listo"); }); };
 $("#bTraer").onclick = function () { var b = this; b.disabled = true; b.lastChild.textContent = "Trayendo..."; api("actualizar", { todo: true }).then(function (r) { b.disabled = false; b.lastChild.textContent = "Traer datos ahora"; aviso(r.ok ? "Listo: " + ((r.posts && r.posts.guardadas) || 0) + " publicaciones actualizadas" : "No se pudo: " + r.error); cargarResumen(); }); };
 
+var ESCENAS = { camara: "Yo a cámara", mano: "Producto en mano", pantalla: "Pantalla", calle: "Caminando en la calle", mixto: "Mixto" };
+function metG(x, i) {
+  var v = (x.vinculos || []).filter(function (o) { return o.gancho === i; })[0]; if (!v) return x.estado === "grabada" ? '<div class="metg">sin reel vinculado todavía</div>' : "";
+  var max = Math.max.apply(null, (x.vinculos || []).map(function (o) { return o.alcance || 0; }));
+  return '<div class="metg">' + ((x.vinculos || []).length > 1 && v.alcance === max ? "<b>GANADOR</b> · " : "") + "alcance " + num(v.alcance) + " · visto " + (v.tiempo_s == null ? "-" : String(v.tiempo_s).replace(".", ",")) + " s · guardados " + num(v.guardados) + " · compartidos " + num(v.compartidos) + (v.link ? ' · <a href="' + esc(v.link) + '" target="_blank" rel="noopener" style="color:#fff">ver</a>' : "") + "</div>";
+}
 function cargarIdeas() {
+  cargarRefs();
   api("ideas?estado=" + $("#fIdeas").value).then(function (l) {
     $("#ideas").innerHTML = l.length ? l.map(function (x) {
       return '<div class="idea" data-id="' + esc(x.id) + '"><div class="fila" style="justify-content:space-between"><h3><input type="checkbox" class="selIdea" value="' + esc(x.id) + '" style="width:20px;height:20px;margin-right:8px;vertical-align:middle">' + esc(x.titulo) + '</h3><span class="fila"><span class="pill n">' + esc(FORMATOS[x.formato] || x.formato) + "</span>" + (x.producto ? '<span class="pill">' + esc(x.producto) + "</span>" : "") + "</span></div>" +
-        (x.ganchos && x.ganchos.length ? x.ganchos.map(function (g, i) { return '<div class="gancho"><small>GANCHO ' + (i + 1) + " · " + esc(g.tipo).toUpperCase() + "</small>" + esc(g.texto) + (g.como ? '<div style="font-size:13px;font-weight:400;opacity:.8;margin-top:4px">' + esc(g.como) + "</div>" : "") + "</div>"; }).join("") : '<div class="gancho"><small>TEXTO EN PANTALLA, PRIMER SEGUNDO</small>' + esc(x.gancho) + "</div>") + '<div class="pq"><b>Cuerpo (se graba una vez):</b></div><ol>' + (x.guion || []).map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ol>" +
+        (x.ganchos && x.ganchos.length ? x.ganchos.map(function (g, i) { return '<div class="gancho"><small>GANCHO ' + (i + 1) + " · " + esc(g.tipo).toUpperCase() + "</small>" + esc(g.texto) + (g.como ? '<div style="font-size:13px;font-weight:400;opacity:.8;margin-top:4px">' + esc(g.como) + "</div>" : "") + metG(x, i) + "</div>"; }).join("") : '<div class="gancho"><small>TEXTO EN PANTALLA, PRIMER SEGUNDO</small>' + esc(x.gancho) + "</div>") + (x.origen || x.escena || x.mostrar ? '<div class="pq">' + (x.origen ? "<b>Sale de:</b> " + esc(x.origen) + " " : "") + (x.escena ? "<b>Escena:</b> " + esc(ESCENAS[x.escena] || x.escena) + " " : "") + (x.mostrar ? "<b>Se ve:</b> " + esc(x.mostrar) : "") + "</div>" : "") + '<div class="pq"><b>Cuerpo (se graba una vez):</b></div><ol>' + (x.guion || []).map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ol>" +
         (x.cta ? "<div><b>Cierre:</b> " + esc(x.cta) + "</div>" : "") + '<div class="pq"><b>Por qué:</b> ' + esc(x.por_que) + "</div>" + (x.hipotesis ? '<div class="pq"><b>Qué probamos:</b> ' + esc(x.hipotesis) + "</div>" : "") + (x.motivo ? '<div class="pq"><b>Por qué la descartaste:</b> ' + esc(x.motivo) + "</div>" : "") +
-        '<div class="fila" style="margin-top:10px">' + (x.estado !== "grabada" ? '<button class="btn p ch" data-e="grabada">Ya lo grabé</button>' : "") + (x.estado !== "descartada" ? '<button class="btn ch" data-e="descartada">Descartar</button>' : "") + (x.estado !== "nueva" ? '<button class="btn ch" data-e="nueva">Volver a pendientes</button>' : "") + '<button class="btn ch" data-c="1">Copiar guion</button></div></div>';
+        '<div class="fila" style="margin-top:10px">' + (x.estado !== "grabada" ? '<button class="btn p ch" data-e="grabada">Ya lo grabé</button>' : "") + (x.estado !== "descartada" ? '<button class="btn ch" data-e="descartada">Descartar</button>' : "") + (x.estado !== "nueva" ? '<button class="btn ch" data-e="nueva">Volver a pendientes</button>' : "") + '<button class="btn ch" data-c="1">Copiar guion</button>' + (x.estado === "grabada" ? '<button class="btn ch" data-v="1">3 variantes</button><button class="btn ch" data-l="1">Vincular reel</button>' : "") + "</div></div>";
     }).join("") : '<div class="vacio">No hay ideas acá. Tocá <b>Generar ideas nuevas</b>.</div>';
     window.__ideas = l;
   });
@@ -734,8 +868,37 @@ $("#cal").onclick = function (ev) {
 $("#bDescSel").onclick = function () { var sel = [].slice.call(document.querySelectorAll("#ideas .selIdea:checked")); if (!sel.length) { aviso("Marcá al menos una"); return; } var m = prompt("¿Por qué descartás estas " + sel.length + "? (un motivo para todas, ej: genéricas, cliché, no basadas en nada real)"); if (m === null) return; m = m.trim(); if (!m) { aviso("Escribí un motivo"); return; } Promise.all(sel.map(function (c) { return api("idea-estado", { id: c.value, estado: "descartada", motivo: m, n: 1 }); })).then(function () { cargarIdeas(); cargarResumen(); }); }; $("#ideas").onclick = function (ev) {
   var b = ev.target.closest("button"); if (!b) return; var card = b.closest(".idea"), idv = card.dataset.id;
     if (b.dataset.c) { var x = (window.__ideas || []).filter(function (i) { return i.id === idv; })[0]; if (!x) return; var NL = String.fromCharCode(10); navigator.clipboard.writeText((x.ganchos && x.ganchos.length ? x.ganchos.map(function (g, i) { return "GANCHO " + (i + 1) + " (" + g.tipo + "): " + g.texto + (g.como ? " / " + g.como : ""); }).join(NL) : "GANCHO: " + x.gancho) + NL + NL + "CUERPO:" + NL + (x.guion || []).map(function (t, i) { return (i + 1) + ". " + t; }).join(NL) + (x.cta ? NL + NL + "CIERRE: " + x.cta : "")).then(function () { aviso("Guion copiado"); }); return; }
+  if (b.dataset.v) { b.disabled = true; b.textContent = "Pensando..."; api("idea-variantes", { id: idv }).then(function (r) { b.disabled = false; b.textContent = "3 variantes"; if (!r.ok) return aviso(r.error); cargarResumen(); aviso(r.cantidad + " variantes nuevas en Para grabar"); }); return; }
+  if (b.dataset.l) { vincular(idv); return; }
+  if (!b.dataset.e) return;
   var motivo = "";   if (b.dataset.e === "descartada") { motivo = prompt("¿Por qué la descartás? Esto es lo que la hace aprender (ej: gancho genérico, no tiene número, ese producto no lo vendemos)"); if (motivo === null) return; motivo = motivo.trim(); if (!motivo) { aviso("Escribí un motivo, aunque sea corto"); return; } }   var nv = 1; if (b.dataset.e === "grabada") { var xi = (window.__ideas || []).filter(function (i) { return i.id === idv; })[0], def = xi && xi.ganchos && xi.ganchos.length ? xi.ganchos.length : 1; var rv = prompt("¿Cuántos videos salieron de esta idea? Se reparten uno por día en el calendario", def); if (rv === null) return; nv = Math.max(1, Math.min(10, parseInt(rv) || def)); }   api("idea-estado", { id: idv, estado: b.dataset.e, motivo: motivo, n: nv }).then(function () { card.remove(); cargarResumen(); });
 };
+function vincular(idv) {
+  var x = (window.__ideas || []).filter(function (i) { return i.id === idv; })[0];
+  api("reels?dias=45").then(function (l) {
+    l = l.filter(function (p) { return p.tipo === "REELS"; });
+    var pop = document.createElement("div"); pop.className = "calpop";
+    pop.innerHTML = '<div><div class="fila" style="justify-content:space-between"><h2>¿Qué reel es?</h2><button class="btn" data-x="1">Cerrar</button></div>' + (l.map(function (p) { return '<div class="it fila" style="justify-content:space-between;gap:8px"><div style="flex:1"><small>' + fecha(p.ts) + " · alcance " + num(p.alcance) + "</small><div>" + esc(p.gancho || p.texto || "(sin texto)") + '</div></div><button class="btn" data-p="' + esc(p.id) + '">Elegir</button></div>'; }).join("") || '<div class="vacio">No hay reels en los últimos 45 días.</div>') + "</div>";
+    pop.onclick = function (e) {
+      if (e.target === pop || e.target.closest("[data-x]")) { pop.remove(); return; }
+      var bp = e.target.closest("[data-p]"); if (!bp) return;
+      var n = x && x.ganchos && x.ganchos.length > 1 ? prompt("¿Qué gancho lleva este reel? (1 a " + x.ganchos.length + ")", "1") : "1"; if (n === null) return;
+      api("idea-vincular", { id: idv, post: bp.dataset.p, gancho: Math.max(0, (parseInt(n) || 1) - 1) }).then(function () { pop.remove(); cargarIdeas(); aviso("Reel vinculado"); });
+    };
+    document.body.appendChild(pop);
+  });
+}
+function cargarRefs() {
+  api("refs").then(function (l) {
+    $("#bRefs").textContent = "Referencias (" + l.length + ")";
+    $("#lRefs").innerHTML = l.map(function (r) { return '<div class="pq" style="border-top:1px solid var(--borde);padding:8px 0"><b>' + esc(r.nicho || "sin nicho") + "</b> · usada " + (r.usos || 0) + (r.usos === 1 ? " vez" : " veces") + (r.link ? ' · <a href="' + esc(r.link) + '" target="_blank" rel="noopener">ver</a>' : "") + "<br>" + esc(r.que_pasa) + (r.por_que ? "<br><i>" + esc(r.por_que) + "</i>" : "") + ' <button class="btn" data-rb="' + esc(r.id) + '">Borrar</button></div>'; }).join("") || '<div class="vacio">Todavía no cargaste referencias.</div>';
+  });
+}
+$("#bPropia").onclick = function () { var p = $("#pPropia"); p.style.display = p.style.display === "none" ? "" : "none"; $("#pRefs").style.display = "none"; };
+$("#bRefs").onclick = function () { var p = $("#pRefs"); p.style.display = p.style.display === "none" ? "" : "none"; $("#pPropia").style.display = "none"; cargarRefs(); };
+$("#bRefOk").onclick = function () { var q = $("#rQue").value.trim(); if (q.length < 10) return aviso("Contá qué pasa en el video"); api("ref-agregar", { link: $("#rLink").value.trim(), nicho: $("#rNicho").value.trim(), que_pasa: q, por_que: $("#rPor").value.trim() }).then(function (r) { if (!r.ok) return aviso(r.error || "No se pudo guardar"); $("#rLink").value = ""; $("#rQue").value = ""; $("#rPor").value = ""; cargarRefs(); aviso("Referencia guardada"); }); };
+$("#lRefs").onclick = function (e) { var b = e.target.closest("[data-rb]"); if (!b || !confirm("¿Borrar esta referencia?")) return; api("ref-borrar", { id: b.dataset.rb }).then(cargarRefs); };
+$("#bPropiaOk").onclick = function () { var b = this, t = $("#tPropia").value.trim(), g = $("#cPropiaG").checked; if (t.length < 15) return aviso("Pegá la idea"); b.disabled = true; b.textContent = "Ordenando..."; api("idea-propia", { texto: t, grabada: g }).then(function (r) { b.disabled = false; b.textContent = "Guardar idea"; if (!r.ok) return aviso(r.error); $("#tPropia").value = ""; $("#pPropia").style.display = "none"; $("#fIdeas").value = g ? "grabada" : "nueva"; cargarIdeas(); cargarResumen(); aviso("Idea guardada"); }); };
 $("#bIdeasGen").onclick = function () { var b = this; b.disabled = true; b.lastChild.textContent = "Pensando ideas..."; api("generar-ideas", {}).then(function (r) { b.disabled = false; b.lastChild.textContent = "Generar ideas nuevas"; if (!r.ok) return aviso(r.error); $("#fIdeas").value = "nueva"; cargarIdeas(); cargarResumen(); aviso(r.cantidad + " ideas nuevas"); }); };
 
 function cargarDms() {
