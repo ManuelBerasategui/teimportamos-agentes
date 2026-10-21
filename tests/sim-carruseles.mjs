@@ -60,7 +60,7 @@ chk("lista con usuario y tipos", lista.usuario === "te.importamos.arg" && lista.
 const BUENO = { slides: [{ tipo: "portada", titulo: "En MercadoLibre sale {precio_ml}.", subtitulo: "¿Cuánto cuesta traerlo?" }, { tipo: "barras", titulo: "La diferencia", a_label: "Importado", a_valor: "{costo}", b_label: "En ML", b_valor: "{precio_ml}", conclusion: "{diferencia} por unidad" }, { tipo: "multiplicacion", arriba: "Multiplicalo.", linea: "{cantidad} × {diferencia}", numero: "{total}", abajo: "en un lote" }, { tipo: "cta", texto: "¿Querés saber?", palabra: "costo", abajo: "te lo cotizo" }], caption: "Comentá COSTO #importaciones" };
 const GENERICO = { slides: [{ tipo: "portada", titulo: "Descubre el secreto de importar", subtitulo: "x" }, { tipo: "texto", titulo: "b" }, { tipo: "texto", titulo: "c" }], caption: "x" };
 let pasos = [];
-resp = (p) => { if (p.includes("Escribí 3 VERSIONES")) { pasos.push("v"); return { versiones: [GENERICO, BUENO] }; } if (p.includes("EDITOR más exigente")) { pasos.push("e"); return { elegida: 1, ...GENERICO }; } if (p.includes("tiene estos problemas")) { pasos.push("f"); return BUENO; } return null; };
+resp = (p) => { if (p.includes("Escribí 2 VERSIONES")) { pasos.push("v"); return { versiones: [GENERICO, BUENO] }; } if (p.includes("EDITOR más exigente")) { pasos.push("e"); return { elegida: 1, ...GENERICO }; } if (p.includes("tiene estos problemas")) { pasos.push("f"); return BUENO; } return null; };
 const e = await api("estructura", { id: idA });
 chk("estructura armada", e.ok && e.estado === "estructura" && e.slides.length === 4 && e.chat.length === 1);
 chk("estructura: 3 versiones, editor y corrección de lo genérico", pasos.join("") === "vef" && e.slides[0].titulo.startsWith("En MercadoLibre"));

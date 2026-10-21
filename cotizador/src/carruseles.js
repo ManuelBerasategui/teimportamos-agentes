@@ -286,9 +286,10 @@ VIRALES DE REFERENCIA (si hay una relacionada con esta idea, tomá su ritmo/func
 ${ref ? JSON.stringify(ref) : textoRefs(refs)}${conImagen ? "\nTambién se adjuntan sus capturas como referencia visual." : ""}
 REGLAS QUE TE ENSEÑÓ EL DUEÑO (respetalas siempre): ${rg.map((x, i) => `${i + 1}. ${x}`).join(" ") || "ninguna"}
 LO QUE EL DUEÑO DESCARTÓ Y POR QUÉ (no repitas esos errores): ${textoDescartes(await descartes(env))}
-Cotizaciones reales recientes: ${w.cotizaciones.map((q) => q.items.map((i) => i.nombre).join(" + ")).join(" | ") || "ninguna"}.`;  // 1) tres versiones distintas
+Cotizaciones reales recientes: ${w.cotizaciones.map((q) => q.items.map((i) => i.nombre).join(" + ")).join(" | ") || "ninguna"}.
+ESTRUCTURA VIRAL OBLIGATORIA (la que pide el dueño): 10 slides. 1) Gancho de portada que obliga a deslizar. 2-3) Un ejemplo concreto que atrapa y genera curiosidad (una situación real o creíble, con producto y número). 4-6) Se profundiza la tensión: por qué pasa, qué está en juego, el error que comete casi todos. 7-8) Resolución PARCIAL: das la mitad de la respuesta (lo útil para guardar), pero lo completo lo tenemos nosotros. 9) El remate o la conclusión que da ganas de actuar. 10) CTA: escribinos al WhatsApp del perfil (o link en bio) con una palabra clave. CADA SLIDE TERMINA CON ALGO QUE LLEVA AL SIGUIENTE (pregunta, "pero…", "y ahí viene lo peor", número incompleto), nunca un slide que cierre la idea antes del final. Nunca mandes al DM ni "por privado" (los DM están restringidos).`;  // 1) tres versiones distintas
   const r1 = await pedirIA(`${base}
-Escribí 3 VERSIONES distintas del carrusel completo (6 a 10 slides según el formato; la última "cta"). Que cambien el gancho de la portada, la estructura y el orden de la tensión, no solo las palabras.
+Escribí 2 VERSIONES distintas del carrusel completo (10 slides, la última "cta"). Que cambien el gancho de la portada, la estructura y el orden de la tensión, no solo las palabras.
 Para portadas de tendencia sirve mucho: pregunta con paréntesis que provoca ("por qué esta letra gigante funciona tanto (y tu diseño bonito no)"), contraste A vs B, o un número que duele. Portada de 5 a 12 palabras.
 Respondé SOLO JSON: {"versiones":[{"slides":[...],"caption":"2 o 3 frases + comentá la PALABRA + 3 hashtags"}]}`);
   let rb_dbg = null;
@@ -296,7 +297,7 @@ Respondé SOLO JSON: {"versiones":[{"slides":[...],"caption":"2 o 3 frases + com
   if (!versiones.length) {
     // Plan B: pedir UNA sola versión (respuesta más corta, la IA se corta menos)
     const rb = await iaJSON(env, `${base}
-Escribí el carrusel completo (6 a 9 slides; el último de tipo "cta"). Cada slide con su "tipo" y los campos de ese tipo.
+Escribí el carrusel completo (10 slides; el último de tipo "cta"), con la ESTRUCTURA VIRAL de arriba. Cada slide con su "tipo" y los campos de ese tipo.
 Respondé SOLO JSON: {"slides":[{"tipo":"portada","titulo":"...","subtitulo":"..."}],"caption":"2 o 3 frases + comentá la PALABRA + 3 hashtags"}`);
     rb_dbg = rb ? { k: Object.keys(rb), s: (rb.slides || []).slice(0, 2) } : null;
     versiones = [{ slides: limpiarSlides(rb?.slides), caption: String(rb?.caption || "") }].filter((v) => v.slides.length >= 3 && !PROHIBIDO.test(JSON.stringify(v)));
