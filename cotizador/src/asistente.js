@@ -137,7 +137,7 @@ export async function redesHoy(env) {
   if (editando) l.push(`Hay ${editando} tanda${editando > 1 ? "s" : ""} de clips editándose: esperar y después revisar`);
   if (err) l.push(`${err} tanda${err > 1 ? "s" : ""} de videos falló al editar: reintentar desde Redes › Videos`);
   if (grab.length && !rev.length && !editando) l.push(`Subir al editor los clips grabados de: ${grab.map((x) => x.titulo).join("; ")}`);
-  if (!prog.length) l.push("No hay ningún video programado para las próximas 24 h: aprobar uno para que salga");
+  if (!prog.length) l.push(rev.length ? "No hay video programado para las próximas 24 h: aprobá uno de los editados" : "No hay ningún video listo para las próximas 24 h: subí clips al editor para tener uno");
   if (ideas.length) l.push(`Grabar (ideas listas): ${ideas.map((x) => x.titulo).join("; ")}`);
   else l.push("No hay ideas de reels para grabar: cargar referencias y tocar Generar ideas (o redefinir las que hay)");
   if (hist.length) l.push(`Subir historias: ${hist.map((x) => x.titulo).join("; ")}`);
@@ -173,7 +173,7 @@ Ya hecho hoy en Notion: ${(nt.hoy || []).filter((x) => x.hecho).map((x) => x.tex
 Habilidades/categorías de su Notion (para "habilidad" de lo nuevo): ${(niveles || []).join(", ")}
 ${(nt.otras || []).map((o) => `BASE "${o.base}" (últimas filas): ${o.filas.join(" | ")}`).join("\n")}
 ${nt.eventos.length ? "EVENTOS DE HOY: " + nt.eventos.map((x) => (x.hora ? x.hora + " " : "") + x.texto).join(" | ") : ""}
-Si pregunta qué tiene en la agenda o sus pendientes de Notion, poné "incluir_agenda": true (yo pego la agenda exacta de Notion) y en "respuesta" solo una línea. Si pide que le organices LO QUE RESTA DEL DÍA (o "organizame", "plan"), en "respuesta" armá bloques con horario real desde ahora usando lo pendiente de su Notion (con sus minutos), lo urgente del negocio y sus fijos, un bloque por renglón ("16:00-17:00 · Estudio Diario"), y "incluir_agenda": false. Si te pregunta por su Notion, contestá SOLO con lo que está acá arriba (si está vacío, decí que no ves nada y que mande "notion" para revisar la conexión); nunca inventes que algo está en Notion. Si dice que hizo algo de su Notion (una tarea o un hábito, ej: "ya fui al gym", "leí"), poné su ref en "notion_hechas". No dupliques en "nuevas" lo que ya está en su Notion.` : ""}
+Si pregunta qué tiene en la agenda o sus pendientes de Notion, poné "incluir_agenda": true (yo pego la agenda exacta de Notion) y en "respuesta" solo una línea. Si pide que le organices LO QUE RESTA DEL DÍA (o "organizame", "plan"), en "respuesta" armá bloques con horario real desde ahora que incluyan TODAS las actividades pendientes de su Notion de hoy (cada una con sus minutos: Ejercicio 60 min = un bloque de 1 h), intercaladas con lo urgente del negocio, lo urgente del negocio y sus fijos, un bloque por renglón ("16:00-17:00 · Estudio Diario"), y "incluir_agenda": false. Si te pregunta por su Notion, contestá SOLO con lo que está acá arriba (si está vacío, decí que no ves nada y que mande "notion" para revisar la conexión); nunca inventes que algo está en Notion. Si dice que hizo algo de su Notion (una tarea o un hábito, ej: "ya fui al gym", "leí"), poné su ref en "notion_hechas". No dupliques en "nuevas" lo que ya está en su Notion.` : ""}
 
 Actuá como un secretario de verdad:
 1. Anotá cada cosa concreta que tiene que hacer como tarea separada, empezando con verbo y con el detalle que dio ("Repasar física para el parcial del 28/10"). Respetá exactamente lo que pidió anotar.
