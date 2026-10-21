@@ -1,0 +1,29 @@
+# Saca imágenes de los diseños de carruseles (tools/slides/disenos/*.html) con fotos reales de internet.
+# Las imágenes quedan en la rama "slides" para bajarlas. No publica nada.
+name: Slides de carruseles
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  sacar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: tools/slides
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Herramientas
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq fonts-noto-color-emoji fonts-inter >/dev/null
+          npm init -y >/dev/null && npm i playwright@1.56.0 >/dev/null && npx playwright install --with-deps chromium >/dev/null
+      - name: Sacar imágenes
+        run: node sacar.mjs salida && ls -la salida
+      - name: Guardar en la rama slides
+        run: |
+          cd /tmp && rm -rf rama && (git clone -q --depth 1 --branch slides "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" rama 2>/dev/null || (mkdir rama && cd rama && git init -q && git checkout -q -b slides && git remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}"))
+          cp $GITHUB_WORKSPACE/tools/slides/salida/*.png /tmp/rama/ && cd /tmp/rama && git add *.png && git -c user.name=slides-bot -c user.email=slides-bot@users.noreply.github.com commit -qm "Slides ${{ github.run_id }}" && git push -q origin slides

@@ -1,0 +1,31 @@
+<!doctype html><html><head><meta charset="utf-8"><style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#000;font-family:'Inter Display','Inter',sans-serif}
+.s{width:1080px;height:1350px;position:relative;overflow:hidden;background:#000}
+.bg{position:absolute;inset:-60px;background-size:cover;background-position:center;filter:blur(26px) brightness(.45) saturate(1.1)}
+.marca{position:absolute;top:38px;left:0;right:0;text-align:center;color:rgba(255,255,255,.8);font-weight:800;font-size:26px;letter-spacing:3px}
+.num{position:absolute;top:36px;right:44px;color:rgba(255,255,255,.75);font-weight:800;font-size:26px}
+.titulo{position:absolute;top:110px;left:50px;right:50px;text-align:center}
+.tag{display:inline-block;font-weight:900;font-size:40px;color:#fff;padding:2px 20px;margin-bottom:16px;letter-spacing:1px;background:#1D7BFF}
+h1{color:#fff;font-weight:900;font-size:68px;line-height:1.0;text-transform:uppercase;letter-spacing:-1.5px;text-shadow:0 4px 18px rgba(0,0,0,.6)}
+.celdas{position:absolute;top:430px;left:44px;right:44px;display:flex;gap:28px}
+.celda{flex:1;display:flex;flex-direction:column;align-items:center}
+.foto{width:100%;height:600px;border-radius:26px;background-size:cover;background-position:center;position:relative;overflow:hidden;box-shadow:0 24px 60px rgba(0,0,0,.6)}
+.foto:after{content:"";position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0) 45%,rgba(0,0,0,.85) 100%)}
+.foto p{position:absolute;left:24px;right:24px;bottom:26px;z-index:1;color:#fff;font-weight:900;font-size:38px;line-height:1.05;text-transform:uppercase;text-align:center}
+.r .foto{box-shadow:0 0 0 7px #E5191E,0 24px 60px rgba(0,0,0,.6)} .v .foto{box-shadow:0 0 0 7px #18B451,0 24px 60px rgba(0,0,0,.6)}
+.et{margin-top:30px;font-weight:900;font-size:64px;color:#fff;padding:4px 30px;letter-spacing:2px}
+.r .et{background:#E5191E}.v .et{background:#18B451}
+.pie{position:absolute;bottom:46px;left:0;right:0;text-align:center;color:rgba(255,255,255,.7);font-weight:800;font-size:28px}
+</style></head><body>
+<div class="s" id="slide">
+  <div class="bg" style="background-image:url(https://images.unsplash.com/photo-1770334597699-df2316d4281f?w=1200&q=80)"></div>
+  <div class="marca">TE.IMPORTAMOS.ARG</div><div class="num">2/10</div>
+  <div class="titulo"><div class="tag">CUÁNTO TRAE</div><h1>El que pierde prueba con poco. El que gana trae en serio.</h1></div>
+  <div class="celdas">
+    <div class="celda r"><div class="foto" style="background-image:url(https://images.unsplash.com/photo-1609143739217-01b60dad1c67?w=900&q=80)"><p>Trae de a 2 o 3 "para probar"</p></div><div class="et">PIERDE</div></div>
+    <div class="celda v"><div class="foto" style="background-image:url(https://images.unsplash.com/photo-1553413077-190dd305871c?w=900&q=80)"><p>Trae 50 y el costo por unidad se va al piso</p></div><div class="et">GANA</div></div>
+  </div>
+  <div class="pie">deslizá →</div>
+</div>
+</body></html>
