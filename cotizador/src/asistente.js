@@ -34,6 +34,10 @@ async function preparar(env) {
     if (fuera.length) await env.DB.batch(fuera.map((i) => env.DB.prepare("UPDATE mis_tareas SET estado='borrada', hecha_ts=? WHERE id=?").bind(Date.now(), i)));
     await kvPut(env, "asist_limpieza_v1", String(fuera.length));
   }
+  if (!(await kvGet(env, "asist_limpieza_v3"))) {
+    await env.DB.prepare("UPDATE mis_tareas SET estado='borrada', hecha_ts=? WHERE estado='pendiente' AND (lower(texto) LIKE 'contestar los %chats%' OR lower(texto) LIKE 'contestar los chats%' OR lower(texto) LIKE 'responder los %chats%')").bind(Date.now()).run();
+    await kvPut(env, "asist_limpieza_v3", "1");
+  }
   if (!(await kvGet(env, "asist_limpieza_v2"))) {
     const hoy = hoyAR();
     await env.DB.prepare("UPDATE mis_tareas SET estado='hecha', hecha_ts=? WHERE estado='pendiente' AND lower(texto) LIKE 'cursar %' AND para<>'' AND para<=?").bind(Date.now(), hoy).run();
@@ -169,11 +173,11 @@ Ya hecho hoy en Notion: ${(nt.hoy || []).filter((x) => x.hecho).map((x) => x.tex
 Habilidades/categorías de su Notion (para "habilidad" de lo nuevo): ${(niveles || []).join(", ")}
 ${(nt.otras || []).map((o) => `BASE "${o.base}" (últimas filas): ${o.filas.join(" | ")}`).join("\n")}
 ${nt.eventos.length ? "EVENTOS DE HOY: " + nt.eventos.map((x) => (x.hora ? x.hora + " " : "") + x.texto).join(" | ") : ""}
-Si pregunta por su agenda, lo que le queda hoy o sus pendientes de Notion, poné "incluir_agenda": true (yo pego la agenda exacta de Notion) y en "respuesta" solo una línea de lo más importante. Si te pregunta por su Notion, contestá SOLO con lo que está acá arriba (si está vacío, decí que no ves nada y que mande "notion" para revisar la conexión); nunca inventes que algo está en Notion. Si dice que hizo algo de su Notion (una tarea o un hábito, ej: "ya fui al gym", "leí"), poné su ref en "notion_hechas". No dupliques en "nuevas" lo que ya está en su Notion.` : ""}
+Si pregunta qué tiene en la agenda o sus pendientes de Notion, poné "incluir_agenda": true (yo pego la agenda exacta de Notion) y en "respuesta" solo una línea. Si pide que le organices LO QUE RESTA DEL DÍA (o "organizame", "plan"), en "respuesta" armá bloques con horario real desde ahora usando lo pendiente de su Notion (con sus minutos), lo urgente del negocio y sus fijos, un bloque por renglón ("16:00-17:00 · Estudio Diario"), y "incluir_agenda": false. Si te pregunta por su Notion, contestá SOLO con lo que está acá arriba (si está vacío, decí que no ves nada y que mande "notion" para revisar la conexión); nunca inventes que algo está en Notion. Si dice que hizo algo de su Notion (una tarea o un hábito, ej: "ya fui al gym", "leí"), poné su ref en "notion_hechas". No dupliques en "nuevas" lo que ya está en su Notion.` : ""}
 
 Actuá como un secretario de verdad:
 1. Anotá cada cosa concreta que tiene que hacer como tarea separada, empezando con verbo y con el detalle que dio ("Repasar física para el parcial del 28/10"). Respetá exactamente lo que pidió anotar.
-2. NUNCA anotes tareas vagas tipo "revisar pendientes de redes" o "ver el WhatsApp": si menciona redes, anotá las acciones concretas de la lista de REDES de arriba que correspondan (ej. "Aprobar y programar 3 videos", "Redefinir las ideas de reels"); si menciona WhatsApp, anotá "Contestar los N chats calientes del 805" con el número real.
+2. Los chats del 805 NO se anotan como tarea (el número cambia todo el tiempo; ya los ves en vivo arriba). Si son lo siguiente, decilo con el número real de arriba. NUNCA anotes tareas vagas tipo "revisar pendientes de redes" o "ver el WhatsApp": si menciona redes, anotá las acciones concretas de la lista de REDES de arriba que correspondan (ej. "Aprobar y programar 3 videos", "Redefinir las ideas de reels"); si menciona WhatsApp, no anotes nada: los chats ya los ves en vivo.
 3. Cosas con horario (cursar, gym, reunión, llamada a una hora) son "evento" con hora_ini y hora_fin (HH:MM). Si el horario ya pasó hoy, o dice que ya lo hizo/terminó o que no va, ponelo en "hechas" o "borrar" (no lo dejes pendiente). Las cursadas fijas de cada semana van al PERFIL, no como tarea, salvo la de hoy si tiene horario.
 4. Si algo ya está en la lista, no lo repitas: actualizalo. Si dice que algo ya lo hizo, va a "hechas". Si dice que algo no va más, a "borrar".
 5. Prioridad: 1 = hoy (plata o cliente esperando, se vence, examen cerca); 2 = esta semana; 3 = puede esperar; 4 = algún día.
@@ -188,7 +192,7 @@ Respondé SOLO JSON: {"nuevas":[{"texto":"...","detalle":"","prioridad":1,"area"
   const ids = new Set(l.map((x) => x.id)), st = [], hhmm = (v) => (/^\d{1,2}:\d{2}$/.test(String(v || "")) ? String(v).padStart(5, "0") : "");
   const pal = (t) => new Set(String(t).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(/[^a-z0-9ñ]+/).filter((w) => w.length > 2));
   const igual = (a, b) => { const A = pal(a), B = pal(b); if (!A.size || !B.size) return false; let n = 0; for (const w of A) if (B.has(w)) n++; return n / Math.min(A.size, B.size) >= 0.75; };
-  const vistas = l.map((x) => x.texto), VAGA = /^(revisar|ver|chequear) (los |las )?(pendientes|cosas|todo)/i;
+  const vistas = l.map((x) => x.texto), VAGA = /^(revisar|ver|chequear) (los |las )?(pendientes|cosas|todo)|^(contestar|responder|liquidar|terminar de contestar) (los |las )?(\d+ )?(chats|mensajes|whatsapp)/i;   // lo de los chats ya lo ve en vivo, no se anota con un número que queda viejo
   let n = 0; const creadas = [];
   for (const x of (Array.isArray(r.nuevas) ? r.nuevas : []).slice(0, 30)) {
     const tx = String(x?.texto || "").trim(); if (tx.length <= 3 || VAGA.test(tx) || vistas.some((v) => igual(v, tx)) || nItems.some((y) => igual(y.texto, tx))) continue; vistas.push(tx); n++;

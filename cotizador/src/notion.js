@@ -180,7 +180,7 @@ export function agendaNotion(n) {
   const l = [...n.hoy].sort((a, b) => (Number(!!a.hecho) - Number(!!b.hecho)) || (Number(!!a.vencida) - Number(!!b.vencida)) || (a.hora || "99").localeCompare(b.hora || "99"));
   if (!l.length) return "📅 En tu Notion no hay nada cargado para hoy.";
   const pend = l.filter((x) => !x.hecho).length;
-  return `📅 Hoy en tu Notion (${pend} por hacer de ${l.length}):\n` + l.map((x) => `${ic(x)} ${x.hora ? x.hora + " " : ""}${x.texto}${x.categoria ? " · " + x.categoria : ""}${x.vencida ? " · vencida" : ""}${x.min ? " · " + x.min + " min" : ""}`).join("\n");
+  return `📅 Hoy en tu Notion (${pend} por hacer de ${l.length}):\n` + l.map((x) => `${ic(x)} ${x.hora ? x.hora + " " : ""}${x.texto}${x.categoria && norm(x.categoria).trim() !== norm(x.texto).trim() ? " · " + x.categoria.trim() : ""}${x.vencida ? " · vencida" : ""}${x.min ? " · " + x.min + " min" : ""}`).join("\n");
 }
 
 // Diagnóstico para el comando "notion": qué bases ve, columnas y cuántas filas abiertas trae
