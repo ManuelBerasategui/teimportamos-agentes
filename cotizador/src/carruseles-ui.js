@@ -217,7 +217,7 @@ function render(canvas, s, i, d) {
   if (EST.fondo2) { ctx.fillStyle = EST.fondo2; ctx.fillRect(0, H / 2, W, H / 2); }
   if (EST.fondo3) { var rg = ctx.createRadialGradient(W / 2, H * 0.42, 60, W / 2, H * 0.42, W * 0.9); rg.addColorStop(0, EST.fondo3); rg.addColorStop(1, CREMA); ctx.fillStyle = rg; ctx.fillRect(0, 0, W, H); }
   // con foto de fondo, los slides sin foto propia usan la última foto cargada antes (o la primera del carrusel)
-  var fotoF = null; if (EST.fotoFondo && (!EST.fotoSoloPortada || s.tipo === "portada")) { for (var q = i; q >= 0 && !fotoF; q--) fotoF = d.fotos[q]; if (!fotoF) Object.keys(d.fotos).forEach(function (k) { fotoF = fotoF || d.fotos[k]; }); }
+  var fotoF = null; var soloP = EST.fotoSoloPortada || (CC.datos && CC.datos.foto_solo_portada); if (EST.fotoFondo && soloP && s.tipo !== "portada") fotoF = d.fotos[i] || null; else if (EST.fotoFondo) { for (var q = i; q >= 0 && !fotoF; q--) fotoF = d.fotos[q]; if (!fotoF) Object.keys(d.fotos).forEach(function (k) { fotoF = fotoF || d.fotos[k]; }); }
   var fondoFoto = EST.fotoFondo && fotoF;
   if (fondoFoto) { var im = fotoF, rz = Math.max(W / im.width, H / im.height); ctx.drawImage(im, (W - im.width * rz) / 2, (H - im.height * rz) / 2, im.width * rz, im.height * rz); var gr = ctx.createLinearGradient(0, 0, 0, H); gr.addColorStop(0, "rgba(0,0,0,.35)"); gr.addColorStop(1, "rgba(0,0,0,.72)"); ctx.fillStyle = gr; ctx.fillRect(0, 0, W, H); }
   if (EST.grano) grano(ctx);

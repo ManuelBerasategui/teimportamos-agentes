@@ -142,6 +142,7 @@ export function limpiarDatos(d = {}, previo = {}) {
     costo: d.costo !== undefined ? num(d.costo) : previo.costo ?? null,
     cantidad: d.cantidad !== undefined ? num(d.cantidad) : previo.cantidad ?? null,
     fotos: { ...(previo.fotos || {}), ...(d.fotos || {}) },
+    foto_solo_portada: d.foto_solo_portada !== undefined ? !!d.foto_solo_portada : !!previo.foto_solo_portada,
     fx: limpiarFx({ ...(previo.fx || {}), ...(d.fx || {}) }),
     dis: limpiarDis({ ...(previo.dis || {}), ...(d.dis || {}) }),
     colores: (() => { const o = {}, src = d.colores === null ? {} : { ...(previo.colores || {}), ...(d.colores || {}) }; for (const k of ["fondo", "tinta", "acento"]) if (/^#[0-9a-f]{6}$/i.test(String(src[k] || ""))) o[k] = String(src[k]).toUpperCase(); return o; })(),
@@ -362,6 +363,17 @@ function colorDirecto(c, mensaje) {
   if (!hechos) return null;
   return { ok: true, respuesta: `Listo: "${frase}" quedó en ${color}${ns ? " en el slide " + ns[1] : ""}.`, regla: "", memoria: "", slides };
 }
+// "que la foto de fondo aparezca solo en el primer slide" / "en todos" → se resuelve en código, sin IA
+function fotoFondoDirecto(c, mensaje) {
+  const m = String(mensaje).toLowerCase();
+  if (!/foto|imagen|fondo/.test(m)) return null;
+  let solo = null;
+  if (/(solo|solamente|[uú]nicamente|nada m[aá]s)\b.{0,40}(primer|1|portada)|(sac|quit|borr)[aá].{0,30}(foto|fondo).{0,40}(dem[aá]s|resto|otros)|(primer|portada).{0,25}(solo|solamente|[uú]nicamente)/.test(m)) solo = true;
+  else if (/(en|a) todos\b|todas? las? (slides|diapositivas)|(volv|pon)[eé].{0,20}(foto|fondo).{0,30}(todos|resto|dem[aá]s)/.test(m)) solo = false;
+  if (solo === null) return null;
+  const datos = limpiarDatos({ foto_solo_portada: solo }, c.datos);
+  return { ok: true, respuesta: solo ? "Listo: la foto de fondo queda solo en la portada; los demás slides van con el fondo liso del estilo. Si querés que vuelva a todos, decime \"poné la foto en todos\"." : "Listo: la foto de fondo vuelve a estar en todos los slides.", regla: "", memoria: "", datos };
+}
 // "bajá / subí / corré a la izquierda la flecha (el ícono)" → se resuelve en código, sin IA
 function iconoDirecto(c, mensaje) {
   const t = sinTildes(mensaje);
@@ -392,7 +404,7 @@ function iconoDirecto(c, mensaje) {
   return { ok: true, respuesta: `Listo, moví el ícono del slide ${+i + 1}${dy > 0 ? " más abajo" : dy < 0 ? " más arriba" : ""}${dx < 0 ? " a la izquierda" : dx > 0 ? " a la derecha" : ""}. Si no te gusta, decime "volvé para atrás".`, regla: "", memoria: "", datos };
 }
 export async function chatCarrusel(env, iaJSON, c, mensaje) {
-  const directo = colorDirecto(c, mensaje) || iconoDirecto(c, mensaje);
+  const directo = colorDirecto(c, mensaje) || iconoDirecto(c, mensaje) || fotoFondoDirecto(c, mensaje);
   if (directo) return directo;
   const rg = await reglas(env);
   const memoriaAntes = await memoriaCarr(env);
@@ -478,7 +490,7 @@ Respondé SOLO JSON: {"respuesta":"corta, qué cambiaste","slides":[...] o null,
   const { nota_fx, ...resto } = cambios;
   let respuesta = String(r.respuesta || "Listo.").slice(0, 600);
   if (nota_fx) respuesta += `\n(Retoque aplicado → ${nota_fx})`;
-  else if (!resto.slides && !resto.caption && !resto.datos && !regla && !memoria) respuesta += "\n(Ojo: esta vez no se aplicó ningún cambio. Pedímelo de nuevo, más concreto: ej. \"slide 3: centrado\" o \"slide 1: el @usuario más abajo y más chico\".)";
+  else if (!resto.slides && !resto.caption && !resto.datos) respuesta = (regla || memoria ? "Me guardé la preferencia para los próximos, pero en ESTE carrusel no cambié nada todavía." : "Ojo: esta vez no se aplicó ningún cambio.") + " Pedímelo de nuevo, más concreto: ej. \"slide 3: centrado\" o \"slide 1: el @usuario más abajo y más chico\".";
   return { ok: true, respuesta, regla, memoria, ...resto };
 }
 
