@@ -6,6 +6,7 @@ import { apiRedes, PANEL_REDES, cronRedes, contextoRedes } from "./redes.js";
 import { apiVideos, rutaVideosEditor, cronVideos, despertarEditor } from "./videos.js";
 import { apiCarruseles, cronCarr } from "./carruseles.js";
 import { conApp, rutaApp } from "./app.js";
+import { rutaTelegram, apiAsistente, cronAsistente } from "./asistente.js";
 /**
  * Agente de WhatsApp · Te Importamos (v15.0: + pestaña Búsquedas de proveedores)
  * Cloudflare Workers + Gemini (gratis) con respaldo de Cloudflare AI.
@@ -3519,6 +3520,7 @@ export default {
       if (m % 5 === 4 && env.LECTOR_TOKEN) await cotizarAuto(env, { T, leerPagina, iaJSON, iaConImagenes }).catch((e) => console.log("Error cotización automática:", e?.stack || e));
       if (env.DB) await cronVideos(env, evento.scheduledTime || Date.now()).catch((e) => console.log("Error videos:", e?.stack || e));
       if (env.DB) await cronCarr(env, evento.scheduledTime || Date.now()).catch((e) => console.log("Error carruseles:", e?.stack || e));
+      if (env.DB) await cronAsistente(env, evento.scheduledTime || Date.now(), iaJSON).catch((e) => console.log("Error asistente:", e?.stack || e));
       if (env.DB) await cronRedes(env, iaJSON, evento.scheduledTime || Date.now(), BASE_URL, T).catch((e) => console.log("Error redes:", e?.stack || e));
     })());
   },
@@ -3528,6 +3530,7 @@ export default {
     const clave = url.searchParams.get("clave");
     // Lector 805: el puente de WhatsApp (solo lectura) postea acá
     { const a = rutaApp(url); if (a) return a; }   // app web (manifest e íconos, públicos)
+    if (url.pathname.startsWith("/tg/") && req.method === "POST") return rutaTelegram(env, req, url, ctx, iaJSON);   // asistente de tareas por Telegram
     if (url.pathname.startsWith("/lector/")) return rutaLector(env, req, url, ctx);
     if (url.pathname.startsWith("/informes/")) return rutaInformes(env, url);
     if (url.pathname.startsWith("/img/")) return rutaImagen(env, url);   // foto de referencia para la búsqueda por imagen en 1688   // cola de informes para la tarea programada de Claude
@@ -3596,6 +3599,7 @@ export default {
     if (url.pathname === "/panel/cotizar/pdf") return paginaCotizacion(env, url.searchParams.get("id") || "", T);
     if (url.pathname === "/panel/cotizar") return new Response(conApp(PANEL_COTIZAR), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
     if (url.pathname.startsWith("/panel/api/carruseles/")) return apiCarruseles(env, req, url, url.searchParams.get("quien"), iaJSON, T, iaConImagenes);
+    if (url.pathname.startsWith("/panel/api/asistente/")) return apiAsistente(env, req, url, url.searchParams.get("quien"), BASE_URL);
     if (url.pathname.startsWith("/panel/api/videos/")) return apiVideos(env, req, url, url.searchParams.get("quien"));
     if (url.pathname.startsWith("/panel/api/redes/")) return apiRedes(env, req, url, url.searchParams.get("quien"), iaJSON, BASE_URL, T);
     if (url.pathname === "/panel/redes") return new Response(conApp(PANEL_REDES), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });

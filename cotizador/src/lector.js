@@ -418,7 +418,8 @@ export async function telegram(env, texto) {
 // El usuario le escribe /start al bot y toca "Conectar Telegram" en el panel: se guarda su chat
 export async function vincularTelegram(env) {
   if (!env.TELEGRAM_TOKEN) return { ok: false, error: "Falta cargar TELEGRAM_TOKEN en Cloudflare" };
-  const r = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_TOKEN}/getUpdates`).then((x) => x.json()).catch(() => null);
+  let r = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_TOKEN}/getUpdates`).then((x) => x.json()).catch(() => null);
+    if (!r?.ok) { try { r = { result: JSON.parse((await env.DB.prepare("SELECT v FROM kv WHERE k='tg_updates'").first())?.v || "[]") }; } catch {} }   // con el asistente activo, Telegram usa webhook
   const ult = (r?.result || []).map((u) => u.message?.chat).filter(Boolean).pop();
   if (!ult) return { ok: false, error: "Escribile /start a tu bot en Telegram y volvé a tocar el botón" };
   await kvPut(env, "telegram_chat", ult.id);

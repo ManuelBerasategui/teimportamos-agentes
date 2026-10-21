@@ -424,7 +424,8 @@ ${p.foto ? `<img src="${e(p.foto)}" referrerpolicy="no-referrer" style="width:90
   // Telegram por persona: le escribís /start al bot y tocás el botón; se guarda el chat de quien está logueado
   if (ruta === "telegram" && req.method === "POST") {
     if (!env.TELEGRAM_TOKEN) return json({ ok: false, res: "Falta TELEGRAM_TOKEN en el cotizador" });
-    const r = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_TOKEN}/getUpdates`).then((x) => x.json()).catch(() => null);
+    let r = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_TOKEN}/getUpdates`).then((x) => x.json()).catch(() => null);
+    if (!r?.ok) { try { r = { result: JSON.parse((await env.DB.prepare("SELECT v FROM kv WHERE k='tg_updates'").first())?.v || "[]") }; } catch {} }   // con el asistente activo, Telegram usa webhook
     const chat = (r?.result || []).map((u) => u.message?.chat).filter(Boolean).pop();
     if (!chat) return json({ ok: false, res: "Escribile /start al bot en Telegram y tocá el botón enseguida" });
     await kvPut(env, `telegram_chat:${quien}`, chat.id);
