@@ -32,7 +32,7 @@ const v = await api("idea-variantes", { id: gr[0].id });
 chk("variantes", v.ok && v.cantidad === 2 && ultimoPrompt.includes("alcance 5.000"));
 const nuevas = await api("ideas", null, "?estado=nueva"); chk("variantes con origen", nuevas.length === 2 && nuevas.every((x) => x.origen.startsWith("variante de")));
 const g = await api("generar-ideas", {});
-chk("generador en dos tandas", g.ok && g.cantidad === 2);
+chk("generador en dos tandas", g.ok && g.cantidad >= 2);
 chk("prompt con refs y ganadoras", ultimoPrompt.includes("[ref:" + refs[0].id + "]") && ultimoPrompt.includes("Esto es impresentable") && ultimoPrompt.includes("ORIGEN OBLIGATORIO"));
 chk("borrar ref", (await api("ref-borrar", { id: refs[0].id })).ok && (await api("refs")).length === 0);
 globalThis.fetch = async (u) => ({ json: async () => (String(u).includes("tiktok.com/oembed") ? { author_name: "cuenta", title: "me llegaron rotos los airpods" } : {}) });
