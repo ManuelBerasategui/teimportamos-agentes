@@ -103,11 +103,14 @@ export async function notionHoy(env) {
   const m = await mapa(env), hoy = hoyAR(), out = { tareas: [], habitos: [], eventos: [], bases: m.todas };
   if (m.tareas) {
     const T = m.tareas, ini = T.fechaIni || T.fecha, fin = T.fecha;
-    // lo de hoy (por fecha de inicio o fin) y lo vencido sin terminar; nada de filas sin fecha
-    const ors = [{ property: ini, date: { equals: hoy } }];
-    if (fin && fin !== ini) ors.push({ property: fin, date: { equals: hoy } }, { property: fin, date: { before: hoy } });
-    else ors.push({ property: ini, date: { before: hoy } });
-    const r = await api(env, `databases/${T.id}/query`, { page_size: 60, filter: { or: ors }, sorts: [{ property: ini, direction: "ascending" }] }).catch(() => ({ results: [] }));
+    // 1) lo de HOY (por fecha de inicio o de fin); 2) aparte, lo vencido de los últimos 7 días que sigue abierto (máx. 5)
+    const deHoyF = [{ property: ini, date: { equals: hoy } }]; if (fin && fin !== ini) deHoyF.push({ property: fin, date: { equals: hoy } });
+    const hace7 = new Date(Date.now() - AR - 7 * 86400e3).toISOString().slice(0, 10), col = fin || ini;
+    const [rh, rv] = await Promise.all([
+      api(env, `databases/${T.id}/query`, { page_size: 100, filter: { or: deHoyF } }).catch(() => ({ results: [] })),
+      api(env, `databases/${T.id}/query`, { page_size: 40, filter: { and: [{ property: col, date: { before: hoy } }, { property: col, date: { on_or_after: hace7 } }] }, sorts: [{ property: col, direction: "descending" }] }).catch(() => ({ results: [] })),
+    ]);
+    const r = { results: [...(rh.results || []), ...(rv.results || []).filter((p) => !(rh.results || []).some((q) => q.id === p.id))] };
     const niveles = await nombresRelacion(env, m);
     out.hoy = [];
     for (const p of r.results || []) {
@@ -115,6 +118,8 @@ export async function notionHoy(env) {
       const fi = p.properties[ini]?.date?.start || "", ff = fin ? p.properties[fin]?.date?.start || "" : "";
       const deHoy = fi.slice(0, 10) === hoy || ff.slice(0, 10) === hoy;
       if (!deHoy && hecho) continue;   // vencidas solo si siguen abiertas
+      const nom = texto(p.properties[T.titulo]); if (!nom.trim()) continue;
+      if (!deHoy && (out.hoy.some((y) => !y.vencida && norm(y.texto) === norm(nom)) || out.hoy.filter((y) => y.vencida).length >= 5 || out.hoy.some((y) => y.vencida && norm(y.texto) === norm(nom)))) continue;   // los hábitos que se repiten cada día no cuentan como vencidos
       const cat = T.relCat ? (p.properties[T.relCat]?.relation || []).map((x) => niveles[x.id] || niveles[Object.keys(niveles).find((k) => k.replace(/-/g, "") === x.id.replace(/-/g, ""))] || "").filter(Boolean).join(", ") : texto(p.properties[T.categoria]);
       out.hoy.push({ id: p.id, texto: texto(p.properties[T.titulo]), estado: texto(p.properties[T.hecho]) || (hecho ? "Hecho" : "Pendiente"), hecho, categoria: cat, hora: fi.length > 10 ? fi.slice(11, 16) : "", vencida: !deHoy, evento: T.esEvento ? !!p.properties[T.esEvento]?.checkbox : false, min: T.duracion ? p.properties[T.duracion]?.number ?? null : null });
     }
