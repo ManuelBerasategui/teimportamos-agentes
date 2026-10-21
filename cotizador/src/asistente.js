@@ -32,6 +32,12 @@ async function preparar(env) {
     if (fuera.length) await env.DB.batch(fuera.map((i) => env.DB.prepare("UPDATE mis_tareas SET estado='borrada', hecha_ts=? WHERE id=?").bind(Date.now(), i)));
     await kvPut(env, "asist_limpieza_v1", String(fuera.length));
   }
+  if (!(await kvGet(env, "asist_limpieza_v2"))) {
+    const hoy = hoyAR();
+    await env.DB.prepare("UPDATE mis_tareas SET estado='hecha', hecha_ts=? WHERE estado='pendiente' AND lower(texto) LIKE 'cursar %' AND para<>'' AND para<=?").bind(Date.now(), hoy).run();
+    await env.DB.prepare("UPDATE mis_tareas SET estado='borrada', hecha_ts=? WHERE estado='pendiente' AND (lower(texto) LIKE 'revisar pendientes%' OR lower(texto) LIKE 'revisar chats urgentes%')").bind(Date.now()).run();
+    await kvPut(env, "asist_limpieza_v2", "1");
+  }
 }
 
 export async function secretoTG(env) {
