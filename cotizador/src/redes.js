@@ -205,15 +205,28 @@ Reglas para los guiones:
 - "por_que": el dato concreto de arriba en el que te basás (con su número).
 - "hipotesis": qué estamos probando con este reel, medible ("gancho con precio en pesos retiene más de 18 s").
 Respondé SOLO JSON: {"ideas":[{"titulo":"...","formato":"ml_vs_china|ml_vendi|producto|historia|reaccion|otro","marco":"pov|importador","origen":"ref:<id> o reel: <cuál>","escena":"camara|mano|pantalla|calle|mixto","mostrar":"qué se ve en el cuerpo","ganchos":[{"tipo":"reaccion|pantalla|lejos|mano|split|cartel","texto":"texto en pantalla","como":"qué se ve y qué se dice en el primer segundo"}],"guion":["...","..."],"cta":"...","por_que":"...","producto":"...","hipotesis":"qué gancho creés que gana y por qué"}]}`);
-  const mitad = Math.ceil(cantidad / 2), r = { ideas: [] };
-  for (const n of [mitad, cantidad - mitad]) {
-    if (n <= 0) continue;
-    const x = await pedir(n, r.ideas.map((y) => y?.titulo).filter(Boolean)).catch(() => null);
-    if (Array.isArray(x?.ideas)) r.ideas.push(...x.ideas);
+  const r = { ideas: [] };
+  if (refs.length) {
+    // Con referencias: prompts cortos y enfocados, una idea por referencia (el modelo gratis rinde mucho mejor así).
+    const elegidas = refs.slice(0, cantidad);
+    for (let i = 0; i < elegidas.length; i += 2) {
+      const grupo = elegidas.slice(i, i + 2);
+      const x = await iaJSON(env, promptRefs(grupo, { propias, ganadoras, rechazos, ya: r.ideas.map((y) => y?.titulo).filter(Boolean).concat(previas.slice(0, 15).map((y) => y.titulo)) })).catch(() => null);
+      if (Array.isArray(x?.ideas)) r.ideas.push(...x.ideas.map((y, j) => ({ ...y, origen: y.origen && /ref:/.test(y.origen) ? y.origen : "ref:" + (grupo[j] || grupo[0]).id })));
+    }
+  }
+  if (r.ideas.length < Math.min(3, cantidad)) {
+    const mitad = Math.ceil(cantidad / 2);
+    for (const n of [mitad, cantidad - mitad]) {
+      if (n <= 0) continue;
+      const x = await pedir(n, r.ideas.map((y) => y?.titulo).filter(Boolean)).catch(() => null);
+      if (Array.isArray(x?.ideas)) r.ideas.push(...x.ideas);
+    }
   }
   const vistos = previas.map((x) => x.titulo);
   const ideas = (r?.ideas || []).filter((x) => {
     if (!x?.titulo || !(x?.gancho || x?.ganchos?.length) || PROHIBIDO.test(JSON.stringify(x))) return false;
+    if (MOLDE_MALO.test(x.titulo) || TARIFA_EN_GUION.test((x.guion || []).join(" "))) return false;   // genérica o explica la tarifa
     if (vistos.some((t) => parecido(t, x.titulo) >= 0.75)) return false;   // repetida o casi igual a una que ya está
     vistos.push(x.titulo); return true;
   }).slice(0, cantidad);
@@ -223,6 +236,33 @@ Respondé SOLO JSON: {"ideas":[{"titulo":"...","formato":"ml_vs_china|ml_vendi|p
   const usadas = [...new Set(ideas.map((x) => (String(x.origen || "").match(/ref:([a-z0-9]+)/i) || [])[1]).filter(Boolean))];
   if (usadas.length) await env.DB.batch(usadas.map((r) => env.DB.prepare("UPDATE ig_refs SET usos = COALESCE(usos,0) + 1 WHERE id=?").bind(r)));
   return { ok: true, cantidad: ideas.length };
+}
+
+// ---------- Ideas a partir de referencias (prompt corto) ----------
+const MOLDE_MALO = /^(el negocio (de|detr[aá]s)|cu[aá]nto le gano|el mito de|el error de|tips|\d+ (errores|cosas|tips))/i;
+const TARIFA_EN_GUION = /honorario|handling|millonari|18 d[oó]lares|por kilo|30 ?(%|por ciento)|10 y 15 d[ií]as/i;
+function promptRefs(grupo, { propias, ganadoras, rechazos, ya }) {
+  return `Sos guionista de reels virales para "Te Importamos": traemos por encargo productos de China a Argentina (buscamos proveedor, aduana y envío). El dueño (Rosario, habla como pibe rioplatense) se graba solo con el celu. No hay local, depósito ni stock.
+${UTILERIA}
+
+LO QUE YA NOS FUNCIONÓ (copiá la ENERGÍA y la mecánica, no el caso):
+${GUIONES_GANADORES.split("LO QUE FRACASÓ")[0].trim()}
+${ganadoras.slice(0, 4).map(({ x }) => `- "${x.titulo}": ${x.vinculos.map((v) => `"${(x.ganchos[v.gancho] || {}).texto || x.gancho}" → ${n0(v.alcance)} cuentas`).join(", ")}`).join("\n")}
+IDEAS DEL PROPIO DUEÑO (este es el tono: imperfecto, momento real, sorpresa, muy orgánico):
+${propias.slice(0, 3).map((x) => `- ganchos: ${x.ganchos.map((g) => `"${g.texto}"`).join(" / ")} | cuerpo: ${x.guion.join(" ")}`).join("\n") || "-"}
+LO QUE EL DUEÑO DESCARTÓ (no repetir): ${rechazos.slice(0, 8).map((x) => `"${x.titulo}" → ${x.motivo}`).join(" | ") || "-"}
+NO REPETIR ESTOS TÍTULOS: ${ya.join(" | ") || "-"}
+
+REFERENCIAS (videos que funcionan, de nuestro nicho o de otros). Hacé UNA idea por cada referencia, trasladando SU MECÁNICA a una situación concreta de importar:
+${grupo.map((x) => `[ref:${x.id}] ${x.que_pasa}${x.por_que ? " | por qué engancha: " + x.por_que : ""}`).join("\n")}
+
+Cómo tiene que ser cada idea:
+- Una SITUACIÓN que pasa y se ve (algo llegó mal, un cliente pidió algo raro, un precio absurdo, un comentario, una prueba), nunca un tema ni un consejo. Título corto que describa la situación, prohibido "El negocio de...", "Cuánto le gano...", "El mito/error de...".
+- 3 o 4 ganchos de tipo visual distinto (reaccion, pantalla, lejos, mano, split, cartel): el texto en pantalla del primer segundo, corto, en minúscula, como habla un pibe. En "como", qué se ve y qué se hace en esa toma, solo con la utilería real.
+- Cuerpo: 5 a 8 frases cortas tal como se dicen a cámara. Tiene que haber un giro o sorpresa y un número concreto (precio en ML vs puesto en Argentina; si no sabés el precio poné [precio real]). PROHIBIDO explicar la tarifa (honorarios, handling, flete por kilo, porcentajes de impuestos, días de envío) y frases de vendedor ("no te prometo que te hagas millonario", "nos encargamos de todo el quilombo").
+- Nunca hacerse pasar por cliente: o POV dramatizado o el dueño contando como importador.
+- CTA: una palabra al WhatsApp del perfil, distinta en cada idea.
+Respondé SOLO JSON: {"ideas":[${FORMA_IDEA.slice(0, -1)},"origen":"ref:<id de la referencia que adaptaste>"}]}`;
 }
 
 // ---------- Ideas: guardar, ideas propias, variantes, referencias y reels vinculados ----------
