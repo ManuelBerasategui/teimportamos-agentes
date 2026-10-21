@@ -2,15 +2,15 @@
 // Números de ejemplo: venta $60.000, comisión 15 % ($9.000), envío $5.000 → quedan $46.000.
 // Vendedor 1 compra a un mayorista local a $40.000 → gana $6.000. Vendedor 2 lo trae de China a $15.000 → gana $31.000 (5 veces más).
 cargar({ escenas: [
-  { id: "dos", dur: 2.6, texto: "dos vendedores." },
-  { id: "producto", dur: 2.6, texto: "mismo producto." },
-  { id: "precio", dur: 2.6, texto: "mismo precio." },
-  { id: "gana", dur: 3.4, texto: "pero uno gana *5 veces más.*" },
-  { id: "pregunta", dur: 2.6, texto: "¿cómo puede ser?" },
-  { id: "ml", dur: 4.2, texto: "los dos le pagan *igual* a Mercado Libre" },
-  { id: "costo", dur: 4.6, texto: "la diferencia es *dónde compran*" },
-  { id: "final", dur: 4.4, texto: "uno le compra al mayorista. el otro lo trae de *China*." },
-  { id: "cta", dur: 4.0, texto: "¿cuánto te queda a vos?" },
+  { id: "dos", dur: 2.6, texto: "dos vendedores.", voz: "Dos vendedores." },
+  { id: "producto", dur: 2.6, texto: "mismo producto.", voz: "Venden el mismo producto." },
+  { id: "precio", dur: 2.6, texto: "mismo precio.", voz: "Al mismo precio." },
+  { id: "gana", dur: 3.4, texto: "pero uno gana *5 veces más.*", voz: "Pero uno gana cinco veces más que el otro." },
+  { id: "pregunta", dur: 2.6, texto: "¿cómo puede ser?", voz: "¿Cómo puede ser?" },
+  { id: "ml", dur: 4.2, texto: "los dos le pagan *igual* a Mercado Libre", voz: "Los dos le pagan lo mismo a Mercado Libre: comisión y envío. A los dos les quedan cuarenta y seis mil pesos." },
+  { id: "costo", dur: 4.6, texto: "la diferencia es *dónde compran*", voz: "La diferencia está en dónde compran. A uno el producto le cuesta cuarenta mil. Al otro, quince mil." },
+  { id: "final", dur: 4.4, texto: "uno le compra al mayorista. el otro lo trae de *China*.", voz: "Uno le compra al mayorista. El otro lo trae de China, por cantidad. Por cada venta, uno gana seis mil. El otro, treinta y un mil." },
+  { id: "cta", dur: 4.0, texto: "¿cuánto te queda a vos?", voz: "¿Querés saber cuánto te quedaría a vos? Escribí margen a nuestro WhatsApp. Está en el link de la bio." },
 ] });
 
 function dibujar(s, p, ps, t) {

@@ -1,0 +1,75 @@
+# Reels animados con voz (tools/animados). Se corre a mano desde Actions o desde Claude.
+# Graba la voz de cada escena con Piper (voz rioplatense es_AR-daniela, gratis), ajusta la duración de cada escena
+# a su frase y exporta MP4 vertical. Los videos quedan como artefacto descargable de la corrida (no se publica nada).
+name: Reels animados
+
+on:
+  workflow_dispatch:
+    inputs:
+      guiones:
+        description: "Guiones a grabar (patrón dentro de tools/animados/guiones, ej: 01-*.js o *.js)"
+        default: "*.js"
+      voz:
+        description: "Con voz"
+        type: boolean
+        default: true
+      velocidad:
+        description: "Velocidad de la voz (menor = más rápido)"
+        default: "0.9"
+
+permissions:
+  contents: read
+
+jobs:
+  grabar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: tools/animados
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Herramientas
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg fonts-noto-color-emoji fonts-inter >/dev/null
+          npm init -y >/dev/null && npm i playwright@1.56.0 >/dev/null && npx playwright install --with-deps chromium >/dev/null
+          pip install -q piper-tts
+      - name: Voz (queda guardada entre corridas)
+        if: inputs.voz
+        uses: actions/cache@v4
+        with:
+          path: tools/animados/modelo
+          key: piper-es_AR-daniela-high-v1
+      - name: Bajar voz
+        if: inputs.voz
+        run: |
+          mkdir -p modelo && cd modelo
+          B=https://huggingface.co/rhasspy/piper-voices/resolve/main/es/es_AR/daniela/high
+          [ -f es_AR-daniela-high.onnx ] || curl -sL -o es_AR-daniela-high.onnx "$B/es_AR-daniela-high.onnx"
+          [ -f es_AR-daniela-high.onnx.json ] || curl -sL -o es_AR-daniela-high.onnx.json "$B/es_AR-daniela-high.onnx.json"
+          ls -la
+      - name: Grabar
+        run: |
+          mkdir -p salida
+          for g in guiones/${{ inputs.guiones }}; do
+            n=$(basename "$g" .js); echo "::group::$n"
+            if [ "${{ inputs.voz }}" = "true" ]; then
+              node voces.mjs "$g" "voz/$n" && python locutar.py "voz/$n" modelo/es_AR-daniela-high.onnx "${{ inputs.velocidad }}"
+              node grabar.mjs "$g" "salida/$n.mp4" 30 "voz/$n"
+            else
+              node grabar.mjs "$g" "salida/$n.mp4" 30
+            fi
+            echo "::endgroup::"
+          done
+          ls -la salida
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reels-animados
+          path: tools/animados/salida/*.mp4
+          retention-days: 14
