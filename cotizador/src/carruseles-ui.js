@@ -30,8 +30,8 @@ export const CARR_HTML = `
  <div id="c-lista">
   <div class="barraher"><button class="btn p" id="bCarrIdeas">Generar ideas de carruseles</button></div>
    <p class="estado ayuda">Generá ideas distintas, elegí una y revisá el borrador. Sólo se programa cuando lo aprobás.</p>
-  <section class="card"><h2>En armado</h2><div class="cgrid" id="cArmado"></div></section>
-  <section class="card"><h2>Ideas</h2><div class="cgrid" id="cIdeas"></div></section>
+  <section class="card"><div class="fila" style="justify-content:space-between"><h2>En armado</h2><span class="fila"><button class="btn ch" data-ctodas="cArmado">Marcar todas</button><button class="btn ch" data-cdescsel="cArmado">Descartar marcadas</button></span></div><div class="cgrid" id="cArmado"></div></section>
+  <section class="card"><div class="fila" style="justify-content:space-between"><h2>Ideas</h2><span class="fila"><button class="btn ch" data-ctodas="cIdeas">Marcar todas</button><button class="btn ch" data-cdescsel="cIdeas">Descartar marcadas</button></span></div><div class="cgrid" id="cIdeas"></div></section>
   <section class="card"><h2>Programados y publicados</h2><div id="cProg"></div></section>
    <details class="card cajustes"><summary>Ajustes y aprendizaje <span class="estado">opcional</span></summary>
     <section class="cajuste"><h2>Dirección para esta etapa</h2><textarea id="cDir" placeholder="Ej: más tips y comparaciones; menos contenido comercial." style="width:100%;min-height:64px;border:1px solid var(--borde);border-radius:10px;padding:10px;font:inherit;font-size:14px"></textarea><div class="fila" style="margin-top:8px"><button class="btn ch" id="cDirGuardar">Guardar</button></div></section>
@@ -247,7 +247,7 @@ function cargarCarr() {
   CAPI("lista").then(function (r) {
     CL = r; USUARIO = r.usuario || USUARIO; TIPOS_S = r.tipos || {}; pintarRefs(r.referencias);
     ESTILOS_S = r.estilos || {}; $("#dEstilo").innerHTML = Object.keys(ESTILOS_S).map(function (k) { return '<option value="' + k + '">' + esc(ESTILOS_S[k].nombre) + "</option>"; }).join(""); if (document.activeElement !== $("#cDir")) $("#cDir").value = r.direccion || ""; if (document.activeElement !== $("#cMemoria")) $("#cMemoria").value = r.memoria || "";
-    var tarjeta = function (c) { return '<div class="ccard" data-c="' + c.id + '"><span class="pill n" style="align-self:flex-start">' + (EST_C[c.estado] || c.estado) + "</span><h3>" + esc(c.titulo) + '</h3><div class="pq">' + esc(c.por_que || "") + '</div><div class="fila" style="margin-top:auto"><button class="btn ch" data-desc="' + c.id + '">Descartar</button></div><div class="dform" style="display:none"><textarea placeholder="¿Por qué la descartás? (opcional, cuanto mejor lo expliques, más aprende)" style="width:100%;min-height:70px;border:1px solid var(--borde);border-radius:8px;padding:8px;font:inherit;font-size:13px"></textarea><div class="fila" style="margin-top:6px"><button class="btn p ch" data-descok="' + c.id + '">Descartar</button><button class="btn ch" data-desccancel="1">Cancelar</button></div></div></div>'; };
+    var tarjeta = function (c) { return '<div class="ccard" data-c="' + c.id + '"><span class="fila" style="justify-content:space-between;align-items:center"><span class="pill n" style="align-self:flex-start">' + (EST_C[c.estado] || c.estado) + '</span><input type="checkbox" class="csel" value="' + c.id + '" aria-label="Marcar para descartar" style="width:22px;height:22px;margin:0;cursor:pointer"></span>' + "<h3>" + esc(c.titulo) + '</h3><div class="pq">' + esc(c.por_que || "") + '</div><div class="fila" style="margin-top:auto"><button class="btn ch" data-desc="' + c.id + '">Descartar</button></div><div class="dform" style="display:none"><textarea placeholder="¿Por qué la descartás? (opcional, cuanto mejor lo expliques, más aprende)" style="width:100%;min-height:70px;border:1px solid var(--borde);border-radius:8px;padding:8px;font:inherit;font-size:13px"></textarea><div class="fila" style="margin-top:6px"><button class="btn p ch" data-descok="' + c.id + '">Descartar</button><button class="btn ch" data-desccancel="1">Cancelar</button></div></div></div>'; };
     var arm = r.carruseles.filter(function (c) { return ["estructura", "slides", "error"].indexOf(c.estado) >= 0; }), ide = r.carruseles.filter(function (c) { return c.estado === "idea"; }), prog = r.carruseles.filter(function (c) { return ["aprobado", "publicando", "publicado"].indexOf(c.estado) >= 0; });
     $("#cArmado").innerHTML = arm.length ? arm.map(tarjeta).join("") : '<div class="vacio">Nada en armado.</div>';
     $("#cIdeas").innerHTML = ide.length ? ide.map(tarjeta).join("") : '<div class="vacio">No hay ideas. Tocá <b>Generar ideas de carruseles</b>.</div>';
@@ -256,6 +256,15 @@ function cargarCarr() {
     $("#cReglas").innerHTML = (r.descartes ? '<span class="estado" style="background:none">Aprendió de ' + r.descartes + ' idea' + (r.descartes === 1 ? "" : "s") + " descartada" + (r.descartes === 1 ? "" : "s") + ".</span>" : "") + (reglas.length ? reglas.map(function (x, i) { return "<span>" + esc(x) + '<button data-rb="' + i + '" aria-label="Borrar regla">×</button></span>'; }).join("") : '<span class="estado" style="background:none">Las preferencias de estilo se resumen arriba; acá aparecen las reglas concretas.</span>');
   });
 }
+// Marcar varias y descartarlas juntas (con un solo motivo, opcional)
+document.addEventListener("click", function (ev) {
+  if (ev.target.classList && ev.target.classList.contains("csel")) { ev.stopPropagation(); return; }
+  var t = ev.target.closest("[data-ctodas]"); if (t) { var l = [].slice.call(document.querySelectorAll("#" + t.dataset.ctodas + " .csel")), todas = l.length && l.every(function (c) { return c.checked; }); l.forEach(function (c) { c.checked = !todas; }); t.textContent = todas ? "Marcar todas" : "Desmarcar"; return; }
+  var d = ev.target.closest("[data-cdescsel]"); if (!d) return;
+  var sel = [].slice.call(document.querySelectorAll("#" + d.dataset.cdescsel + " .csel:checked")); if (!sel.length) return aviso("Marcá al menos uno");
+  var m = prompt("¿Por qué no sirven? (opcional, un motivo para todos; así aprende)", ""); if (m === null) return;
+  d.disabled = true; Promise.all(sel.map(function (c) { return CAPI("descartar", { id: c.value, motivo: m }); })).then(function () { d.disabled = false; aviso(sel.length + " descartado" + (sel.length > 1 ? "s" : "")); cargarCarr(); });
+}, true);
 function pintarRefs(l) {
   $("#rLista").innerHTML = (l || []).slice().reverse().map(function (x, k) { var i = l.length - 1 - k;
     var imgs = (x.capturas || []).map(function (_, n) { return '<img loading="lazy" alt="Captura de referencia ' + (n + 1) + '" src="/panel/api/carruseles/referencia-img?id=' + encodeURIComponent(x.id || "") + '&n=' + n + '">'; }).join("");
