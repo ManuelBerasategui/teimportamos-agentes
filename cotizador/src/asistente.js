@@ -9,7 +9,7 @@ const nid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 const AR = 3 * 3600e3;
 const hoyAR = () => new Date(Date.now() - AR).toISOString().slice(0, 10);
 
-export const VERSION_ASISTENTE = "21/10 12:20 (secretario + diagnóstico)";
+export const VERSION_ASISTENTE = "21/10 12:35 (secretario)";
 export const PRIORIDADES = { 1: "🔴 URGENTE (hoy)", 2: "🟠 IMPORTANTE (esta semana)", 3: "🟡 PUEDE ESPERAR", 4: "⚪ ALGÚN DÍA / IDEAS" };
 const AREAS = ["Ventas", "Proveedores", "Redes", "Operaciones", "Finanzas", "Sistema", "Equipo", "Personal", "Otro"];
 
@@ -327,10 +327,14 @@ export async function rutaTelegram(env, req, url, ctx, iaJSON) {
   const sec = await secretoTG(env);
   if (url.pathname !== "/tg/" + sec || req.headers.get("X-Telegram-Bot-Api-Secret-Token") !== sec) return new Response("no", { status: 403 });
   const upd = await req.json().catch(() => ({}));
-  ctx.waitUntil((async () => {
+  // Se procesa ANTES de contestarle a Telegram: waitUntil corta a los 30 s y la IA a veces tarda más (por eso no respondía).
+  // Si pasa de 50 s, se le contesta a Telegram igual (para que no reintente) y se sigue en segundo plano.
+  const trabajo = (async () => {
     await kvPut(env, "asist_ultimo", JSON.stringify({ ts: Date.now(), texto: String(upd?.message?.text || (upd?.message?.voice ? "[audio]" : "")).slice(0, 60) })).catch(() => {});
     await atender(env, iaJSON, upd).catch(async (e) => { console.log("Asistente:", e?.stack || e); await kvPut(env, "asist_error", JSON.stringify({ ts: Date.now(), error: String(e?.stack || e).slice(0, 800) })).catch(() => {}); });
-  })());
+  })();
+  const listo = await Promise.race([trabajo.then(() => true), new Promise((ok) => setTimeout(() => ok(false), 50000))]);
+  if (!listo) ctx.waitUntil(trabajo);
   return new Response("ok");
 }
 
