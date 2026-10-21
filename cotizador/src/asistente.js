@@ -47,7 +47,7 @@ export async function secretoTG(env) {
   return [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, "0")).join("").slice(0, 32);
 }
 const tg = (env, metodo, body) => fetch(`https://api.telegram.org/bot${env.TELEGRAM_TOKEN}/${metodo}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json()).catch(() => null);
-const decir = (env, chat, texto) => tg(env, "sendMessage", { chat_id: chat, text: String(texto).slice(0, 4000), disable_web_page_preview: true });
+const decir = (env, chat, texto) => env.__captura ? (env.__captura.push(String(texto)), Promise.resolve({ ok: true })) : tg(env, "sendMessage", { chat_id: chat, text: String(texto).slice(0, 4000), disable_web_page_preview: true });
 
 // Quién es cada chat: los que conectaron Telegram en el panel (telegram_chat:<nombre>) y el chat de alertas (telegram_chat)
 async function chatsConocidos(env) {
@@ -391,7 +391,7 @@ export async function rutaTelegram(env, req, url, ctx, iaJSON) {
 }
 
 // /panel/api/asistente/... (con sesión del panel)
-export async function apiAsistente(env, req, url, quien, base) {
+export async function apiAsistente(env, req, url, quien, base, iaJSON = null) {
   await preparar(env);
   const r = url.pathname.replace("/panel/api/asistente/", "");
   const json = (o, s = 200) => new Response(JSON.stringify(o), { status: s, headers: { "Content-Type": "application/json" } });
@@ -407,6 +407,15 @@ export async function apiAsistente(env, req, url, quien, base) {
     let reactivado = null;
     if (env.TELEGRAM_TOKEN && info?.result?.url !== `${base}/tg/${sec}`) reactivado = await tg(env, "setWebhook", { url: `${base}/tg/${sec}`, secret_token: sec, allowed_updates: ["message", "edited_message"], drop_pending_updates: false });
     return json({ version: VERSION_ASISTENTE, telegram: info?.result ? { url_ok: info.result.url === `${base}/tg/${sec}`, pendientes: info.result.pending_update_count, ultimo_error: info.result.last_error_message || "", error_hace_min: info.result.last_error_date ? Math.round((Date.now() / 1000 - info.result.last_error_date) / 60) : null } : info, reactivado, ultimo_mensaje: JSON.parse((await kvGet(env, "asist_ultimo")) || "null"), ultimo_error: JSON.parse((await kvGet(env, "asist_error")) || "null"), chats: await chatsConocidos(env) });
+  }
+  // Probar el asistente desde el panel sin mandar nada a Telegram (devuelve lo que contestaría)
+  if (r === "probar" && req.method === "POST") {
+    const b = await req.json().catch(() => ({})), chats = await chatsConocidos(env);
+    const chat = Object.keys(chats).find((c) => chats[c] === (b.quien || quien)) || Object.keys(chats)[0];
+    const e2 = { ...env, __captura: [] };
+    if (!iaJSON) return json({ error: "sin IA" });
+    await atender(e2, iaJSON, { message: { chat: { id: chat }, text: String(b.texto || "") } });
+    return json({ respuestas: e2.__captura });
   }
   if (r === "tareas") return json(await pendientes(env, url.searchParams.get("de") || quien));
   return json({ error: "ruta desconocida" }, 404);
