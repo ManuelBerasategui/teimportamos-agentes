@@ -86,7 +86,7 @@ export function mediana(xs) { const v = xs.filter((x) => x != null).sort((a, b) 
 const listo = new WeakSet();
 export async function prepararRedes(env) {
   if (listo.has(env.DB)) return;
-  await env.DB.batch([...ESQUEMA_REDES, ...ESQUEMA_IG].map((s) => env.DB.prepare(s)));   for (const s of ["ALTER TABLE ig_ideas ADD COLUMN motivo TEXT", "ALTER TABLE ig_ideas ADD COLUMN ganchos TEXT", "ALTER TABLE ig_ideas ADD COLUMN hecho_ts INTEGER", "ALTER TABLE ig_historias ADD COLUMN hecho_ts INTEGER", "ALTER TABLE ig_ideas ADD COLUMN n_videos INTEGER", "ALTER TABLE ig_ideas ADD COLUMN origen TEXT", "ALTER TABLE ig_ideas ADD COLUMN escena TEXT", "ALTER TABLE ig_ideas ADD COLUMN mostrar TEXT", "ALTER TABLE ig_ideas ADD COLUMN reels TEXT"]) { try { await env.DB.prepare(s).run(); } catch {} }
+  await env.DB.batch([...ESQUEMA_REDES, ...ESQUEMA_IG].map((s) => env.DB.prepare(s)));   for (const s of ["ALTER TABLE ig_ideas ADD COLUMN motivo TEXT", "ALTER TABLE ig_ideas ADD COLUMN ganchos TEXT", "ALTER TABLE ig_ideas ADD COLUMN hecho_ts INTEGER", "ALTER TABLE ig_historias ADD COLUMN hecho_ts INTEGER", "ALTER TABLE ig_ideas ADD COLUMN n_videos INTEGER", "ALTER TABLE ig_ideas ADD COLUMN origen TEXT", "ALTER TABLE ig_ideas ADD COLUMN escena TEXT", "ALTER TABLE ig_ideas ADD COLUMN mostrar TEXT", "ALTER TABLE ig_ideas ADD COLUMN reels TEXT", "ALTER TABLE ig_historias ADD COLUMN motivo TEXT"]) { try { await env.DB.prepare(s).run(); } catch {} }
   listo.add(env.DB);
 }
 
@@ -403,10 +403,15 @@ export async function generarHistorias(env, iaJSON, { T, quien = "auto", cantida
   const cotUsadas = new Set(previas.flatMap((x) => { try { return JSON.parse(x.refs || "[]"); } catch { return []; } }));
   const cotLibres = w.cotizaciones.filter((c) => !cotUsadas.has(c.id));
   const [dms, coms] = await Promise.all([dmsPendientes(env, 30), comentariosIG(env, 7)]);
+  const rechH = (await env.DB.prepare("SELECT tipo, titulo, texto, motivo FROM ig_historias WHERE estado='descartada' AND motivo<>'' ORDER BY ts DESC LIMIT 15").all().catch(() => ({ results: [] }))).results || [];
   const r = await iaJSON(env, `Sos quien maneja las HISTORIAS de Instagram de este negocio:
 ${NEGOCIO}
 ${bloqueReglas(await reglasDe(env, "ig_reglas_ideas"))}
-${UTILERIA} Proponé ${cantidad} historias para subir HOY, sacadas de lo que pasa de verdad en el WhatsApp y en Instagram. Las historias son para gente que ya te sigue: generan confianza y llevan al DM o al WhatsApp.
+${UTILERIA} Proponé ${cantidad} historias para subir HOY, sacadas de lo que pasa de verdad en el WhatsApp y en Instagram. Las historias NO son para viralizar: son para la gente que ya te sigue y todavía no compró. Generan CONFIANZA (somos reales, laburamos todos los días, a otros les sale bien) e INTERACCIÓN (que respondan, voten, pregunten) y los llevan al WhatsApp.
+Armalas como una SECUENCIA del día, en este orden: 1) prueba real (cotización que salió, pedido que llegó, captura de un chat con datos tapados, backstage de laburo); 2) interacción (encuesta o quiz sobre un producto que se consultó de verdad); 3) objeción resuelta (una duda o miedo real de los que preguntan, respondido en una frase); 4) llamado directo (cupo abierto o "mandame la foto de lo que buscás al WhatsApp"). Título empieza con el número: "1. ...".
+
+HISTORIAS QUE EL DUEÑO DESCARTÓ Y POR QUÉ (no repetir esos errores):
+${rechH.map((x) => `- [${x.tipo}] "${x.titulo}" → ${x.motivo}`).join("\n") || "(ninguna)"}
 
 DATOS REALES:
 ${resumenWA({ ...w, cotizaciones: cotLibres })}
@@ -421,7 +426,8 @@ Reglas:
 - Variá los tipos. Si hay cotizaciones armadas, una historia "cotizaciones" que muestre varias juntas (captura del PDF o lista), con los ids en "cotizaciones". Si hay un producto que se consultó mucho, una "producto" o una "encuesta" sobre eso.
 - Para encuesta o quiz: pregunta corta y 2 opciones (hasta 4 en quiz). Para caja de preguntas: la pregunta del sticker.
 - "mostrar": qué grabar o capturar, concreto y que se haga en 2 minutos con el celular, solo con cosas de la UTILERÍA, la pantalla o capturas reales.
-- "texto": lo que va escrito en la historia, corto, como habla un pibe de Rosario, sin emojis.
+- "texto": lo que va escrito en la historia, corto (máximo 2 renglones), como habla un pibe de Rosario, sin emojis. Nada genérico tipo "mirá las cotizaciones del día" o "¿qué te interesa importar?": siempre producto, número o situación concreta.
+- El CTA siempre al WhatsApp, nunca al DM (los DM de Instagram están restringidos).
 - NUNCA nombres, teléfonos ni usuarios de clientes. En capturas de cotizaciones, tapar nombre y número del cliente.
 - Precios: solo los de las cotizaciones de arriba (son "puesto en Argentina", del día). No inventes precios ni prometas ganancias.
 - "por_que": el dato de arriba en el que te basás, con su número.
@@ -612,7 +618,7 @@ export async function apiRedes(env, req, url, quien, iaJSON, base = "", T = null
   if (r === "generar-ideas" && req.method === "POST") return json(await generarIdeas(env, iaJSON, quien || "panel", 8, T));
   if (r === "historias") {
     const est = ["nueva", "subida", "descartada"].includes(url.searchParams.get("estado")) ? url.searchParams.get("estado") : "nueva";
-    const l = (await env.DB.prepare("SELECT * FROM ig_historias WHERE estado=? ORDER BY ts DESC LIMIT 40").bind(est).all()).results || [];
+    const l = (await env.DB.prepare("SELECT * FROM ig_historias WHERE estado=? AND (estado<>'nueva' OR ts > ?) ORDER BY ts DESC LIMIT 40").bind(est, Date.now() - 3 * 86400e3).all()).results || [];
     const nums = {};
     for (const c of (await env.DB.prepare("SELECT id, num FROM cotiz_manual WHERE ts > ?").bind(Date.now() - 30 * 86400e3).all().catch(() => ({ results: [] }))).results || []) nums[c.id] = c.num;
     return json(l.map((x) => ({ ...x, sticker: x.sticker ? JSON.parse(x.sticker) : null, refs: JSON.parse(x.refs || "[]").map((i) => ({ id: i, num: nums[i] || null })) })));
@@ -620,7 +626,7 @@ export async function apiRedes(env, req, url, quien, iaJSON, base = "", T = null
   if (r === "generar-historias" && req.method === "POST") return json(await generarHistorias(env, iaJSON, { T, quien: quien || "panel" }));
   if (r === "historia-estado" && req.method === "POST") {
     if (!["nueva", "subida", "descartada"].includes(body.estado)) return json({ error: "estado inválido" }, 400);
-    await env.DB.prepare("UPDATE ig_historias SET estado=?, hecho_ts=? WHERE id=?").bind(body.estado, body.estado === "subida" ? Date.now() : null, String(body.id || "")).run();
+    await env.DB.prepare("UPDATE ig_historias SET estado=?, hecho_ts=?, motivo=? WHERE id=?").bind(body.estado, body.estado === "subida" ? Date.now() : null, body.estado === "descartada" ? String(body.motivo || "").slice(0, 300) : null, String(body.id || "")).run();
     return json({ ok: true });
   }
   if (r === "idea-estado" && req.method === "POST") {
@@ -798,7 +804,7 @@ https://www.instagram.com/reel/abc"></textarea><p class="pq">La IA no puede mira
 </div>
   <div id="i-hist" style="display:none">
   <div class="barraher"><button class="btn p" id="bHistGen"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>Generar historias</button><select id="fHist"><option value="nueva">Para subir</option><option value="subida">Ya subidas</option><option value="descartada">Descartadas</option></select><button class="btn" data-todas="historias">Marcar todas</button><button class="btn" id="bDescHist">Descartar marcadas</button></div>
-  <p class="estado ayuda">Salen solas todos los días a las 9 con lo que pasa en el WhatsApp: cotizaciones que mandaste, lo más consultado y lo que preguntan. No se repiten.</p>
+  <p class="estado ayuda">Salen solas todos los días a las 9 como secuencia: prueba real, interacción, duda resuelta y llamado al WhatsApp. Las que no subiste en 3 días se esconden solas.</p>
   <div id="historias"><div class="vacio">Cargando...</div></div>
   </div>
 </div>
@@ -939,7 +945,7 @@ $("#cal").onclick = function (ev) {
 };
 function marcadas(c) { return [].slice.call(document.querySelectorAll("#" + c + " .sel:checked")); }
 document.addEventListener("click", function (e) { var t = e.target.closest("[data-todas]"); if (!t) return; var l = [].slice.call(document.querySelectorAll("#" + t.dataset.todas + " .sel")), todas = l.length && l.every(function (c) { return c.checked; }); l.forEach(function (c) { c.checked = !todas; }); t.textContent = todas ? "Marcar todas" : "Desmarcar"; });
-$("#bDescHist").onclick = function () { var sel = marcadas("historias"); if (!sel.length) return aviso("Marcá al menos una"); Promise.all(sel.map(function (c) { return api("historia-estado", { id: c.value, estado: "descartada" }); })).then(function () { cargarHist(); cargarResumen(); aviso(sel.length + " descartadas"); }); };
+$("#bDescHist").onclick = function () { var sel = marcadas("historias"); if (!sel.length) return aviso("Marcá al menos una"); var mh = prompt("¿Por qué no sirven? (opcional, un motivo para todas)", ""); if (mh === null) return; Promise.all(sel.map(function (c) { return api("historia-estado", { id: c.value, estado: "descartada", motivo: mh }); })).then(function () { cargarHist(); cargarResumen(); aviso(sel.length + " descartadas"); }); };
 $("#bDescSel").onclick = function () { var sel = marcadas("ideas"); if (!sel.length) { aviso("Marcá al menos una"); return; } var m = prompt("¿Por qué descartás estas " + sel.length + "? (un motivo para todas, ej: genéricas, cliché, no basadas en nada real)"); if (m === null) return; m = m.trim(); if (!m) { aviso("Escribí un motivo"); return; } Promise.all(sel.map(function (c) { return api("idea-estado", { id: c.value, estado: "descartada", motivo: m, n: 1 }); })).then(function () { cargarIdeas(); cargarResumen(); aviso(sel.length + " descartadas"); }); }; $("#ideas").onclick = function (ev) {
   var b = ev.target.closest("button"); if (!b) return; var card = b.closest(".idea"), idv = card.dataset.id;
     if (b.dataset.c) { var x = (window.__ideas || []).filter(function (i) { return i.id === idv; })[0]; if (!x) return; var NL = String.fromCharCode(10); navigator.clipboard.writeText((x.ganchos && x.ganchos.length ? x.ganchos.map(function (g, i) { return "GANCHO " + (i + 1) + " (" + g.tipo + "): " + g.texto + (g.como ? " / " + g.como : ""); }).join(NL) : "GANCHO: " + x.gancho) + NL + NL + "CUERPO:" + NL + (x.guion || []).map(function (t, i) { return (i + 1) + ". " + t; }).join(NL) + (x.cta ? NL + NL + "CIERRE: " + x.cta : "")).then(function () { aviso("Guion copiado"); }); return; }
@@ -1046,7 +1052,8 @@ $("#fHist").onchange = cargarHist;
 $("#historias").onclick = function (ev) {
   var b = ev.target.closest("button"); if (!b) return; var card = b.closest(".idea"), idv = card.dataset.id;
   if (b.dataset.c) { var x = (window.__hist || []).filter(function (i) { return i.id === idv; })[0]; if (x) navigator.clipboard.writeText(x.texto + (x.sticker && x.sticker.pregunta ? "\n\n" + x.sticker.pregunta + (x.sticker.opciones && x.sticker.opciones.length ? "\n" + x.sticker.opciones.join(" / ") : "") : "")).then(function () { aviso("Texto copiado"); }); return; }
-  api("historia-estado", { id: idv, estado: b.dataset.e }).then(function () { card.remove(); cargarResumen(); });
+  var mh = ""; if (b.dataset.e === "descartada") { mh = prompt("¿Por qué no sirve? (opcional, así aprende)", ""); if (mh === null) return; }
+  api("historia-estado", { id: idv, estado: b.dataset.e, motivo: mh }).then(function () { card.remove(); cargarResumen(); });
 };
 $("#bHistGen").onclick = function () { var b = this; b.disabled = true; var t = b.lastChild.textContent; b.lastChild.textContent = "Pensando historias..."; api("generar-historias", {}).then(function (r) { b.disabled = false; b.lastChild.textContent = t; if (!r.ok) return aviso(r.error); $("#fHist").value = "nueva"; cargarHist(); cargarResumen(); aviso(r.cantidad + " historias nuevas"); }); };
 
