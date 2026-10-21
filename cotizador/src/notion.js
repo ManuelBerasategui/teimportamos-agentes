@@ -105,13 +105,21 @@ export async function notionHoy(env) {
     const T = m.tareas, ini = T.fechaIni || T.fecha, fin = T.fecha;
     // 1) lo de HOY (por fecha de inicio o de fin); 2) aparte, lo vencido de los últimos 7 días que sigue abierto (máx. 5)
     const deHoyF = [{ property: ini, date: { equals: hoy } }]; if (fin && fin !== ini) deHoyF.push({ property: fin, date: { equals: hoy } });
-    const hace7 = new Date(Date.now() - AR - 7 * 86400e3).toISOString().slice(0, 10), col = fin || ini;
+    const hace7 = new Date(Date.now() - AR - 7 * 86400e3).toISOString().slice(0, 10), hace21 = new Date(Date.now() - AR - 21 * 86400e3).toISOString().slice(0, 10), col = fin || ini;
     const [rh, rv] = await Promise.all([
       api(env, `databases/${T.id}/query`, { page_size: 100, filter: { or: deHoyF } }).catch(() => ({ results: [] })),
-      api(env, `databases/${T.id}/query`, { page_size: 40, filter: { and: [{ property: col, date: { before: hoy } }, { property: col, date: { on_or_after: hace7 } }] }, sorts: [{ property: col, direction: "descending" }] }).catch(() => ({ results: [] })),
+      api(env, `databases/${T.id}/query`, { page_size: 40, filter: { and: [{ property: col, date: { before: hoy } }, { property: col, date: { on_or_after: hace21 } }] }, sorts: [{ property: col, direction: "descending" }] }).catch(() => ({ results: [] })),
     ]);
-    const r = { results: [...(rh.results || []), ...(rv.results || []).filter((p) => !(rh.results || []).some((q) => q.id === p.id))] };
+    // lo que se repite (hábitos diarios, consultas de cada semana) no es "vencido": solo cuenta lo que aparece una vez en 3 semanas
+    const veces = {}; for (const p of [...(rh.results || []), ...(rv.results || [])]) { const k = norm(texto(p.properties[T.titulo])); veces[k] = (veces[k] || 0) + 1; }
+    const vence = (rv.results || []).filter((p) => !(rh.results || []).some((q) => q.id === p.id) && veces[norm(texto(p.properties[T.titulo]))] === 1 && String(p.properties[col]?.date?.start || "") >= hace7 && !(T.esEvento && p.properties[T.esEvento]?.checkbox));
+    const r = { results: [...(rh.results || []), ...vence] };
     const niveles = await nombresRelacion(env, m);
+    const faltan = new Set(); for (const p of r.results || []) for (const x of (T.relCat ? p.properties[T.relCat]?.relation || [] : [])) if (!niveles[x.id]) faltan.add(x.id);
+    if (faltan.size) {
+      for (const idp of [...faltan].slice(0, 15)) { const pg = await api(env, "pages/" + idp).catch(() => null); const tt = pg ? Object.values(pg.properties || {}).find((v) => v.type === "title") : null; if (tt) niveles[idp] = texto(tt); }
+      await kvPut(env, "notion_niveles", JSON.stringify({ ts: Date.now(), m: niveles }));
+    }
     out.hoy = [];
     for (const p of r.results || []) {
       const hecho = hechoSi(T, p) || (T.completado && p.properties[T.completado]?.checkbox === true);
@@ -120,7 +128,7 @@ export async function notionHoy(env) {
       if (!deHoy && hecho) continue;   // vencidas solo si siguen abiertas
       const nom = texto(p.properties[T.titulo]); if (!nom.trim()) continue;
       if (!deHoy && (out.hoy.some((y) => !y.vencida && norm(y.texto) === norm(nom)) || out.hoy.filter((y) => y.vencida).length >= 5 || out.hoy.some((y) => y.vencida && norm(y.texto) === norm(nom)))) continue;   // los hábitos que se repiten cada día no cuentan como vencidos
-      const cat = T.relCat ? (p.properties[T.relCat]?.relation || []).map((x) => niveles[x.id] || niveles[Object.keys(niveles).find((k) => k.replace(/-/g, "") === x.id.replace(/-/g, ""))] || "").filter(Boolean).join(", ") : texto(p.properties[T.categoria]);
+      const cat = T.relCat ? (p.properties[T.relCat]?.relation || []).map((x) => niveles[x.id] || "").filter(Boolean).join(", ") : texto(p.properties[T.categoria]);
       out.hoy.push({ id: p.id, texto: texto(p.properties[T.titulo]), estado: texto(p.properties[T.hecho]) || (hecho ? "Hecho" : "Pendiente"), hecho, categoria: cat, hora: fi.length > 10 ? fi.slice(11, 16) : "", vencida: !deHoy, evento: T.esEvento ? !!p.properties[T.esEvento]?.checkbox : false, min: T.duracion ? p.properties[T.duracion]?.number ?? null : null });
     }
     out.tareas = out.hoy.filter((x) => !x.hecho && x.texto).map((x) => ({ ...x, fecha: x.vencida ? "vencida" : "hoy" }));
@@ -169,7 +177,7 @@ export async function nivelesNotion(env) { const m = await mapa(env); return [..
 export function agendaNotion(n) {
   if (!n?.hoy) return "";
   const ic = (x) => (x.hecho ? "✅" : /progres|curso/i.test(x.estado) ? "🔄" : "⏳");
-  const l = [...n.hoy].sort((a, b) => (a.hecho - b.hecho) || (a.hora || "99").localeCompare(b.hora || "99"));
+  const l = [...n.hoy].sort((a, b) => (Number(!!a.hecho) - Number(!!b.hecho)) || (Number(!!a.vencida) - Number(!!b.vencida)) || (a.hora || "99").localeCompare(b.hora || "99"));
   if (!l.length) return "📅 En tu Notion no hay nada cargado para hoy.";
   const pend = l.filter((x) => !x.hecho).length;
   return `📅 Hoy en tu Notion (${pend} por hacer de ${l.length}):\n` + l.map((x) => `${ic(x)} ${x.hora ? x.hora + " " : ""}${x.texto}${x.categoria ? " · " + x.categoria : ""}${x.vencida ? " · vencida" : ""}${x.min ? " · " + x.min + " min" : ""}`).join("\n");
