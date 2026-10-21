@@ -376,7 +376,7 @@ async function atender(env, iaJSON, upd) {
   }
   if (/^\/?(plan|planificame|organizame|organiza(me)? el dia|organizame lo que resta del dia|lo que resta del dia)\s*\??$/.test(t)) return decir(env, chat, await planBloques(env, quien));
   if (/^\/?(version|versión)\s*$/.test(t)) return decir(env, chat, "Asistente versión " + VERSION_ASISTENTE);
-  if (/^\/?(agenda|mi agenda|hoy en notion|notion hoy|que me queda( hoy)?)\s*\??$/.test(t)) {
+  if (/^\/?(agenda|mi agenda|hoy en notion|notion hoy|que me queda( hoy)?)\s*\??$/.test(t) || (/\bagenda\b|que (me|nos) queda (pendiente )?(de )?hoy|pendientes? de hoy/.test(t) && !/(anota|agrega|sum|organiz|plan|resta del dia)/.test(t) && t.length < 160)) {
     if (!notionActivo(env)) return decir(env, chat, await textoLista(env, chat, quien, { titulo: "Para hoy", soloHoy: true }));
     const nt = await notionHoy(env).catch(() => null), neg = await negocioPendiente(env);
     return decir(env, chat, (nt ? agendaNotion(nt) : "No pude leer tu Notion ahora.") + (neg.calientes ? `\n\n💬 Negocio: ${neg.calientes} chats calientes del 805 (decime "chats").` : ""));
