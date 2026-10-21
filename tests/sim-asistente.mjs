@@ -38,8 +38,8 @@ await mandar({ text: "redes" }); chk("comando redes", enviados.at(-1).includes("
 await mandar({ text: "negocio" }); chk("negocio", enviados.at(-1).includes("sin contestar"));
 const n0 = enviados.length;
 const hoy = new Date(); const t = (h) => Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), hoy.getUTCDate(), h, 0);
-await A.cronAsistente(env, t(11), ia); chk("8 am plan", enviados.at(-1).includes("Buen día") && enviados.at(-1).includes("Foco"));
-await A.cronAsistente(env, t(17), ia); chk("14 hs cómo vas", enviados.at(-1).includes("Mitad del día"));
+await A.cronAsistente(env, t(11), ia); chk("8 am una sola cosa", enviados.at(-1).includes("Buen día") && enviados.at(-1).includes("una sola cosa") && enviados.at(-1).length < 300);
+await A.cronAsistente(env, t(17), ia); chk("14 hs cómo vas corto", enviados.at(-1).includes("Cómo vas") && enviados.at(-1).length < 200);
 await A.cronAsistente(env, t(0), ia); chk("21 cierre pasa urgentes a mañana", enviados.at(-1).includes("Cierre") && db.prepare("SELECT para FROM mis_tareas").get().para !== "");
 await A.cronAsistente(env, t(12), ia); chk("otras horas no manda", enviados.length === n0 + 3);
 const nT = db.prepare("SELECT COUNT(*) n FROM mis_tareas").get().n;
@@ -49,4 +49,7 @@ chk("la pregunta no se anota", db.prepare("SELECT COUNT(*) n FROM mis_tareas").g
 const nP = db.prepare("SELECT COUNT(*) n FROM mis_tareas WHERE estado='pendiente'").get().n;
 await mandar({ text: "tengo que llamar a logística por el envío de termos" });
 chk("no duplica tarea", db.prepare("SELECT COUNT(*) n FROM mis_tareas WHERE estado='pendiente'").get().n === nP);
+db.prepare("INSERT OR REPLACE INTO kv VALUES ('asist_prefs:Manuel','No me mandes el aviso de las 14',NULL)").run();
+const n1 = enviados.length; await A.cronAsistente(env, t(17), ia); chk("respeta preferencia sin aviso 14", enviados.length === n1);
+await mandar({ text: "listo" }); chk("listo sin número tacha el foco", db.prepare("SELECT COUNT(*) n FROM mis_tareas WHERE estado='hecha'").get().n >= 1 && enviados.at(-1).includes("Bien ahí"));
 console.log(`sim-asistente: ${ok} ok, ${mal} fallas`);

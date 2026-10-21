@@ -9,7 +9,7 @@ const nid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 const AR = 3 * 3600e3;
 const hoyAR = () => new Date(Date.now() - AR).toISOString().slice(0, 10);
 
-export const VERSION_ASISTENTE = "21/10 12:35 (secretario)";
+export const VERSION_ASISTENTE = "21/10 13:00 (de a una cosa)";
 export const PRIORIDADES = { 1: "🔴 URGENTE (hoy)", 2: "🟠 IMPORTANTE (esta semana)", 3: "🟡 PUEDE ESPERAR", 4: "⚪ ALGÚN DÍA / IDEAS" };
 const AREAS = ["Ventas", "Proveedores", "Redes", "Operaciones", "Finanzas", "Sistema", "Equipo", "Personal", "Otro"];
 
@@ -143,7 +143,8 @@ export async function redesHoy(env) {
 
 // El secretario: entiende lo que le decís (audio o texto) con todo el contexto y hace lo que haría un secretario de verdad
 async function secretario(env, iaJSON, quien, chat, texto) {
-  const [l, perfil, redes, neg] = await Promise.all([pendientes(env, quien), perfilDe(env, quien), redesHoy(env), negocioPendiente(env)]);
+  const [l, perfil, redes, neg, prefs] = await Promise.all([pendientes(env, quien), perfilDe(env, quien), redesHoy(env), negocioPendiente(env), prefsDe(env, quien)]);
+  const focoId = await kvGet(env, "asist_foco:" + quien), foco = l.find((x) => x.id === focoId) || null;
   const chats = await chatsSinContestar(env, 10);
   const ahora = new Date(Date.now() - AR), hm = ahora.toISOString().slice(11, 16), dia = ahora.toLocaleDateString("es-AR", { weekday: "long", timeZone: "UTC" });
   const r = await iaJSON(env, `Sos el SECRETARIO personal de ${nombreDe(quien)}, dueño de "Te Importamos" (importaciones por encargo de China a Argentina, Rosario; vende por WhatsApp 805, hace reels, historias y carruseles para Instagram; su socio es Matías "Buco"; Pedro Aguirre es el despachante/logística). Estudia en la facultad.
@@ -151,6 +152,8 @@ Ahora es ${dia} ${hoyAR()}, ${hm} h (Argentina).
 Te habla así (puede ser un audio transcripto, desordenado): """${texto.slice(0, 5000)}"""
 
 LO QUE SABÉS DE SU RUTINA: ${perfil || "(nada todavía)"}
+CÓMO QUIERE QUE LE HABLES (sus preferencias, respetalas siempre): ${prefs || "mensajes cortos, de a una cosa a la vez (Kanban): no le mandes listas largas salvo que las pida"}
+EN LO QUE ESTÁ AHORA (foco actual): ${foco ? foco.texto : "(nada)"}
 SUS PENDIENTES (id · prioridad · fecha · horario · texto):
 ${l.map((x) => `[${x.id}] P${x.prioridad} · ${x.para || "-"} · ${x.hora_ini ? x.hora_ini + "-" + (x.hora_fin || "?") : "-"} · ${x.texto}`).join("\n") || "(ninguno)"}
 QUÉ HAY QUE HACER EN REDES (dato real del panel):
@@ -166,8 +169,10 @@ Actuá como un secretario de verdad:
 6. Si pregunta algo, contestá eso primero y directo. Si pide los chats, poné "incluir_chats": true (yo agrego la lista real con números). Si pregunta qué hay que hacer en redes, "incluir_redes": true.
 7. Si pide que le organices el día (o dicta varias cosas), armá en "respuesta" el plan de lo que QUEDA del día desde las ${hm}, en bloques con horario real, respetando lo fijo (facu, gym) y poniendo primero lo que tiene plata o clientes esperando. Repartí los chats en 2 o 3 bloques cortos.
 8. "perfil": si aparece algo estable de su rutina (horarios de facu por día, gym, trabajo, fechas de parciales), devolvé el PERFIL COMPLETO actualizado (2 a 8 líneas). Si no, "".
-9. "respuesta": en rioplatense, corta y clara, como un secretario que ya lo resolvió (no "ahí me fijo"). Sin repetir la lista completa salvo que la pida.
-Respondé SOLO JSON: {"nuevas":[{"texto":"...","detalle":"","prioridad":1,"area":"${AREAS.join("|")}","para":"YYYY-MM-DD o vacío","tipo":"tarea|evento","hora_ini":"","hora_fin":""}],"hechas":["id"],"borrar":["id"],"actualizar":[{"id":"...","texto":"","prioridad":null,"para":"","hora_ini":"","hora_fin":""}],"perfil":"","incluir_chats":false,"incluir_redes":false,"mostrar_lista":false,"respuesta":"..."}`);
+9. "preferencias": si te dice CÓMO quiere que le hables o uses el bot (largo de los mensajes, de a una cosa, horarios de avisos, que no le mandes X), devolvé sus preferencias COMPLETAS actualizadas (1 a 6 líneas). Si no, "".
+10. "siguiente": la UNA cosa que tiene que hacer ahora (Kanban: una a la vez), elegida por prioridad, hora y lo que tiene plata o clientes esperando. "siguiente_id": el id si es una tarea de la lista (o vacío). Si pregunta "¿ahora qué hago?" o terminó algo, la respuesta es solo eso: qué hacer ahora y por qué en una línea.
+11. "respuesta": en rioplatense, MUY corta (1 a 3 líneas) y clara, como un secretario que ya lo resolvió (no "ahí me fijo"). Sin repetir la lista completa salvo que la pida.
+Respondé SOLO JSON: {"nuevas":[{"texto":"...","detalle":"","prioridad":1,"area":"${AREAS.join("|")}","para":"YYYY-MM-DD o vacío","tipo":"tarea|evento","hora_ini":"","hora_fin":""}],"hechas":["id"],"borrar":["id"],"actualizar":[{"id":"...","texto":"","prioridad":null,"para":"","hora_ini":"","hora_fin":""}],"perfil":"","incluir_chats":false,"incluir_redes":false,"mostrar_lista":false,"preferencias":"","siguiente":"","siguiente_id":"","respuesta":"..."}`);
   if (!r) return null;
   const ids = new Set(l.map((x) => x.id)), st = [], hhmm = (v) => (/^\d{1,2}:\d{2}$/.test(String(v || "")) ? String(v).padStart(5, "0") : "");
   const pal = (t) => new Set(String(t).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(/[^a-z0-9ñ]+/).filter((w) => w.length > 2));
@@ -185,14 +190,18 @@ Respondé SOLO JSON: {"nuevas":[{"texto":"...","detalle":"","prioridad":1,"area"
   for (const u of (Array.isArray(r.actualizar) ? r.actualizar : [])) if (ids.has(String(u?.id))) st.push(env.DB.prepare("UPDATE mis_tareas SET texto=COALESCE(NULLIF(?,''),texto), prioridad=COALESCE(?,prioridad), para=COALESCE(NULLIF(?,''),para), hora_ini=COALESCE(NULLIF(?,''),hora_ini), hora_fin=COALESCE(NULLIF(?,''),hora_fin) WHERE id=?").bind(String(u.texto || "").slice(0, 200), u.prioridad ? Math.max(1, Math.min(4, parseInt(u.prioridad))) : null, /^\d{4}-\d{2}-\d{2}$/.test(u.para || "") ? u.para : "", hhmm(u.hora_ini), hhmm(u.hora_fin), String(u.id)));
   if (st.length) await env.DB.batch(st);
   if (r.perfil && String(r.perfil).trim().length > 10) await kvPut(env, "asist_perfil:" + quien, String(r.perfil).trim().slice(0, 1500));
+  if (r.preferencias && String(r.preferencias).trim().length > 5) await kvPut(env, "asist_prefs:" + quien, String(r.preferencias).trim().slice(0, 1000));
+  if (r.siguiente_id && ids.has(String(r.siguiente_id))) await kvPut(env, "asist_foco:" + quien, String(r.siguiente_id));
   const marcas = [n ? `+${n} anotada${n > 1 ? "s" : ""}` : "", hechas.length ? `✅ ${hechas.length} tachada${hechas.length > 1 ? "s" : ""}` : "", borrar.length ? `🗑 ${borrar.length} sacada${borrar.length > 1 ? "s" : ""}` : ""].filter(Boolean).join(" · ");
   let out = String(r.respuesta || "Listo.").slice(0, 2500) + (marcas ? `\n(${marcas})` : "");
   if (r.incluir_chats) out += "\n\n" + chats;
   if (r.incluir_redes) out += "\n\n📲 Hoy en redes:\n" + redes.map((x) => "• " + x).join("\n");
-  if (r.mostrar_lista || n || hechas.length || borrar.length) out += "\n\n" + (await textoLista(env, chat, quien));
+  if (r.siguiente && !String(r.respuesta || "").includes(String(r.siguiente).slice(0, 25))) out += `\n\n👉 Ahora: ${r.siguiente}`;
+  if (r.mostrar_lista) out += "\n\n" + (await textoLista(env, chat, quien));
   return out.slice(0, 4000);
 }
 
+const prefsDe = async (env, quien) => (await kvGet(env, "asist_prefs:" + quien)) || "";
 const nombreDe = (q) => (/^admin$/i.test(q) ? "Manuel" : q);
 const perfilDe = async (env, quien) => (await kvGet(env, "asist_perfil:" + quien)) || "";
 
@@ -293,7 +302,15 @@ async function atender(env, iaJSON, upd) {
   if (/^\/?(start|ayuda|help)\b/.test(t)) return decir(env, chat, `Hola ${nombreDe(quien)}. Mandame un audio o un texto con todo lo que tenés que hacer, desordenado, y te lo ordeno por prioridad.\n\n• "lista": todo lo pendiente\n• "hoy": solo lo urgente\n• "hecho 2" o "hecho 1,3": tachar\n• "subí 4" / "bajá 4": cambiar prioridad\n• "borrar 4"\n• "plan": te armo el día en bloques (tus tareas + lo que espera en el negocio + facu, gym, etc.)\n• "negocio": chats, videos, carruseles e historias pendientes\n• "perfil": lo que sé de tu rutina\nA las 8 te mando el plan, a las 14 cómo vas y a las 21 el cierre del día.`);
   if (/^\/?(lista|tareas|pendientes|que tengo|todo)\b/.test(t)) return decir(env, chat, await textoLista(env, chat, quien));
   if (/^\/?hoy\b/.test(t)) return decir(env, chat, await textoLista(env, chat, quien, { titulo: "Para hoy", soloHoy: true }));
-  if (/^\/?(plan|planificame|organizame|organiza(me)? el dia|que hago|que hago ahora|en que me enfoco|ahora que)\b/.test(t)) {
+  // "listo" / "ya está" / "terminé" sin número: tacha lo que estaba haciendo y le dice lo que sigue
+  if (/^(listo|ya esta|ya lo hice|termine|hecho|done|ok listo)[.! ]*$/.test(t)) {
+    const fid = await kvGet(env, "asist_foco:" + quien);
+    if (fid) { await env.DB.prepare("UPDATE mis_tareas SET estado='hecha', hecha_ts=? WHERE id=? AND quien=? AND estado='pendiente'").bind(Date.now(), fid, quien).run(); await env.DB.prepare("DELETE FROM kv WHERE k=?").bind("asist_foco:" + quien).run(); }
+    await tg(env, "sendChatAction", { chat_id: chat, action: "typing" });
+    const r2 = await secretario(env, iaJSON, quien, chat, "Terminé lo que estaba haciendo. ¿Ahora qué hago?");
+    return decir(env, chat, (fid ? "✅ Bien ahí.\n" : "") + (r2 || "Decime \"lista\" y elegimos lo que sigue."));
+  }
+  if (/^\/?(plan|planificame|organizame|organiza(me)? el dia)\b/.test(t)) {
     await tg(env, "sendChatAction", { chat_id: chat, action: "typing" });
     return decir(env, chat, (await planDia(env, iaJSON, quien)) || "La IA no respondió ahora. Mientras tanto:\n\n" + (await textoLista(env, chat, quien, { titulo: "Para hoy", soloHoy: true })));
   }
@@ -301,6 +318,7 @@ async function atender(env, iaJSON, upd) {
   if (/^\/?(chats|whatsapp|wpp|805)\s*$/.test(t)) return decir(env, chat, await chatsSinContestar(env));
   if (/^\/?(redes|instagram)\s*$/.test(t)) return decir(env, chat, "📲 Hoy en redes:\n" + (await redesHoy(env)).map((x) => "• " + x).join("\n"));
   if (/^\/?(negocio|pendientes del negocio|panel)\b/.test(t)) { const n = await negocioPendiente(env); return decir(env, chat, n.texto ? "Lo que está esperando en el negocio:\n" + n.texto : "En el negocio no hay nada esperando. 🙌"); }
+  if (/^\/?(preferencias|configuracion|ajustes)\s*$/.test(t)) { const pf = await prefsDe(env, quien); return decir(env, chat, (pf ? "Así te hablo:\n" + pf : "Por ahora: mensajes cortos y de a una cosa.") + "\n\nPara cambiarlo decímelo normal (ej: \"no me mandes el aviso de las 14\")."); }
   if (/^\/?(perfil|mi perfil|que sabes de mi)\b/.test(t)) { const pf = await perfilDe(env, quien); return decir(env, chat, pf ? "Lo que sé de tu rutina:\n" + pf + "\n\nPara cambiarlo, contame (ej: \"los martes y jueves tengo facu de 18 a 22\")." : "Todavía no sé nada de tu rutina. Contame tus horarios fijos: trabajo, facu, gym, y lo tengo en cuenta en el plan."); }
   const cmd = t.match(/^\/?(hecho|hecha|listo|ok|tache|tacha|borrar|borra|elimina|subi|subir|baja|bajar)\s+((?:\d+\s*(?:,|y|\s)\s*)*\d+)\s*$/);
   if (cmd) {
@@ -367,19 +385,25 @@ export async function cronAsistente(env, ts, iaJSON = null) {
   await preparar(env);
   const neg = await negocioPendiente(env);
   for (const [chat, quien] of Object.entries(await chatsConocidos(env))) {
+    const pf = (await prefsDe(env, quien)).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    if (h === 11 && /(no|sin|sacame|saca)\b.{0,30}\b(8|ocho|manana|buen dia)\b/.test(pf)) continue;
+    if (h === 17 && /(no|sin|sacame|saca)\b.{0,30}\b(14|catorce|mediodia|mitad|como vas)\b/.test(pf)) continue;
+    if (h === 0 && /(no|sin|sacame|saca)\b.{0,30}\b(21|noche|cierre)\b/.test(pf)) continue;
     if (h === 11) {
-      const plan = iaJSON ? await planDia(env, iaJSON, quien).catch(() => null) : null;
-      await decir(env, chat, "Buen día " + nombreDe(quien) + ".\n\n" + (plan || (await textoLista(env, chat, quien, { titulo: "Tu día" })) + (neg.texto ? "\n\nEn el negocio:\n" + neg.texto : "")));
+      const l = await pendientes(env, quien), top = l[0];
+      if (top) await kvPut(env, "asist_foco:" + quien, top.id);
+      const primero = neg.calientes ? `contestar los ${neg.calientes} chats calientes del 805 (decime "chats" y te paso los números)` : top ? top.texto : neg.chats ? `contestar los ${neg.chats} chats del 805` : "";
+      await decir(env, chat, `Buen día ${nombreDe(quien)}. ${primero ? "Arrancamos con una sola cosa: " + primero + "." : "No tenés nada urgente. Mandame un audio con lo que quieras hacer hoy."}\nCuando termines decime "listo" y te digo lo que sigue.`);
     } else if (h === 17) {
       const urg = (await pendientes(env, quien)).filter((x) => x.prioridad === 1 || (x.para && x.para <= hoyAR()));
       if (!urg.length && !neg.calientes && !neg.chats) continue;
-      await decir(env, chat, `⏱ Mitad del día. ${urg.length ? `Te quedan ${urg.length} urgente${urg.length > 1 ? "s" : ""}: ${urg.slice(0, 4).map((x) => x.texto).join("; ")}.` : "Las urgentes ya están."}${neg.chats ? `\n💬 ${neg.chats} chat${neg.chats > 1 ? "s" : ""} sin contestar${neg.calientes ? `, ${neg.calientes} calientes` : ""}: metele 20 minutos ahora.` : ""}\nSi algo ya lo hiciste, decime "hecho N" o mandame un audio.`);
+      await decir(env, chat, `⏱ ¿Cómo vas? ${urg.length ? `Te quedan ${urg.length} urgente${urg.length > 1 ? "s" : ""}.` : "Lo urgente ya está."}${neg.chats ? ` Hay ${neg.chats} chat${neg.chats > 1 ? "s" : ""} esperando.` : ""} Decime "ahora qué hago" y seguimos.`);
     } else {
       const l = await pendientes(env, quien), hoy = hoyAR(), urg = l.filter((x) => x.prioridad === 1 || (x.para && x.para <= hoy));
       // lo urgente que no se hizo pasa a mañana con fecha, así aparece primero en el plan de mañana
       const man = new Date(Date.now() - AR + 86400e3).toISOString().slice(0, 10);
       if (urg.length) await env.DB.batch(urg.map((x) => env.DB.prepare("UPDATE mis_tareas SET para=? WHERE id=?").bind(man, x.id)));
-      await decir(env, chat, `🌙 Cierre del día.${urg.length ? `\nQuedaron ${urg.length} urgente${urg.length > 1 ? "s" : ""}, las paso para mañana temprano: ${urg.slice(0, 5).map((x) => x.texto).join("; ")}.` : "\nTerminaste lo urgente. 💪"}${neg.texto ? "\n\nQuedó esperando en el negocio:\n" + neg.texto : ""}\n\nMandame un audio con lo que hiciste hoy y lo que tengas para mañana, así arrancás con la cabeza vacía.`);
+      await decir(env, chat, `🌙 Cierre. ${urg.length ? `${urg.length} urgente${urg.length > 1 ? "s pasan" : " pasa"} a mañana temprano.` : "Lo urgente quedó hecho. 💪"} Mandame un audio con lo que tengas para mañana y arrancás con la cabeza vacía.`);
     }
   }
 }
