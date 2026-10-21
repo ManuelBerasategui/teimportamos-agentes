@@ -54,7 +54,9 @@ export async function descubrir(env) {
   const fijo = JSON.parse((await kvGet(env, "notion_roles")) || "{}");   // si el dueño dijo "tareas es la base X"
   const elegir = (re, rol) => (fijo[rol] && dbs.find((d) => norm(d.nombre) === norm(fijo[rol]))) || dbs.find((d) => re.test(norm(d.nombre))) || null;
   const mapa = {
-    tareas: elegir(/tarea|task|to ?do|pendiente|mision|quest|proyecto|accion/, "tareas"),
+    tareas: elegir(/tarea|task|to ?do|pendiente|mision|quest|proyecto|accion/, "tareas") ||
+      // nombre genérico ("Base de Datos"): la que tiene título + fecha + casilla/estado, la que no sea de niveles o categorías
+      dbs.filter((d) => d.titulo && d.fecha && d.hecho && !/nivel|categor|area|config/.test(norm(d.nombre))).sort((a, b) => b.columnas.length - a.columnas.length)[0] || null,
     habitos: elegir(/habito|habit|rutina|diario|tracker/, "habitos"),
     eventos: elegir(/evento|agenda|calendar|turno/, "eventos"),
     todas: dbs.map((d) => d.nombre),
@@ -128,7 +130,8 @@ export async function notionHoy(env) {
 export async function diagnosticoNotion(env) {
   const m = await descubrir(env), n = await notionHoy(env).catch((e) => ({ error: String(e.message || e) }));
   const rol = (x) => (x ? `${x.nombre} (título "${x.titulo}", fecha "${x.fecha || "-"}", hecho "${x.hecho || "-"}", categoría "${x.categoria || "-"}")` : "no la reconocí");
-  return `Bases que veo (${m.todas.length}): ${m.todas.join(", ") || "ninguna"}\n\nTareas: ${rol(m.tareas)}\nHábitos: ${rol(m.habitos)}\nEventos: ${rol(m.eventos)}\n\nHoy leí: ${n.error ? "error " + n.error : `${n.tareas.length} tareas abiertas, ${n.habitos.length} hábitos sin marcar, ${n.eventos.length} eventos, y ${n.otras.reduce((a, x) => a + x.filas.length, 0)} filas de otras bases`}.\n\nSi alguna base la tomé mal, decime por ejemplo "en Notion las tareas están en la base Misiones".`;
+  const cols = (m.bases || []).map((d) => `• ${d.nombre}: ${d.columnas.join(", ")}`).join("\n");
+  return `Bases que veo (${m.todas.length}): ${m.todas.join(", ") || "ninguna"}\n${cols}\n\nTareas: ${rol(m.tareas)}\nHábitos: ${rol(m.habitos)}\nEventos: ${rol(m.eventos)}\n\nHoy leí: ${n.error ? "error " + n.error : `${n.tareas.length} tareas abiertas, ${n.habitos.length} hábitos sin marcar, ${n.eventos.length} eventos, y ${n.otras.reduce((a, x) => a + x.filas.length, 0)} filas de otras bases`}.\n\nSi alguna base la tomé mal, decime por ejemplo "en Notion las tareas están en la base Misiones".`;
 }
 export async function fijarRol(env, rol, nombre) {
   const f = JSON.parse((await kvGet(env, "notion_roles")) || "{}"); f[rol] = nombre;
