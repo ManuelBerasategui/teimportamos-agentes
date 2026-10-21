@@ -7,7 +7,7 @@ const b = await chromium.launch(); const p = await b.newPage({ viewport: { width
 for (const f of fs.readdirSync(dir + "/disenos").filter((x) => x.endsWith(".html"))) {
   await p.goto("file://" + dir + "/disenos/" + f, { waitUntil: "networkidle" }); await p.evaluate(() => document.fonts.ready); await p.waitForTimeout(800);
   const els = await p.locator(".s").all();
-  for (let i = 0; i < els.length; i++) await els[i].screenshot({ path: `${out}/${f.replace(".html", "")}${els.length > 1 ? "-" + (i + 1) : ""}.png` });
+  for (let i = 0; i < els.length; i++) await els[i].screenshot({ path: `${out}/${f.replace(".html", "")}${els.length > 1 ? "-" + String(i + 1).padStart(2, "0") : ""}.png` });
   console.log(f, els.length);
 }
 await b.close();
