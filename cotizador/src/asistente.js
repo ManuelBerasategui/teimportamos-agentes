@@ -162,7 +162,8 @@ async function planBloques(env, quien) {
   if (neg.calientes || neg.chats) items.push({ t: `💬 Chats del 805${neg.calientes ? ` (${neg.calientes} calientes primero)` : ""}`, d: 30 });
   for (const x of l.filter((x) => x.prioridad === 1)) items.push({ t: x.texto, d: 30, h: x.hora_ini });
   const redesUrg = redes.filter((x) => /^(Aprobar|No hay ningún video|No hay video|Subir historias)/.test(x));
-  if (redesUrg.length) items.push({ t: "📲 Redes: " + redesUrg.map((x) => x.split(":")[0].replace(/ \(.*$/, "")).join(" + "), d: 30 });
+  const corto = (x) => (/^Aprobar/.test(x) ? "aprobar videos" : /aprobá uno/.test(x) ? "aprobar un video" : /^No hay ningún video/.test(x) ? "subir clips al editor" : /^Subir historias/.test(x) ? "subir historias" : x);
+  if (redesUrg.length) items.push({ t: "📲 Redes: " + [...new Set(redesUrg.map(corto))].join(" + "), d: 30 });
   for (const x of (nt?.tareas || []).filter((x) => x.fecha === "hoy")) items.push({ t: x.texto, d: Math.max(15, Math.min(240, x.min || 45)), h: x.hora });
   if (neg.chats) items.push({ t: "💬 Segunda vuelta de chats", d: 20 });
   for (const x of l.filter((x) => x.prioridad === 2 && (!x.para || x.para <= hoyAR()))) items.push({ t: x.texto, d: 30, h: x.hora_ini });
