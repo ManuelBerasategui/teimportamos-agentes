@@ -9,7 +9,7 @@ const nid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 const AR = 3 * 3600e3;
 const hoyAR = () => new Date(Date.now() - AR).toISOString().slice(0, 10);
 
-export const VERSION_ASISTENTE = "21/10 12:10 (secretario)";
+export const VERSION_ASISTENTE = "21/10 12:20 (secretario + diagnóstico)";
 export const PRIORIDADES = { 1: "🔴 URGENTE (hoy)", 2: "🟠 IMPORTANTE (esta semana)", 3: "🟡 PUEDE ESPERAR", 4: "⚪ ALGÚN DÍA / IDEAS" };
 const AREAS = ["Ventas", "Proveedores", "Redes", "Operaciones", "Finanzas", "Sistema", "Equipo", "Personal", "Otro"];
 
@@ -327,7 +327,10 @@ export async function rutaTelegram(env, req, url, ctx, iaJSON) {
   const sec = await secretoTG(env);
   if (url.pathname !== "/tg/" + sec || req.headers.get("X-Telegram-Bot-Api-Secret-Token") !== sec) return new Response("no", { status: 403 });
   const upd = await req.json().catch(() => ({}));
-  ctx.waitUntil(atender(env, iaJSON, upd).catch((e) => console.log("Asistente:", e?.stack || e)));
+  ctx.waitUntil((async () => {
+    await kvPut(env, "asist_ultimo", JSON.stringify({ ts: Date.now(), texto: String(upd?.message?.text || (upd?.message?.voice ? "[audio]" : "")).slice(0, 60) })).catch(() => {});
+    await atender(env, iaJSON, upd).catch(async (e) => { console.log("Asistente:", e?.stack || e); await kvPut(env, "asist_error", JSON.stringify({ ts: Date.now(), error: String(e?.stack || e).slice(0, 800) })).catch(() => {}); });
+  })());
   return new Response("ok");
 }
 
@@ -341,6 +344,13 @@ export async function apiAsistente(env, req, url, quien, base) {
     const sec = await secretoTG(env);
     const x = await tg(env, "setWebhook", { url: `${base}/tg/${sec}`, secret_token: sec, allowed_updates: ["message", "edited_message"], drop_pending_updates: false });
     return json({ ok: !!x?.ok, telegram: x, chats: await chatsConocidos(env) });
+  }
+  // Diagnóstico (se abre desde el celu logueado en el panel): qué dice Telegram, último mensaje y último error. Si el webhook se cayó, lo vuelve a poner.
+  if (r === "estado") {
+    const sec = await secretoTG(env), info = await tg(env, "getWebhookInfo", {});
+    let reactivado = null;
+    if (env.TELEGRAM_TOKEN && info?.result?.url !== `${base}/tg/${sec}`) reactivado = await tg(env, "setWebhook", { url: `${base}/tg/${sec}`, secret_token: sec, allowed_updates: ["message", "edited_message"], drop_pending_updates: false });
+    return json({ version: VERSION_ASISTENTE, telegram: info?.result ? { url_ok: info.result.url === `${base}/tg/${sec}`, pendientes: info.result.pending_update_count, ultimo_error: info.result.last_error_message || "", error_hace_min: info.result.last_error_date ? Math.round((Date.now() / 1000 - info.result.last_error_date) / 60) : null } : info, reactivado, ultimo_mensaje: JSON.parse((await kvGet(env, "asist_ultimo")) || "null"), ultimo_error: JSON.parse((await kvGet(env, "asist_error")) || "null"), chats: await chatsConocidos(env) });
   }
   if (r === "tareas") return json(await pendientes(env, url.searchParams.get("de") || quien));
   return json({ error: "ruta desconocida" }, 404);
