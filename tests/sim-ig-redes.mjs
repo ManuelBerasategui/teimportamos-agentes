@@ -50,7 +50,7 @@ globalThis.fetch = async (u) => {
   return new Response("{}", { status: 404 });
 };
 const tg = [];
-const env = { DB, VERIFY_TOKEN: "k", TELEGRAM_TOKEN: "t", TELEGRAM_CHAT: "1" };
+const env = { DB, VERIFY_TOKEN: "k", TELEGRAM_TOKEN: "t", TELEGRAM_CHAT: "1", TELEGRAM_AVISOS: "todos" };
 const ESQUEMA_BASE = ["CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT, exp INTEGER)"];
 for (const s of ESQUEMA_BASE) db.exec(s);
 

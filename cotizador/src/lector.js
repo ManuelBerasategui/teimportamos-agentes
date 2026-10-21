@@ -405,7 +405,12 @@ export async function listas(env) {
 // ---------------------------------------------------------------------------
 // 5) Telegram (alertas y reportes al celular, gratis)
 // ---------------------------------------------------------------------------
+// Avisos automáticos por Telegram: el dueño no los lee, así que solo pasan los de "algo se rompió".
+// El resto (reportes, cotizaciones, seguimientos, videos listos) queda en el panel y el asistente los resume en su plan.
+// Para volver a recibir todo: kv telegram_avisos = "todos".
+const AVISO_CRITICO = /desvincul|no llegan mensajes|No pude editar|Videos: hay .* guardados/i;
 export async function telegram(env, texto) {
+  if (!AVISO_CRITICO.test(String(texto)) && env.TELEGRAM_AVISOS !== "todos" && (await kvGet(env, "telegram_avisos")) !== "todos") return false;
   const chat = env.TELEGRAM_CHAT || (await kvGet(env, "telegram_chat"));
   if (!env.TELEGRAM_TOKEN || !chat) return false;
   const r = await fetch(`https://api.telegram.org/bot${env.TELEGRAM_TOKEN}/sendMessage`, {

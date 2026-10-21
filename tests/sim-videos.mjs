@@ -30,7 +30,7 @@ const R2 = {
 };
 const tg = [];
 globalThis.fetch = async (u) => { if (String(u).includes("telegram")) tg.push(String(u)); return new Response("{}"); };
-const env = { DB, VIDEOS: R2, VERIFY_TOKEN: "k", TELEGRAM_TOKEN: "t", TELEGRAM_CHAT: "1" };
+const env = { DB, VIDEOS: R2, VERIFY_TOKEN: "k", TELEGRAM_TOKEN: "t", TELEGRAM_CHAT: "1", TELEGRAM_AVISOS: "todos" };
 db.exec("CREATE TABLE kv (k TEXT PRIMARY KEY, v TEXT, exp INTEGER)");
 
 const V = await import(`${dir}/co/videos.js`);
