@@ -1,4 +1,4 @@
-import { notionActivo, notionHoy, textoNotion, crearEnNotion, marcarEnNotion, descubrir, diagnosticoNotion, fijarRol } from "./notion.js";
+import { notionActivo, notionHoy, textoNotion, crearEnNotion, marcarEnNotion, descubrir, diagnosticoNotion, fijarRol, agendaNotion, nivelesNotion } from "./notion.js";
 // Asistente personal por Telegram: le mandás un audio o un texto con todo lo que tenés en la cabeza
 // y lo ordena en tareas por prioridad. Cada persona tiene su lista (según desde qué chat escribe).
 // Comandos: "lista" (o /lista), "hecho 2" / "listo 1,3", "borrar 4", "subí 3" / "bajá 3", "hoy".
@@ -10,7 +10,7 @@ const nid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 const AR = 3 * 3600e3;
 const hoyAR = () => new Date(Date.now() - AR).toISOString().slice(0, 10);
 
-export const VERSION_ASISTENTE = "21/10 15:00 (Notion 2)";
+export const VERSION_ASISTENTE = "21/10 16:00 (agenda Notion)";
 export const PRIORIDADES = { 1: "🔴 URGENTE (hoy)", 2: "🟠 IMPORTANTE (esta semana)", 3: "🟡 PUEDE ESPERAR", 4: "⚪ ALGÚN DÍA / IDEAS" };
 const AREAS = ["Ventas", "Proveedores", "Redes", "Operaciones", "Finanzas", "Sistema", "Equipo", "Personal", "Otro"];
 
@@ -147,6 +147,7 @@ async function secretario(env, iaJSON, quien, chat, texto) {
   const [l, perfil, redes, neg, prefs] = await Promise.all([pendientes(env, quien), perfilDe(env, quien), redesHoy(env), negocioPendiente(env), prefsDe(env, quien)]);
   const focoId = await kvGet(env, "asist_foco:" + quien), foco = l.find((x) => x.id === focoId) || null;
   const nt = notionActivo(env) ? await notionHoy(env).catch(() => null) : null;
+  const niveles = nt ? await nivelesNotion(env).catch(() => []) : [];
   const nItems = nt ? [...nt.tareas.map((x) => ({ ...x, k: "tarea" })), ...nt.habitos.map((x) => ({ ...x, k: "habito" }))].map((x, i) => ({ ...x, ref: "n" + (i + 1) })) : [];
   const chats = await chatsSinContestar(env, 10);
   const ahora = new Date(Date.now() - AR), hm = ahora.toISOString().slice(11, 16), dia = ahora.toLocaleDateString("es-AR", { weekday: "long", timeZone: "UTC" });
@@ -163,10 +164,12 @@ QUÉ HAY QUE HACER EN REDES (dato real del panel):
 ${redes.map((x) => "- " + x).join("\n")}
 WHATSAPP 805: ${neg.chats} chats sin contestar, ${neg.calientes} calientes.
 ${nt ? `SU NOTION (donde organiza su vida: tareas por categoría, hábitos y eventos; tenelo en cuenta para el plan y para "¿ahora qué hago?"):
-${nItems.map((x) => `[${x.ref}] ${x.k === "habito" ? "hábito de hoy" : "tarea"}: ${x.texto}${x.categoria ? " [" + x.categoria + "]" : ""}${x.fecha ? " (" + String(x.fecha).slice(0, 10) + ")" : ""}`).join("\n") || "(nada abierto)"}
+${nItems.map((x) => `[${x.ref}] ${x.k === "habito" ? "hábito de hoy" : "actividad"}: ${x.hora ? x.hora + " " : ""}${x.texto}${x.categoria ? " [" + x.categoria + "]" : ""} · ${x.estado || ""}${x.fecha === "vencida" ? " · VENCIDA" : ""}`).join("\n") || "(nada abierto hoy)"}
+Ya hecho hoy en Notion: ${(nt.hoy || []).filter((x) => x.hecho).map((x) => x.texto).join(", ") || "nada"}
+Habilidades/categorías de su Notion (para "habilidad" de lo nuevo): ${(niveles || []).join(", ")}
 ${(nt.otras || []).map((o) => `BASE "${o.base}" (últimas filas): ${o.filas.join(" | ")}`).join("\n")}
 ${nt.eventos.length ? "EVENTOS DE HOY: " + nt.eventos.map((x) => (x.hora ? x.hora + " " : "") + x.texto).join(" | ") : ""}
-Si te pregunta por su Notion, contestá SOLO con lo que está acá arriba (si está vacío, decí que no ves nada y que mande "notion" para revisar la conexión); nunca inventes que algo está en Notion. Si dice que hizo algo de su Notion (una tarea o un hábito, ej: "ya fui al gym", "leí"), poné su ref en "notion_hechas". No dupliques en "nuevas" lo que ya está en su Notion.` : ""}
+Si pregunta por su agenda, lo que le queda hoy o sus pendientes de Notion, poné "incluir_agenda": true (yo pego la agenda exacta de Notion) y en "respuesta" solo una línea de lo más importante. Si te pregunta por su Notion, contestá SOLO con lo que está acá arriba (si está vacío, decí que no ves nada y que mande "notion" para revisar la conexión); nunca inventes que algo está en Notion. Si dice que hizo algo de su Notion (una tarea o un hábito, ej: "ya fui al gym", "leí"), poné su ref en "notion_hechas". No dupliques en "nuevas" lo que ya está en su Notion.` : ""}
 
 Actuá como un secretario de verdad:
 1. Anotá cada cosa concreta que tiene que hacer como tarea separada, empezando con verbo y con el detalle que dio ("Repasar física para el parcial del 28/10"). Respetá exactamente lo que pidió anotar.
@@ -174,13 +177,13 @@ Actuá como un secretario de verdad:
 3. Cosas con horario (cursar, gym, reunión, llamada a una hora) son "evento" con hora_ini y hora_fin (HH:MM). Si el horario ya pasó hoy, o dice que ya lo hizo/terminó o que no va, ponelo en "hechas" o "borrar" (no lo dejes pendiente). Las cursadas fijas de cada semana van al PERFIL, no como tarea, salvo la de hoy si tiene horario.
 4. Si algo ya está en la lista, no lo repitas: actualizalo. Si dice que algo ya lo hizo, va a "hechas". Si dice que algo no va más, a "borrar".
 5. Prioridad: 1 = hoy (plata o cliente esperando, se vence, examen cerca); 2 = esta semana; 3 = puede esperar; 4 = algún día.
-6. Si pregunta algo, contestá eso primero y directo. Si pide los chats, poné "incluir_chats": true (yo agrego la lista real con números). Si pregunta qué hay que hacer en redes, "incluir_redes": true.
+6. Si pregunta algo, contestá ESO primero y directo; no le repitas lo de los chats del 805 en cada mensaje (solo si lo pregunta o si de verdad es lo siguiente). Si pide los chats, poné "incluir_chats": true (yo agrego la lista real con números). Si pregunta qué hay que hacer en redes, "incluir_redes": true.
 7. Si pide que le organices el día (o dicta varias cosas), armá en "respuesta" el plan de lo que QUEDA del día desde las ${hm}, en bloques con horario real, respetando lo fijo (facu, gym) y poniendo primero lo que tiene plata o clientes esperando. Repartí los chats en 2 o 3 bloques cortos.
 8. "perfil": si aparece algo estable de su rutina (horarios de facu por día, gym, trabajo, fechas de parciales), devolvé el PERFIL COMPLETO actualizado (2 a 8 líneas). Si no, "".
 9. "preferencias": si te dice CÓMO quiere que le hables o uses el bot (largo de los mensajes, de a una cosa, horarios de avisos, que no le mandes X), devolvé sus preferencias COMPLETAS actualizadas (1 a 6 líneas). Si no, "".
 10. "siguiente": la UNA cosa que tiene que hacer ahora (Kanban: una a la vez), elegida por prioridad, hora y lo que tiene plata o clientes esperando. "siguiente_id": el id si es una tarea de la lista (o vacío). Si pregunta "¿ahora qué hago?" o terminó algo, la respuesta es solo eso: qué hacer ahora y por qué en una línea.
 11. "respuesta": en rioplatense, MUY corta (1 a 3 líneas) y clara, como un secretario que ya lo resolvió (no "ahí me fijo"). Sin repetir la lista completa salvo que la pida.
-Respondé SOLO JSON: {"nuevas":[{"texto":"...","detalle":"","prioridad":1,"area":"${AREAS.join("|")}","para":"YYYY-MM-DD o vacío","tipo":"tarea|evento","hora_ini":"","hora_fin":""}],"hechas":["id"],"borrar":["id"],"actualizar":[{"id":"...","texto":"","prioridad":null,"para":"","hora_ini":"","hora_fin":""}],"perfil":"","incluir_chats":false,"incluir_redes":false,"mostrar_lista":false,"preferencias":"","siguiente":"","siguiente_id":"","notion_hechas":[],"respuesta":"..."}`);
+Respondé SOLO JSON: {"nuevas":[{"texto":"...","detalle":"","prioridad":1,"area":"${AREAS.join("|")}","para":"YYYY-MM-DD o vacío","tipo":"tarea|evento","hora_ini":"","hora_fin":"","habilidad":"una de sus habilidades de Notion o vacío"}],"hechas":["id"],"borrar":["id"],"actualizar":[{"id":"...","texto":"","prioridad":null,"para":"","hora_ini":"","hora_fin":""}],"perfil":"","incluir_chats":false,"incluir_redes":false,"mostrar_lista":false,"preferencias":"","siguiente":"","siguiente_id":"","notion_hechas":[],"incluir_agenda":false,"respuesta":"..."}`);
   if (!r) return null;
   const ids = new Set(l.map((x) => x.id)), st = [], hhmm = (v) => (/^\d{1,2}:\d{2}$/.test(String(v || "")) ? String(v).padStart(5, "0") : "");
   const pal = (t) => new Set(String(t).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(/[^a-z0-9ñ]+/).filter((w) => w.length > 2));
@@ -189,7 +192,7 @@ Respondé SOLO JSON: {"nuevas":[{"texto":"...","detalle":"","prioridad":1,"area"
   let n = 0; const creadas = [];
   for (const x of (Array.isArray(r.nuevas) ? r.nuevas : []).slice(0, 30)) {
     const tx = String(x?.texto || "").trim(); if (tx.length <= 3 || VAGA.test(tx) || vistas.some((v) => igual(v, tx)) || nItems.some((y) => igual(y.texto, tx))) continue; vistas.push(tx); n++;
-    const idN = nid(); creadas.push({ id: idN, texto: tx, fecha: /^\d{4}-\d{2}-\d{2}$/.test(x.para || "") ? x.para : "", categoria: x.area || "" });
+    const idN = nid(); creadas.push({ id: idN, texto: tx, fecha: /^\d{4}-\d{2}-\d{2}$/.test(x.para || "") ? x.para : "", categoria: x.habilidad || x.area || "" });
     st.push(env.DB.prepare("INSERT INTO mis_tareas (id, ts, quien, texto, detalle, prioridad, area, para, estado, origen, tipo, hora_ini, hora_fin) VALUES (?,?,?,?,?,?,?,?,'pendiente',?,?,?,?)")
       .bind(idN, Date.now(), quien, tx.slice(0, 200), String(x.detalle || "").slice(0, 500), Math.max(1, Math.min(4, parseInt(x.prioridad) || 3)), AREAS.includes(x.area) ? x.area : "Otro", /^\d{4}-\d{2}-\d{2}$/.test(x.para || "") ? x.para : (hhmm(x.hora_ini) ? hoyAR() : ""), texto.slice(0, 300), x.tipo === "evento" ? "evento" : "tarea", hhmm(x.hora_ini), hhmm(x.hora_fin)));
   }
@@ -210,6 +213,7 @@ Respondé SOLO JSON: {"nuevas":[{"texto":"...","detalle":"","prioridad":1,"area"
   if (r.siguiente_id && ids.has(String(r.siguiente_id))) await kvPut(env, "asist_foco:" + quien, String(r.siguiente_id));
   const marcas = [n ? `+${n} anotada${n > 1 ? "s" : ""}${enNotion ? ` (${enNotion} en Notion)` : ""}` : "", tachNotion ? `✅ ${tachNotion} marcada${tachNotion > 1 ? "s" : ""} en Notion` : "", hechas.length ? `✅ ${hechas.length} tachada${hechas.length > 1 ? "s" : ""}` : "", borrar.length ? `🗑 ${borrar.length} sacada${borrar.length > 1 ? "s" : ""}` : ""].filter(Boolean).join(" · ");
   let out = String(r.respuesta || "Listo.").slice(0, 2500) + (marcas ? `\n(${marcas})` : "");
+  if (r.incluir_agenda && nt) out += "\n\n" + agendaNotion(nt) + (neg.calientes ? `\n\n💬 Negocio: ${neg.calientes} chats calientes del 805 esperando (decime "chats").` : "");
   if (r.incluir_chats) out += "\n\n" + chats;
   if (r.incluir_redes) out += "\n\n📲 Hoy en redes:\n" + redes.map((x) => "• " + x).join("\n");
   if (r.siguiente && !String(r.respuesta || "").includes(String(r.siguiente).slice(0, 25))) out += `\n\n👉 Ahora: ${r.siguiente}`;
@@ -254,13 +258,15 @@ async function porNumero(env, chat, nums) {
   return nums.map((n) => ids[n - 1]).filter(Boolean);
 }
 
+// Palabras que el audio entiende mal seguido
+const corregir = (t) => t.replace(/\b(nou?s[oó]n|nous?ion|knowzone|know ?zone|noci[oó]n|noshon|n[oó]chon|nosh[oó]n|noution|n[oa]u?ti[oó]n)\b/gi, "Notion").replace(/\bel ochocientos cinco\b/gi, "el 805");
 async function transcribirTG(env, fileId) {
   const f = await tg(env, "getFile", { file_id: fileId });
   if (!f?.ok) throw new Error("no pude bajar el audio");
   const buf = new Uint8Array(await (await fetch(`https://api.telegram.org/file/bot${env.TELEGRAM_TOKEN}/${f.result.file_path}`)).arrayBuffer());
   let bin = ""; for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
-  const r = await env.AI.run("@cf/openai/whisper-large-v3-turbo", { audio: btoa(bin), language: "es" });
-  return String(r?.text || "").trim();
+  const r = await env.AI.run("@cf/openai/whisper-large-v3-turbo", { audio: btoa(bin), language: "es", initial_prompt: "Notion, Telegram, WhatsApp 805, Buco, Matías, Pedro, reels, carruseles, historias, Mercado Libre, Alibaba, facultad, física, cálculo." });
+  return corregir(String(r?.text || "").trim());
 }
 
 async function organizar(env, iaJSON, quien, texto) {
@@ -331,6 +337,11 @@ async function atender(env, iaJSON, upd) {
     return decir(env, chat, (await planDia(env, iaJSON, quien)) || "La IA no respondió ahora. Mientras tanto:\n\n" + (await textoLista(env, chat, quien, { titulo: "Para hoy", soloHoy: true })));
   }
   if (/^\/?(version|versión)\s*$/.test(t)) return decir(env, chat, "Asistente versión " + VERSION_ASISTENTE);
+  if (/^\/?(agenda|mi agenda|hoy en notion|notion hoy|que me queda( hoy)?)\s*\??$/.test(t)) {
+    if (!notionActivo(env)) return decir(env, chat, await textoLista(env, chat, quien, { titulo: "Para hoy", soloHoy: true }));
+    const nt = await notionHoy(env).catch(() => null), neg = await negocioPendiente(env);
+    return decir(env, chat, (nt ? agendaNotion(nt) : "No pude leer tu Notion ahora.") + (neg.calientes ? `\n\n💬 Negocio: ${neg.calientes} chats calientes del 805 (decime "chats").` : ""));
+  }
   if (/^\/?(chats|whatsapp|wpp|805)\s*$/.test(t)) return decir(env, chat, await chatsSinContestar(env));
   if (/^\/?(redes|instagram)\s*$/.test(t)) return decir(env, chat, "📲 Hoy en redes:\n" + (await redesHoy(env)).map((x) => "• " + x).join("\n"));
   if (/^\/?(negocio|pendientes del negocio|panel)\b/.test(t)) { const n = await negocioPendiente(env); return decir(env, chat, n.texto ? "Lo que está esperando en el negocio:\n" + n.texto : "En el negocio no hay nada esperando. 🙌"); }
