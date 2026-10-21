@@ -52,4 +52,21 @@ chk("no duplica tarea", db.prepare("SELECT COUNT(*) n FROM mis_tareas WHERE esta
 db.prepare("INSERT OR REPLACE INTO kv VALUES ('asist_prefs:Manuel','No me mandes el aviso de las 14',NULL)").run();
 const n1 = enviados.length; await A.cronAsistente(env, t(17), ia); chk("respeta preferencia sin aviso 14", enviados.length === n1);
 await mandar({ text: "listo" }); chk("listo sin número tacha el foco", db.prepare("SELECT COUNT(*) n FROM mis_tareas WHERE estado='hecha'").get().n >= 1 && enviados.at(-1).includes("Bien ahí"));
+// ---- Notion ----
+env.NOTION_TOKEN = "secret_x"; const notionLlamadas = [];
+const DBS = [{ id: "dbT", object: "database", title: [{ plain_text: "Tareas RPG" }], properties: { Nombre: { type: "title" }, Fecha: { type: "date" }, Hecho: { type: "checkbox" }, Categoría: { type: "select", select: { options: [{ name: "Trabajo" }, { name: "Estudio" }] } }, Tiempo: { type: "number" } } },
+  { id: "dbH", object: "database", title: [{ plain_text: "Hábitos diarios" }], properties: { Día: { type: "title" }, Fecha: { type: "date" }, Gym: { type: "checkbox" }, Leer: { type: "checkbox" } } }];
+const fetch0 = globalThis.fetch;
+globalThis.fetch = async (u, o) => { u = String(u); if (!u.includes("api.notion.com")) return fetch0(u, o); const b = o?.body ? JSON.parse(o.body) : null; notionLlamadas.push([o?.method || "GET", u.split("/v1/")[1], b]);
+  if (u.endsWith("/search")) return { ok: true, json: async () => ({ results: DBS }) };
+  if (u.includes("databases/dbT/query")) return { ok: true, json: async () => ({ results: [{ id: "pT1", properties: { Nombre: { type: "title", title: [{ plain_text: "Leer cap 3 de física" }] }, Hecho: { type: "checkbox", checkbox: false }, Categoría: { type: "select", select: { name: "Estudio" } }, Fecha: { type: "date", date: null } } }] }) };
+  if (u.includes("databases/dbH/query")) return { ok: true, json: async () => ({ results: [{ id: "pH1", properties: { Día: { type: "title", title: [{ plain_text: "hoy" }] }, Gym: { type: "checkbox", checkbox: false }, Leer: { type: "checkbox", checkbox: true } } }] }) };
+  return { ok: true, json: async () => ({ id: "nuevaPage" }) }; };
+const iaN = async (_e, p) => { prompts.push(p); return { nuevas: [{ texto: "Llamar al contador por el monotributo", prioridad: 2, area: "Trabajo" }], notion_hechas: ["n2"], respuesta: "Hecho." }; };
+const ctxN = { p: null, waitUntil(x) { this.p = x; } };
+await A.rutaTelegram(env, { json: async () => ({ message: { chat: { id: 111 }, text: "ya fui al gym, anotame llamar al contador por el monotributo" } }), headers: { get: () => sec } }, new URL("https://x/tg/" + sec), ctxN, iaN);
+chk("notion en el contexto", prompts.at(-1).includes("SU NOTION") && prompts.at(-1).includes("Leer cap 3 de física") && prompts.at(-1).includes("hábito de hoy: Gym"));
+chk("crea tarea en notion", notionLlamadas.some(([m, r, b]) => r === "pages" && b?.parent?.database_id === "dbT" && b.properties.Nombre.title[0].text.content.includes("contador") && b.properties["Categoría"].select.name === "Trabajo"));
+chk("marca hábito gym", notionLlamadas.some(([m, r, b]) => m === "PATCH" && r === "pages/pH1" && b.properties.Gym.checkbox === true));
+chk("avisa", enviados.at(-1).includes("en Notion"));
 console.log(`sim-asistente: ${ok} ok, ${mal} fallas`);
