@@ -123,13 +123,13 @@ chk("resumen: KPIs de la cuenta", res.kpis.alcance7 === 2000 && res.kpis.alcance
 chk("resumen: DMs pendientes", res.kpis.dms_pendientes === 2 && res.dms_error === "");
 chk("resumen: formatos ordenados por mediana", res.formatos.length > 0 && res.formatos[0].alcance_mediano >= res.formatos.at(-1).alcance_mediano);
 const gi = await api("generar-ideas", {});
-chk("ideas: guarda 2 por tanda (dos tandas) y filtra la prohibida", gi.ok && gi.cantidad === 4 && fila("SELECT COUNT(*) n FROM ig_ideas WHERE titulo LIKE '%Vapes%'").n === 0);
+chk("ideas: guarda 2 por tanda (dos tandas) y filtra la prohibida", gi.ok && gi.cantidad === 2 && fila("SELECT COUNT(*) n FROM ig_ideas WHERE titulo LIKE '%Vapes%'").n === 0);
 const pi = prompts.at(-1);
 chk("ideas: el prompt cruza WhatsApp, DMs y formatos", pi.includes("auriculares A9 Pro (2)") && pi.includes("sigo esperando") && pi.includes("Historia de cliente a cámara") && pi.includes("[precio real]"));
 const li = await api("ideas?estado=nueva");
-chk("ideas: lista con guion", li.length === 4 && Array.isArray(li[0].guion) && li[0].guion.length >= 2);
+chk("ideas: lista con guion", li.length === 2 && Array.isArray(li[0].guion) && li[0].guion.length >= 2);
 await api("idea-estado", { id: li[0].id, estado: "grabada" });
-chk("ideas: marcar grabada", (await api("ideas?estado=grabada")).length === 1 && (await api("ideas?estado=nueva")).length === 3);
+chk("ideas: marcar grabada", (await api("ideas?estado=grabada")).length === 1 && (await api("ideas?estado=nueva")).length === 1);
 chk("ideas: estado inválido rechazado", !!(await api("idea-estado", { id: li[0].id, estado: "x" })).error);
 await api("generar-ideas", {});
 chk("ideas: el prompt recuerda las ideas previas", prompts.at(-1).includes("El revendedor de Córdoba") && prompts.at(-1).includes("(grabada)"));

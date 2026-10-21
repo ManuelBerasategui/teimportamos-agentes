@@ -190,6 +190,7 @@ ${previas.map((x) => `- ${x.titulo} [${x.formato}] (${x.estado})`).join("\n") ||
 
 Reglas para los guiones:
 - ORIGEN OBLIGATORIO. Ninguna idea sale de la nada. Si hay REFERENCIAS, al menos 2 de cada 3 ideas adaptan UNA referencia concreta: tomá su mecánica (lo que la hace enganchar: la sorpresa, el momento real, el giro, el formato) y trasladala a importación con nuestra utilería; en "origen" poné "ref:<id>". El resto son versiones RENOVADAS de lo que mejor nos anduvo (gancho ganador de arriba o mejores reels): misma mecánica, otro producto, otra situación, otro giro; en "origen" poné "reel: <cuál>". El mismo chiste no da risa dos veces: nunca la misma idea con otras palabras.
+- PROHIBIDO el molde "El negocio de X por cantidad" / "Cuánto le gano a X": cambiar el producto NO es una idea nueva. Cada idea tiene una situación distinta (algo que pasó, salió mal, sorprendió, se descubrió) y las de una tanda usan escenas distintas (no todas a cámara).
 - PROHIBIDO lo genérico y el cliché: "5 errores al importar", "tips para", "sabías que", "la verdad que nadie te cuenta", "el secreto de", listas, consejos sueltos, frases motivacionales. Cada idea es una SITUACIÓN concreta con estímulo (algo que pasa, se ve y sorprende), no un tema.
 - "escena": qué tipo de video es (camara = yo hablando a cámara, mano = producto en mano, pantalla = grabación de pantalla, calle = caminando y hablando, mixto). "mostrar": qué se ve durante el cuerpo, concreto (ej: "caja de AirPods arrugada en la mano, después pantalla con el precio en ML").
 - CADA IDEA ES UN CUERPO + 3 o 4 GANCHOS. El cuerpo es el guion que se graba una vez; los ganchos son aperturas distintas del primer segundo que se graban aparte y se pegan al mismo cuerpo, para testear cuál rinde.
@@ -210,7 +211,12 @@ Respondé SOLO JSON: {"ideas":[{"titulo":"...","formato":"ml_vs_china|ml_vendi|p
     const x = await pedir(n, r.ideas.map((y) => y?.titulo).filter(Boolean)).catch(() => null);
     if (Array.isArray(x?.ideas)) r.ideas.push(...x.ideas);
   }
-  const ideas = (r?.ideas || []).filter((x) => x?.titulo && (x?.gancho || x?.ganchos?.length) && !PROHIBIDO.test(JSON.stringify(x))).slice(0, cantidad);
+  const vistos = previas.map((x) => x.titulo);
+  const ideas = (r?.ideas || []).filter((x) => {
+    if (!x?.titulo || !(x?.gancho || x?.ganchos?.length) || PROHIBIDO.test(JSON.stringify(x))) return false;
+    if (vistos.some((t) => parecido(t, x.titulo) >= 0.75)) return false;   // repetida o casi igual a una que ya está
+    vistos.push(x.titulo); return true;
+  }).slice(0, cantidad);
   if (!ideas.length) return { ok: false, error: "La IA no respondió o no dio ideas válidas. Probá de nuevo en un minuto." };
   const lote = id();
   await env.DB.batch(ideas.map((x) => stmtIdea(env, x, { lote, quien })));
