@@ -1,0 +1,98 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><style>html,body{margin:0;background:#000}canvas{display:block}</style></head>
+<body><canvas id="c" width="1080" height="1920"></canvas>
+<script>
+// Motor de reels animados (estilo "dos restaurantes" / "si quedaran 10 personas").
+// Un guion = lista de escenas con duración. render(t) dibuja el cuadro exacto del segundo t: así se graba cuadro por cuadro sin saltos.
+const cv = document.getElementById("c"), x = cv.getContext("2d"), W = 1080, H = 1920;
+const F = "'Inter Display', 'Inter', sans-serif";
+const ease = (p) => (p < 0 ? 0 : p > 1 ? 1 : 1 - Math.pow(1 - p, 3));
+const pop = (p) => { p = Math.max(0, Math.min(1, p)); const c1 = 1.70158, c3 = c1 + 1; return 1 + c3 * Math.pow(p - 1, 3) + c1 * Math.pow(p - 1, 2); };
+const lerp = (a, b, p) => a + (b - a) * p;
+const P = { fondo1: "#EEF0F3", fondo2: "#D9DDE3", tinta: "#0E0E10", gris: "#6B7280", nar: "#EA5B0C", verde: "#16A34A", rojo: "#DC2626", ml: "#FFE600", azul: "#2F6BFF" };
+
+function fondo(t) {
+  const g = x.createLinearGradient(0, 0, 0, H); g.addColorStop(0, P.fondo1); g.addColorStop(1, P.fondo2); x.fillStyle = g; x.fillRect(0, 0, W, H);
+  // grilla suave tipo plano urbano, se mueve lento para que nunca esté quieto
+  x.save(); x.globalAlpha = 0.06; x.strokeStyle = "#000"; x.lineWidth = 2; const o = (t * 18) % 90;
+  for (let i = -2; i < 26; i++) { x.beginPath(); x.moveTo(i * 90 - o, 0); x.lineTo(i * 90 - o - 600, H); x.stroke(); }
+  x.restore();
+}
+function texto(s, y, tam, p, { color = P.tinta, peso = 900, alin = "center", maxW = 940, x0 = W / 2 } = {}) {
+  if (p <= 0) return;
+  x.save(); x.globalAlpha = ease(p * 1.6); const dy = (1 - ease(p * 1.4)) * 40;
+  x.font = `${peso} ${tam}px ${F}`; x.textAlign = alin; x.textBaseline = "alphabetic"; x.fillStyle = color;
+  // partes con *resaltado* en naranja
+  const lineas = partir(s, tam, peso, maxW); let yy = y + dy;
+  for (const l of lineas) { dibujarLinea(l, x0, yy, tam, peso, color, alin); yy += tam * 1.12; }
+  x.restore();
+  return lineas.length * tam * 1.12;
+}
+function partir(s, tam, peso, maxW) {
+  x.font = `${peso} ${tam}px ${F}`; const pal = s.split(" "), out = []; let cur = "";
+  for (const w of pal) { const prueba = cur ? cur + " " + w : w; if (x.measureText(prueba.replace(/\*/g, "")).width > maxW && cur) { out.push(cur); cur = w; } else cur = prueba; }
+  if (cur) out.push(cur); return out;
+}
+function dibujarLinea(l, x0, y, tam, peso, color, alin) {
+  const trozos = l.split("*"); const total = x.measureText(l.replace(/\*/g, "")).width;
+  let xx = alin === "center" ? x0 - total / 2 : alin === "right" ? x0 - total : x0; x.textAlign = "left";
+  trozos.forEach((tr, i) => { x.fillStyle = i % 2 ? P.nar : color; x.fillText(tr, xx, y); xx += x.measureText(tr).width; });
+}
+function caja(cx, cy, w, h, r, color, sombra = true) {
+  x.save(); if (sombra) { x.shadowColor = "rgba(0,0,0,.18)"; x.shadowBlur = 40; x.shadowOffsetY = 18; }
+  x.fillStyle = color; x.beginPath(); x.roundRect(cx - w / 2, cy - h / 2, w, h, r); x.fill(); x.restore();
+}
+function etiqueta(s, cx, cy, p, fondo = "#1F2937", color = "#fff", tam = 34) {
+  if (p <= 0) return; x.save(); const k = pop(p); x.translate(cx, cy); x.scale(k, k);
+  x.font = `800 ${tam}px ${F}`; const w = x.measureText(s).width + 44; caja(0, 0, w, tam * 1.6, tam * 0.8, fondo, false);
+  x.fillStyle = color; x.textAlign = "center"; x.textBaseline = "middle"; x.fillText(s, 0, 2); x.restore();
+}
+// Local de Mercado Libre estilizado (edificio con toldo)
+function local(cx, cy, p, { nombre = "Vendedor", toldo = P.ml, gente = 0, t = 0 } = {}) {
+  if (p <= 0) return; x.save(); const k = pop(p); x.translate(cx, cy); x.scale(k, k);
+  caja(0, 0, 300, 380, 18, "#F8FAFC"); // edificio
+  x.fillStyle = "#CBD5E1"; for (let f = 0; f < 3; f++) for (let c = 0; c < 3; c++) x.fillRect(-110 + c * 80, -160 + f * 70, 50, 44);
+  x.fillStyle = toldo; x.beginPath(); x.moveTo(-160, 60); x.lineTo(160, 60); x.lineTo(140, 110); x.lineTo(-140, 110); x.fill();
+  x.fillStyle = "rgba(0,0,0,.12)"; for (let i = -140; i < 140; i += 40) x.fillRect(i, 60, 20, 50);
+  x.fillStyle = "#334155"; x.fillRect(-50, 120, 100, 70);
+  for (let i = 0; i < gente; i++) { const gx = -120 + (i % 6) * 48 + Math.sin(t * 3 + i) * 4, gy = 230 + Math.floor(i / 6) * 40; x.fillStyle = ["#0E0E10", "#EA5B0C", "#2F6BFF", "#16A34A"][i % 4]; x.beginPath(); x.arc(gx, gy - 22, 11, 0, 7); x.fill(); x.fillRect(gx - 9, gy - 10, 18, 26); }
+  x.restore(); etiqueta(nombre, cx, cy - 240 * k, p);
+}
+function producto(cx, cy, p, emoji = "🔊", tam = 120) {
+  if (p <= 0) return; x.save(); const k = pop(p); x.translate(cx, cy - (1 - ease(p)) * 200); x.scale(k, k);
+  caja(0, 0, tam * 1.5, tam * 1.5, 30, "#fff"); x.font = `${tam}px 'Noto Color Emoji', sans-serif`; x.textAlign = "center"; x.textBaseline = "middle"; x.fillText(emoji, 0, 8); x.restore();
+}
+function monedas(cx, base, n, p, color = "#F59E0B") {
+  const m = Math.round(n * ease(p));
+  for (let i = 0; i < m; i++) { x.fillStyle = color; x.strokeStyle = "#B45309"; x.lineWidth = 4; x.beginPath(); x.ellipse(cx, base - i * 22, 70, 22, 0, 0, 7); x.fill(); x.stroke(); }
+}
+function barra(cx, base, alto, p, color, valor, rot) {
+  const h = alto * ease(p); caja(cx, base - h / 2, 200, h, 16, color, false);
+  if (p > 0.3) { texto(valor, base - h - 30, 64, (p - 0.3) * 2, { color: P.tinta, x0: cx, maxW: 400 }); }
+  texto(rot, base + 70, 38, p, { color: P.gris, peso: 700, maxW: 300, x0: cx });
+}
+function marca(p) { if (p <= 0) return; x.save(); x.globalAlpha = ease(p); x.font = `800 34px ${F}`; x.fillStyle = P.gris; x.textAlign = "center"; x.fillText("@te.importamos.arg", W / 2, H - 120); x.restore(); }
+
+// ---------- Escenas reutilizables ----------
+const ESC = {
+  titulo: (e, p, t) => { texto(e.texto, 330, e.tam || 120, p * 2); if (e.sub) texto(e.sub, 330 + (e.tam || 120) * 1.3, 52, (p - 0.25) * 2, { color: P.gris, peso: 700 }); },
+  dosLocales: (e, p, t, g) => {
+    local(W / 2 - 200, 1100, g.pLocales, { nombre: e.a || "Vendedor 1", gente: e.genteA ? Math.round(e.genteA * ease(p)) : 0, t });
+    local(W / 2 + 200, 1100, g.pLocales, { nombre: e.b || "Vendedor 2", gente: e.genteB ? Math.round(e.genteB * ease(p)) : 0, t });
+  },
+};
+
+// ---------- Reproductor de guion ----------
+let GUION = null;
+function cargar(g) { GUION = g; let acc = 0; for (const s of g.escenas) { s.ini = acc; acc += s.dur; } GUION.total = acc; return acc; }
+function render(t) {
+  fondo(t);
+  const g = GUION, s = g.escenas.find((e) => t >= e.ini && t < e.ini + e.dur) || g.escenas[g.escenas.length - 1];
+  const p = (t - s.ini) / s.dur, ps = (t - s.ini); // p: 0→1 dentro de la escena; ps: segundos
+  dibujar(s, p, ps, t);
+  marca(1);
+}
+window.cargar = cargar; window.render = render;
+</script>
+<script id="guion"></script>
+</body></html>
