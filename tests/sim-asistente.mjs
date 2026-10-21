@@ -31,6 +31,6 @@ const n0 = enviados.length;
 const hoy = new Date(); const t = (h) => Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), hoy.getUTCDate(), h, 0);
 await A.cronAsistente(env, t(11), ia); chk("8 am plan", enviados.at(-1).includes("Buen día") && enviados.at(-1).includes("Foco"));
 await A.cronAsistente(env, t(17), ia); chk("14 hs cómo vas", enviados.at(-1).includes("Mitad del día"));
-await A.cronAsistente(env, t(0), ia); chk("21 cierre pasa urgentes a mañana", enviados.at(-1).includes("Cierre") && db.prepare("SELECT para FROM tareas").get().para !== "");
+await A.cronAsistente(env, t(0), ia); chk("21 cierre pasa urgentes a mañana", enviados.at(-1).includes("Cierre") && db.prepare("SELECT para FROM mis_tareas").get().para !== "");
 await A.cronAsistente(env, t(12), ia); chk("otras horas no manda", enviados.length === n0 + 3);
 console.log(`sim-asistente: ${ok} ok, ${mal} fallas`);

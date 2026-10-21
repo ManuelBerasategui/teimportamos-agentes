@@ -17,8 +17,8 @@ async function preparar(env) {
   if (listo) return;
   await env.DB.batch([
     "CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT, exp INTEGER)",
-    "CREATE TABLE IF NOT EXISTS tareas (id TEXT PRIMARY KEY, ts INTEGER, quien TEXT, texto TEXT, detalle TEXT, prioridad INTEGER, area TEXT, para TEXT, estado TEXT DEFAULT 'pendiente', hecha_ts INTEGER, origen TEXT)",
-    "CREATE INDEX IF NOT EXISTS tareas_quien ON tareas(quien, estado, prioridad)",
+    "CREATE TABLE IF NOT EXISTS mis_tareas (id TEXT PRIMARY KEY, ts INTEGER, quien TEXT, texto TEXT, detalle TEXT, prioridad INTEGER, area TEXT, para TEXT, estado TEXT DEFAULT 'pendiente', hecha_ts INTEGER, origen TEXT)",
+    "CREATE INDEX IF NOT EXISTS mis_tareas_quien ON mis_tareas(quien, estado, prioridad)",
   ].map((s) => env.DB.prepare(s)));
   listo = true;
 }
@@ -40,7 +40,7 @@ async function chatsConocidos(env) {
 }
 
 async function pendientes(env, quien) {
-  return (await env.DB.prepare("SELECT * FROM tareas WHERE quien=? AND estado='pendiente' ORDER BY prioridad ASC, CASE WHEN para='' OR para IS NULL THEN 1 ELSE 0 END, para ASC, ts ASC LIMIT 80").bind(quien).all()).results || [];
+  return (await env.DB.prepare("SELECT * FROM mis_tareas WHERE quien=? AND estado='pendiente' ORDER BY prioridad ASC, CASE WHEN para='' OR para IS NULL THEN 1 ELSE 0 END, para ASC, ts ASC LIMIT 80").bind(quien).all()).results || [];
 }
 
 // Arma el texto de la lista numerada y guarda qué número es cada tarea (para "hecho 3")
@@ -140,11 +140,11 @@ Respondé SOLO JSON: {"nuevas":[{"texto":"...","detalle":"contexto útil o vací
   if (!r) return null;
   const ids = new Set(actuales.map((x) => x.id)), st = [];
   const nuevas = (Array.isArray(r.nuevas) ? r.nuevas : []).filter((x) => x && String(x.texto || "").trim().length > 3).slice(0, 30);
-  for (const x of nuevas) st.push(env.DB.prepare("INSERT INTO tareas (id, ts, quien, texto, detalle, prioridad, area, para, estado, origen) VALUES (?,?,?,?,?,?,?,?,'pendiente',?)")
+  for (const x of nuevas) st.push(env.DB.prepare("INSERT INTO mis_tareas (id, ts, quien, texto, detalle, prioridad, area, para, estado, origen) VALUES (?,?,?,?,?,?,?,?,'pendiente',?)")
     .bind(nid(), Date.now(), quien, String(x.texto).trim().slice(0, 200), String(x.detalle || "").slice(0, 500), Math.max(1, Math.min(4, parseInt(x.prioridad) || 3)), AREAS.includes(x.area) ? x.area : "Otro", /^\d{4}-\d{2}-\d{2}$/.test(x.para || "") ? x.para : "", texto.slice(0, 300)));
   const hechas = (Array.isArray(r.hechas) ? r.hechas : []).map(String).filter((i) => ids.has(i));
-  for (const i of hechas) st.push(env.DB.prepare("UPDATE tareas SET estado='hecha', hecha_ts=? WHERE id=?").bind(Date.now(), i));
-  for (const u of (Array.isArray(r.actualizar) ? r.actualizar : [])) if (ids.has(String(u?.id))) st.push(env.DB.prepare("UPDATE tareas SET texto=COALESCE(NULLIF(?,''),texto), prioridad=COALESCE(?,prioridad), para=COALESCE(NULLIF(?,''),para) WHERE id=?").bind(String(u.texto || "").slice(0, 200), u.prioridad ? Math.max(1, Math.min(4, parseInt(u.prioridad))) : null, /^\d{4}-\d{2}-\d{2}$/.test(u.para || "") ? u.para : "", String(u.id)));
+  for (const i of hechas) st.push(env.DB.prepare("UPDATE mis_tareas SET estado='hecha', hecha_ts=? WHERE id=?").bind(Date.now(), i));
+  for (const u of (Array.isArray(r.actualizar) ? r.actualizar : [])) if (ids.has(String(u?.id))) st.push(env.DB.prepare("UPDATE mis_tareas SET texto=COALESCE(NULLIF(?,''),texto), prioridad=COALESCE(?,prioridad), para=COALESCE(NULLIF(?,''),para) WHERE id=?").bind(String(u.texto || "").slice(0, 200), u.prioridad ? Math.max(1, Math.min(4, parseInt(u.prioridad))) : null, /^\d{4}-\d{2}-\d{2}$/.test(u.para || "") ? u.para : "", String(u.id)));
   if (st.length) await env.DB.batch(st);
   return { n: nuevas.length, hechas: hechas.length, respuesta: String(r.respuesta || "Listo, anotado.").slice(0, 300) };
 }
@@ -190,7 +190,7 @@ async function atender(env, iaJSON, upd) {
     const nums = cmd[2].split(/\D+/).map(Number).filter(Boolean), ids = await porNumero(env, chat, nums);
     if (!ids.length) return decir(env, chat, "No encontré esos números. Pedí \"lista\" primero.");
     const v = cmd[1];
-    const sql = /^(hech|list|ok|tach)/.test(v) ? "UPDATE tareas SET estado='hecha', hecha_ts=? WHERE id=? AND quien=?" : /^(borr|elim)/.test(v) ? "UPDATE tareas SET estado='borrada', hecha_ts=? WHERE id=? AND quien=?" : /^sub/.test(v) ? "UPDATE tareas SET prioridad=MAX(1, prioridad-1), hecha_ts=hecha_ts WHERE ? IS NOT NULL AND id=? AND quien=?" : "UPDATE tareas SET prioridad=MIN(4, prioridad+1), hecha_ts=hecha_ts WHERE ? IS NOT NULL AND id=? AND quien=?";
+    const sql = /^(hech|list|ok|tach)/.test(v) ? "UPDATE mis_tareas SET estado='hecha', hecha_ts=? WHERE id=? AND quien=?" : /^(borr|elim)/.test(v) ? "UPDATE mis_tareas SET estado='borrada', hecha_ts=? WHERE id=? AND quien=?" : /^sub/.test(v) ? "UPDATE mis_tareas SET prioridad=MAX(1, prioridad-1), hecha_ts=hecha_ts WHERE ? IS NOT NULL AND id=? AND quien=?" : "UPDATE mis_tareas SET prioridad=MIN(4, prioridad+1), hecha_ts=hecha_ts WHERE ? IS NOT NULL AND id=? AND quien=?";
     await env.DB.batch(ids.map((i) => env.DB.prepare(sql).bind(Date.now(), i, quien)));
     const pre = /^(hech|list|ok|tach)/.test(v) ? `✅ Tachada${ids.length > 1 ? "s" : ""}.` : /^(borr|elim)/.test(v) ? "🗑 Borrada." : "↕️ Cambiada la prioridad.";
     return decir(env, chat, pre + "\n\n" + (await textoLista(env, chat, quien)));
@@ -201,7 +201,7 @@ async function atender(env, iaJSON, upd) {
   return decir(env, chat, (audio ? `🎙 "${texto.slice(0, 220)}${texto.length > 220 ? "…" : ""}"\n\n` : "") + `${r.respuesta}${r.n ? ` (+${r.n} nueva${r.n > 1 ? "s" : ""})` : ""}${r.hechas ? ` (✅ ${r.hechas} tachada${r.hechas > 1 ? "s" : ""})` : ""}\n\n` + (await textoLista(env, chat, quien)));
 }
 async function guardarCrudo(env, quien, texto) {
-  await env.DB.prepare("INSERT INTO tareas (id, ts, quien, texto, detalle, prioridad, area, para, estado, origen) VALUES (?,?,?,?,?,2,'Otro','','pendiente',?)").bind(nid(), Date.now(), quien, "Ordenar: " + texto.slice(0, 180), texto.slice(0, 500), texto.slice(0, 300)).run();
+  await env.DB.prepare("INSERT INTO mis_tareas (id, ts, quien, texto, detalle, prioridad, area, para, estado, origen) VALUES (?,?,?,?,?,2,'Otro','','pendiente',?)").bind(nid(), Date.now(), quien, "Ordenar: " + texto.slice(0, 180), texto.slice(0, 500), texto.slice(0, 300)).run();
   return "";
 }
 
@@ -247,7 +247,7 @@ export async function cronAsistente(env, ts, iaJSON = null) {
       const l = await pendientes(env, quien), hoy = hoyAR(), urg = l.filter((x) => x.prioridad === 1 || (x.para && x.para <= hoy));
       // lo urgente que no se hizo pasa a mañana con fecha, así aparece primero en el plan de mañana
       const man = new Date(Date.now() - AR + 86400e3).toISOString().slice(0, 10);
-      if (urg.length) await env.DB.batch(urg.map((x) => env.DB.prepare("UPDATE tareas SET para=? WHERE id=?").bind(man, x.id)));
+      if (urg.length) await env.DB.batch(urg.map((x) => env.DB.prepare("UPDATE mis_tareas SET para=? WHERE id=?").bind(man, x.id)));
       await decir(env, chat, `🌙 Cierre del día.${urg.length ? `\nQuedaron ${urg.length} urgente${urg.length > 1 ? "s" : ""}, las paso para mañana temprano: ${urg.slice(0, 5).map((x) => x.texto).join("; ")}.` : "\nTerminaste lo urgente. 💪"}${neg.texto ? "\n\nQuedó esperando en el negocio:\n" + neg.texto : ""}\n\nMandame un audio con lo que hiciste hoy y lo que tengas para mañana, así arrancás con la cabeza vacía.`);
     }
   }
