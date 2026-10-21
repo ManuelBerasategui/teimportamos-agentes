@@ -34,6 +34,13 @@ async function preparar(env) {
     if (fuera.length) await env.DB.batch(fuera.map((i) => env.DB.prepare("UPDATE mis_tareas SET estado='borrada', hecha_ts=? WHERE id=?").bind(Date.now(), i)));
     await kvPut(env, "asist_limpieza_v1", String(fuera.length));
   }
+  if (!(await kvGet(env, "asist_limpieza_v4"))) {
+    const l4 = (await env.DB.prepare("SELECT id, texto FROM mis_tareas WHERE estado='pendiente'").all()).results || [];
+    const re = /^(aprobar|subir|generar|cargar|confirmar|diseñar|terminar|programar)\b.{0,40}\b(video|videos|historia|historias|carrusel|carruseles|clip|clips|idea|ideas|referencia|referencias)\b/i;
+    const ids = l4.filter((x) => re.test(x.texto)).map((x) => x.id);
+    if (ids.length) await env.DB.batch(ids.map((i) => env.DB.prepare("UPDATE mis_tareas SET estado='borrada', hecha_ts=? WHERE id=?").bind(Date.now(), i)));
+    await kvPut(env, "asist_limpieza_v4", "1");
+  }
   if (!(await kvGet(env, "asist_limpieza_v3"))) {
     await env.DB.prepare("UPDATE mis_tareas SET estado='borrada', hecha_ts=? WHERE estado='pendiente' AND (lower(texto) LIKE 'contestar los %chats%' OR lower(texto) LIKE 'contestar los chats%' OR lower(texto) LIKE 'responder los %chats%')").bind(Date.now()).run();
     await kvPut(env, "asist_limpieza_v3", "1");
@@ -146,6 +153,33 @@ export async function redesHoy(env) {
   return l;
 }
 
+// Plan del resto del día armado en código (exacto): chats calientes primero, lo urgente, lo de Notion con sus minutos y un segundo bloque de chats
+async function planBloques(env, quien) {
+  const [l, neg, nt, redes] = await Promise.all([pendientes(env, quien), negocioPendiente(env), notionActivo(env) ? notionHoy(env).catch(() => null) : null, redesHoy(env)]);
+  const ahora = new Date(Date.now() - AR); let min = ahora.getUTCHours() * 60 + ahora.getUTCMinutes(); min = Math.ceil(min / 15) * 15;
+  const fin = 23 * 60, hhmm = (m) => String(Math.floor(m / 60) % 24).padStart(2, "0") + ":" + String(m % 60).padStart(2, "0");
+  const items = [];
+  if (neg.calientes || neg.chats) items.push({ t: `💬 Chats del 805${neg.calientes ? ` (${neg.calientes} calientes primero)` : ""}`, d: 30 });
+  for (const x of l.filter((x) => x.prioridad === 1)) items.push({ t: x.texto, d: 30, h: x.hora_ini });
+  const redesUrg = redes.filter((x) => /^(Aprobar|No hay ningún video|No hay video|Subir historias)/.test(x));
+  if (redesUrg.length) items.push({ t: "📲 Redes: " + redesUrg.map((x) => x.split(":")[0].replace(/ \(.*$/, "")).join(" + "), d: 30 });
+  for (const x of (nt?.tareas || []).filter((x) => x.fecha === "hoy")) items.push({ t: x.texto, d: Math.max(15, Math.min(240, x.min || 45)), h: x.hora });
+  if (neg.chats) items.push({ t: "💬 Segunda vuelta de chats", d: 20 });
+  for (const x of l.filter((x) => x.prioridad === 2 && (!x.para || x.para <= hoyAR()))) items.push({ t: x.texto, d: 30, h: x.hora_ini });
+  // primero lo que tiene hora fija, en su lugar; el resto llena los huecos en orden
+  const fijos = items.filter((x) => x.h && /^\d\d:\d\d$/.test(x.h)).map((x) => ({ ...x, ini: +x.h.slice(0, 2) * 60 + +x.h.slice(3) })).filter((x) => x.ini >= min).sort((a, b) => a.ini - b.ini);
+  const libres = items.filter((x) => !fijos.some((f) => f.t === x.t) && !(x.h && /^\d\d:\d\d$/.test(x.h) && +x.h.slice(0, 2) * 60 + +x.h.slice(3) < min));
+  const out = [], sobra = [];
+  for (const x of libres) {
+    while (fijos.length && min + x.d > fijos[0].ini) { const f = fijos.shift(); min = Math.max(min, f.ini); out.push(`${hhmm(min)}-${hhmm(min + f.d)} · ${f.t}`); min += f.d; }
+    if (min + x.d > fin) { sobra.push(x.t); continue; }
+    out.push(`${hhmm(min)}-${hhmm(min + x.d)} · ${x.t}`); min += x.d;
+  }
+  for (const f of fijos) { min = Math.max(min, f.ini); out.push(`${hhmm(min)}-${hhmm(min + f.d)} · ${f.t}`); min += f.d; }
+  if (!out.length) return "Para lo que queda de hoy no tenés nada pendiente. 🙌";
+  return `🗓 Lo que resta del día:\n${out.join("\n")}${sobra.length ? `\n\n➡️ No entra hoy: ${sobra.join("; ")}` : ""}\n\nCuando termines cada cosa decime "listo".`;
+}
+
 // El secretario: entiende lo que le decís (audio o texto) con todo el contexto y hace lo que haría un secretario de verdad
 async function secretario(env, iaJSON, quien, chat, texto) {
   const [l, perfil, redes, neg, prefs] = await Promise.all([pendientes(env, quien), perfilDe(env, quien), redesHoy(env), negocioPendiente(env), prefsDe(env, quien)]);
@@ -192,10 +226,11 @@ Respondé SOLO JSON: {"nuevas":[{"texto":"...","detalle":"","prioridad":1,"area"
   const ids = new Set(l.map((x) => x.id)), st = [], hhmm = (v) => (/^\d{1,2}:\d{2}$/.test(String(v || "")) ? String(v).padStart(5, "0") : "");
   const pal = (t) => new Set(String(t).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(/[^a-z0-9ñ]+/).filter((w) => w.length > 2));
   const igual = (a, b) => { const A = pal(a), B = pal(b); if (!A.size || !B.size) return false; let n = 0; for (const w of A) if (B.has(w)) n++; return n / Math.min(A.size, B.size) >= 0.75; };
+  const REDES_VIVO = /^(aprobar|subir|generar|cargar|confirmar|diseñar|terminar|programar)\b.{0,40}\b(video|videos|historia|historias|carrusel|carruseles|clip|clips|idea|ideas|referencia|referencias)\b/i;   // eso sale del panel en vivo
   const vistas = l.map((x) => x.texto), VAGA = /^(revisar|ver|chequear) (los |las )?(pendientes|cosas|todo)|^(contestar|responder|liquidar|terminar de contestar) (los |las )?(\d+ )?(chats|mensajes|whatsapp)/i;   // lo de los chats ya lo ve en vivo, no se anota con un número que queda viejo
   let n = 0; const creadas = [];
   for (const x of (Array.isArray(r.nuevas) ? r.nuevas : []).slice(0, 30)) {
-    const tx = String(x?.texto || "").trim(); if (tx.length <= 3 || VAGA.test(tx) || vistas.some((v) => igual(v, tx)) || nItems.some((y) => igual(y.texto, tx))) continue; vistas.push(tx); n++;
+    const tx = String(x?.texto || "").trim(); if (tx.length <= 3 || VAGA.test(tx) || REDES_VIVO.test(tx) || vistas.some((v) => igual(v, tx)) || nItems.some((y) => igual(y.texto, tx))) continue; vistas.push(tx); n++;
     const idN = nid(); creadas.push({ id: idN, texto: tx, fecha: /^\d{4}-\d{2}-\d{2}$/.test(x.para || "") ? x.para : "", categoria: x.habilidad || x.area || "" });
     st.push(env.DB.prepare("INSERT INTO mis_tareas (id, ts, quien, texto, detalle, prioridad, area, para, estado, origen, tipo, hora_ini, hora_fin) VALUES (?,?,?,?,?,?,?,?,'pendiente',?,?,?,?)")
       .bind(idN, Date.now(), quien, tx.slice(0, 200), String(x.detalle || "").slice(0, 500), Math.max(1, Math.min(4, parseInt(x.prioridad) || 3)), AREAS.includes(x.area) ? x.area : "Otro", /^\d{4}-\d{2}-\d{2}$/.test(x.para || "") ? x.para : (hhmm(x.hora_ini) ? hoyAR() : ""), texto.slice(0, 300), x.tipo === "evento" ? "evento" : "tarea", hhmm(x.hora_ini), hhmm(x.hora_fin)));
@@ -216,6 +251,8 @@ Respondé SOLO JSON: {"nuevas":[{"texto":"...","detalle":"","prioridad":1,"area"
   if (r.preferencias && String(r.preferencias).trim().length > 5) await kvPut(env, "asist_prefs:" + quien, String(r.preferencias).trim().slice(0, 1000));
   if (r.siguiente_id && ids.has(String(r.siguiente_id))) await kvPut(env, "asist_foco:" + quien, String(r.siguiente_id));
   const marcas = [n ? `+${n} anotada${n > 1 ? "s" : ""}${enNotion ? ` (${enNotion} en Notion)` : ""}` : "", tachNotion ? `✅ ${tachNotion} marcada${tachNotion > 1 ? "s" : ""} en Notion` : "", hechas.length ? `✅ ${hechas.length} tachada${hechas.length > 1 ? "s" : ""}` : "", borrar.length ? `🗑 ${borrar.length} sacada${borrar.length > 1 ? "s" : ""}` : ""].filter(Boolean).join(" · ");
+  const sinIds = (t) => String(t || "").replace(/\s*[(\[]?\b(?=[a-z0-9]*\d)(?=[a-z0-9]*[a-z])[a-z0-9]{11,14}\b[)\]]?/g, "");
+  r.respuesta = sinIds(r.respuesta); r.siguiente = sinIds(r.siguiente);
   let out = String(r.respuesta || "Listo.").slice(0, 2500) + (marcas ? `\n(${marcas})` : "");
   if (r.incluir_agenda && nt) out += "\n\n" + agendaNotion(nt) + (neg.calientes ? `\n\n💬 Negocio: ${neg.calientes} chats calientes del 805 esperando (decime "chats").` : "");
   if (r.incluir_chats) out += "\n\n" + chats;
@@ -336,7 +373,7 @@ async function atender(env, iaJSON, upd) {
     const r2 = await secretario(env, iaJSON, quien, chat, "Terminé lo que estaba haciendo. ¿Ahora qué hago?");
     return decir(env, chat, (fid ? "✅ Bien ahí.\n" : "") + (r2 || "Decime \"lista\" y elegimos lo que sigue."));
   }
-  if (/^\/?(plan|planificame|organizame|organiza(me)? el dia)\s*$/.test(t)) texto = "Organizame lo que resta del día";
+  if (/^\/?(plan|planificame|organizame|organiza(me)? el dia|organizame lo que resta del dia|lo que resta del dia)\s*\??$/.test(t)) return decir(env, chat, await planBloques(env, quien));
   if (/^\/?(version|versión)\s*$/.test(t)) return decir(env, chat, "Asistente versión " + VERSION_ASISTENTE);
   if (/^\/?(agenda|mi agenda|hoy en notion|notion hoy|que me queda( hoy)?)\s*\??$/.test(t)) {
     if (!notionActivo(env)) return decir(env, chat, await textoLista(env, chat, quien, { titulo: "Para hoy", soloHoy: true }));
