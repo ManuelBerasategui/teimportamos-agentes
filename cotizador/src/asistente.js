@@ -9,6 +9,7 @@ const nid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 const AR = 3 * 3600e3;
 const hoyAR = () => new Date(Date.now() - AR).toISOString().slice(0, 10);
 
+export const VERSION_ASISTENTE = "21/10 12:10 (secretario)";
 export const PRIORIDADES = { 1: "🔴 URGENTE (hoy)", 2: "🟠 IMPORTANTE (esta semana)", 3: "🟡 PUEDE ESPERAR", 4: "⚪ ALGÚN DÍA / IDEAS" };
 const AREAS = ["Ventas", "Proveedores", "Redes", "Operaciones", "Finanzas", "Sistema", "Equipo", "Personal", "Otro"];
 
@@ -296,6 +297,7 @@ async function atender(env, iaJSON, upd) {
     await tg(env, "sendChatAction", { chat_id: chat, action: "typing" });
     return decir(env, chat, (await planDia(env, iaJSON, quien)) || "La IA no respondió ahora. Mientras tanto:\n\n" + (await textoLista(env, chat, quien, { titulo: "Para hoy", soloHoy: true })));
   }
+  if (/^\/?(version|versión)\s*$/.test(t)) return decir(env, chat, "Asistente versión " + VERSION_ASISTENTE);
   if (/^\/?(chats|whatsapp|wpp|805)\s*$/.test(t)) return decir(env, chat, await chatsSinContestar(env));
   if (/^\/?(redes|instagram)\s*$/.test(t)) return decir(env, chat, "📲 Hoy en redes:\n" + (await redesHoy(env)).map((x) => "• " + x).join("\n"));
   if (/^\/?(negocio|pendientes del negocio|panel)\b/.test(t)) { const n = await negocioPendiente(env); return decir(env, chat, n.texto ? "Lo que está esperando en el negocio:\n" + n.texto : "En el negocio no hay nada esperando. 🙌"); }
