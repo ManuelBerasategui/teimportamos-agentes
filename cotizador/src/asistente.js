@@ -326,8 +326,8 @@ async function atender(env, iaJSON, upd) {
   const t = texto.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
   if (/(esta(s)? configurad|funciona(s)?\b|andas\b|me escuchas|sos el asistente|que podes hacer|como te uso|como funciona)/.test(t) && t.length < 120) return decir(env, chat, `Sí ${nombreDe(quien)}, estoy andando y este es el chat correcto. Mandame audios o textos con todo lo que tengas que hacer y lo ordeno.\n\n• "lista": todo lo pendiente\n• "hoy": lo urgente\n• "plan": te armo el día en bloques\n• "chats": los del 805 sin contestar, con número\n• "redes": qué hay que hacer hoy en redes\n• "negocio": lo que espera en el panel\n• "hecho 2", "subí 3", "borrar 4"\nTe escribo a las 8, a las 14 y a las 21.`);
   if (/^\/?(start|ayuda|help)\b/.test(t)) return decir(env, chat, `Hola ${nombreDe(quien)}. Mandame un audio o un texto con todo lo que tenés que hacer, desordenado, y te lo ordeno por prioridad.\n\n• "lista": todo lo pendiente\n• "hoy": solo lo urgente\n• "hecho 2" o "hecho 1,3": tachar\n• "subí 4" / "bajá 4": cambiar prioridad\n• "borrar 4"\n• "plan": te armo el día en bloques (tus tareas + lo que espera en el negocio + facu, gym, etc.)\n• "negocio": chats, videos, carruseles e historias pendientes\n• "perfil": lo que sé de tu rutina\nA las 8 te mando el plan, a las 14 cómo vas y a las 21 el cierre del día.`);
-  if (/^\/?(lista|tareas|pendientes|que tengo|todo)\b/.test(t)) return decir(env, chat, await textoLista(env, chat, quien));
-  if (/^\/?hoy\b/.test(t)) return decir(env, chat, await textoLista(env, chat, quien, { titulo: "Para hoy", soloHoy: true }));
+  if (/^\/?(lista|tareas|mis tareas|pendientes|todo|la lista)\s*$/.test(t)) return decir(env, chat, await textoLista(env, chat, quien));
+  if (/^\/?hoy\s*$/.test(t)) return decir(env, chat, await textoLista(env, chat, quien, { titulo: "Para hoy", soloHoy: true }));
   // "listo" / "ya está" / "terminé" sin número: tacha lo que estaba haciendo y le dice lo que sigue
   if (/^(listo|ya esta|ya lo hice|termine|hecho|done|ok listo)[.! ]*$/.test(t)) {
     const fid = await kvGet(env, "asist_foco:" + quien);
@@ -336,10 +336,7 @@ async function atender(env, iaJSON, upd) {
     const r2 = await secretario(env, iaJSON, quien, chat, "Terminé lo que estaba haciendo. ¿Ahora qué hago?");
     return decir(env, chat, (fid ? "✅ Bien ahí.\n" : "") + (r2 || "Decime \"lista\" y elegimos lo que sigue."));
   }
-  if (/^\/?(plan|planificame|organizame|organiza(me)? el dia)\b/.test(t)) {
-    await tg(env, "sendChatAction", { chat_id: chat, action: "typing" });
-    return decir(env, chat, (await planDia(env, iaJSON, quien)) || "La IA no respondió ahora. Mientras tanto:\n\n" + (await textoLista(env, chat, quien, { titulo: "Para hoy", soloHoy: true })));
-  }
+  if (/^\/?(plan|planificame|organizame|organiza(me)? el dia)\s*$/.test(t)) texto = "Organizame lo que resta del día";
   if (/^\/?(version|versión)\s*$/.test(t)) return decir(env, chat, "Asistente versión " + VERSION_ASISTENTE);
   if (/^\/?(agenda|mi agenda|hoy en notion|notion hoy|que me queda( hoy)?)\s*\??$/.test(t)) {
     if (!notionActivo(env)) return decir(env, chat, await textoLista(env, chat, quien, { titulo: "Para hoy", soloHoy: true }));
