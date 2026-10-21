@@ -217,6 +217,7 @@ export async function generarIdeasCarrusel(env, iaJSON, { T, quien = "panel", ca
   const refs = await referencias(env);
   const foco = ref != null && refs[ref] ? refs[ref] : null;
   const memoria = await memoriaCarr(env);
+  const refsVideo = ((await env.DB.prepare("SELECT que_pasa FROM ig_refs WHERE que_pasa<>'' ORDER BY ts DESC LIMIT 12").all().catch(() => ({ results: [] }))).results || []).map((x) => x.que_pasa);
   const imgsRef = foco ? await imagenesDeReferencia(env, [foco], 3) : [];
   const promptImagenes = imgsRef.length && iaImg ? "\nLas capturas de referencia adjuntas sirven para inspirar ritmo y jerarquía visual; no copies textos, marca ni diseño." : "";
   const pIdeas = `Sos quien arma los CARRUSELES de Instagram de este negocio:
@@ -228,7 +229,9 @@ ${textoMemoria(memoria)}
 Referencias visuales y estructurales (adaptá mecánicas, no copies contenido): ${textoRefs(refs)}
 ${foco ? `Esta tanda toma como base la referencia elegida: ${JSON.stringify(foco)}${promptImagenes}` : ""}
 Ideas descartadas (no repitas tema ni errores): ${textoDescartes(await descartes(env))}
-Generá ${cantidad} ideas distintas de carrusel como experimentos variados para viralizar. Cada una usa un formato distinto. Buscá mitos, errores, decisiones, operaciones, opinión, comunidad, casos sin datos inventados y preguntas; no fuerces producto ni precio. Máximo una comparación de precios. Cada idea tiene hipótesis sobre guardados, compartidos o comentarios.
+MECÁNICAS QUE ESTÁN FUNCIONANDO EN VIDEOS (de nuestro nicho y de otros; trasladá la mecánica al formato carrusel): ${refsVideo.join(" | ") || "-"}
+Generá ${cantidad} ideas distintas de carrusel como experimentos variados para viralizar.
+CRITERIO (lo más importante): cada idea tiene una TENSIÓN concreta en la portada (una situación, un número que duele, un miedo real, una contradicción, algo que le pasó a alguien), nunca un tema suelto. PROHIBIDO títulos o portadas genéricas como "La verdad sobre...", "Error común al...", "Caso real de éxito", "¿Qué pasa si...?" sin la situación concreta, "La guerra de precios". El título interno describe la situación ("El cliente que pidió 1000 tarjetas y le llegaron 900"). Que se guarde (sirve como guía o checklist que vuelve a mirar) o se comparta (le pasa al amigo que vende en ML). Cada una usa un formato distinto. Buscá mitos, errores, decisiones, operaciones, opinión, comunidad, casos sin datos inventados y preguntas; no fuerces producto ni precio. Máximo una comparación de precios. Cada idea tiene hipótesis sobre guardados, compartidos o comentarios.
 ${await rendimiento(env)}
 Público principal: gente que vende o quiere vender en Mercado Libre y revendedores. Hablales como colega que los entiende (las comisiones, el envío, la competencia), no como alguien que los critica. En cada tanda incluí al menos una idea "ensayo" (hilo con una idea fuerte) y una "vs" (dos caminos enfrentados).
 LO QUE PASA EN WHATSAPP: cotizaciones ${w.cotizaciones.map((c) => c.items.map((i) => `${i.cantidad} × ${i.nombre}`).join(" + ")).join(" | ") || "ninguna"}; productos por chat ${w.cotizados.map((x) => `${x.producto} (${x.n})`).join(", ") || "sin datos"}; más consultado (14 días) ${w.demanda14.map((x) => `${x.producto} (${x.n})`).join(", ") || "sin datos"}.
