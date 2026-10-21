@@ -630,6 +630,16 @@ export async function apiCarruseles(env, req, url, quien, iaJSON, T = null, iaIm
     await kvPut(env, "ig_reglas_carrusel", JSON.stringify(l));
     return json({ ok: true, reglas: l });
   }
+  // Carrusel ya escrito (por Claude o a mano): entra directo en "estructura" para revisarlo y diseñarlo
+  if (r === "crear-directo" && req.method === "POST") {
+    const sl = limpiarSlides(body.slides);
+    if (sl.length < 3 || PROHIBIDO.test(JSON.stringify(sl))) return json({ error: "slides inválidos" }, 400);
+    const nid = nuevoId();
+    await env.DB.prepare("INSERT INTO ig_carruseles (id, ts, estado, titulo, angulo, por_que, producto, datos, slides, caption, chat) VALUES (?,?,'estructura',?,?,?,?,?,?,?,?)")
+      .bind(nid, Date.now(), String(body.titulo || "Carrusel").slice(0, 140), ANGULOS_CARR.has(body.angulo) ? body.angulo : "otro", String(body.por_que || "").slice(0, 600), String(body.producto || "").slice(0, 80),
+        JSON.stringify(limpiarDatos(body.datos || {}, {})), JSON.stringify(sl), String(body.caption || "").slice(0, 2200), JSON.stringify([{ r: "a", t: String(body.nota || "Estructura lista. Revisala y tocá \"Confirmar estructura\" para diseñarlo.").slice(0, 600) }])).run();
+    return json({ ok: true, id: nid });
+  }
   const c = await uno();
   if (!c) return json({ error: "carrusel desconocido" }, 404);
   if (r === "ver") return json(c);
