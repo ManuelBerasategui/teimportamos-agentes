@@ -143,14 +143,14 @@ export async function generarIdeas(env, iaJSON, quien = "auto", cantidad = 7, T 
   const d = await datosRedes(env);
   const w = await datosWhatsApp(env, T);
   const previas = (await env.DB.prepare("SELECT titulo, formato, estado FROM ig_ideas ORDER BY ts DESC LIMIT 25").all()).results || [];   const rechazos = (await env.DB.prepare("SELECT titulo, gancho, motivo FROM ig_ideas WHERE estado='descartada' AND motivo<>'' ORDER BY ts DESC LIMIT 20").all()).results || [];   const aprobadas = (await env.DB.prepare("SELECT titulo, gancho FROM ig_ideas WHERE estado='grabada' ORDER BY ts DESC LIMIT 10").all()).results || [];
-  const refs = (await env.DB.prepare("SELECT id, link, nicho, que_pasa, por_que, usos FROM ig_refs ORDER BY usos ASC, ts DESC LIMIT 25").all()).results || [];
+  const refs = (await env.DB.prepare("SELECT id, link, nicho, que_pasa, por_que, usos FROM ig_refs WHERE que_pasa<>'' ORDER BY usos ASC, ts DESC LIMIT 25").all()).results || [];
   const propias = ((await env.DB.prepare("SELECT titulo, ganchos, guion, origen FROM ig_ideas WHERE origen LIKE 'propia%' ORDER BY ts DESC LIMIT 8").all()).results || []).map((x) => ({ ...x, ganchos: jparse(x.ganchos), guion: jparse(x.guion) }));
   const ganadoras = await ideasGanadoras(env);
   const dmsTxt = d.dms.slice(0, 25).map((x) => String(x.ult_texto || "").slice(0, 120)).filter((t) => t && !t.startsWith("["));
-  const r = await iaJSON(env, `Sos el estratega de contenido de Instagram de este negocio:
+  const pedir = async (n, ya) => iaJSON(env, `Sos el estratega de contenido de Instagram de este negocio:
 ${NEGOCIO}
 ${bloqueReglas(await reglasDe(env, "ig_reglas_ideas"))}
-El dueño solo se graba; todo lo publica como REEL DE PRUEBA (le llega primero a gente que no lo sigue). Necesita ${cantidad} guiones para grabar esta semana.
+El dueño solo se graba; todo lo publica como REEL DE PRUEBA (le llega primero a gente que no lo sigue). Necesita ${n} guiones para grabar esta semana.${ya.length ? ` Ya armaste estas en esta tanda, hacé OTRAS distintas (otra referencia, otro producto, otra escena): ${ya.join(" | ")}.` : ""}
 
 LO QUE YA SABEMOS (diagnóstico de 120 publicaciones):
 ${APRENDIZAJES_BASE}
@@ -204,6 +204,12 @@ Reglas para los guiones:
 - "por_que": el dato concreto de arriba en el que te basás (con su número).
 - "hipotesis": qué estamos probando con este reel, medible ("gancho con precio en pesos retiene más de 18 s").
 Respondé SOLO JSON: {"ideas":[{"titulo":"...","formato":"ml_vs_china|ml_vendi|producto|historia|reaccion|otro","marco":"pov|importador","origen":"ref:<id> o reel: <cuál>","escena":"camara|mano|pantalla|calle|mixto","mostrar":"qué se ve en el cuerpo","ganchos":[{"tipo":"reaccion|pantalla|lejos|mano|split|cartel","texto":"texto en pantalla","como":"qué se ve y qué se dice en el primer segundo"}],"guion":["...","..."],"cta":"...","por_que":"...","producto":"...","hipotesis":"qué gancho creés que gana y por qué"}]}`);
+  const mitad = Math.ceil(cantidad / 2), r = { ideas: [] };
+  for (const n of [mitad, cantidad - mitad]) {
+    if (n <= 0) continue;
+    const x = await pedir(n, r.ideas.map((y) => y?.titulo).filter(Boolean)).catch(() => null);
+    if (Array.isArray(x?.ideas)) r.ideas.push(...x.ideas);
+  }
   const ideas = (r?.ideas || []).filter((x) => x?.titulo && (x?.gancho || x?.ganchos?.length) && !PROHIBIDO.test(JSON.stringify(x))).slice(0, cantidad);
   if (!ideas.length) return { ok: false, error: "La IA no respondió o no dio ideas válidas. Probá de nuevo en un minuto." };
   const lote = id();
@@ -540,6 +546,22 @@ export async function apiRedes(env, req, url, quien, iaJSON, base = "", T = null
     await env.DB.prepare("INSERT INTO ig_refs (id, ts, link, nicho, que_pasa, por_que, usos, quien) VALUES (?,?,?,?,?,?,0,?)").bind(id(), Date.now(), String(body.link || "").trim().slice(0, 300), String(body.nicho || "").trim().slice(0, 60), q.slice(0, 800), String(body.por_que || "").trim().slice(0, 400), quien || "panel").run();
     return json({ ok: true });
   }
+  if (r === "refs-lote" && req.method === "POST") {
+    const lineas = String(body.texto || "").split(/\n+/).map((t) => t.trim()).filter(Boolean).slice(0, 60);
+    const ya = new Set(((await env.DB.prepare("SELECT link FROM ig_refs").all()).results || []).map((x) => x.link));
+    let n = 0, rep = 0;
+    for (const l of lineas) {
+      const link = (l.match(/https?:\/\/\S+/) || [""])[0].replace(/[),.]+$/, ""), nota = l.replace(link, "").replace(/^[\s\-–:|]+/, "").trim();
+      if (!link && nota.length < 10) continue;
+      if (link && ya.has(link)) { rep++; continue; }
+      let posteo = "";
+      if (/tiktok\.com/i.test(link)) { try { const o = await fetch("https://www.tiktok.com/oembed?url=" + encodeURIComponent(link), { signal: AbortSignal.timeout(4000) }).then((x) => x.json()); posteo = [o.author_name ? "@" + o.author_name : "", o.title || ""].filter(Boolean).join(": "); } catch {} }
+      const que = nota || (posteo ? "Texto del posteo: " + posteo : "");
+      await env.DB.prepare("INSERT INTO ig_refs (id, ts, link, nicho, que_pasa, por_que, usos, quien) VALUES (?,?,?,?,?,?,0,?)").bind(id(), Date.now(), link.slice(0, 300), /tiktok/i.test(link) ? "tiktok" : /instagram/i.test(link) ? "instagram" : "", que.slice(0, 800), "", quien || "panel").run();
+      if (link) ya.add(link); n++;
+    }
+    return json({ ok: true, cargadas: n, repetidas: rep });
+  }
   if (r === "ref-borrar" && req.method === "POST") { await env.DB.prepare("DELETE FROM ig_refs WHERE id=?").bind(String(body.id || "")).run(); return json({ ok: true }); }
   if (r === "generar-ideas" && req.method === "POST") return json(await generarIdeas(env, iaJSON, quien || "panel", 8, T));
   if (r === "historias") {
@@ -645,6 +667,7 @@ td{padding:8px;border-bottom:1px solid #f0f2f6;vertical-align:top}th.n,td.n{text
 .idea{border:1px solid var(--borde);border-radius:12px;padding:14px;margin-bottom:10px;background:#fff}
 .idea h3{margin:0 0 6px;font-size:16px}.gancho{background:#0B0B0B;color:#fff;border-radius:10px;padding:12px 14px;font-size:18px;font-weight:800;margin:8px 0;line-height:1.3}
 .gancho small{display:block;color:var(--nar);font-size:11px;font-weight:700;letter-spacing:.04em;margin-bottom:4px}
+details.idea>summary{list-style:none;display:flex;align-items:center;gap:8px;cursor:pointer;font-weight:700;font-size:16px;flex-wrap:wrap}details.idea>summary::-webkit-details-marker{display:none}details.idea>summary .st{flex:1;min-width:160px}details.idea[open]>summary{margin-bottom:8px}details.idea .sel{width:22px;height:22px;flex:none;margin:0}details.idea>summary:after{content:"+";font-size:20px;color:var(--nar)}details.idea[open]>summary:after{content:"−"}
 .campo{width:100%;box-sizing:border-box;border:1px solid var(--borde);border-radius:8px;padding:8px;font:inherit;font-size:14px;margin:4px 0}.metg{font-size:12px;font-weight:600;color:#fff;opacity:.9;margin-top:6px}.metg b{color:var(--nar)}
 .idea ol{margin:6px 0 8px;padding-left:22px;line-height:1.5;font-size:15px}.idea .pq{font-size:13px;color:var(--gris);margin-top:4px;line-height:1.4}
 .dm{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:10px 0;border-bottom:1px solid #f0f2f6}.dm:last-child{border-bottom:0}
@@ -719,14 +742,16 @@ ${CARR_CSS}
 <div id="m-ideas" style="display:none">
   <div class="seg tabs2" id="ideasTipo"><button data-k="reels" class="on">Reels para grabar<span class="bd2" id="bIR"></span></button><button data-k="hist">Historias de hoy<span class="bd2" id="bIH"></span></button></div>
   <div id="i-reels">
-  <div class="barraher"><button class="btn p" id="bIdeasGen"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>Generar ideas nuevas</button><select id="fIdeas"><option value="nueva">Para grabar</option><option value="grabada">Ya grabadas</option><option value="descartada">Descartadas</option></select><button class="btn" id="bPropia">Cargar mi idea</button><button class="btn" id="bRefs">Referencias</button><button class="btn" id="bDescSel">Descartar marcadas</button></div>
+  <div class="barraher"><button class="btn p" id="bIdeasGen"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>Generar ideas nuevas</button><select id="fIdeas"><option value="nueva">Para grabar</option><option value="grabada">Ya grabadas</option><option value="descartada">Descartadas</option></select><button class="btn" id="bPropia">Cargar mi idea</button><button class="btn" id="bRefs">Referencias</button><button class="btn" data-todas="ideas">Marcar todas</button><button class="btn" id="bDescSel">Descartar marcadas</button></div>
   <p class="estado ayuda">Salen de tus <b>Referencias</b> (videos que les funcionan a otros) y de tus reels que mejor anduvieron, gancho por gancho. Cuantas más referencias cargues, mejores ideas. También salen solas cada lunes a las 9.</p>
   <div id="pPropia" class="idea" style="display:none"><h3>Cargar mi idea</h3><p class="pq">Pegala como la anotaste: ganchos, cuerpo, de dónde salió. La IA solo la ordena, no te cambia las palabras.</p><textarea id="tPropia" class="campo" style="min-height:170px"></textarea><label class="pq"><input type="checkbox" id="cPropiaG"> Ya la grabé</label><div class="fila" style="margin-top:8px"><button class="btn p" id="bPropiaOk">Guardar idea</button></div></div>
-  <div id="pRefs" class="idea" style="display:none"><h3>Referencias</h3><p class="pq">Cada video que te pegue mientras scrolleás (de importación o de cualquier nicho): el link y en una línea qué pasa y por qué engancha. Con eso el generador adapta la mecánica a lo nuestro en vez de inventar.</p><input id="rLink" class="campo" placeholder="Link (TikTok o Instagram, opcional)"><input id="rNicho" class="campo" placeholder="Nicho (ej: importación, humor, otro rubro)"><textarea id="rQue" class="campo" placeholder="Qué pasa en el video: gancho, qué muestra, cómo sigue"></textarea><textarea id="rPor" class="campo" placeholder="Por qué engancha: sorpresa, momento real, número, queja..."></textarea><div class="fila"><button class="btn p" id="bRefOk">Agregar referencia</button></div><div id="lRefs"></div></div>
+  <div id="pRefs" class="idea" style="display:none"><h3>Referencias</h3><p class="pq">Cada video que te pegue mientras scrolleás (de importación o de cualquier nicho): el link y en una línea qué pasa y por qué engancha. Con eso el generador adapta la mecánica a lo nuestro en vez de inventar.</p><textarea id="rLote" class="campo" style="min-height:150px" placeholder="Pegá todos los links juntos, uno por renglón. Si querés, después del link escribí qué pasa o por qué engancha:
+https://www.tiktok.com/@cuenta/video/123  airpods arrugados en la caja, se queja a cámara
+https://www.instagram.com/reel/abc"></textarea><p class="pq">La IA no puede mirar los videos: de TikTok lee solo el texto del posteo, de Instagram nada. Por eso, unas palabras al lado del link valen mucho más que el link solo. Los links sin nota quedan guardados pero no se usan hasta que les agregues algo.</p><div class="fila"><button class="btn p" id="bRefOk">Agregar referencias</button></div><div id="lRefs"></div></div>
   <div id="ideas"><div class="vacio">Cargando...</div></div>
 </div>
   <div id="i-hist" style="display:none">
-  <div class="barraher"><button class="btn p" id="bHistGen"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>Generar historias</button><select id="fHist"><option value="nueva">Para subir</option><option value="subida">Ya subidas</option><option value="descartada">Descartadas</option></select></div>
+  <div class="barraher"><button class="btn p" id="bHistGen"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>Generar historias</button><select id="fHist"><option value="nueva">Para subir</option><option value="subida">Ya subidas</option><option value="descartada">Descartadas</option></select><button class="btn" data-todas="historias">Marcar todas</button><button class="btn" id="bDescHist">Descartar marcadas</button></div>
   <p class="estado ayuda">Salen solas todos los días a las 9 con lo que pasa en el WhatsApp: cotizaciones que mandaste, lo más consultado y lo que preguntan. No se repiten.</p>
   <div id="historias"><div class="vacio">Cargando...</div></div>
   </div>
@@ -825,10 +850,11 @@ function cargarIdeas() {
   cargarRefs();
   api("ideas?estado=" + $("#fIdeas").value).then(function (l) {
     $("#ideas").innerHTML = l.length ? l.map(function (x) {
-      return '<div class="idea" data-id="' + esc(x.id) + '"><div class="fila" style="justify-content:space-between"><h3><input type="checkbox" class="selIdea" value="' + esc(x.id) + '" style="width:20px;height:20px;margin-right:8px;vertical-align:middle">' + esc(x.titulo) + '</h3><span class="fila"><span class="pill n">' + esc(FORMATOS[x.formato] || x.formato) + "</span>" + (x.producto ? '<span class="pill">' + esc(x.producto) + "</span>" : "") + "</span></div>" +
+      var mej = (x.vinculos || []).reduce(function (m, v) { return Math.max(m, v.alcance || 0); }, 0);
+      return '<details class="idea" data-id="' + esc(x.id) + '"><summary><input type="checkbox" class="sel" value="' + esc(x.id) + '"><span class="st">' + esc(x.titulo) + "</span>" + (x.escena ? '<span class="pill">' + esc(ESCENAS[x.escena] || x.escena) + "</span>" : "") + (mej ? '<span class="pill n">' + num(mej) + "</span>" : "") + "</summary>" + '<div class="fila"><span class="pill n">' + esc(FORMATOS[x.formato] || x.formato) + "</span>" + (x.producto ? '<span class="pill">' + esc(x.producto) + "</span>" : "") + "</div>" +
         (x.ganchos && x.ganchos.length ? x.ganchos.map(function (g, i) { return '<div class="gancho"><small>GANCHO ' + (i + 1) + " · " + esc(g.tipo).toUpperCase() + "</small>" + esc(g.texto) + (g.como ? '<div style="font-size:13px;font-weight:400;opacity:.8;margin-top:4px">' + esc(g.como) + "</div>" : "") + metG(x, i) + "</div>"; }).join("") : '<div class="gancho"><small>TEXTO EN PANTALLA, PRIMER SEGUNDO</small>' + esc(x.gancho) + "</div>") + (x.origen || x.escena || x.mostrar ? '<div class="pq">' + (x.origen ? "<b>Sale de:</b> " + esc(x.origen) + " " : "") + (x.escena ? "<b>Escena:</b> " + esc(ESCENAS[x.escena] || x.escena) + " " : "") + (x.mostrar ? "<b>Se ve:</b> " + esc(x.mostrar) : "") + "</div>" : "") + '<div class="pq"><b>Cuerpo (se graba una vez):</b></div><ol>' + (x.guion || []).map(function (t) { return "<li>" + esc(t) + "</li>"; }).join("") + "</ol>" +
         (x.cta ? "<div><b>Cierre:</b> " + esc(x.cta) + "</div>" : "") + '<div class="pq"><b>Por qué:</b> ' + esc(x.por_que) + "</div>" + (x.hipotesis ? '<div class="pq"><b>Qué probamos:</b> ' + esc(x.hipotesis) + "</div>" : "") + (x.motivo ? '<div class="pq"><b>Por qué la descartaste:</b> ' + esc(x.motivo) + "</div>" : "") +
-        '<div class="fila" style="margin-top:10px">' + (x.estado !== "grabada" ? '<button class="btn p ch" data-e="grabada">Ya lo grabé</button>' : "") + (x.estado !== "descartada" ? '<button class="btn ch" data-e="descartada">Descartar</button>' : "") + (x.estado !== "nueva" ? '<button class="btn ch" data-e="nueva">Volver a pendientes</button>' : "") + '<button class="btn ch" data-c="1">Copiar guion</button>' + (x.estado === "grabada" ? '<button class="btn ch" data-v="1">3 variantes</button><button class="btn ch" data-l="1">Vincular reel</button>' : "") + "</div></div>";
+        '<div class="fila" style="margin-top:10px">' + (x.estado !== "grabada" ? '<button class="btn p ch" data-e="grabada">Ya lo grabé</button>' : "") + (x.estado !== "descartada" ? '<button class="btn ch" data-e="descartada">Descartar</button>' : "") + (x.estado !== "nueva" ? '<button class="btn ch" data-e="nueva">Volver a pendientes</button>' : "") + '<button class="btn ch" data-c="1">Copiar guion</button>' + (x.estado === "grabada" ? '<button class="btn ch" data-v="1">3 variantes</button><button class="btn ch" data-l="1">Vincular reel</button>' : "") + "</div></details>";
     }).join("") : '<div class="vacio">No hay ideas acá. Tocá <b>Generar ideas nuevas</b>.</div>';
     window.__ideas = l;
   });
@@ -865,7 +891,10 @@ $("#cal").onclick = function (ev) {
   pop.onclick = function (e) { if (e.target === pop || e.target.closest("[data-x]")) pop.remove(); };
   document.body.appendChild(pop);
 };
-$("#bDescSel").onclick = function () { var sel = [].slice.call(document.querySelectorAll("#ideas .selIdea:checked")); if (!sel.length) { aviso("Marcá al menos una"); return; } var m = prompt("¿Por qué descartás estas " + sel.length + "? (un motivo para todas, ej: genéricas, cliché, no basadas en nada real)"); if (m === null) return; m = m.trim(); if (!m) { aviso("Escribí un motivo"); return; } Promise.all(sel.map(function (c) { return api("idea-estado", { id: c.value, estado: "descartada", motivo: m, n: 1 }); })).then(function () { cargarIdeas(); cargarResumen(); }); }; $("#ideas").onclick = function (ev) {
+function marcadas(c) { return [].slice.call(document.querySelectorAll("#" + c + " .sel:checked")); }
+document.addEventListener("click", function (e) { var t = e.target.closest("[data-todas]"); if (!t) return; var l = [].slice.call(document.querySelectorAll("#" + t.dataset.todas + " .sel")), todas = l.length && l.every(function (c) { return c.checked; }); l.forEach(function (c) { c.checked = !todas; }); t.textContent = todas ? "Marcar todas" : "Desmarcar"; });
+$("#bDescHist").onclick = function () { var sel = marcadas("historias"); if (!sel.length) return aviso("Marcá al menos una"); Promise.all(sel.map(function (c) { return api("historia-estado", { id: c.value, estado: "descartada" }); })).then(function () { cargarHist(); cargarResumen(); aviso(sel.length + " descartadas"); }); };
+$("#bDescSel").onclick = function () { var sel = marcadas("ideas"); if (!sel.length) { aviso("Marcá al menos una"); return; } var m = prompt("¿Por qué descartás estas " + sel.length + "? (un motivo para todas, ej: genéricas, cliché, no basadas en nada real)"); if (m === null) return; m = m.trim(); if (!m) { aviso("Escribí un motivo"); return; } Promise.all(sel.map(function (c) { return api("idea-estado", { id: c.value, estado: "descartada", motivo: m, n: 1 }); })).then(function () { cargarIdeas(); cargarResumen(); aviso(sel.length + " descartadas"); }); }; $("#ideas").onclick = function (ev) {
   var b = ev.target.closest("button"); if (!b) return; var card = b.closest(".idea"), idv = card.dataset.id;
     if (b.dataset.c) { var x = (window.__ideas || []).filter(function (i) { return i.id === idv; })[0]; if (!x) return; var NL = String.fromCharCode(10); navigator.clipboard.writeText((x.ganchos && x.ganchos.length ? x.ganchos.map(function (g, i) { return "GANCHO " + (i + 1) + " (" + g.tipo + "): " + g.texto + (g.como ? " / " + g.como : ""); }).join(NL) : "GANCHO: " + x.gancho) + NL + NL + "CUERPO:" + NL + (x.guion || []).map(function (t, i) { return (i + 1) + ". " + t; }).join(NL) + (x.cta ? NL + NL + "CIERRE: " + x.cta : "")).then(function () { aviso("Guion copiado"); }); return; }
   if (b.dataset.v) { b.disabled = true; b.textContent = "Pensando..."; api("idea-variantes", { id: idv }).then(function (r) { b.disabled = false; b.textContent = "3 variantes"; if (!r.ok) return aviso(r.error); cargarResumen(); aviso(r.cantidad + " variantes nuevas en Para grabar"); }); return; }
@@ -891,12 +920,12 @@ function vincular(idv) {
 function cargarRefs() {
   api("refs").then(function (l) {
     $("#bRefs").textContent = "Referencias (" + l.length + ")";
-    $("#lRefs").innerHTML = l.map(function (r) { return '<div class="pq" style="border-top:1px solid var(--borde);padding:8px 0"><b>' + esc(r.nicho || "sin nicho") + "</b> · usada " + (r.usos || 0) + (r.usos === 1 ? " vez" : " veces") + (r.link ? ' · <a href="' + esc(r.link) + '" target="_blank" rel="noopener">ver</a>' : "") + "<br>" + esc(r.que_pasa) + (r.por_que ? "<br><i>" + esc(r.por_que) + "</i>" : "") + ' <button class="btn" data-rb="' + esc(r.id) + '">Borrar</button></div>'; }).join("") || '<div class="vacio">Todavía no cargaste referencias.</div>';
+    $("#lRefs").innerHTML = l.map(function (r) { return '<div class="pq" style="border-top:1px solid var(--borde);padding:8px 0"><b>' + esc(r.nicho || "sin nicho") + "</b> · usada " + (r.usos || 0) + (r.usos === 1 ? " vez" : " veces") + (r.link ? ' · <a href="' + esc(r.link) + '" target="_blank" rel="noopener">ver</a>' : "") + "<br>" + (r.que_pasa ? esc(r.que_pasa) : '<span style="color:var(--nar)">Sin nota: la IA no la usa todavía</span>') + (r.por_que ? "<br><i>" + esc(r.por_que) + "</i>" : "") + ' <button class="btn" data-rb="' + esc(r.id) + '">Borrar</button></div>'; }).join("") || '<div class="vacio">Todavía no cargaste referencias.</div>';
   });
 }
 $("#bPropia").onclick = function () { var p = $("#pPropia"); p.style.display = p.style.display === "none" ? "" : "none"; $("#pRefs").style.display = "none"; };
 $("#bRefs").onclick = function () { var p = $("#pRefs"); p.style.display = p.style.display === "none" ? "" : "none"; $("#pPropia").style.display = "none"; cargarRefs(); };
-$("#bRefOk").onclick = function () { var q = $("#rQue").value.trim(); if (q.length < 10) return aviso("Contá qué pasa en el video"); api("ref-agregar", { link: $("#rLink").value.trim(), nicho: $("#rNicho").value.trim(), que_pasa: q, por_que: $("#rPor").value.trim() }).then(function (r) { if (!r.ok) return aviso(r.error || "No se pudo guardar"); $("#rLink").value = ""; $("#rQue").value = ""; $("#rPor").value = ""; cargarRefs(); aviso("Referencia guardada"); }); };
+$("#bRefOk").onclick = function () { var b = this, t = $("#rLote").value.trim(); if (!t) return aviso("Pegá los links"); b.disabled = true; b.textContent = "Cargando..."; api("refs-lote", { texto: t }).then(function (r) { b.disabled = false; b.textContent = "Agregar referencias"; if (!r.ok) return aviso(r.error || "No se pudo guardar"); $("#rLote").value = ""; cargarRefs(); aviso(r.cargadas + " cargadas" + (r.repetidas ? ", " + r.repetidas + " ya estaban" : "")); }); };
 $("#lRefs").onclick = function (e) { var b = e.target.closest("[data-rb]"); if (!b || !confirm("¿Borrar esta referencia?")) return; api("ref-borrar", { id: b.dataset.rb }).then(cargarRefs); };
 $("#bPropiaOk").onclick = function () { var b = this, t = $("#tPropia").value.trim(), g = $("#cPropiaG").checked; if (t.length < 15) return aviso("Pegá la idea"); b.disabled = true; b.textContent = "Ordenando..."; api("idea-propia", { texto: t, grabada: g }).then(function (r) { b.disabled = false; b.textContent = "Guardar idea"; if (!r.ok) return aviso(r.error); $("#tPropia").value = ""; $("#pPropia").style.display = "none"; $("#fIdeas").value = g ? "grabada" : "nueva"; cargarIdeas(); cargarResumen(); aviso("Idea guardada"); }); };
 $("#bIdeasGen").onclick = function () { var b = this; b.disabled = true; b.lastChild.textContent = "Pensando ideas..."; api("generar-ideas", {}).then(function (r) { b.disabled = false; b.lastChild.textContent = "Generar ideas nuevas"; if (!r.ok) return aviso(r.error); $("#fIdeas").value = "nueva"; cargarIdeas(); cargarResumen(); aviso(r.cantidad + " ideas nuevas"); }); };
@@ -957,13 +986,13 @@ function cargarHist() {
     window.__hist = l;
     $("#historias").innerHTML = l.length ? l.map(function (x) {
       var st = x.sticker;
-      return '<div class="idea" data-id="' + esc(x.id) + '"><div class="tit"><h3>' + esc(x.titulo) + '</h3><span class="pill n">' + esc(TIPOS_H[x.tipo] || x.tipo) + "</span></div>" +
+      return '<details class="idea" data-id="' + esc(x.id) + '"><summary><input type="checkbox" class="sel" value="' + esc(x.id) + '"><span class="st">' + esc(x.titulo) + '</span><span class="pill n">' + esc(TIPOS_H[x.tipo] || x.tipo) + "</span></summary>" +
         (x.mostrar ? '<div class="pq" style="color:var(--txt);font-size:14px"><b>Qué mostrar:</b> ' + esc(x.mostrar) + "</div>" : "") +
         (x.texto ? '<div class="gancho"><small>TEXTO EN LA HISTORIA</small>' + esc(x.texto) + "</div>" : "") +
         (st ? '<div class="sticker"><small>' + (STK[st.tipo] || "STICKER") + "</small>" + (st.pregunta ? "<b>" + esc(st.pregunta) + "</b>" : "") + (st.opciones && st.opciones.length ? '<div class="ops">' + st.opciones.map(function (o) { return "<span>" + esc(o) + "</span>"; }).join("") + "</div>" : "") + "</div>" : "") +
         (x.refs && x.refs.length ? '<div class="refs">' + x.refs.map(function (c) { return '<a class="btn ch" target="_blank" rel="noopener" href="/panel/cotizar/pdf?id=' + encodeURIComponent(c.id) + '">Ver cotización' + (c.num ? " N° " + c.num : "") + "</a>"; }).join("") + "</div>" : "") +
         '<div class="pq"><b>Por qué:</b> ' + esc(x.por_que) + "</div>" +
-        '<div class="fila" style="margin-top:10px">' + (x.estado !== "subida" ? '<button class="btn p ch" data-e="subida">Ya la subí</button>' : "") + (x.estado !== "descartada" ? '<button class="btn ch" data-e="descartada">Descartar</button>' : "") + (x.estado !== "nueva" ? '<button class="btn ch" data-e="nueva">Volver a pendientes</button>' : "") + (x.texto ? '<button class="btn ch" data-c="1">Copiar texto</button>' : "") + "</div></div>";
+        '<div class="fila" style="margin-top:10px">' + (x.estado !== "subida" ? '<button class="btn p ch" data-e="subida">Ya la subí</button>' : "") + (x.estado !== "descartada" ? '<button class="btn ch" data-e="descartada">Descartar</button>' : "") + (x.estado !== "nueva" ? '<button class="btn ch" data-e="nueva">Volver a pendientes</button>' : "") + (x.texto ? '<button class="btn ch" data-c="1">Copiar texto</button>' : "") + "</div></details>";
     }).join("") : '<div class="vacio">No hay historias acá. Tocá <b>Generar historias</b>.</div>';
   });
 }
