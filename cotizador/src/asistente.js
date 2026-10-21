@@ -1,4 +1,4 @@
-import { notionActivo, notionHoy, textoNotion, crearEnNotion, marcarEnNotion, descubrir } from "./notion.js";
+import { notionActivo, notionHoy, textoNotion, crearEnNotion, marcarEnNotion, descubrir, diagnosticoNotion, fijarRol } from "./notion.js";
 // Asistente personal por Telegram: le mandás un audio o un texto con todo lo que tenés en la cabeza
 // y lo ordena en tareas por prioridad. Cada persona tiene su lista (según desde qué chat escribe).
 // Comandos: "lista" (o /lista), "hecho 2" / "listo 1,3", "borrar 4", "subí 3" / "bajá 3", "hoy".
@@ -10,7 +10,7 @@ const nid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 const AR = 3 * 3600e3;
 const hoyAR = () => new Date(Date.now() - AR).toISOString().slice(0, 10);
 
-export const VERSION_ASISTENTE = "21/10 14:30 (Notion)";
+export const VERSION_ASISTENTE = "21/10 15:00 (Notion 2)";
 export const PRIORIDADES = { 1: "🔴 URGENTE (hoy)", 2: "🟠 IMPORTANTE (esta semana)", 3: "🟡 PUEDE ESPERAR", 4: "⚪ ALGÚN DÍA / IDEAS" };
 const AREAS = ["Ventas", "Proveedores", "Redes", "Operaciones", "Finanzas", "Sistema", "Equipo", "Personal", "Otro"];
 
@@ -164,8 +164,9 @@ ${redes.map((x) => "- " + x).join("\n")}
 WHATSAPP 805: ${neg.chats} chats sin contestar, ${neg.calientes} calientes.
 ${nt ? `SU NOTION (donde organiza su vida: tareas por categoría, hábitos y eventos; tenelo en cuenta para el plan y para "¿ahora qué hago?"):
 ${nItems.map((x) => `[${x.ref}] ${x.k === "habito" ? "hábito de hoy" : "tarea"}: ${x.texto}${x.categoria ? " [" + x.categoria + "]" : ""}${x.fecha ? " (" + String(x.fecha).slice(0, 10) + ")" : ""}`).join("\n") || "(nada abierto)"}
+${(nt.otras || []).map((o) => `BASE "${o.base}" (últimas filas): ${o.filas.join(" | ")}`).join("\n")}
 ${nt.eventos.length ? "EVENTOS DE HOY: " + nt.eventos.map((x) => (x.hora ? x.hora + " " : "") + x.texto).join(" | ") : ""}
-Si dice que hizo algo de su Notion (una tarea o un hábito, ej: "ya fui al gym", "leí"), poné su ref en "notion_hechas". No dupliques en "nuevas" lo que ya está en su Notion.` : ""}
+Si te pregunta por su Notion, contestá SOLO con lo que está acá arriba (si está vacío, decí que no ves nada y que mande "notion" para revisar la conexión); nunca inventes que algo está en Notion. Si dice que hizo algo de su Notion (una tarea o un hábito, ej: "ya fui al gym", "leí"), poné su ref en "notion_hechas". No dupliques en "nuevas" lo que ya está en su Notion.` : ""}
 
 Actuá como un secretario de verdad:
 1. Anotá cada cosa concreta que tiene que hacer como tarea separada, empezando con verbo y con el detalle que dio ("Repasar física para el parcial del 28/10"). Respetá exactamente lo que pidió anotar.
@@ -335,9 +336,11 @@ async function atender(env, iaJSON, upd) {
   if (/^\/?(negocio|pendientes del negocio|panel)\b/.test(t)) { const n = await negocioPendiente(env); return decir(env, chat, n.texto ? "Lo que está esperando en el negocio:\n" + n.texto : "En el negocio no hay nada esperando. 🙌"); }
   if (/^\/?notion\s*$/.test(t)) {
     if (!notionActivo(env)) return decir(env, chat, "Notion todavía no está conectado. Falta cargar NOTION_TOKEN en Cloudflare y compartir tus páginas con la integración (te lo explicó Claude paso a paso).");
-    try { const m = await descubrir(env); return decir(env, chat, `Notion conectado. Veo ${m.todas.length} base${m.todas.length === 1 ? "" : "s"}: ${m.todas.join(", ") || "ninguna (compartilas con la integración)"}.\nTareas: ${m.tareas?.nombre || "no la encontré"} · Hábitos: ${m.habitos?.nombre || "no la encontré"} · Eventos: ${m.eventos?.nombre || "no la encontré"}`); }
+    try { return decir(env, chat, await diagnosticoNotion(env)); }
     catch (e) { return decir(env, chat, "No pude leer tu Notion: " + String(e.message || e).slice(0, 150)); }
   }
+  const rolN = t.match(/(tareas|habitos|eventos)\b.{0,30}\b(base|tabla|pagina)\s+["“']?([^"”']+?)["”']?\s*$/);
+  if (rolN && /notion/.test(t) && notionActivo(env)) { const nom = texto.match(/(?:base|tabla|p[aá]gina)\s+["“']?([^"”']+?)["”']?\s*$/i)?.[1] || rolN[3]; await fijarRol(env, rolN[1], nom.trim()); return decir(env, chat, `Listo, uso "${nom.trim()}" como ${rolN[1]}.\n\n` + (await diagnosticoNotion(env))); }
   if (/^\/?(preferencias|configuracion|ajustes)\s*$/.test(t)) { const pf = await prefsDe(env, quien); return decir(env, chat, (pf ? "Así te hablo:\n" + pf : "Por ahora: mensajes cortos y de a una cosa.") + "\n\nPara cambiarlo decímelo normal (ej: \"no me mandes el aviso de las 14\")."); }
   if (/^\/?(perfil|mi perfil|que sabes de mi)\b/.test(t)) { const pf = await perfilDe(env, quien); return decir(env, chat, pf ? "Lo que sé de tu rutina:\n" + pf + "\n\nPara cambiarlo, contame (ej: \"los martes y jueves tengo facu de 18 a 22\")." : "Todavía no sé nada de tu rutina. Contame tus horarios fijos: trabajo, facu, gym, y lo tengo en cuenta en el plan."); }
   const cmd = t.match(/^\/?(hecho|hecha|listo|ok|tache|tacha|borrar|borra|elimina|subi|subir|baja|bajar)\s+((?:\d+\s*(?:,|y|\s)\s*)*\d+)\s*$/);

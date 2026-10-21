@@ -41,6 +41,7 @@ function mapear(db) {
     tiempo: columna(p, ["number", "rich_text"], /tiempo|minutos|horas|duracion/),
     checks: Object.entries(p).filter(([, x]) => x.type === "checkbox").map(([n]) => n),   // en hábitos: una columna por hábito
     opcionesCat: (() => { const c = Object.values(p).find((x) => ["select", "multi_select"].includes(x.type)); return (c?.[c.type]?.options || []).map((o) => o.name); })(),
+    columnas: Object.entries(p).map(([n, x]) => n + ":" + x.type),
     estados: (() => { const s = Object.values(p).find((x) => x.type === "status"); return (s?.status?.options || []).map((o) => o.name); })(),
   };
 }
@@ -50,12 +51,14 @@ export async function descubrir(env) {
   const r = await api(env, "search", { filter: { property: "object", value: "database" }, page_size: 50 });
   const dbs = (r.results || []).map(mapear);
   for (const d of dbs) d.tipoHecho = d.hecho ? (Object.entries((r.results.find((x) => x.id === d.id) || {}).properties || {}).find(([n]) => n === d.hecho)?.[1]?.type || null) : null;
-  const elegir = (re) => dbs.find((d) => re.test(norm(d.nombre))) || null;
+  const fijo = JSON.parse((await kvGet(env, "notion_roles")) || "{}");   // si el dueño dijo "tareas es la base X"
+  const elegir = (re, rol) => (fijo[rol] && dbs.find((d) => norm(d.nombre) === norm(fijo[rol]))) || dbs.find((d) => re.test(norm(d.nombre))) || null;
   const mapa = {
-    tareas: elegir(/tarea|task|to ?do|pendiente|mision|quest/),
-    habitos: elegir(/habito|habit|rutina|diario/),
-    eventos: elegir(/evento|agenda|calendar|turno/),
+    tareas: elegir(/tarea|task|to ?do|pendiente|mision|quest|proyecto|accion/, "tareas"),
+    habitos: elegir(/habito|habit|rutina|diario|tracker/, "habitos"),
+    eventos: elegir(/evento|agenda|calendar|turno/, "eventos"),
     todas: dbs.map((d) => d.nombre),
+    bases: dbs,
     ts: Date.now(),
   };
   await kvPut(env, "notion_mapa", JSON.stringify(mapa));
@@ -92,12 +95,14 @@ export async function notionHoy(env) {
   const m = await mapa(env), hoy = hoyAR(), out = { tareas: [], habitos: [], eventos: [], bases: m.todas };
   if (m.tareas) {
     const f = m.tareas.fecha ? { or: [{ property: m.tareas.fecha, date: { on_or_before: hoy } }, { property: m.tareas.fecha, date: { is_empty: true } }] } : undefined;
-    const r = await api(env, `databases/${m.tareas.id}/query`, { page_size: 40, ...(f ? { filter: f } : {}) }).catch(() => ({ results: [] }));
+    let r = await api(env, `databases/${m.tareas.id}/query`, { page_size: 40, ...(f ? { filter: f } : {}) }).catch(() => ({ results: [] }));
+    if (!(r.results || []).length && f) r = await api(env, `databases/${m.tareas.id}/query`, { page_size: 40, sorts: [{ timestamp: "last_edited_time", direction: "descending" }] }).catch(() => ({ results: [] }));
     out.tareas = (r.results || []).filter((p) => !hechoSi(m.tareas, p)).map((p) => ({ id: p.id, texto: texto(p.properties[m.tareas.titulo]), fecha: texto(p.properties[m.tareas.fecha]), categoria: texto(p.properties[m.tareas.categoria]) })).filter((x) => x.texto).slice(0, 30);
   }
   if (m.habitos) {
     const f = m.habitos.fecha ? { filter: { property: m.habitos.fecha, date: { equals: hoy } } } : {};
-    const r = await api(env, `databases/${m.habitos.id}/query`, { page_size: 30, ...f }).catch(() => ({ results: [] }));
+    let r = await api(env, `databases/${m.habitos.id}/query`, { page_size: 30, ...f }).catch(() => ({ results: [] }));
+    if (!(r.results || []).length) r = await api(env, `databases/${m.habitos.id}/query`, { page_size: 1, sorts: [{ timestamp: "created_time", direction: "descending" }] }).catch(() => ({ results: [] }));   // la fila más nueva = hoy
     for (const p of r.results || []) {
       // dos formas comunes: una fila por día con una casilla por hábito, o una fila por hábito con su casilla de hecho
       const sinMarcar = m.habitos.checks.filter((c) => p.properties[c]?.checkbox === false);
@@ -109,7 +114,25 @@ export async function notionHoy(env) {
     const r = await api(env, `databases/${m.eventos.id}/query`, { page_size: 20, filter: { property: m.eventos.fecha, date: { equals: hoy } } }).catch(() => ({ results: [] }));
     out.eventos = (r.results || []).map((p) => ({ texto: texto(p.properties[m.eventos.titulo]), hora: String(p.properties[m.eventos.fecha]?.date?.start || "").slice(11, 16) })).filter((x) => x.texto);
   }
+  const usadas = new Set([m.tareas?.id, m.habitos?.id, m.eventos?.id].filter(Boolean));
+  out.otras = [];
+  for (const d of (m.bases || []).filter((x) => !usadas.has(x.id)).slice(0, 6)) {
+    const r = await api(env, `databases/${d.id}/query`, { page_size: 12, sorts: [{ timestamp: "last_edited_time", direction: "descending" }] }).catch(() => ({ results: [] }));
+    const filas = (r.results || []).map((p) => Object.entries(p.properties || {}).map(([n, v]) => [n, texto(v)]).filter(([, v]) => v).slice(0, 6).map(([n, v]) => (v === texto(p.properties[d.titulo]) ? v : n + ": " + v)).join(" · ")).filter(Boolean);
+    if (filas.length) out.otras.push({ base: d.nombre, filas });
+  }
   return out;
+}
+
+// Diagnóstico para el comando "notion": qué bases ve, columnas y cuántas filas abiertas trae
+export async function diagnosticoNotion(env) {
+  const m = await descubrir(env), n = await notionHoy(env).catch((e) => ({ error: String(e.message || e) }));
+  const rol = (x) => (x ? `${x.nombre} (título "${x.titulo}", fecha "${x.fecha || "-"}", hecho "${x.hecho || "-"}", categoría "${x.categoria || "-"}")` : "no la reconocí");
+  return `Bases que veo (${m.todas.length}): ${m.todas.join(", ") || "ninguna"}\n\nTareas: ${rol(m.tareas)}\nHábitos: ${rol(m.habitos)}\nEventos: ${rol(m.eventos)}\n\nHoy leí: ${n.error ? "error " + n.error : `${n.tareas.length} tareas abiertas, ${n.habitos.length} hábitos sin marcar, ${n.eventos.length} eventos, y ${n.otras.reduce((a, x) => a + x.filas.length, 0)} filas de otras bases`}.\n\nSi alguna base la tomé mal, decime por ejemplo "en Notion las tareas están en la base Misiones".`;
+}
+export async function fijarRol(env, rol, nombre) {
+  const f = JSON.parse((await kvGet(env, "notion_roles")) || "{}"); f[rol] = nombre;
+  await kvPut(env, "notion_roles", JSON.stringify(f)); return descubrir(env);
 }
 
 export function textoNotion(n) {

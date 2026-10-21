@@ -69,4 +69,9 @@ chk("notion en el contexto", prompts.at(-1).includes("SU NOTION") && prompts.at(
 chk("crea tarea en notion", notionLlamadas.some(([m, r, b]) => r === "pages" && b?.parent?.database_id === "dbT" && b.properties.Nombre.title[0].text.content.includes("contador") && b.properties["Categoría"].select.name === "Trabajo"));
 chk("marca hábito gym", notionLlamadas.some(([m, r, b]) => m === "PATCH" && r === "pages/pH1" && b.properties.Gym.checkbox === true));
 chk("avisa", enviados.at(-1).includes("en Notion"));
+const ctxD = { p: null, waitUntil(x) { this.p = x; } };
+await A.rutaTelegram(env, { json: async () => ({ message: { chat: { id: 111 }, text: "notion" } }), headers: { get: () => sec } }, new URL("https://x/tg/" + sec), ctxD, iaN);
+chk("diagnóstico notion", enviados.at(-1).includes("Tareas: Tareas RPG") && enviados.at(-1).includes("1 tareas abiertas") && enviados.at(-1).includes("1 hábitos sin marcar"));
+await A.rutaTelegram(env, { json: async () => ({ message: { chat: { id: 111 }, text: "en Notion las tareas están en la base Hábitos diarios" } }), headers: { get: () => sec } }, new URL("https://x/tg/" + sec), ctxD, iaN);
+chk("fijar rol", enviados.at(-1).includes('uso "Hábitos diarios" como tareas'));
 console.log(`sim-asistente: ${ok} ok, ${mal} fallas`);
