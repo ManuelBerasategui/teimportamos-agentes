@@ -859,7 +859,7 @@ async function cerebro(env, e, texto, imagen, pagina, extra = {}) {
 //  y propone reglas nuevas. Ustedes las aprueban con un botón (o #autoaprender si).
 // =====================================================================
 const APRENDIZAJE = { horaUTC: 12, minuto: 30, maxChats: 40, maxReglas: 60 };   // 12:30 UTC = 9:30 Rosario
-async function iaJSON(env, prompt) {
+async function iaJSON(env, prompt, opts = {}) {
   const parsear = (t) => { const m = (t || "").match(/\{[\s\S]*\}/); try { return m ? JSON.parse(m[0]) : null; } catch { return null; } };
   for (const m of (await modelosDisponibles(env)).slice(0, 8)) {
     { const ag = await env.ESTADO.get(`agotado:${m}`); if (ag === "1") await env.ESTADO.delete(`agotado:${m}`); else if (ag) continue; }   // "1" = bloqueo viejo de 6 h: se libera
@@ -870,6 +870,7 @@ async function iaJSON(env, prompt) {
     const res = parsear((j.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join(""));
     if (res) return res;
   }
+  if (opts.sinRespaldo) return null;   // para ideas: mejor nada que ideas flojas del modelo de respaldo
   if (env.AI) { try { const r = await env.AI.run("@cf/meta/llama-3.3-70b-instruct-fp8-fast", { messages: [{ role: "user", content: prompt.length > 24000 ? prompt.slice(0, 11000) + " [...datos recortados...] " + prompt.slice(-13000) : prompt }], max_tokens: 1500, temperature: 0.3 }); return parsear(typeof r.response === "string" ? r.response : JSON.stringify(r.response)); } catch {} }
   return null;
 }

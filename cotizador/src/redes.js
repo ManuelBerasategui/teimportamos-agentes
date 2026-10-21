@@ -204,14 +204,14 @@ Reglas para los guiones:
 - Números: solo de la tarifa real de arriba. Si hace falta un precio de producto que no sabés, escribí [precio real] para que lo complete el dueño. No inventes casos con datos falsos: si la historia es un ejemplo, que sea creíble y genérico ("un cliente de Córdoba que revende auriculares").
 - "por_que": el dato concreto de arriba en el que te basás (con su número).
 - "hipotesis": qué estamos probando con este reel, medible ("gancho con precio en pesos retiene más de 18 s").
-Respondé SOLO JSON: {"ideas":[{"titulo":"...","formato":"ml_vs_china|ml_vendi|producto|historia|reaccion|otro","marco":"pov|importador","origen":"ref:<id> o reel: <cuál>","escena":"camara|mano|pantalla|calle|mixto","mostrar":"qué se ve en el cuerpo","ganchos":[{"tipo":"reaccion|pantalla|lejos|mano|split|cartel","texto":"texto en pantalla","como":"qué se ve y qué se dice en el primer segundo"}],"guion":["...","..."],"cta":"...","por_que":"...","producto":"...","hipotesis":"qué gancho creés que gana y por qué"}]}`);
+Respondé SOLO JSON: {"ideas":[{"titulo":"...","formato":"ml_vs_china|ml_vendi|producto|historia|reaccion|otro","marco":"pov|importador","origen":"ref:<id> o reel: <cuál>","escena":"camara|mano|pantalla|calle|mixto","mostrar":"qué se ve en el cuerpo","ganchos":[{"tipo":"reaccion|pantalla|lejos|mano|split|cartel","texto":"texto en pantalla","como":"qué se ve y qué se dice en el primer segundo"}],"guion":["...","..."],"cta":"...","por_que":"...","producto":"...","hipotesis":"qué gancho creés que gana y por qué"}]}`, { sinRespaldo: true });
   const r = { ideas: [] };
   if (refs.length) {
     // Con referencias: prompts cortos y enfocados, una idea por referencia (el modelo gratis rinde mucho mejor así).
     const elegidas = refs.slice(0, cantidad);
     for (let i = 0; i < elegidas.length; i += 2) {
       const grupo = elegidas.slice(i, i + 2);
-      const x = await iaJSON(env, promptRefs(grupo, { propias, ganadoras, rechazos, ya: r.ideas.map((y) => y?.titulo).filter(Boolean).concat(previas.slice(0, 15).map((y) => y.titulo)) })).catch(() => null);
+      const x = await iaJSON(env, promptRefs(grupo, { propias, ganadoras, rechazos, ya: r.ideas.map((y) => y?.titulo).filter(Boolean).concat(previas.slice(0, 15).map((y) => y.titulo)) }), { sinRespaldo: true }).catch(() => null);
       if (Array.isArray(x?.ideas)) r.ideas.push(...x.ideas.map((y, j) => ({ ...y, origen: y.origen && /ref:/.test(y.origen) ? y.origen : "ref:" + (grupo[j] || grupo[0]).id })));
     }
   }
@@ -232,7 +232,7 @@ Respondé SOLO JSON: {"ideas":[{"titulo":"...","formato":"ml_vs_china|ml_vendi|p
     if (vistos.some((t) => parecido(t, x.titulo) >= 0.75)) return false;   // repetida o casi igual a una que ya está
     vistos.push(x.titulo); return true;
   }).slice(0, cantidad);
-  if (!ideas.length) return { ok: false, error: "La IA no respondió o no dio ideas válidas. Probá de nuevo en un minuto." };
+  if (!ideas.length) return { ok: false, error: "La IA gratis no respondió (suele ser la cuota del día, que se renueva a las 5 de la mañana) o las ideas no pasaron el filtro de calidad. Probá más tarde." };
   const lote = id();
   await env.DB.batch(ideas.map((x) => stmtIdea(env, x, { lote, quien })));
   const usadas = [...new Set(ideas.map((x) => (String(x.origen || "").match(/ref:([a-z0-9]+)/i) || [])[1]).filter(Boolean))];
@@ -313,7 +313,7 @@ Cierre: ${x.cta || "-"}
 RESULTADOS REALES:
 ${res}
 Hacé 3 VARIANTES NUEVAS para seguir testeando. Mantené la MECÁNICA que hace funcionar la original (si un gancho ganó, su tipo y su estímulo), pero cambiá el producto, la situación o el giro: el mismo chiste no da risa dos veces. Nada genérico ni de consejos: situaciones concretas con estímulo. Cada variante: 3 o 4 ganchos de tipo visual distinto, cuerpo de 6 a 10 frases en rioplatense como se dicen a cámara, CTA de una palabra al WhatsApp del perfil (distinta en cada una). Solo utilería real. Precios que no sepas: [precio real].
-Respondé SOLO JSON: {"ideas":[${FORMA_IDEA}]}`);
+Respondé SOLO JSON: {"ideas":[${FORMA_IDEA}]}`, { sinRespaldo: true });
   const ideas = (r?.ideas || []).filter((y) => y?.titulo && (y.ganchos || []).length && !PROHIBIDO.test(JSON.stringify(y))).slice(0, 3);
   if (!ideas.length) return { ok: false, error: "La IA no respondió. Probá de nuevo en un minuto." };
   const lote = id();
