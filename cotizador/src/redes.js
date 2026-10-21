@@ -226,7 +226,9 @@ Respondé SOLO JSON: {"ideas":[{"titulo":"...","formato":"ml_vs_china|ml_vendi|p
   const vistos = previas.map((x) => x.titulo);
   const ideas = (r?.ideas || []).filter((x) => {
     if (!x?.titulo || !(x?.gancho || x?.ganchos?.length) || PROHIBIDO.test(JSON.stringify(x))) return false;
-    if (MOLDE_MALO.test(x.titulo) || TARIFA_EN_GUION.test((x.guion || []).join(" "))) return false;   // genérica o explica la tarifa
+    const cuerpo = (Array.isArray(x.guion) ? x.guion : [String(x.guion || "")]).join(" ");
+    if (MOLDE_MALO.test(x.titulo) || TARIFA_EN_GUION.test(cuerpo)) return false;   // genérica o explica la tarifa
+    if (COMO_CLIENTE.test(cuerpo) || /\$\s?\d/.test(cuerpo)) return false;   // se hace pasar por cliente o inventa precios
     if (vistos.some((t) => parecido(t, x.titulo) >= 0.75)) return false;   // repetida o casi igual a una que ya está
     vistos.push(x.titulo); return true;
   }).slice(0, cantidad);
@@ -240,6 +242,7 @@ Respondé SOLO JSON: {"ideas":[{"titulo":"...","formato":"ml_vs_china|ml_vendi|p
 
 // ---------- Ideas a partir de referencias (prompt corto) ----------
 const MOLDE_MALO = /^(el negocio (de|detr[aá]s)|cu[aá]nto le gano|el mito de|el error de|tips|\d+ (errores|cosas|tips))/i;
+const COMO_CLIENTE = /(a|de|con) (los chicos de |la gente de )?te importamos|le escrib(o|í) a te importamos|les escrib(o|í) a|mando la foto (por whatsapp )?a /i;
 const TARIFA_EN_GUION = /honorario|handling|millonari|18 d[oó]lares|por kilo|30 ?(%|por ciento)|10 y 15 d[ií]as/i;
 function promptRefs(grupo, { propias, ganadoras, rechazos, ya }) {
   return `Sos guionista de reels virales para "Te Importamos": traemos por encargo productos de China a Argentina (buscamos proveedor, aduana y envío). El dueño (Rosario, habla como pibe rioplatense) se graba solo con el celu. No hay local, depósito ni stock.
@@ -260,7 +263,8 @@ Cómo tiene que ser cada idea:
 - Una SITUACIÓN que pasa y se ve (algo llegó mal, un cliente pidió algo raro, un precio absurdo, un comentario, una prueba), nunca un tema ni un consejo. Título corto que describa la situación, prohibido "El negocio de...", "Cuánto le gano...", "El mito/error de...".
 - 3 o 4 ganchos de tipo visual distinto (reaccion, pantalla, lejos, mano, split, cartel): el texto en pantalla del primer segundo, corto, en minúscula, como habla un pibe. En "como", qué se ve y qué se hace en esa toma, solo con la utilería real.
 - Cuerpo: 5 a 8 frases cortas tal como se dicen a cámara. Tiene que haber un giro o sorpresa y un número concreto (precio en ML vs puesto en Argentina; si no sabés el precio poné [precio real]). PROHIBIDO explicar la tarifa (honorarios, handling, flete por kilo, porcentajes de impuestos, días de envío) y frases de vendedor ("no te prometo que te hagas millonario", "nos encargamos de todo el quilombo").
-- Nunca hacerse pasar por cliente: o POV dramatizado o el dueño contando como importador.
+- Nunca hacerse pasar por cliente (Instagram ya nos restringió por eso): el que habla ES Te Importamos, en primera persona ("me pidió un cliente", "lo traje", "te lo consigo"). Prohibido "le escribo a Te Importamos" o "los chicos de Te Importamos". También vale POV dramatizado.
+- Precios: no inventes ningún número de producto; usá [precio real] para que lo complete el dueño.
 - CTA: una palabra al WhatsApp del perfil, distinta en cada idea.
 Respondé SOLO JSON: {"ideas":[${FORMA_IDEA.slice(0, -1)},"origen":"ref:<id de la referencia que adaptaste>"}]}`;
 }
