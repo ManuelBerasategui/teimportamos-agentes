@@ -18,7 +18,7 @@ on:
         default: "0.9"
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   grabar:
@@ -68,6 +68,11 @@ jobs:
             echo "::endgroup::"
           done
           ls -la salida
+      - name: Guardar en la rama reels-animados (para bajarlos fácil)
+        run: |
+          git config user.name "reels-bot" && git config user.email "reels-bot@users.noreply.github.com"
+          cp salida/*.mp4 /tmp/ && cd /tmp && rm -rf rama && git clone -q --depth 1 --branch reels-animados "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}" rama 2>/dev/null || (mkdir rama && cd rama && git init -q && git checkout -q -b reels-animados && git remote add origin "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}")
+          cd /tmp/rama && cp /tmp/*.mp4 . && git add *.mp4 && git -c user.name=reels-bot -c user.email=reels-bot@users.noreply.github.com commit -qm "Reels animados ${{ github.run_id }}" && git push -q origin reels-animados
       - uses: actions/upload-artifact@v4
         with:
           name: reels-animados
