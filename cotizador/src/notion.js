@@ -98,7 +98,14 @@ const hechoSi = (d, page) => {
 };
 
 // Lo de hoy en Notion: tareas abiertas (vencidas, de hoy o sin fecha), hábitos sin marcar y eventos de hoy
-export async function notionHoy(env) {
+export async function notionHoy(env, fresco = false) {
+  // se guarda 3 minutos: leer Notion son varias consultas y el asistente tiene que contestar rápido
+  if (!fresco) { const c = JSON.parse((await kvGet(env, "notion_hoy")) || "null"); if (c && Date.now() - c.ts < 180e3) return c.d; }
+  const d = await notionHoy0(env);
+  if (d) await kvPut(env, "notion_hoy", JSON.stringify({ ts: Date.now(), d }));
+  return d;
+}
+async function notionHoy0(env) {
   if (!notionActivo(env)) return null;
   const m = await mapa(env), hoy = hoyAR(), out = { tareas: [], habitos: [], eventos: [], bases: m.todas };
   if (m.tareas) {
@@ -220,6 +227,7 @@ export async function crearEnNotion(env, { texto: t, fecha, categoria }) {
     const op = m.tareas.opcionesCat.find((o) => norm(o) === norm(categoria)) || m.tareas.opcionesCat.find((o) => norm(o).includes(norm(categoria)) || norm(categoria).includes(norm(o)));
     if (op) props[m.tareas.categoria] = { select: { name: op } };
   }
+  await env.DB.prepare("DELETE FROM kv WHERE k='notion_hoy'").run().catch(() => {});
   const r = await api(env, "pages", { parent: { database_id: m.tareas.id }, properties: props }).catch(async (e) => {
     // si la categoría es multi_select, Notion rechaza "select": reintento sin categoría
     delete props[m.tareas.categoria]; return api(env, "pages", { parent: { database_id: m.tareas.id }, properties: props }).catch(() => null);
@@ -235,6 +243,7 @@ export async function marcarEnNotion(env, pageId, col = null) {
   const c = col || base?.hecho; if (!c) return false;
   const tipo = col && base === m.habitos ? "checkbox" : base.tipoHecho;
   const val = tipo === "status" ? { status: { name: base.estados.find((e) => /hech|done|complet|list|termin/i.test(norm(e))) || base.estados.at(-1) } } : { checkbox: true };
+  await env.DB.prepare("DELETE FROM kv WHERE k='notion_hoy'").run().catch(() => {});
   const props = { [c]: val };
   if (!col && base?.completado && base.completado !== c) props[base.completado] = { checkbox: true };
   return !!(await api(env, "pages/" + pageId, { properties: props }, "PATCH").catch(() => null));

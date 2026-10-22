@@ -10,7 +10,7 @@ const nid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 const AR = 3 * 3600e3;
 const hoyAR = () => new Date(Date.now() - AR).toISOString().slice(0, 10);
 
-export const VERSION_ASISTENTE = "21/10 23:00 (cupo IA)";
+export const VERSION_ASISTENTE = "22/10 10:00 (más rápido)";
 export const PRIORIDADES = { 1: "🔴 URGENTE (hoy)", 2: "🟠 IMPORTANTE (esta semana)", 3: "🟡 PUEDE ESPERAR", 4: "⚪ ALGÚN DÍA / IDEAS" };
 const AREAS = ["Ventas", "Proveedores", "Redes", "Operaciones", "Finanzas", "Sistema", "Equipo", "Personal", "Otro"];
 
@@ -413,7 +413,8 @@ async function atender(env, iaJSON, upd) {
     return decir(env, chat, pre + "\n\n" + (await textoLista(env, chat, quien)));
   }
   await tg(env, "sendChatAction", { chat_id: chat, action: "typing" });
-  const r = await secretario(env, iaJSON, quien, chat, texto);
+  const aviso = setTimeout(() => { decir(env, chat, "Dame un toque, lo estoy pensando…").catch(() => {}); }, 15000);
+  const r = await secretario(env, iaJSON, quien, chat, texto).finally(() => clearTimeout(aviso));
   if (!r) return decir(env, chat, "La IA no respondió ahora. Guardé lo que dijiste como una tarea para no perderlo; reenviamelo en un rato para ordenarlo." + (await guardarCrudo(env, quien, texto)));
   return decir(env, chat, (audio ? `🎙 "${texto.slice(0, 200)}${texto.length > 200 ? "…" : ""}"\n\n` : "") + r);
 }
@@ -431,7 +432,8 @@ export async function rutaTelegram(env, req, url, ctx, iaJSON) {
   // Si pasa de 50 s, se le contesta a Telegram igual (para que no reintente) y se sigue en segundo plano.
   const trabajo = (async () => {
     await kvPut(env, "asist_ultimo", JSON.stringify({ ts: Date.now(), texto: String(upd?.message?.text || (upd?.message?.voice ? "[audio]" : "")).slice(0, 60) })).catch(() => {});
-    await atender(env, iaJSON, upd).catch(async (e) => { console.log("Asistente:", e?.stack || e); await kvPut(env, "asist_error", JSON.stringify({ ts: Date.now(), error: String(e?.stack || e).slice(0, 800) })).catch(() => {}); });
+    await atender(env, iaJSON, upd).catch(async (e) => {
+      const ch = upd?.message?.chat?.id; if (ch) await decir(env, String(ch), "Se me trabó procesando eso (" + String(e?.message || e).slice(0, 80) + "). Mandámelo de nuevo en un minuto.").catch(() => {}); console.log("Asistente:", e?.stack || e); await kvPut(env, "asist_error", JSON.stringify({ ts: Date.now(), error: String(e?.stack || e).slice(0, 800) })).catch(() => {}); });
   })();
   const listo = await Promise.race([trabajo.then(() => true), new Promise((ok) => setTimeout(() => ok(false), 50000))]);
   if (!listo) ctx.waitUntil(trabajo);
