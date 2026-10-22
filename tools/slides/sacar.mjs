@@ -5,7 +5,7 @@ const dir = path.dirname(new URL(import.meta.url).pathname), out = process.argv[
 fs.mkdirSync(out, { recursive: true });
 const b = await chromium.launch(); const p = await b.newPage({ viewport: { width: 1080, height: 1920 } });
 for (const f of fs.readdirSync(dir + "/disenos").filter((x) => x.endsWith(".html") && (!process.env.SOLO || process.env.SOLO.split(",").includes(x.replace(".html", ""))))) {
-  await p.goto("file://" + dir + "/disenos/" + f, { waitUntil: "networkidle" }); await p.evaluate(() => document.fonts.ready); await p.waitForTimeout(800);
+  await p.goto("file://" + dir + "/disenos/" + f, { waitUntil: "load", timeout: 60000 }); await p.evaluate(() => document.fonts.ready); await p.waitForTimeout(800);
   const els = await p.locator(".s").all();
   for (let i = 0; i < els.length; i++) await els[i].screenshot({ path: `${out}/${f.replace(".html", "")}${els.length > 1 ? "-" + String(i + 1).padStart(2, "0") : ""}.png` });
   console.log(f, els.length);
