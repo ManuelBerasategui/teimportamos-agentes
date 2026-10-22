@@ -871,7 +871,12 @@ async function iaJSON(env, prompt, opts = {}) {
     const res = parsear((j.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join(""));
     if (res) return res;
   }
-  if (opts.sinRespaldo) return null;   // para ideas: mejor nada que ideas flojas del modelo de respaldo
+  if (opts.sinRespaldo) return null;   // para ideas y tareas de fondo: mejor nada que gastar el respaldo
+  // El respaldo (Cloudflare AI) tiene 10.000 "neuronas" gratis por día y también las usa el audio del asistente:
+  // las tareas de fondo pueden usarlo como mucho 25 veces por día; lo que pide el dueño (prioridad) tiene 25 más.
+  const kR = "respaldo_dia:" + new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10), usados = +((await env.ESTADO.get(kR)) || 0);
+  if (usados >= (opts.prioridad ? 50 : 25)) return null;
+  await env.ESTADO.put(kR, String(usados + 1), { expirationTtl: 2 * 86400 });
   if (env.AI) { try { const r = await env.AI.run("@cf/meta/llama-3.3-70b-instruct-fp8-fast", { messages: [{ role: "user", content: prompt.length > 24000 ? prompt.slice(0, 11000) + " [...datos recortados...] " + prompt.slice(-13000) : prompt }], max_tokens: 1500, temperature: 0.3 }); return parsear(typeof r.response === "string" ? r.response : JSON.stringify(r.response)); } catch {} }
   return null;
 }

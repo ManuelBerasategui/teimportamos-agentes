@@ -276,7 +276,7 @@ REGLAS DEL DUEÑO (mandan por encima de todo lo anterior):${REGLAS_DUENO}
 - motivo_perdida: solo si etapa es "perdido" o la charla se cortó después de cotizarle: "caro" | "minimo" (quería menos que el mínimo) | "plazo" | "desconfianza" | "sin_respuesta" (dejó de contestar aunque le escribimos después de cotizar) | "sin_seguimiento" (lo último es nuestra cotización y nunca más le escribimos) | "otro" | null.
 Respondé JSON: {"chats":[{...}]}
 
-${bloques.join("\n\n")}`);
+${bloques.join("\n\n")}`, { sinRespaldo: true });
     const lista = Array.isArray(r?.chats) ? r.chats : [];
     const ops = [];
     for (const a of lista) {
@@ -354,7 +354,7 @@ VENTAS: marcá "venta" SOLO si ESE DÍA (mensajes sin "(día anterior)") el clie
 CHAT NUEVO: "primer_contacto" true solo si este día es la primera vez que esta persona nos escribe (consulta inicial, sin señales de que ya nos conocía: compras anteriores, pedidos en curso, "como te dije", etc.).
 Devolvé JSON: {"chats":[{"chat":"id exacto","interno":true SOLO si es una charla entre socios del equipo o con un proveedor, forwarder, agente de carga, despachante o transportista (gente a la que NOSOTROS le pagamos) (si no, false),"primer_contacto":true|false,"cotizaciones":[{"msg":número del mensaje (#) donde se mandó,"producto":"2-5 palabras"}],"venta":null o {"msg":número del mensaje del pago o la confirmación,"producto":"2-5 palabras","monto":"si se ve, si no \"\""}}]}
 
-${bloques.join("\n\n")}`);
+${bloques.join("\n\n")}`, { sinRespaldo: true });
     if (debug) return { r, prompt: bloques.join("\n\n").slice(0, 6000) };
     if (!r || !Array.isArray(r.chats)) continue;
     const ops = [];
