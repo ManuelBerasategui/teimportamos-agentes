@@ -21,7 +21,12 @@ const CONFIG = {
   diasMax: 21,            // no responde comentarios más viejos que esto
   pausaMin: 8, pausaMax: 25,   // segundos entre respuesta y respuesta (para parecer natural)
 };
-const ESTILO = `
+// A DÓNDE MANDA A LA GENTE EL COMENTARIO:
+//   "whatsapp" = responde con el número de WhatsApp (usalo mientras no puedas mandar DMs)
+//   "dm"       = responde "escribime al dm" (el de siempre; volvé a este cuando termine la restricción, el 9/11)
+const CANAL = "whatsapp";
+const WHATSAPP = "341 805 1515";   // ⚠️ verificá que sea el número que querés mostrar en público
+const ESTILO_DM = `
 Sos quien maneja el Instagram de "Te Importamos" (importación por encargo, Rosario).
 Respondés comentarios públicos con algo MUY corto: de 1 a 4 palabras. Minúscula, informal, rioplatense.
 El único objetivo es que escriban por privado. Nunca des precios, mínimos ni info en público.
@@ -30,6 +35,18 @@ Estilo exacto (variá y combiná entre estas, a veces estirando una letra):
 Para elogios: "graciass", "gracias!!", "🙌", "graciaas, escribime si queres".
 Podés usar como mucho 1 emoji, y solo a veces. Nunca uses dos veces seguidas la misma respuesta.
 `;
+const ESTILO_WHATSAPP = `
+Sos quien maneja el Instagram de "Te Importamos" (importación por encargo, Rosario).
+Respondés comentarios públicos con algo MUY corto. Minúscula, informal, rioplatense.
+El único objetivo es que escriban al WhatsApp ${WHATSAPP}. Nunca des precios, mínimos ni info en público.
+IMPORTANTE: NO pidas que te escriban por DM ni por privado de Instagram (no se puede). Siempre mandalos al WhatsApp.
+En cada respuesta que invite a escribir, incluí el número EXACTAMENTE así: ${WHATSAPP}
+Estilo exacto (variá y combiná entre estas, a veces estirando una letra):
+"escribime al wsp ${WHATSAPP}", "wsp ${WHATSAPP}", "al whatsapp ${WHATSAPP}", "mandame msj al ${WHATSAPP}", "escribime al ${WHATSAPP}", "wsp! ${WHATSAPP}", "te paso por wsp, escribime al ${WHATSAPP}".
+Para elogios: "graciass", "gracias!!", "🙌", "graciaas, escribime al wsp ${WHATSAPP} si queres".
+Podés usar como mucho 1 emoji, y solo a veces. Nunca uses dos veces seguidas la misma respuesta.
+`;
+const ESTILO = CANAL === "whatsapp" ? ESTILO_WHATSAPP : ESTILO_DM;
 // =====================================================================
 
 import { rutasMetricas } from "./metricas.js";
@@ -186,8 +203,8 @@ async function vuelta(env, { forzarPrueba = false } = {}) {
 Respuestas que ya usaste (NO las repitas ni las imites): ${previas.join(" | ") || "(ninguna)"}
 
 Clasificá y respondé cada comentario:
-- "interes": pregunta precio, cómo funciona, si traen algo, "info", "quiero", etiqueta a alguien diciendo que le interesa → respuesta invitando al DM.
-- "elogio": felicita, emojis de fuego/aplausos, "buenísimo" → agradecé corto y variado (podés sumar la invitación al DM o no).
+- "interes": pregunta precio, cómo funciona, si traen algo, "info", "quiero", etiqueta a alguien diciendo que le interesa → respuesta invitando a escribir (según el ESTILO de arriba: al WhatsApp o al DM).
+- "elogio": felicita, emojis de fuego/aplausos, "buenísimo" → agradecé corto y variado (podés sumar la invitación o no).
 - "etiqueta": solo menciona a otra persona sin decir nada → respuesta muy corta y amistosa, o null si no aporta.
 - "revisar": queja, insulto, acusación de estafa, crítica, tema delicado, pregunta técnica que necesita una persona, o algo que no entendés → respuesta null (lo ve el equipo).
 - "spam": publicidad, bots, links raros → respuesta null.
