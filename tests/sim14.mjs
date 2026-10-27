@@ -25,7 +25,7 @@ const ctx={ waits:[], waitUntil(p){this.waits.push(p)} };
 const flush=async()=>{while(ctx.waits.length) await ctx.waits.shift();};
 let n=0;
 
-env.LECTOR_TOKEN="tok"; env.TELEGRAM_TOKEN="tg"; env.TELEGRAM_CHAT="1";
+env.LECTOR_TOKEN="tok"; env.TELEGRAM_TOKEN="tg"; env.TELEGRAM_CHAT="1"; env.TELEGRAM_AVISOS="todos";   // la sim revisa los avisos que en producción están silenciados
 const tgs=[]; const f0=globalThis.fetch; globalThis.fetch=async(u,o={})=>{ if(String(u).includes("telegram")){tgs.push(JSON.parse(o.body||"{}").text);return new Response('{"ok":true}');} return f0(u,o); };
 const post=(p,b,tok="tok")=>W.fetch(new Request("https://x/lector"+p,{method:"POST",headers:{Authorization:"Bearer "+tok,"Content-Type":"application/json"},body:JSON.stringify(b)}),env,ctx);
 const now=Date.now(), iso=(m)=>new Date(now-m*60000).toISOString();
