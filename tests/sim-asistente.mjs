@@ -52,6 +52,30 @@ chk("no duplica tarea", db.prepare("SELECT COUNT(*) n FROM mis_tareas WHERE esta
 db.prepare("INSERT OR REPLACE INTO kv VALUES ('asist_prefs:Manuel','No me mandes el aviso de las 14',NULL)").run();
 const n1 = enviados.length; await A.cronAsistente(env, t(17), ia); chk("respeta preferencia sin aviso 14", enviados.length === n1);
 await mandar({ text: "listo" }); chk("listo sin número tacha el foco", db.prepare("SELECT COUNT(*) n FROM mis_tareas WHERE estado='hecha'").get().n >= 1 && enviados.at(-1).includes("Bien ahí"));
+// ---- Seguimientos: cotizados que no contestan, con mensaje listo y botón al WhatsApp ----
+for (const c of ["perfil TEXT", "presup_usd INT", "ult_yo_ts INT", "seg_visto INT"]) db.exec("ALTER TABLE w_conv ADD COLUMN " + c);
+db.exec("CREATE TABLE w_hito (id TEXT, conv TEXT, tipo TEXT, ts INT, dato TEXT, oculto INT DEFAULT 0); CREATE TABLE w_msg (id TEXT, conv TEXT, yo INT, texto TEXT, ts INT)");
+const dHace = (d) => Date.now() - d * 86400e3;
+db.prepare("INSERT INTO w_conv (conv, grupo, archivado, ult_yo, resp, prov, ult_cliente_ts, visto_ts, etapa, puntaje, cot_pend, nombre, producto, perfil, presup_usd, ult_yo_ts, seg_visto) VALUES ('5493410000001',0,0,1,1,0,?,0,'cotizado',7,0,'Ana','auriculares','B',800,?,0)").run(dHace(4), dHace(4));
+db.prepare("INSERT INTO w_hito VALUES ('c1','5493410000001','cotizacion',?,'',0)").run(dHace(4));
+db.prepare("INSERT INTO w_msg VALUES ('m1','5493410000001',0,'cuanto me salen 50 auriculares?',?),('m2','5493410000001',1,'Te quedan en USD 16 c/u puesto en Rosario',?)").run(dHace(5), dHace(4));
+let promptSeg = "", llamadasSeg = 0;
+const iaS = async (_e, p) => { if (p.includes("dejaron de contestar")) { llamadasSeg++; promptSeg = p; return { mensajes: [{ n: 1, mensaje: "Ana, ¿pudiste ver lo de los auriculares? ¿Te sirve que lo ajustemos a 30?" }] }; } return ia(_e, p); };
+const mandarS = async (text) => { const ctx = { p: null, waitUntil(x) { this.p = x; } }; await A.rutaTelegram(env, { json: async () => ({ message: { chat: { id: 111 }, text } }), headers: { get: () => sec } }, new URL("https://x/tg/" + sec), ctx, iaS); await ctx.p; };
+const capS = []; const fetchS = globalThis.fetch; globalThis.fetch = async (u, o) => { if (String(u).endsWith("/sendMessage")) capS.push(JSON.parse(o.body)); return fetchS(u, o); };
+await mandarS("seguimientos");
+const ms = capS.at(-1);
+chk("seguimientos: lista con mensaje listo", ms?.text.includes("Seguimientos de hoy: 1") && ms.text.includes("Ana") && ms.text.includes("cotizado hace 4 d") && ms.text.includes("¿pudiste ver lo de los auriculares?"));
+chk("seguimientos: botón abre WhatsApp con el texto", ms?.reply_markup?.inline_keyboard?.[0]?.[0]?.url === "https://wa.me/5493410000001?text=" + encodeURIComponent("Ana, ¿pudiste ver lo de los auriculares? ¿Te sirve que lo ajustemos a 30?"));
+chk("seguimientos: la IA ve la charla", promptSeg.includes("Cliente: cuanto me salen 50 auriculares?") && promptSeg.includes("cotizado hace 4 días"));
+await mandarS("seg"); chk("seguimientos: el mensaje se escribe una vez por día", llamadasSeg === 1 && capS.at(-1).text.includes("¿pudiste ver"));
+const nS = capS.length; await A.cronAsistente(env, t(13), iaS); chk("10 hs manda los seguimientos al chat principal", capS.length === nS + 1 && capS.at(-1).chat_id === "111" && capS.at(-1).reply_markup);
+await A.cronAsistente(env, t(11), iaS); chk("8 hs avisa cuántos seguimientos vienen", capS.at(-1).text.includes("A las 10 te paso 1 seguimiento"));
+await A.cronAsistente(env, t(0), iaS); chk("21 hs avisa seguimientos sin hacer", capS.at(-1).text.includes("Quedaron 1 seguimiento sin hacer"));
+db.prepare("UPDATE w_conv SET ult_yo_ts=? WHERE conv='5493410000001'").run(Date.now());
+await mandarS("seguimientos"); chk("si ya le escribimos, sale de la lista", capS.at(-1).text.includes("No hay seguimientos pendientes"));
+const nS2 = capS.length; await A.cronAsistente(env, t(13), iaS); chk("10 hs sin seguimientos no manda nada", capS.length === nS2);
+globalThis.fetch = fetchS;
 // ---- Notion ----
 env.NOTION_TOKEN = "secret_x"; const notionLlamadas = [];
 const DBS = [{ id: "dbT", object: "database", title: [{ plain_text: "Tareas RPG" }], properties: { Nombre: { type: "title" }, Fecha: { type: "date" }, Hecho: { type: "checkbox" }, Categoría: { type: "select", select: { options: [{ name: "Trabajo" }, { name: "Estudio" }] } }, Tiempo: { type: "number" } } },

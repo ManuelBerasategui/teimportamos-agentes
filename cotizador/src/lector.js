@@ -584,7 +584,6 @@ export async function cronLector(env, iaJSON, scheduledTime) {
   if (m % 30 === 3) await alertasRapidas(env).catch((e) => console.log("lector alertas", e?.stack || e));
   { const lista = [...NO_CLIENTES], kf = "no_clientes:" + lista.join(","); if (lista.length && !(await kvGet(env, kf))) { const q = lista.map(() => "?").join(","); await env.DB.batch([env.DB.prepare(`UPDATE w_conv SET prov=1, perfil=NULL, etapa='no_cliente' WHERE conv IN (${q})`).bind(...lista), env.DB.prepare(`UPDATE w_hito SET oculto=1 WHERE tipo='venta' AND conv IN (${q})`).bind(...lista), env.DB.prepare(`UPDATE tareas SET estado='resuelta' WHERE estado='abierta' AND tel IN (${q})`).bind(...lista), env.DB.prepare("DELETE FROM kv WHERE k='lector_resumen'")]); await kvPut(env, kf, Date.now()); } }
   if (!(await kvGet(env, "perfil_v1"))) { await env.DB.prepare("UPDATE w_conv SET analizado_ts=0 WHERE grupo=0 AND ult_ts>=?").bind(Date.now() - 14 * 86400e3).run(); await kvPut(env, "perfil_v1", Date.now()); }
-  if (hAR === 10 && m >= 5 && m < 20) await avisoSeguimientos(env).catch((e) => console.log("lector seguimientos", e?.stack || e));
   // Reporte diario: desde las 21 h; si falla o se saltea, reintenta cada 10 min y se recupera durante todo el día siguiente
   {
     const ref = hAR >= 21 ? scheduledTime : scheduledTime - 86400e3;
@@ -897,17 +896,7 @@ export async function avanceObjetivos(env) {
   return objs;
 }
 
-// Telegram a las 10 h: seguimientos del día (una vez por día)
-export async function avisoSeguimientos(env) {
-  const k = "seg_tg:" + diaAR(Date.now());
-  if (await kvGet(env, k)) return 0;
-  await kvPut(env, k, Date.now());
-  const s = await seguimientos(env);
-  if (!s.length) return 0;
-  const top = s.slice(0, 8).map((f) => `- ${f.nombre || telefono(f.conv)}${f.perfil ? " (" + f.perfil + ")" : ""} · ${f.producto || "-"}${f.presup_usd ? " · aprox USD " + f.presup_usd : ""} · cotizado hace ${f.dias_cot} d`);
-  await telegram(env, `Seguimientos de hoy: ${s.length}\n${top.join("\n")}\nPedile al agente: "pasame los mensajes de seguimiento de hoy"\n${(env.PUBLIC_URL || "https://cotizador.berasateguimanuel07.workers.dev") + "/panel"}`);
-  return s.length;
-}
+// Los seguimientos del día los manda el asistente de Telegram a las 10, con el mensaje listo (asistente.js)
 
 // El agente: asistente de WhatsApp + jefe de ventas, con memoria liviana en D1
 export async function preguntarVendedor(env, iaJSON, pregunta) {
