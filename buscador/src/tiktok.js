@@ -1,7 +1,7 @@
 // ============================================================================
 // TIKTOK — métricas de la cuenta propia (@te.importamos.arg) vía Apify
 // ----------------------------------------------------------------------------
-// Cada 2 días (6:20 AR) lanza el lector de perfiles de TikTok de Apify con los
+// La primera vez lee apenas se publica (60 videos); después cada 2 días a las 6 AR lanza el lector de perfiles de TikTok de Apify con los
 // últimos videos y guarda vistas, likes, comentarios, compartidos y guardados
 // en la tabla tt_posts de la D1 "agente". El panel (Redes › Rendimiento) los
 // cruza con Instagram. Solo lectura: no publica nada en TikTok.
@@ -12,6 +12,8 @@ export const TIKTOK = {
   usuario: "te.importamos.arg",
   actor: "clockworks~tiktok-scraper",
   videos: 25,               // últimos videos por lectura (cubre ~3 semanas)
+  videosPrimera: 60,        // la primera vez trae más historial (~2 meses) para poder comparar
+  usdPrimera: 0.25,
   cadaDias: 2,
   horaAR: 6,
   usdPorRun: 0.1,           // tope de gasto de cada lectura (Apify corta ahí)
@@ -70,7 +72,7 @@ export async function vueltaTikTok(env, { apify, gastoMes, topeMes, ahora = Date
       await kvPut(env, "tt_costo:" + mesAR(ahora), n(await kvGet(env, "tt_costo:" + mesAR(ahora))) + costo);
       let guardados = 0;
       if (s.j.data.defaultDatasetId) {
-        const d = await apify(env, `/datasets/${s.j.data.defaultDatasetId}/items?clean=true&limit=${TIKTOK.videos + 10}`);
+        const d = await apify(env, `/datasets/${s.j.data.defaultDatasetId}/items?clean=true&limit=${TIKTOK.videosPrimera + 10}`);
         if (d.ok && Array.isArray(d.j)) guardados = await guardarTikTok(env, d.j);
       }
       await env.DB.prepare("DELETE FROM kv WHERE k='tt_run'").run();
@@ -82,11 +84,14 @@ export async function vueltaTikTok(env, { apify, gastoMes, topeMes, ahora = Date
   }
   const ult = JSON.parse((await kvGet(env, "tt_ultimo")) || "null");
   const hAR = new Date(ahora - AR).getUTCHours();
-  if (!forzar && (hAR !== TIKTOK.horaAR || (ult && ahora - ult.ts < (TIKTOK.cadaDias - 0.5) * 86400e3))) return "";
-  if ((await gastoMes(env)) + TIKTOK.usdPorRun > topeMes) return "TikTok: tope de Apify del mes alcanzado";
-  const q = new URLSearchParams({ maxItems: String(TIKTOK.videos), maxTotalChargeUsd: String(TIKTOK.usdPorRun), timeout: "600" });
+  // La primera lectura (o si la anterior falló hace más de 6 h) va apenas puede; después, cada 2 días a las 6
+  const primera = !ult || (ult.estado === "ERROR" && ahora - ult.ts > 6 * 3600e3);
+  if (!forzar && !primera && (hAR !== TIKTOK.horaAR || ahora - ult.ts < (TIKTOK.cadaDias - 0.5) * 86400e3)) return "";
+  const cuantos = !ult ? TIKTOK.videosPrimera : TIKTOK.videos, tope = !ult ? TIKTOK.usdPrimera : TIKTOK.usdPorRun;
+  if ((await gastoMes(env)) + tope > topeMes) return "TikTok: tope de Apify del mes alcanzado";
+  const q = new URLSearchParams({ maxItems: String(cuantos), maxTotalChargeUsd: String(tope), timeout: "600" });
   const r = await apify(env, `/acts/${env.ACTOR_TIKTOK || TIKTOK.actor}/runs?${q}`, { method: "POST", body: JSON.stringify({
-    profiles: [env.TIKTOK_USUARIO || TIKTOK.usuario], profileScrapeSections: ["videos"], profileSorting: "latest", resultsPerPage: TIKTOK.videos,
+    profiles: [env.TIKTOK_USUARIO || TIKTOK.usuario], profileScrapeSections: ["videos"], profileSorting: "latest", resultsPerPage: cuantos,
     shouldDownloadVideos: false, shouldDownloadCovers: false, shouldDownloadSubtitles: false, shouldDownloadSlideshowImages: false, shouldDownloadAvatars: false,
   }) });
   if (!r.ok || !r.j?.data?.id) { await kvPut(env, "tt_ultimo", JSON.stringify({ ts: ahora, estado: "ERROR", error: String(r.err || r.status).slice(0, 200) })); return "TikTok: no pude lanzar la lectura: " + (r.err || r.status); }

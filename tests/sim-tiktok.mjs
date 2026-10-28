@@ -19,6 +19,7 @@ const items = [
   { id: "t3", text: "Cuánto cuesta importar zapatillas", createTimeISO: new Date(hoy - 10 * D).toISOString(), playCount: 5000 },
 ];
 let lanz = null, estado = "RUNNING";
+// La fecha de lectura queda en kv; ult.ts se compara con "ahora"
 const apify = async (_e, ruta, o) => {
   if (ruta.startsWith("/acts/")) { lanz = { ruta, body: JSON.parse(o.body) }; return { ok: true, j: { data: { id: "run1" } } }; }
   if (ruta === "/actor-runs/run1") return { ok: true, j: { data: { status: estado, usageTotalUsd: 0.04, defaultDatasetId: "ds1" } } };
@@ -28,9 +29,8 @@ const apify = async (_e, ruta, o) => {
 let gastoBuscador = 0;
 const gastoMes = async (e) => gastoBuscador + (await T.gastoTikTokMes(e));
 const a6 = Date.UTC(2026, 9, 28, 9, 10), a10 = Date.UTC(2026, 9, 28, 13, 0);   // 6:10 y 10:00 en Argentina
-chk("fuera de hora no lanza", (await T.vueltaTikTok(env, { apify, gastoMes, topeMes: 4.5, ahora: a10 })) === "" && !lanz);
-chk("a las 6 lanza la lectura", (await T.vueltaTikTok(env, { apify, gastoMes, topeMes: 4.5, ahora: a6 })) === "TikTok: lectura lanzada");
-chk("pide el perfil propio, sin bajar videos y con tope por lectura", lanz.body.profiles[0] === "te.importamos.arg" && lanz.body.shouldDownloadVideos === false && lanz.ruta.includes("maxTotalChargeUsd=0.1") && lanz.ruta.includes("clockworks~tiktok-scraper"));
+chk("la primera lectura va apenas se publica, a cualquier hora", (await T.vueltaTikTok(env, { apify, gastoMes, topeMes: 4.5, ahora: a6 })) === "TikTok: lectura lanzada");
+chk("la primera trae más historial, sin bajar videos y con tope", lanz.body.profiles[0] === "te.importamos.arg" && lanz.body.resultsPerPage === 60 && lanz.body.shouldDownloadVideos === false && lanz.ruta.includes("maxTotalChargeUsd=0.25") && lanz.ruta.includes("clockworks~tiktok-scraper"));
 chk("mientras corre, espera", (await T.vueltaTikTok(env, { apify, gastoMes, topeMes: 4.5, ahora: a6 + 120e3 })) === "TikTok: leyendo");
 estado = "SUCCEEDED";
 chk("al terminar guarda los videos", (await T.vueltaTikTok(env, { apify, gastoMes, topeMes: 4.5, ahora: a6 + 240e3 })).includes("3 videos"));
@@ -39,9 +39,12 @@ chk("métricas planas", t1.vistas === 40000 && t1.guardados === 300 && t1.duraci
 chk("métricas dentro de stats y fecha en segundos", t2.vistas === 2000 && t2.likes === 30 && Math.abs(t2.ts - (hoy - 6 * D)) < 2000 && t2.link.endsWith("/video/t2"));
 chk("suma el costo al mes", Math.abs((await T.gastoTikTokMes(env)) - 0.04) < 1e-9);
 lanz = null;
-chk("no repite antes de 2 días", (await T.vueltaTikTok(env, { apify, gastoMes, topeMes: 4.5, ahora: a6 + D })) === "" && !lanz);
+chk("después, fuera de hora no lanza", (await T.vueltaTikTok(env, { apify, gastoMes, topeMes: 4.5, ahora: a10 + 2 * D })) === "" && !lanz);
+chk("después, a las 6 de 2 días más tarde lanza 25 con tope chico", (await T.vueltaTikTok(env, { apify, gastoMes, topeMes: 4.5, ahora: a6 + 2 * D })) === "TikTok: lectura lanzada" && lanz.body.resultsPerPage === 25 && lanz.ruta.includes("maxTotalChargeUsd=0.1"));
+db.prepare("DELETE FROM kv WHERE k='tt_run'").run(); db.prepare("UPDATE kv SET v=? WHERE k='tt_ultimo'").run(JSON.stringify({ ts: a6 + 2 * D, estado: "SUCCEEDED" })); lanz = null;
+chk("no repite antes de 2 días", (await T.vueltaTikTok(env, { apify, gastoMes, topeMes: 4.5, ahora: a6 + 3 * D })) === "" && !lanz);
 gastoBuscador = 4.45;
-chk("respeta el tope de Apify del mes", (await T.vueltaTikTok(env, { apify, gastoMes, topeMes: 4.5, ahora: a6 + 2 * D })).includes("tope") && !lanz);
+chk("respeta el tope de Apify del mes", (await T.vueltaTikTok(env, { apify, gastoMes, topeMes: 4.5, ahora: a6 + 4 * D })).includes("tope") && !lanz);
 items[0].playCount = 100; await T.guardarTikTok(env, items);
 chk("una lectura con menos vistas no pisa las anteriores", db.prepare("SELECT vistas FROM tt_posts WHERE id='t1'").get().vistas === 40000);
 // ---- Cruce con Instagram ----
