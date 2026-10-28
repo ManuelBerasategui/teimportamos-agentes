@@ -76,6 +76,25 @@ db.prepare("UPDATE w_conv SET ult_yo_ts=? WHERE conv='5493410000001'").run(Date.
 await mandarS("seguimientos"); chk("si ya le escribimos, sale de la lista", capS.at(-1).text.includes("No hay seguimientos pendientes"));
 const nS2 = capS.length; await A.cronAsistente(env, t(13), iaS); chk("10 hs sin seguimientos no manda nada", capS.length === nS2);
 globalThis.fetch = fetchS;
+// ---- Referencias de contenido: video reenviado al bot → Gemini lo mira → ig_refs ----
+env.GEMINI_KEY = "g"; let pedidoGem = null; const capV = [];
+const fetchV = globalThis.fetch;
+globalThis.fetch = async (u, o) => { u = String(u);
+  if (u.includes("generativelanguage")) { pedidoGem = JSON.parse(o.body); return { ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: JSON.stringify({ gancho: "Abre una caja y grita: ¿esto me costó 3 dólares?", que_pasa: "Muestra el producto, el precio en China y el de Mercado Libre.", estructura: "caja → precio China → precio ML → reacción", por_que: "El número sorprende.", para_nosotros: "Termos: USD 4 en China vs $25.000 en ML", red: "tiktok" }) }] } }] }) }; }
+  if (u.endsWith("/sendMessage")) capV.push(JSON.parse(o.body).text);
+  return fetchV(u, o); };
+const mandarV = async (msg) => { const ctx = { p: null, waitUntil(x) { this.p = x; } }; await A.rutaTelegram(env, { json: async () => ({ message: { chat: { id: 111 }, ...msg } }), headers: { get: () => sec } }, new URL("https://x/tg/" + sec), ctx, ia); await ctx.p; };
+await mandarV({ video: { file_id: "v1", mime_type: "video/mp4", file_size: 8 }, caption: "este explotó https://www.tiktok.com/@x/video/1" });
+const refV = db.prepare("SELECT * FROM ig_refs").get();
+chk("video: Gemini recibe el video y la nota", pedidoGem?.contents[0].parts[0].inline_data.mime_type === "video/mp4" && pedidoGem.contents[0].parts[1].text.includes('"este explotó"'));
+chk("video: queda como referencia con gancho y estructura", refV?.link === "https://www.tiktok.com/@x/video/1" && refV.nicho === "tiktok" && refV.que_pasa.includes("Gancho (0-3 s): Abre una caja") && refV.que_pasa.includes("Nota del dueño: este explotó") && refV.por_que.includes("Para nosotros: Termos"));
+chk("video: responde con el análisis", capV.at(-1).includes("Lo miré") && capV.at(-1).includes("caja → precio China"));
+await mandarV({ video: { file_id: "v1", mime_type: "video/mp4", file_size: 8 }, caption: "https://www.tiktok.com/@x/video/1" });
+chk("video: el mismo link no se duplica", db.prepare("SELECT COUNT(*) n FROM ig_refs").get().n === 1);
+await mandarV({ video: { file_id: "v2", file_size: 30e6 } }); chk("video: muy pesado avisa", capV.at(-1).includes("más de 20 MB"));
+await mandarV({ text: "https://www.instagram.com/reel/abc se queja porque le llegó roto y muestra la caja" });
+chk("link con nota se guarda", db.prepare("SELECT que_pasa FROM ig_refs WHERE link='https://www.instagram.com/reel/abc'").get()?.que_pasa === "se queja porque le llegó roto y muestra la caja" && capV.at(-1).includes("Guardé la referencia"));
+delete env.GEMINI_KEY; globalThis.fetch = fetchV;
 // ---- Notion ----
 env.NOTION_TOKEN = "secret_x"; const notionLlamadas = [];
 const DBS = [{ id: "dbT", object: "database", title: [{ plain_text: "Tareas RPG" }], properties: { Nombre: { type: "title" }, Fecha: { type: "date" }, Hecho: { type: "checkbox" }, Categoría: { type: "select", select: { options: [{ name: "Trabajo" }, { name: "Estudio" }] } }, Tiempo: { type: "number" } } },

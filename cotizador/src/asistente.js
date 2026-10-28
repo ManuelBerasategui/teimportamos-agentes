@@ -11,7 +11,7 @@ const nid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 const AR = 3 * 3600e3;
 const hoyAR = () => new Date(Date.now() - AR).toISOString().slice(0, 10);
 
-export const VERSION_ASISTENTE = "27/10 (seguimientos listos para mandar)";
+export const VERSION_ASISTENTE = "28/10 (mira videos de referencia)";
 export const PRIORIDADES = { 1: "🔴 URGENTE (hoy)", 2: "🟠 IMPORTANTE (esta semana)", 3: "🟡 PUEDE ESPERAR", 4: "⚪ ALGÚN DÍA / IDEAS" };
 const AREAS = ["Ventas", "Proveedores", "Redes", "Operaciones", "Finanzas", "Sistema", "Equipo", "Personal", "Otro"];
 
@@ -372,6 +372,61 @@ async function transcribirTG(env, fileId) {
   return corregir(String(r?.text || "").trim());
 }
 
+// Referencias de contenido: le reenvían al bot un video que funciona (descargado de TikTok o Instagram) y Gemini lo mira entero.
+// Queda en ig_refs, de donde salen las ideas de reels (lunes 9 h o "Generar ideas") y los carruseles. Gratis: no usa Apify.
+const MAX_VIDEO = 14e6;   // Gemini acepta hasta ~20 MB por pedido y el video va en base64 (+33%)
+const ESQUEMA_REFS = "CREATE TABLE IF NOT EXISTS ig_refs (id TEXT PRIMARY KEY, ts INTEGER, link TEXT, nicho TEXT, que_pasa TEXT, por_que TEXT, usos INTEGER DEFAULT 0, quien TEXT)";
+const RE_LINK_RED = /https?:\/\/(?:www\.|vm\.|vt\.|m\.)?(?:tiktok\.com|instagram\.com)\/\S+/i;
+async function guardarRef(env, { link = "", nicho = "", que_pasa, por_que = "", quien }) {
+  await env.DB.prepare(ESQUEMA_REFS).run();
+  if (link) await env.DB.prepare("DELETE FROM ig_refs WHERE link=?").bind(link).run();
+  await env.DB.prepare("INSERT INTO ig_refs (id, ts, link, nicho, que_pasa, por_que, usos, quien) VALUES (?,?,?,?,?,?,0,?)").bind(nid(), Date.now(), link.slice(0, 300), nicho.slice(0, 60), String(que_pasa).slice(0, 800), String(por_que).slice(0, 400), quien).run();
+}
+async function analizarVideoRef(env, chat, quien, video, nota) {
+  if (!env.GEMINI_KEY) return decir(env, chat, "Para mirar videos falta cargar GEMINI_KEY en Cloudflare.");
+  if (video.file_size > 20e6) return decir(env, chat, "Ese video pesa más de 20 MB y Telegram no me deja bajarlo. Mandámelo como video (no como archivo), así Telegram lo comprime.");
+  const f = await tg(env, "getFile", { file_id: video.file_id });
+  if (!f?.ok) return decir(env, chat, "No pude bajar el video de Telegram. Probá mandarlo de nuevo como video (no como archivo).");
+  const buf = new Uint8Array(await (await fetch(`https://api.telegram.org/file/bot${env.TELEGRAM_TOKEN}/${f.result.file_path}`)).arrayBuffer());
+  if (buf.length > MAX_VIDEO) return decir(env, chat, `El video pesa ${Math.round(buf.length / 1e6)} MB y puedo mirar hasta ${MAX_VIDEO / 1e6}. Mandámelo como video (no como archivo) o recortalo.`);
+  let bin = ""; for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+  const link = (nota.match(RE_LINK_RED) || [""])[0].replace(/[),.]+$/, ""), comentario = nota.replace(link, "").trim();
+  const prompt = `Sos el estratega de contenido de "Te Importamos" (Rosario, Argentina): importamos por encargo de China para revendedores, emprendedores y gente que vende en Mercado Libre; hacemos reels e historias en Instagram y TikTok. El dueño te pasa este video porque le funcionó a otro (es una REFERENCIA, no es nuestro).${comentario ? ` Lo que dice él: "${comentario.slice(0, 500)}".` : ""}
+Miralo entero (imagen, texto en pantalla y audio) y explicá su MECÁNICA para poder copiarla en nuestro nicho:
+- "gancho": qué se ve, qué se dice y qué texto aparece en los primeros 3 segundos, tal cual.
+- "que_pasa": qué pasa en el video, en orden y concreto (escenas, giro, cierre), en 2 a 4 oraciones.
+- "estructura": la estructura en pasos cortos (ej. "problema → búsqueda frustrada → revelación del precio → reacción").
+- "por_que": por qué engancha (sorpresa, momento real, número que impacta, identificación, polémica, curiosidad), en 1 o 2 oraciones.
+- "para_nosotros": una idea concreta de cómo usar esa misma mecánica con importación, con un producto y un número.
+- "red": "tiktok", "instagram" u "otro" según lo que se vea (marca de agua, interfaz).
+Respondé SOLO JSON: {"gancho":"","que_pasa":"","estructura":"","por_que":"","para_nosotros":"","red":""}`;
+  let r = null;
+  for (const m of ["gemini-flash-latest", "gemini-2.5-flash", "gemini-flash-lite-latest"]) {
+    const g = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, { method: "POST", headers: { "Content-Type": "application/json", "x-goog-api-key": env.GEMINI_KEY },
+      body: JSON.stringify({ contents: [{ parts: [{ inline_data: { mime_type: video.mime_type || "video/mp4", data: btoa(bin) } }, { text: prompt }] }], generationConfig: { temperature: 0.4, responseMimeType: "application/json" } }) }).catch(() => null);
+    const j = g?.ok ? await g.json().catch(() => null) : null;
+    try { r = JSON.parse((j?.candidates?.[0]?.content?.parts || []).map((x) => x.text || "").join("").replace(/^```(json)?|```$/g, "").trim()); } catch { r = null; }
+    if (r?.que_pasa) break;
+  }
+  if (!r?.que_pasa) {
+    if (comentario.length >= 10) { await guardarRef(env, { link, nicho: /tiktok/i.test(link) ? "tiktok" : /instagram/i.test(link) ? "instagram" : "", que_pasa: comentario, quien }); return decir(env, chat, "No pude mirar el video ahora, pero guardé la referencia con lo que me escribiste."); }
+    return decir(env, chat, "No pude mirar el video ahora. Probá de nuevo en un rato o mandámelo con dos palabras de qué pasa.");
+  }
+  await guardarRef(env, { link, nicho: ["tiktok", "instagram"].includes(r.red) ? r.red : "", quien,
+    que_pasa: `Gancho (0-3 s): ${r.gancho || "-"} | Qué pasa: ${r.que_pasa} | Estructura: ${r.estructura || "-"}${comentario ? " | Nota del dueño: " + comentario : ""}`,
+    por_que: [r.por_que, r.para_nosotros ? "Para nosotros: " + r.para_nosotros : ""].filter(Boolean).join(" ") });
+  const n = (await env.DB.prepare("SELECT COUNT(*) n FROM ig_refs WHERE que_pasa<>''").first())?.n || 0;
+  return decir(env, chat, `🎬 Lo miré y lo guardé como referencia (ya hay ${n}).\n\n🪝 Gancho: ${r.gancho || "-"}\n🧩 Estructura: ${r.estructura || "-"}\n💡 Por qué engancha: ${r.por_que || "-"}${r.para_nosotros ? "\n➡️ Para nosotros: " + r.para_nosotros : ""}\n\nEntra en las ideas del lunes (o tocá "Generar ideas" en Redes).`);
+}
+// Un link de TikTok/Instagram sin video: se guarda con la nota (o el texto del posteo de TikTok), como en el panel
+async function guardarLinkRef(env, chat, quien, texto) {
+  const link = (texto.match(RE_LINK_RED) || [""])[0].replace(/[),.]+$/, ""), nota = texto.replace(link, "").replace(/^[\s\-–:|]+/, "").trim();
+  let posteo = "";
+  if (!nota && /tiktok\.com/i.test(link)) { try { const o = await fetch("https://www.tiktok.com/oembed?url=" + encodeURIComponent(link), { signal: AbortSignal.timeout(4000) }).then((x) => x.json()); posteo = [o.author_name ? "@" + o.author_name : "", o.title || ""].filter(Boolean).join(": "); } catch {} }
+  await guardarRef(env, { link, nicho: /tiktok/i.test(link) ? "tiktok" : "instagram", que_pasa: nota || (posteo ? "Texto del posteo: " + posteo : ""), quien });
+  return decir(env, chat, nota.length >= 10 ? "📌 Guardé la referencia con tu nota. Si me mandás el video descargado, lo miro entero y saco el gancho y la estructura (rinde mucho más)." : "📌 Guardé el link, pero solo con el link no sé qué pasa en el video" + (posteo ? " (leí el texto del posteo)" : "") + ". Mandame el video descargado y lo miro entero, o escribime en dos palabras qué pasa.");
+}
+
 async function organizar(env, iaJSON, quien, texto) {
   const actuales = await pendientes(env, quien);
   const r = await iaJSON(env, `Sos el asistente personal de ${nombreDe(quien)}, dueño de "Te Importamos" (importaciones por encargo de China a Argentina, Rosario: vende por WhatsApp, hace contenido para Instagram, trabaja con proveedores y un socio). Hoy es ${hoyAR()} (hora Argentina).
@@ -415,6 +470,9 @@ async function atender(env, iaJSON, upd) {
   }
   await preparar(env);
   let texto = String(msg.text || msg.caption || "").trim();
+  const video = msg.video || msg.animation || (/^video\//.test(msg.document?.mime_type || "") ? msg.document : null);
+  if (video) { await tg(env, "sendChatAction", { chat_id: chat, action: "typing" }); return analizarVideoRef(env, chat, quien, video, texto); }
+  if (RE_LINK_RED.test(texto) && texto.replace(RE_LINK_RED, "").trim().length < 300) return guardarLinkRef(env, chat, quien, texto);
   const audio = msg.voice || msg.audio || (msg.video_note ? { file_id: msg.video_note.file_id } : null);
   if (audio) {
     await tg(env, "sendChatAction", { chat_id: chat, action: "typing" });
@@ -423,8 +481,8 @@ async function atender(env, iaJSON, upd) {
   }
   if (!texto) return;
   const t = texto.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
-  if (/(esta(s)? configurad|funciona(s)?\b|andas\b|me escuchas|sos el asistente|que podes hacer|como te uso|como funciona)/.test(t) && t.length < 120) return decir(env, chat, `Sí ${nombreDe(quien)}, estoy andando y este es el chat correcto. Mandame audios o textos con todo lo que tengas que hacer y lo ordeno.\n\n• "lista": todo lo pendiente\n• "hoy": lo urgente\n• "plan": te armo el día en bloques\n• "chats": los del 805 sin contestar, con número\n• "seguimientos": cotizados que no contestaron, con el mensaje listo para mandar\n• "redes": qué hay que hacer hoy en redes\n• "negocio": lo que espera en el panel\n• "hecho 2", "subí 3", "borrar 4"\nTe escribo a las 8, a las 10 (seguimientos), a las 14 y a las 21.`);
-  if (/^\/?(start|ayuda|help)\b/.test(t)) return decir(env, chat, `Hola ${nombreDe(quien)}. Mandame un audio o un texto con todo lo que tenés que hacer, desordenado, y te lo ordeno por prioridad.\n\n• "lista": todo lo pendiente\n• "hoy": solo lo urgente\n• "hecho 2" o "hecho 1,3": tachar\n• "subí 4" / "bajá 4": cambiar prioridad\n• "borrar 4"\n• "plan": te armo el día en bloques (tus tareas + lo que espera en el negocio + facu, gym, etc.)\n• "negocio": chats, videos, carruseles e historias pendientes\n• "seguimientos": a quién volver a escribirle, con el mensaje listo\n• "perfil": lo que sé de tu rutina\nA las 8 te mando el plan, a las 10 los seguimientos, a las 14 cómo vas y a las 21 el cierre del día.`);
+  if (/(esta(s)? configurad|funciona(s)?\b|andas\b|me escuchas|sos el asistente|que podes hacer|como te uso|como funciona)/.test(t) && t.length < 120) return decir(env, chat, `Sí ${nombreDe(quien)}, estoy andando y este es el chat correcto. Mandame audios o textos con todo lo que tengas que hacer y lo ordeno.\n\n• "lista": todo lo pendiente\n• "hoy": lo urgente\n• "plan": te armo el día en bloques\n• "chats": los del 805 sin contestar, con número\n• "seguimientos": cotizados que no contestaron, con el mensaje listo para mandar\n• Reenviame un video que funcione (de TikTok o Instagram) y lo miro para sacar ideas\n• "redes": qué hay que hacer hoy en redes\n• "negocio": lo que espera en el panel\n• "hecho 2", "subí 3", "borrar 4"\nTe escribo a las 8, a las 10 (seguimientos), a las 14 y a las 21.`);
+  if (/^\/?(start|ayuda|help)\b/.test(t)) return decir(env, chat, `Hola ${nombreDe(quien)}. Mandame un audio o un texto con todo lo que tenés que hacer, desordenado, y te lo ordeno por prioridad.\n\n• "lista": todo lo pendiente\n• "hoy": solo lo urgente\n• "hecho 2" o "hecho 1,3": tachar\n• "subí 4" / "bajá 4": cambiar prioridad\n• "borrar 4"\n• "plan": te armo el día en bloques (tus tareas + lo que espera en el negocio + facu, gym, etc.)\n• "negocio": chats, videos, carruseles e historias pendientes\n• "seguimientos": a quién volver a escribirle, con el mensaje listo\n• Mandame un video que le funcionó a otro y lo guardo como referencia para las ideas\n• "perfil": lo que sé de tu rutina\nA las 8 te mando el plan, a las 10 los seguimientos, a las 14 cómo vas y a las 21 el cierre del día.`);
   if (/^\/?(lista|tareas|mis tareas|pendientes|todo|la lista)\s*$/.test(t)) return decir(env, chat, await textoLista(env, chat, quien));
   if (/^\/?hoy\s*$/.test(t)) return decir(env, chat, await textoLista(env, chat, quien, { titulo: "Para hoy", soloHoy: true }));
   // "listo" / "ya está" / "terminé" sin número: tacha lo que estaba haciendo y le dice lo que sigue
