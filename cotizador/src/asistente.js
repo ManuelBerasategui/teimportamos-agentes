@@ -100,21 +100,19 @@ async function textoLista(env, chat, quien, { titulo = "Tu lista", soloHoy = fal
 async function contar(env, sql, ...b) { try { return (await env.DB.prepare(sql).bind(...b).first())?.n || 0; } catch { return 0; } }
 export async function negocioPendiente(env) {
   const hace24 = Date.now() - 24 * 3600e3, hace3d = Date.now() - 3 * 86400e3;
-  const [chats, calientes, videos, carr, ideas, hist] = await Promise.all([
+  const [chats, calientes, videos, ideas, hist] = await Promise.all([
     contar(env, "SELECT COUNT(*) n " + SIN_CONTESTAR, Date.now() - 3 * 86400e3),
     contar(env, "SELECT COUNT(*) n FROM w_conv WHERE grupo=0 AND archivado=0 AND ult_yo=0 AND COALESCE(resp,1)=1 AND COALESCE(prov,0)=0 AND ult_cliente_ts>COALESCE(visto_ts,0) AND COALESCE(etapa,'')<>'no_cliente' AND ult_cliente_ts>=? AND (puntaje>=8 OR cot_pend=1)", hace24),
     contar(env, "SELECT COUNT(*) n FROM ig_videos WHERE estado='revision' AND borrado=0"),
-    contar(env, "SELECT COUNT(*) n FROM ig_carruseles WHERE estado IN ('estructura','slides') AND COALESCE(borrado,0)=0"),
     contar(env, "SELECT COUNT(*) n FROM ig_ideas WHERE estado='nueva'"),
     contar(env, "SELECT COUNT(*) n FROM ig_historias WHERE estado='nueva' AND ts>?", hace3d),
   ]);
   const l = [];
   if (chats) l.push(`💬 ${chats} chat${chats > 1 ? "s" : ""} de WhatsApp sin contestar${calientes ? ` (${calientes} con cotización o muy calientes: primero esos)` : ""}`);
   if (videos) l.push(`🎬 ${videos} video${videos > 1 ? "s" : ""} editado${videos > 1 ? "s" : ""} esperando que los apruebes`);
-  if (carr) l.push(`🖼 ${carr} carrusel${carr > 1 ? "es" : ""} a medio armar`);
   if (hist) l.push(`📱 ${hist} historia${hist > 1 ? "s" : ""} para subir`);
   if (ideas) l.push(`💡 ${ideas} idea${ideas > 1 ? "s" : ""} de reel para grabar`);
-  return { chats, calientes, videos, carr, ideas, hist, texto: l.join("\n") };
+  return { chats, calientes, videos, ideas, hist, texto: l.join("\n") };
 }
 // Los chats del 805 que esperan respuesta, con número y link para abrirlos directo
 const SIN_CONTESTAR = "FROM w_conv WHERE grupo=0 AND archivado=0 AND ult_yo=0 AND COALESCE(resp,1)=1 AND COALESCE(prov,0)=0 AND ult_cliente_ts>COALESCE(visto_ts,0) AND COALESCE(etapa,'')<>'no_cliente' AND ult_cliente_ts>=?";
@@ -179,12 +177,11 @@ async function mandarSeguimientos(env, iaJSON, chat) {
 async function filas(env, sql, ...b) { try { return (await env.DB.prepare(sql).bind(...b).all()).results || []; } catch { return []; } }
 export async function redesHoy(env) {
   const hace3d = Date.now() - 3 * 86400e3, ahora = Date.now(), finDia = ahora + 24 * 3600e3;
-  const [ideas, lotes, rev, prog, carr, hist, grab] = await Promise.all([
+  const [ideas, lotes, rev, prog, hist, grab] = await Promise.all([
     filas(env, "SELECT titulo FROM ig_ideas WHERE estado='nueva' ORDER BY ts DESC LIMIT 6"),
     filas(env, "SELECT estado, error FROM ig_lotes WHERE estado IN ('subiendo','en_cola','procesando','error') AND ts>?", ahora - 7 * 86400e3),
     filas(env, "SELECT texto FROM ig_videos WHERE estado='revision' AND borrado=0 LIMIT 10"),
     filas(env, "SELECT programado_ts FROM ig_videos WHERE estado='aprobado' AND programado_ts BETWEEN ? AND ?", ahora, finDia),
-    filas(env, "SELECT titulo, estado FROM ig_carruseles WHERE estado IN ('idea','estructura','slides') AND COALESCE(borrado,0)=0 ORDER BY ts DESC LIMIT 6"),
     filas(env, "SELECT titulo FROM ig_historias WHERE estado='nueva' AND ts>? ORDER BY ts DESC LIMIT 5", hace3d),
     filas(env, "SELECT titulo FROM ig_ideas WHERE estado='grabada' AND hecho_ts>? ORDER BY hecho_ts DESC LIMIT 5", ahora - 5 * 86400e3),
   ]);
@@ -199,7 +196,6 @@ export async function redesHoy(env) {
   else l.push("No hay ideas de reels para grabar: cargar referencias y tocar Generar ideas (o redefinir las que hay)");
   if (hist.length) l.push(`Subir historias: ${hist.map((x) => x.titulo).join("; ")}`);
   else l.push("Generar las historias de hoy (Redes › Ideas › Historias)");
-  if (carr.length) l.push(`Carruseles a terminar: ${carr.map((x) => `${x.titulo} (${x.estado === "idea" ? "falta estructura" : x.estado === "estructura" ? "falta confirmar y diseñar" : "falta aprobar"})`).join("; ")}`);
   return l;
 }
 
@@ -373,7 +369,7 @@ async function transcribirTG(env, fileId) {
 }
 
 // Referencias de contenido: le reenvían al bot un video que funciona (descargado de TikTok o Instagram) y Gemini lo mira entero.
-// Queda en ig_refs, de donde salen las ideas de reels (lunes 9 h o "Generar ideas") y los carruseles. Gratis: no usa Apify.
+// Queda en ig_refs, de donde salen las ideas de reels (lunes 9 h o "Generar ideas") Gratis: no usa Apify.
 const MAX_VIDEO = 14e6;   // Gemini acepta hasta ~20 MB por pedido y el video va en base64 (+33%)
 const ESQUEMA_REFS = "CREATE TABLE IF NOT EXISTS ig_refs (id TEXT PRIMARY KEY, ts INTEGER, link TEXT, nicho TEXT, que_pasa TEXT, por_que TEXT, usos INTEGER DEFAULT 0, quien TEXT)";
 const RE_LINK_RED = /https?:\/\/(?:www\.|vm\.|vt\.|m\.)?(?:tiktok\.com|instagram\.com)\/\S+/i;

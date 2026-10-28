@@ -4,7 +4,6 @@ import { apiCotizar, paginaCotizacion, PANEL_COTIZAR, cotizarAuto } from "./coti
 import { apiBusquedas, PANEL_BUSQUEDAS, rutaInformes, rutaImagen } from "./busquedas.js";
 import { apiRedes, PANEL_REDES, cronRedes, contextoRedes } from "./redes.js";
 import { apiVideos, rutaVideosEditor, cronVideos, despertarEditor } from "./videos.js";
-import { apiCarruseles, cronCarr } from "./carruseles.js";
 import { conApp, rutaApp } from "./app.js";
 import { rutaTelegram, apiAsistente, cronAsistente } from "./asistente.js";
 /**
@@ -2633,7 +2632,7 @@ const AGENTES = {
   redes: { nombre: "Agente de Redes", clave: "ig_reglas" },
 };
 // El Agente de Redes guarda lo que aprende separado por área; cada parte del sistema lee la suya
-const AREAS_REDES = { comentarios: "ig_reglas", ideas: "ig_reglas_ideas", carruseles: "ig_reglas_carrusel", videos: "ig_reglas_videos" };
+const AREAS_REDES = { comentarios: "ig_reglas", ideas: "ig_reglas_ideas", videos: "ig_reglas_videos" };
 const CONFIG_VIDEO = { sub_tam: [58, "tamaño de los subtítulos (40 a 110)"], sub_alto: [800, "distancia de los subtítulos al borde de abajo, en px (300 a 1300)"], gancho_tam: [94, "tamaño del texto de arriba (50 a 130)"], gancho_alto: [300, "distancia del texto de arriba al borde de arriba, en px (120 a 700)"], pausa_ms: [350, "silencio más largo que se deja sin cortar, en milisegundos (150 a 1200): más chico = cortes más agresivos, más grande = más aire"], margen_ms: [80, "aire que se deja antes y después de cada palabra, en milisegundos (0 a 300): si se comen el principio o el final de las palabras, subilo"] };
 const LIM_VIDEO = { sub_tam: [40, 110], sub_alto: [300, 1300], gancho_tam: [50, 130], gancho_alto: [120, 700], pausa_ms: [150, 1200], margen_ms: [0, 300] };
 const nombreAg = (a) => (a === "instagram" ? "redes" : AGENTES[a] ? a : "whatsapp");
@@ -2654,8 +2653,6 @@ async function estadoRedes(env) {
   const lotes = await q("SELECT id, ts, estado, intentos, tomado_ts, error FROM ig_lotes ORDER BY ts DESC LIMIT 6");
   const vids = await q("SELECT estado, COUNT(*) n FROM ig_videos WHERE borrado=0 GROUP BY estado");
   const verr = await q("SELECT id, error, ts FROM ig_videos WHERE error IS NOT NULL AND error <> '' ORDER BY ts DESC LIMIT 4");
-  const carr = await q("SELECT estado, COUNT(*) n FROM ig_carruseles WHERE borrado=0 GROUP BY estado");
-  const cerr = await q("SELECT id, titulo, error, ts FROM ig_carruseles WHERE error IS NOT NULL AND error <> '' ORDER BY ts DESC LIMIT 4");
   const hist = await q("SELECT ts, estado FROM ig_historias ORDER BY ts DESC LIMIT 1");
   const ideas = await q("SELECT ts FROM ig_ideas ORDER BY ts DESC LIMIT 1");
   const dms = await q("SELECT MAX(actualizado) m, COUNT(*) n FROM ig_dms");
@@ -2664,13 +2661,12 @@ async function estadoRedes(env) {
     `Hora AR: ${f(Date.now())}`,
     `Lotes de video (últimos): ${lotes ? lotes.map((l) => `${l.id} ${f(l.ts)} estado=${l.estado} intentos=${l.intentos}${l.tomado_ts ? " tomado " + f(l.tomado_ts) : ""}${l.error ? " ERROR: " + String(l.error).slice(0, 200) : ""}`).join(" | ") || "ninguno" : "tabla sin crear"}`,
     `Videos por estado: ${vids ? vids.map((x) => x.estado + " " + x.n).join(", ") || "ninguno" : "-"}${verr?.length ? " · errores: " + verr.map((x) => String(x.error).slice(0, 150)).join(" | ") : ""}`,
-    `Carruseles por estado: ${carr ? carr.map((x) => x.estado + " " + x.n).join(", ") || "ninguno" : "-"}${cerr?.length ? " · errores: " + cerr.map((x) => `"${x.titulo}": ${String(x.error).slice(0, 150)}`).join(" | ") : ""}`,
     `Última historia propuesta: ${hist?.[0] ? f(hist[0].ts) : "-"} · últimas ideas: ${ideas?.[0] ? f(ideas[0].ts) : "-"}`,
     `DMs sincronizados: ${dms?.[0]?.n ?? "-"} (último ${f(dms?.[0]?.m)}) · posts: ${posts?.[0]?.n ?? "-"} (último ${f(posts?.[0]?.m)})`,
     `Editor de videos: GH_TOKEN ${env.GH_TOKEN ? "cargado" : "NO cargado (el editor depende del cron de GitHub, que se atrasa)"} · ajustes actuales: ${(await env.ESTADO.get("ig_config_videos")) || "los de fábrica"}`,
   ].join("\n");
 }
-const PARA_CLAUDE = (agente) => `"para_claude": SOLO si el problema NO se arregla con una regla ni con una acción tuya (es un error del sistema, algo que no se sincroniza bien, un dato que se calcula mal, un botón que no anda, un video que sale roto): escribí acá un pedido completo para Claude Code, el programador. Tiene que entenderse sin contexto: qué hace mal (síntoma exacto), qué esperaba el dueño, ejemplos concretos con datos (nombre/número/fecha/id/error), qué ya probaste y en qué parte creés que está (${agente === "redes" ? "cotizador/src/redes.js, videos.js, carruseles.js, carruseles-ui.js, instagram/src/*.js, tools/editor/editar.py" : "cotizador/src/worker.js: tareas/pendientes, cerebro, sincronización con los chats"}). Si no hace falta, dejalo "".`;
+const PARA_CLAUDE = (agente) => `"para_claude": SOLO si el problema NO se arregla con una regla ni con una acción tuya (es un error del sistema, algo que no se sincroniza bien, un dato que se calcula mal, un botón que no anda, un video que sale roto): escribí acá un pedido completo para Claude Code, el programador. Tiene que entenderse sin contexto: qué hace mal (síntoma exacto), qué esperaba el dueño, ejemplos concretos con datos (nombre/número/fecha/id/error), qué ya probaste y en qué parte creés que está (${agente === "redes" ? "cotizador/src/redes.js, videos.js, instagram/src/*.js, tools/editor/editar.py" : "cotizador/src/worker.js: tareas/pendientes, cerebro, sincronización con los chats"}). Si no hace falta, dejalo "".`;
 async function iaConImagenes(env, prompt, imagenes) {
   const partes = [{ text: prompt }, ...imagenes.slice(0, 6).map((d) => { const m = String(d).match(/^data:([^;]+);base64,(.+)$/); return m ? { inline_data: { mime_type: m[1], data: m[2] } } : null; }).filter(Boolean)];
   for (const m of (await modelosDisponibles(env)).slice(0, 3)) {
@@ -2739,8 +2735,8 @@ async function hablarConAgente(env, { agente, texto, imagenes }, quien) {
   const estado = a === "redes" ? (await estadoRedes(env)) + "\n" + (await contextoRedes(env, T)) : "";
   const contexto = a === "whatsapp"
     ? `Sos el agente de WhatsApp de "Te Importamos" (atendés clientes que quieren importar). Te habla ${quien || "el equipo"}, tu jefe, para enseñarte, corregirte o pedirte acciones. También manejás los PENDIENTES del panel (tareas que se abren y cierran según lo que pasa en cada chat): si el jefe dice que un pendiente está mal, proponé la acción para corregir ese chat y una regla para que no vuelva a pasar; si es un error de cómo se sincronizan, armá el pedido "para_claude".`
-    : `Sos el Agente de Redes de "Te Importamos" (Instagram). Manejás TODO: respuestas a comentarios (frases muy cortas, 1 a 4 palabras, invitando al DM), ideas de reels, historias, carruseles y la edición automática de videos. Te habla ${quien || "el equipo"}, tu jefe, para enseñarte, corregirte o preguntarte por qué algo falla.
-Cada regla nueva va con su ÁREA al principio, entre corchetes, exactamente una de: [comentarios] [ideas] [carruseles] [videos]. Ej: "[videos] Sacá también las frases donde me trabo aunque no se repitan." · "[ideas] No propongas ideas de ropa." ("ideas" sirve para ideas de reels y para historias; "videos" para qué frases se cortan, el texto de arriba y el caption).
+    : `Sos el Agente de Redes de "Te Importamos" (Instagram). Manejás TODO: respuestas a comentarios (frases muy cortas, 1 a 4 palabras, invitando al DM), ideas de reels, historias y la edición automática de videos. Te habla ${quien || "el equipo"}, tu jefe, para enseñarte, corregirte o preguntarte por qué algo falla.
+Cada regla nueva va con su ÁREA al principio, entre corchetes, exactamente una de: [comentarios] [ideas] [videos]. Ej: "[videos] Sacá también las frases donde me trabo aunque no se repitan." · "[ideas] No propongas ideas de ropa." ("ideas" sirve para ideas de reels y para historias; "videos" para qué frases se cortan, el texto de arriba y el caption).
 Cosas de la edición que SÍ podés cambiar vos con la acción "ajustar_video" (poné en "config" solo lo que cambia): ${Object.entries(CONFIG_VIDEO).map(([k, v]) => `${k} = ${v[1]}, de fábrica ${v[0]}`).join("; ")}.
 Si los videos quedaron trabados o con error, podés proponer la acción "reintentar_videos" (los vuelve a poner en cola y despierta al editor).
 ESTADO ACTUAL DEL SISTEMA (datos reales, usalos para diagnosticar):
@@ -3393,7 +3389,7 @@ function pintarAgente(d) {
     (m.acciones || []).forEach(function (a, j) { x += '<div class="prop"><span>⚡ ' + esc(a.descripcion || a.tipo) + (a.texto ? ': "' + esc(a.texto) + '"' : "") + '</span><button class="btn lleno" data-accion="' + i + "-" + j + '">Hacerlo</button></div>'; });
     if (m.para_claude) x += '<div class="prop" style="flex-direction:column;align-items:stretch"><span><b>Esto es un arreglo de código.</b> Copiá este texto y mandáselo a Claude:</span><textarea readonly rows="6" style="width:100%;font-size:12px;margin:6px 0">' + esc(m.para_claude) + '</textarea><button class="btn lleno" data-claude="' + i + '">Copiar para Claude</button></div>';
     return x + "</div>";
-  }).join("") : AG === "redes" ? '<div class="vacio">Este agente maneja comentarios, ideas, historias, carruseles y videos. Enseñale o contale qué anda mal.<br><br>Ejemplos:<br>· "en los videos los subtítulos quedan muy abajo"<br>· "no me propongas más ideas de ropa"<br>· "los videos están hace una hora en cola, ¿qué pasa?"<br>· "a los comentarios que dicen precio respondé: te paso info por DM"<br><br>Si es un error de código, te arma el texto listo para mandarle a Claude.</div>' : '<div class="vacio">Escribile al agente para enseñarle algo o corregirlo.<br><br>Ejemplos:<br>· "el chat de Abel no está en riesgo"<br>· "cuando pregunten por factura, decí que hacemos factura C" <br>· pegá una captura y decile "acá respondiste mal porque..."<br><br><b>Para probarlo sin usar WhatsApp</b>, escribí:<br>· "probá: traen productos de arabia saudita?"<br>y te muestra qué le contestaría a un cliente, sin mandar nada.</div>';
+  }).join("") : AG === "redes" ? '<div class="vacio">Este agente maneja comentarios, ideas, historias y videos. Enseñale o contale qué anda mal.<br><br>Ejemplos:<br>· "en los videos los subtítulos quedan muy abajo"<br>· "no me propongas más ideas de ropa"<br>· "los videos están hace una hora en cola, ¿qué pasa?"<br>· "a los comentarios que dicen precio respondé: te paso info por DM"<br><br>Si es un error de código, te arma el texto listo para mandarle a Claude.</div>' : '<div class="vacio">Escribile al agente para enseñarle algo o corregirlo.<br><br>Ejemplos:<br>· "el chat de Abel no está en riesgo"<br>· "cuando pregunten por factura, decí que hacemos factura C" <br>· pegá una captura y decile "acá respondiste mal porque..."<br><br><b>Para probarlo sin usar WhatsApp</b>, escribí:<br>· "probá: traen productos de arabia saudita?"<br>y te muestra qué le contestaría a un cliente, sin mandar nada.</div>';
   window.__agHilo = h;
   $("#agN").textContent = (d.reglas || []).length;
   $("#agReglas").innerHTML = (d.reglas || []).map(function (r, i) { return '<li>' + esc(r) + ' <button data-editar="' + (i + 1) + '" title="Editar">✏️</button><button data-olvidar="' + (i + 1) + '" title="Borrar">🗑️</button></li>'; }).join("") || "<li>Todavía no tiene reglas guardadas.</li>";
@@ -3525,7 +3521,6 @@ export default {
       await cronLector(env, iaJSON, evento.scheduledTime || Date.now()).catch((e) => console.log("Error lector 805:", e?.stack || e));
       if (m % 5 === 4 && env.LECTOR_TOKEN) await cotizarAuto(env, { T, leerPagina, iaJSON, iaConImagenes }).catch((e) => console.log("Error cotización automática:", e?.stack || e));
       if (env.DB) await cronVideos(env, evento.scheduledTime || Date.now()).catch((e) => console.log("Error videos:", e?.stack || e));
-      if (env.DB) await cronCarr(env, evento.scheduledTime || Date.now()).catch((e) => console.log("Error carruseles:", e?.stack || e));
       if (env.DB) await cronAsistente(env, evento.scheduledTime || Date.now(), iaJSON).catch((e) => console.log("Error asistente:", e?.stack || e));
       if (env.DB) await cronRedes(env, iaJSON, evento.scheduledTime || Date.now(), BASE_URL, T).catch((e) => console.log("Error redes:", e?.stack || e));
     })());
@@ -3604,7 +3599,6 @@ export default {
     if (url.pathname.startsWith("/panel/api/cotizar/")) return apiCotizar(env, req, url, url.searchParams.get("quien"), { T, leerPagina, iaJSON, iaConImagenes });
     if (url.pathname === "/panel/cotizar/pdf") return paginaCotizacion(env, url.searchParams.get("id") || "", T);
     if (url.pathname === "/panel/cotizar") return new Response(conApp(PANEL_COTIZAR), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
-    if (url.pathname.startsWith("/panel/api/carruseles/")) return apiCarruseles(env, req, url, url.searchParams.get("quien"), iaJSON, T, iaConImagenes);
     if (url.pathname.startsWith("/panel/api/asistente/")) return apiAsistente(env, req, url, url.searchParams.get("quien"), BASE_URL, iaJSON);
     if (url.pathname.startsWith("/panel/api/videos/")) return apiVideos(env, req, url, url.searchParams.get("quien"));
     if (url.pathname.startsWith("/panel/api/redes/")) return apiRedes(env, req, url, url.searchParams.get("quien"), iaJSON, BASE_URL, T);

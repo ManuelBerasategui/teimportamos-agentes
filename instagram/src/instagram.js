@@ -52,7 +52,7 @@ const ESTILO = CANAL === "whatsapp" ? ESTILO_WHATSAPP : ESTILO_DM;
 import { rutasMetricas } from "./metricas.js";
 import { syncCompleto, syncDMs, prepararSync, conTope } from "./sync.js";
 import { FORMATOS_INICIALES } from "./formatos-iniciales.js";
-import { publicarPendientes, servirParaInstagram, publicarCarruseles, servirSlide } from "./publicar.js";
+import { publicarPendientes, servirParaInstagram } from "./publicar.js";
 
 const CRON_SYNC = "17 */2 * * *";   // cada 2 horas: métricas, cuenta, DMs y formato de reels nuevos (solo lectura)
 
@@ -262,8 +262,6 @@ export default {
       if (env.VIDEOS) {
         try { const p = await publicarPendientes(env, igApi(env), { crearTarea }); if (p.length) console.log("Publicación:", JSON.stringify(p)); }
         catch (e) { console.log("Error publicando:", e?.stack || e); }
-        try { const p = await publicarCarruseles(env, igApi(env), { crearTarea }); if (p.length) console.log("Carruseles:", JSON.stringify(p)); }
-        catch (e) { console.log("Error publicando carrusel:", e?.stack || e); }
       }
       try {
         if ((await env.DB.prepare("SELECT v FROM kv WHERE k = 'ig_pausa'").first().catch(() => null))?.v !== "si") {
@@ -279,8 +277,6 @@ export default {
     const url = new URL(req.url);
     const mv = url.pathname.match(/^\/v\/([0-9a-f]{48})\.mp4$/);
     if (mv) return servirParaInstagram(env, req, mv[1]);
-    const mc = url.pathname.match(/^\/c\/([0-9a-f]{48})\/(\d{1,2})\.jpg$/);
-    if (mc) return servirSlide(env, mc[1], +mc[2]);   // Instagram baja de acá los slides del carrusel que se está publicando   // Instagram baja de acá el video que se está publicando
     if (url.searchParams.get("clave") !== env.VERIFY_TOKEN) return texto("Agente de Instagram activo. Para usarlo agregá ?clave=", 401);
     await tablas(env);
     try {
