@@ -167,6 +167,12 @@ export async function seguimientosHoy(env, iaJSON, limite = 10) {
   }
   return partes;
 }
+// Para el panel (Hoy › Seguimientos): todos los de la lista; los 10 primeros con el mensaje escrito (los mismos que van por Telegram)
+export async function seguimientosPanel(env, iaJSON) {
+  let l = []; try { l = await seguimientos(env); } catch {}
+  const borr = l.length ? await borradoresSeg(env, iaJSON, l.slice(0, 10)) : {};
+  return l.map((s) => ({ conv: s.conv, nombre: s.nombre, producto: s.producto, perfil: s.perfil, presup_usd: s.presup_usd, dias_cot: s.dias_cot, dias_sin: s.dias_sin, borrador: borr[s.conv] || "" }));
+}
 async function mandarSeguimientos(env, iaJSON, chat) {
   const p = await seguimientosHoy(env, iaJSON);
   if (!p.length) return decir(env, chat, "No hay seguimientos pendientes hoy. 🙌");
@@ -574,6 +580,7 @@ export async function apiAsistente(env, req, url, quien, base, iaJSON = null) {
     await atender(e2, iaJSON, { message: { chat: { id: chat }, text: String(b.texto || "") } });
     return json({ respuestas: e2.__captura });
   }
+  if (r === "seguimientos") return json(await seguimientosPanel(env, iaJSON));
   if (r === "tareas") return json(await pendientes(env, url.searchParams.get("de") || quien));
   return json({ error: "ruta desconocida" }, 404);
 }
