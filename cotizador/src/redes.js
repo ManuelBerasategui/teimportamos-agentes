@@ -144,6 +144,68 @@ export async function cruceRedes(env, dias = 60) {
     mejores_ig: out.filter((x) => x.ig).sort((a, b) => (b.ig.alcance || 0) - (a.ig.alcance || 0)).slice(0, 5), mejores_tt: out.filter((x) => x.tt).sort((a, b) => (b.tt.vistas || 0) - (a.tt.vistas || 0)).slice(0, 5), formatos, tiktok_ultimo: ultimo };
 }
 
+// ---------- Lo que el agente único sabe de redes (todo medido por el código) ----------
+// Manual de contenido del agente. Escrito con palabras propias a partir de lo que Instagram y TikTok publican sobre cómo
+// recomiendan videos (tiempo visto, compartidos, guardados, originalidad) y de práctica de creadores. Para cambiarlo, editá este texto.
+export const MANUAL_REDES = `
+CÓMO DIAGNOSTICÁS CUANDO BAJAN LAS VISTAS O UN VIDEO NO ANDA (en este orden; decí cuál es EL cuello de botella, uno solo):
+1. Volumen y constancia: cuántos videos se publicaron esta semana contra la anterior, en cada red. Menos videos = menos chances de pegar uno; el alcance de una cuenta chica depende de cuántos tiros hace.
+2. Datos frescos: los videos de las últimas 48 h todavía están sumando. No compares una semana que recién empieza contra una cerrada sin aclararlo.
+3. El gancho (primeros 1 a 3 s): es lo que más pesa. En Instagram se ve en el tiempo visto promedio (si cae debajo de ~13 s, el gancho o el ritmo no sostienen). Gancho fuerte = número concreto, pregunta, conflicto o resultado en pantalla desde el segundo 0. Arrancar con una pantalla o con contexto mata el video.
+4. El formato y el tema: comparalo con la mediana de su formato en ESA red (los números de "veces lo normal"). Un formato gastado (que antes pegaba y ahora no) se renueva con otro producto, otra situación o otro giro, no se repite igual.
+5. Las señales de calidad: compartidos y guardados (por cada mil de alcance) son lo que más hace que la red lo muestre a gente nueva. Muchos likes y pocos compartidos = gustó pero no se recomienda.
+6. La distribución: en Instagram, los reels de prueba van primero a gente que no te sigue (su piso normal es ~1.500); en TikTok cada video arranca con una tanda chica y escala si retiene.
+7. El negocio: vistas sin chats no sirven. Mirá si los chats nuevos del WhatsApp acompañan a las vistas y de qué video dicen que vienen.
+
+DIFERENCIAS ENTRE REDES (usalas cuando un video anda en una y no en la otra):
+- TikTok premia la retención pura y el ritmo: gancho más rápido, cortes más seguidos, texto en pantalla con palabras que la gente busca (TikTok funciona mucho como buscador: "importar de China", "Mercado Libre", el producto). Tolera más lo crudo y lo improvisado.
+- Instagram premia que lo compartan por mensaje y lo guarden, y el contenido original (no reciclado con marca de agua de otra app). La portada y el texto del primer cuadro pesan más porque se ve en la grilla.
+- Si un video anda en una sola red, la diferencia casi siempre está en el gancho (velocidad, texto en pantalla) o en el largo; mirá qué tienen en común los que anduvieron en cada red antes de opinar.
+
+CÓMO PROPONÉS IDEAS:
+- Cada idea sale de algo con datos: una referencia que funcionó, un reel nuestro que superó lo normal, o lo que más se pide por WhatsApp. Decí de dónde sale.
+- Formato de cada idea: gancho (lo que se ve y se dice en el segundo 0), cuerpo en 3 a 5 frases, CTA, en qué red conviene probarla primero y qué número esperás si funciona (comparado con la mediana).
+- Probá una sola variable a la vez (mismo cuerpo con dos ganchos, por ejemplo) para aprender qué funcionó.
+- Nada de ideas genéricas ("hacé contenido de valor"): producto concreto, número concreto, situación concreta.
+`;
+const medianaN = (xs) => mediana(xs.filter((x) => x != null)) ?? null;
+export async function contextoRedesAgente(env) {
+  const D = 86400e3, ahora = Date.now(), s7 = ahora - 7 * D, s14 = ahora - 14 * D;
+  const q = async (sql, ...b) => { try { return (await env.DB.prepare(sql).bind(...b).all()).results || []; } catch { return []; } };
+  const [d, tt, cruce, ideas, refs, vids, origen] = await Promise.all([
+    datosRedes(env).catch(() => null), q("SELECT * FROM tt_posts WHERE ts>? ORDER BY ts DESC", ahora - 60 * D), cruceRedes(env, 60).catch(() => null),
+    q("SELECT estado, COUNT(*) n FROM ig_ideas GROUP BY estado"), q("SELECT COUNT(*) n FROM ig_refs WHERE que_pasa<>''"),
+    q("SELECT estado, COUNT(*) n FROM ig_videos WHERE borrado=0 AND ts>? GROUP BY estado", s14),
+    q("SELECT origen, COUNT(*) n FROM w_conv WHERE grupo=0 AND origen IS NOT NULL AND origen<>'' AND primer_ts>? GROUP BY origen ORDER BY n DESC LIMIT 10", s14),
+  ]);
+  const semana = (l, campo, desde, hasta) => { const x = l.filter((p) => p.ts > desde && p.ts <= hasta); return { videos: x.length, total: x.reduce((a, p) => a + (p[campo] || 0), 0), mediana: medianaN(x.map((p) => p[campo])) }; };
+  const reels = d?.reels || [];
+  const igSem = { esta: semana(reels, "alcance", s7, ahora), anterior: semana(reels, "alcance", s14, s7) };
+  const ttSem = { esta: semana(tt, "vistas", s7, ahora), anterior: semana(tt, "vistas", s14, s7) };
+  const tSem = (l) => medianaN(l.filter((p) => p.ts > s7 && p.tiempo_ms).map((p) => p.tiempo_ms / 1000));
+  const fTt = (p) => `${fecha(p.ts)} · ${n0(p.vistas)} vistas · ${n0(p.likes)} likes · ${n0(p.compartidos)} compartidos · ${n0(p.guardados)} guardados · ${p.duracion || "?"} s · "${String(p.texto || "").replace(/#\S+/g, "").trim().slice(0, 90)}"`;
+  const ttOrden = [...tt].sort((a, b) => (b.vistas || 0) - (a.vistas || 0));
+  const dif = (cruce?.filas || []).filter((f) => /^Solo /.test(f.veredicto)).slice(0, 8);
+  return `REDES (medido por el código; "x2" = el doble de la mediana de ESA red en 60 días)
+INSTAGRAM · cuenta 7 días: ${JSON.stringify(d ? kpis(d) : null)}
+INSTAGRAM · reels esta semana vs la anterior (alcance): ${JSON.stringify(igSem)} · tiempo visto mediano esta semana: ${tSem(reels) ?? "-"} s
+TIKTOK · videos esta semana vs la anterior (vistas): ${JSON.stringify(ttSem)}${tt.length ? "" : " (todavía sin datos de TikTok: se leen cada 2 días)"}
+MEDIANAS 60 días: Instagram ${n0(cruce?.mediana_ig)} cuentas por reel · TikTok ${n0(cruce?.mediana_tt)} vistas por video
+FORMATOS EN CADA RED (veces lo normal, entre paréntesis cuántos videos): ${(cruce?.formatos || []).map((f) => `${f.nombre}: IG ${f.ig ?? "-"} (${f.n_ig}) · TikTok ${f.tt ?? "-"} (${f.n_tt})`).join(" | ") || "sin datos"}
+ANDUVIERON EN UNA SOLA RED: ${dif.map((f) => `${fecha(f.ts)} "${f.texto}" gancho "${f.gancho || "?"}" → IG ${f.ig ? n0(f.ig.alcance) + " (x" + f.ig.rel + ")" : "no está"} · TikTok ${f.tt ? n0(f.tt.vistas) + " (x" + f.tt.rel + ")" : "no está"} = ${f.veredicto}`).join("\n") || "ninguno todavía"}
+FORMATOS INSTAGRAM (60 días): ${(d?.formatos || []).map((f) => `${f.nombre}: ${f.reels} reels, mediana ${n0(f.alcance_mediano)}, mejor ${n0(f.mejor)}, tiempo ${f.tiempo_s ? Math.round(f.tiempo_s) + " s" : "-"}`).join(" | ")}
+MEJORES REELS INSTAGRAM: ${(d?.top || []).slice(0, 6).map(resumenPost).join("\n")}
+PEORES REELS INSTAGRAM: ${(d?.peores || []).slice(0, 4).map(resumenPost).join("\n")}
+ÚLTIMOS REELS INSTAGRAM: ${reels.slice(0, 8).map(resumenPost).join("\n")}
+MEJORES TIKTOK: ${ttOrden.slice(0, 6).map(fTt).join("\n") || "sin datos"}
+ÚLTIMOS TIKTOK: ${tt.slice(0, 8).map(fTt).join("\n") || "sin datos"}
+LO QUE YA APRENDIMOS DE LA CUENTA: ${APRENDIZAJES_BASE}
+GUIONES QUE MEJOR ANDUVIERON: ${GUIONES_GANADORES}
+PRODUCCIÓN (14 días): videos por estado ${JSON.stringify(vids)} · ideas por estado ${JSON.stringify(ideas)} · referencias cargadas: ${refs[0]?.n ?? 0}
+DE DÓNDE DICEN QUE VIENEN LOS CHATS NUEVOS DEL WHATSAPP (14 días): ${origen.map((o) => o.origen + " " + o.n).join(", ") || "sin datos"}
+DMS DE INSTAGRAM SIN RESPONDER: ${d?.dms?.length ?? "-"}`;
+}
+
 async function dmsPendientes(env, limite = 200) {
   return (await env.DB.prepare("SELECT conv, usuario, ult_texto, ult_ts FROM ig_dms WHERE ult_yo = 0 AND ult_ts > ? ORDER BY ult_ts DESC LIMIT ?").bind(Date.now() - 30 * 86400e3, limite).all()).results || [];
 }
@@ -909,7 +971,7 @@ function fecha(ts) { var d = new Date(ts); return d.toLocaleDateString("es-AR", 
 function cambio(v) { return v == null ? "" : '<i class="' + (v >= 0 ? "sube" : "baja") + '">' + (v >= 0 ? "+" : "") + v + "% vs semana anterior</i>"; }
 var ultimoContenido = "ideas", vistasContenido = ["ideas", "videos", "reels"];
 function modo(m) {
-  if (m === "agente") { location.href = "/panel?tab=agentes&ag=redes"; return; }
+  if (m === "agente") { location.href = "/panel?tab=agentes"; return; }
   if (m === "contenido") m = ultimoContenido;
   var enContenido = vistasContenido.indexOf(m) >= 0, principal = enContenido ? "contenido" : m;
   document.querySelectorAll("#modos-main button").forEach(function (b) { b.classList.toggle("on", b.dataset.view === principal); });

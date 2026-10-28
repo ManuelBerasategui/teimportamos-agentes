@@ -6,6 +6,7 @@ import { apiRedes, PANEL_REDES, cronRedes, contextoRedes } from "./redes.js";
 import { apiVideos, rutaVideosEditor, cronVideos, despertarEditor } from "./videos.js";
 import { conApp, rutaApp } from "./app.js";
 import { rutaTelegram, apiAsistente, cronAsistente } from "./asistente.js";
+import { preguntarAgente, charlaAgente } from "./agente.js";
 /**
  * Agente de WhatsApp · Te Importamos (v15.0: + pestaña Búsquedas de proveedores)
  * Cloudflare Workers + Gemini (gratis) con respaldo de Cloudflare AI.
@@ -3049,7 +3050,7 @@ button{font:inherit;cursor:pointer}
 <div class="card reportes"><div class="cab"><h3 id="rep-tit" style="margin:0">Reportes diarios</h3><button class="btn" id="generar">Generar ahora</button></div><div id="reps"></div></div>
 </div></div>
 
-<div class="vista" id="v-agentes"><div class="ag"><div class="lista" id="agLista"><button data-a="asistente" class="on">Asistente de WhatsApp</button><button data-a="redes">Agente de Redes</button></div>
+<div class="vista" id="v-agentes"><div class="ag"><div class="lista" id="agLista"><button data-a="asistente" class="on">Agente</button><button data-a="redes">Reglas de Redes</button></div>
 <div class="cuerpo"><div class="hilo" id="agHilo"><div class="vacio">Cargando...</div></div>
 <details class="reglas" id="agReglasBox"><summary><b>Lo que sabe</b> (<span id="agN">0</span> reglas) · tocá para ver, editar o borrar</summary><ol id="agReglas"></ol><button id="agOrdenar" style="color:var(--azul)">Ordenar y fusionar reglas parecidas</button> · <button id="agLimpiar" style="color:var(--gris)">Borrar esta conversación</button></details>
 <div class="adj" id="agAdj"></div>
@@ -3399,15 +3400,17 @@ document.addEventListener("click", function (ev) { var b = ev.target.closest("[d
 
 // ---------- Agentes ----------
 var AG = "asistente", agImgs = [], ASIS = [];
+var ASIS_CARGADA = false;
 function pintarAsistente() {
-  $("#agReglasBox").style.display = "none"; $("#agFoto").style.display = "none"; $("#agTxt").placeholder = "Preguntale sobre los chats del 805: a quién le tenías que mandar algo, qué se pidió más hoy, quién quedó sin respuesta...";
-  $("#agHilo").innerHTML = (ASIS.length ? ASIS : [{ r: "a", t: "Preguntame lo que quieras sobre los chats del WhatsApp 805. Por ejemplo: a quién le tenías que mandar un producto, qué se pidió más hoy o quién quedó sin respuesta." }]).map(function (m) { return '<div class="burb ' + (m.r === "u" ? "u" : "a") + '">' + esc(m.t).replace(/\+?(549\d{8,11})/g, '<a href="/panel/805#$1" style="color:inherit;font-weight:700">+$1</a>') + "</div>"; }).join("") +
-    '<div class="sugA">' + ["Qué productos se pidieron más hoy", "A quién tengo que responder primero", "Qué cotizaciones quedaron pendientes"].map(function (x) { return '<button data-sug="' + x + '">' + x + "</button>"; }).join("") + "</div>";
+  $("#agReglasBox").style.display = "none"; $("#agFoto").style.display = "none"; $("#agTxt").placeholder = "Preguntale lo que quieras de ventas o de redes: por qué no cerramos, por qué bajaron las vistas, pedile ideas u opinión. Es el mismo agente que el de Telegram.";
+  if (!ASIS_CARGADA) { ASIS_CARGADA = true; fetch("/panel/api/agente/charla").then(function (r) { return r.json(); }).then(function (l) { if (!ASIS.length && l.length) { ASIS = l.map(function (m) { return { r: m.rol === "u" ? "u" : "a", t: m.texto }; }); pintarAsistente(); } }).catch(function () {}); }
+  $("#agHilo").innerHTML = (ASIS.length ? ASIS : [{ r: "a", t: "Soy el agente de Te Importamos: veo las ventas del WhatsApp 805 y las métricas de Instagram y TikTok. Preguntame por qué pasó algo, pedime ideas u opinión: te contesto con los números y te digo qué hacer." }]).map(function (m) { return '<div class="burb ' + (m.r === "u" ? "u" : "a") + '">' + esc(m.t).replace(/\+?(549\d{8,11})/g, '<a href="/panel/805#$1" style="color:inherit;font-weight:700">+$1</a>') + "</div>"; }).join("") +
+    '<div class="sugA">' + ["¿Por qué no cerramos más ventas esta semana?", "¿Por qué bajaron las vistas?", "Dame 3 ideas de reels con lo que funcionó", "¿Qué video anduvo en TikTok y no en Instagram, y por qué?", "¿Qué hago hoy para vender más?"].map(function (x) { return '<button data-sug="' + x + '">' + x + "</button>"; }).join("") + "</div>";
   $("#agHilo").scrollTop = 1e9;
 }
 function preguntarAsis(q) {
-  if (!q) return; ASIS.push({ r: "u", t: q }); ASIS.push({ r: "a", t: "Buscando en los chats..." }); pintarAsistente();
-  fetch("/panel/api/805/preguntar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pregunta: q, historial: ASIS.slice(0, -2).slice(-6) }) }).then(function (r) { return r.json(); }).then(function (r) { ASIS[ASIS.length - 1] = { r: "a", t: r.respuesta }; pintarAsistente(); }).catch(function () { ASIS[ASIS.length - 1] = { r: "a", t: "No pude responder. Probá de nuevo." }; pintarAsistente(); });
+  if (!q) return; ASIS.push({ r: "u", t: q }); ASIS.push({ r: "a", t: "Mirando los números…" }); pintarAsistente();
+  fetch("/panel/api/agente/preguntar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pregunta: q }) }).then(function (r) { return r.json(); }).then(function (r) { ASIS[ASIS.length - 1] = { r: "a", t: r.respuesta }; pintarAsistente(); }).catch(function () { ASIS[ASIS.length - 1] = { r: "a", t: "No pude responder. Probá de nuevo." }; pintarAsistente(); });
 }
 $("#agHilo").addEventListener("click", function (ev) { var b = ev.target.closest("[data-sug]"); if (b) preguntarAsis(b.dataset.sug); });
 function cargarAgente() { if (AG === "asistente") return pintarAsistente(); $("#agReglasBox").style.display = ""; $("#agFoto").style.display = ""; $("#agTxt").placeholder = "Escribile al agente: enseñale algo, corregilo o pedile una acción. Podés pegar capturas con Ctrl+V"; api("agente-hilo?a=" + AG).then(pintarAgente).catch(function () {}); }
@@ -3627,6 +3630,9 @@ export default {
         return new Response(img.body, { headers: { "Content-Type": meta.mime_type || "image/jpeg", "Cache-Control": "private, max-age=86400" } });
       } catch { return new Response("No se pudo cargar la foto", { status: 502 }); }
     }
+    // Un solo agente: el chat de la pestaña Agente, el asistente del 805 y el de Redes van al mismo (ventas + contenido, misma memoria)
+    if (req.method === "POST" && ["/panel/api/agente/preguntar", "/panel/api/805/preguntar", "/panel/api/redes/preguntar"].includes(url.pathname)) { const b = await req.json().catch(() => ({})); return Response.json(await preguntarAgente(env, iaJSON, String(b.pregunta || ""))); }
+    if (url.pathname === "/panel/api/agente/charla") return Response.json(await charlaAgente(env));
     if (url.pathname.startsWith("/panel/api/805/")) return apiLector(env, req, url, iaJSON);
     if (url.pathname.startsWith("/panel/api/cotizar/")) return apiCotizar(env, req, url, url.searchParams.get("quien"), { T, leerPagina, iaJSON, iaConImagenes });
     if (url.pathname === "/panel/cotizar/pdf") return paginaCotizacion(env, url.searchParams.get("id") || "", T);

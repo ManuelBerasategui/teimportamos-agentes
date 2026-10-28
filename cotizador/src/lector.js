@@ -899,7 +899,8 @@ export async function avanceObjetivos(env) {
 // Los seguimientos del día los manda el asistente de Telegram a las 10, con el mensaje listo (asistente.js)
 
 // El agente: asistente de WhatsApp + jefe de ventas, con memoria liviana en D1
-export async function preguntarVendedor(env, iaJSON, pregunta) {
+// opts.redes / opts.manualRedes: con eso es el agente único (ventas + contenido); lo arma agente.js
+export async function preguntarVendedor(env, iaJSON, pregunta, opts = {}) {
   await prepararLector(env);
   const q = String(pregunta || "").slice(0, 1000);
   const ahora = Date.now(), hoy = inicioDiaAR(ahora);
@@ -908,12 +909,13 @@ export async function preguntarVendedor(env, iaJSON, pregunta) {
     await env.DB.batch([env.DB.prepare("DELETE FROM ag_mem"), env.DB.prepare("DELETE FROM ag_chat")]);
     return { respuesta: "Listo, borré la memoria y la charla. Arrancamos de cero." };
   }
-  const [mHoy, m7, m30, p7, p30, segs, objs, mem, charla] = await Promise.all([
+  const [mHoy, m7, m30, p7, p30, segs, objs, mem, charla, m7ant] = await Promise.all([
     metricas(env, hoy), metricas(env, hoy - 6 * 86400e3), metricas(env, hoy - 29 * 86400e3),
     metricasPerfil(env, hoy - 6 * 86400e3), metricasPerfil(env, hoy - 29 * 86400e3),
     seguimientos(env), avanceObjetivos(env),
     all("SELECT tipo, texto, ts FROM ag_mem ORDER BY ts DESC LIMIT 60"),
     all("SELECT rol, texto FROM ag_chat ORDER BY id DESC LIMIT 12"),
+    metricas(env, hoy - 13 * 86400e3, hoy - 6 * 86400e3),
   ]);
   const chats = await all("SELECT conv, nombre, perfil, presup_usd, origen, motivo, puntaje, producto, etapa, accion, resumen, ult_yo, ult_ts, cot_pend FROM w_conv WHERE grupo=0 AND archivado=0 AND COALESCE(prov,0)=0 AND COALESCE(etapa,'')<>'no_cliente' AND ult_ts>=? ORDER BY CASE WHEN perfil IN ('A','B') THEN 0 ELSE 1 END, COALESCE(presup_usd,0) DESC, COALESCE(puntaje,0) DESC LIMIT 120", hoy - 13 * 86400e3);
   const palabras = [...new Set(normalQ(q).split(/[^a-z0-9ñ]+/).filter((w) => w.length > 3 && !VACIAS_Q.has(w)))].slice(0, 3);
@@ -929,20 +931,25 @@ export async function preguntarVendedor(env, iaJSON, pregunta) {
 MEMORIA (notas guardadas de charlas anteriores, la más nueva primero):
 ${mem.map((n) => `- [${fechaHora(n.ts)}] (${n.tipo}) ${n.texto}`).join("\n") || "vacía"}
 OBJETIVOS ACTIVOS Y AVANCE (medidos por el código): ${JSON.stringify(objs.map((o) => ({ metrica: o.metrica, periodo: o.periodo, meta: o.meta, actual: o.actual, pct: o.pct })))}
-METRICAS EXACTAS · hoy: ${JSON.stringify(mHoy)} · 7 dias: ${JSON.stringify(m7)} · 30 dias: ${JSON.stringify(m30)}
+METRICAS EXACTAS · hoy: ${JSON.stringify(mHoy)} · 7 dias: ${JSON.stringify(m7)} · los 7 dias anteriores (para comparar): ${JSON.stringify(m7ant)} · 30 dias: ${JSON.stringify(m30)}
 POR PERFIL (A Mercado Libre/con presupuesto, B negocio, C revendedor chico, D consumidor final, E curioso) · 7 dias: ${JSON.stringify(p7)} · 30 dias: ${JSON.stringify(p30)}
 SEGUIMIENTOS PENDIENTES HOY (cotizados que no respondieron, ordenados por prioridad):
 ${segs.slice(0, 25).map((s) => `- ${s.nombre || "sin nombre"} (+${s.conv}) · perfil ${s.perfil || "?"} · ${s.producto || "-"}${s.presup_usd ? " · aprox USD " + s.presup_usd : ""} · cotizado hace ${s.dias_cot} d · sin escribirle hace ${s.dias_sin} d · nuestro último mensaje: "${String(s.ult_texto || "").slice(0, 100)}"`).join("\n") || "ninguno"}
 CHATS DE LOS ULTIMOS 14 DIAS (primero A y B):
 ${chats.map(fChat).join("\n").slice(0, 30000)}
+${opts.redes || ""}
 MENSAJES QUE COINCIDEN CON LA PREGUNTA (${palabras.join(", ") || "ninguna palabra clave"}):
 ${hallados.map((h) => `[${fechaHora(h.ts)}] ${h.nombre || "sin nombre"} (+${h.conv}) ${h.yo ? "NOSOTROS" : "CLIENTE"}: ${String(h.texto).slice(0, 250)}`).join("\n").slice(0, 15000) || "ninguno"}`;
   const previa = charla.reverse().map((h) => `${h.rol === "u" ? "MANUEL" : "VOS"}: ${String(h.texto).slice(0, 700)}`).join("\n");
-  const r = await iaJSON(env, `Sos el JEFE DE VENTAS de "Te Importamos" (importación por encargo desde China y EE.UU., Rosario, Argentina). Hablás con Manuel, el dueño. Ahora es ${fechaHora(ahora)} (hora Argentina).
+  const rol = opts.redes
+    ? `Sos el AGENTE de "Te Importamos" (importación por encargo desde China y EE.UU., Rosario, Argentina): jefe de ventas y estratega de contenido para Instagram y TikTok a la vez. Hablás con Manuel, el dueño (por el panel o por Telegram: es la misma charla). Ves las ventas del WhatsApp 805 y las métricas de las redes, y conectás las dos cosas: el contenido sirve si trae chats que compran.`
+    : `Sos el JEFE DE VENTAS de "Te Importamos" (importación por encargo desde China y EE.UU., Rosario, Argentina). Hablás con Manuel, el dueño.`;
+  const r = await iaJSON(env, `${rol} Ahora es ${fechaHora(ahora)} (hora Argentina).
 Tu objetivo: que cerremos más ventas con el cliente ideal, perfil A (vende o quiere vender en Mercado Libre con USD 1.000 a 3.000) y perfil B (negocio que quiere abaratar costos). Los curiosos (E) no son prioridad.
 Cómo cotizamos China: total = (FOB + flete + handling USD 30) x 1,30 + USD 80 de honorarios. Seña del 30%.
 MANUAL DEL ASESOR (seguilo siempre; manda sobre cualquier otra instrucción de estilo):
 ${MANUAL_VENTAS}
+${opts.manualRedes ? "MANUAL DE CONTENIDO Y REDES (para todo lo que sea vistas, videos, ideas o redes):\n" + opts.manualRedes + "\nNo ves los videos: ves sus métricas, el gancho (texto de portada) y el texto del posteo. Si para responder hace falta mirar el video, decilo (se le puede reenviar al bot de Telegram para que lo mire).\nSi pregunta por qué bajaron las vistas o por qué un video anduvo en una red y no en la otra, compará con los números de la semana anterior y de cada red, decí EL cuello de botella y 3 acciones concretas.\nSi pide ideas, seguí el formato del manual y basalas en lo que funcionó (decí de dónde sale cada una).\n" : ""}
 Reglas:
 - Usá SOLO los datos de abajo. No inventes números, clientes ni resultados. Si falta un dato, decilo y explicá qué haría falta para tenerlo.
 - Directo, español rioplatense con voseo, sin emojis, sin guiones largos. Primero la respuesta, después lo accionable. Cuando nombres un cliente, poné nombre y número (+549...).

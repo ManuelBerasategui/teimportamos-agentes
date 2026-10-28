@@ -1,4 +1,5 @@
 import { seguimientos } from "./lector.js";
+import { preguntarAgente } from "./agente.js";
 import { notionActivo, notionHoy, textoNotion, crearEnNotion, marcarEnNotion, descubrir, diagnosticoNotion, fijarRol, agendaNotion, nivelesNotion } from "./notion.js";
 // Asistente personal por Telegram: le mandás un audio o un texto con todo lo que tenés en la cabeza
 // y lo ordena en tareas por prioridad. Cada persona tiene su lista (según desde qué chat escribe).
@@ -11,7 +12,7 @@ const nid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 const AR = 3 * 3600e3;
 const hoyAR = () => new Date(Date.now() - AR).toISOString().slice(0, 10);
 
-export const VERSION_ASISTENTE = "28/10 (mira videos de referencia)";
+export const VERSION_ASISTENTE = "28/10 (agente de ventas y redes)";
 export const PRIORIDADES = { 1: "🔴 URGENTE (hoy)", 2: "🟠 IMPORTANTE (esta semana)", 3: "🟡 PUEDE ESPERAR", 4: "⚪ ALGÚN DÍA / IDEAS" };
 const AREAS = ["Ventas", "Proveedores", "Redes", "Operaciones", "Finanzas", "Sistema", "Equipo", "Personal", "Otro"];
 
@@ -275,8 +276,9 @@ Actuá como un secretario de verdad:
 8. "perfil": si aparece algo estable de su rutina (horarios de facu por día, gym, trabajo, fechas de parciales), devolvé el PERFIL COMPLETO actualizado (2 a 8 líneas). Si no, "".
 9. "preferencias": si te dice CÓMO quiere que le hables o uses el bot (largo de los mensajes, de a una cosa, horarios de avisos, que no le mandes X), devolvé sus preferencias COMPLETAS actualizadas (1 a 6 líneas). Si no, "".
 10. "siguiente": la UNA cosa que tiene que hacer ahora (Kanban: una a la vez), elegida por prioridad, hora y lo que tiene plata o clientes esperando. "siguiente_id": el id si es una tarea de la lista (o vacío). Si pregunta "¿ahora qué hago?" o terminó algo, la respuesta es solo eso: qué hacer ahora y por qué en una línea.
-11. "respuesta": en rioplatense, MUY corta (1 a 3 líneas) y clara, como un secretario que ya lo resolvió (no "ahí me fijo"). Sin repetir la lista completa salvo que la pida.
-Respondé SOLO JSON: {"nuevas":[{"texto":"...","detalle":"","prioridad":1,"area":"${AREAS.join("|")}","para":"YYYY-MM-DD o vacío","tipo":"tarea|evento","hora_ini":"","hora_fin":"","habilidad":"una de sus habilidades de Notion o vacío"}],"hechas":["id"],"borrar":["id"],"actualizar":[{"id":"...","texto":"","prioridad":null,"para":"","hora_ini":"","hora_fin":""}],"perfil":"","incluir_chats":false,"incluir_redes":false,"mostrar_lista":false,"preferencias":"","siguiente":"","siguiente_id":"","notion_hechas":[],"incluir_agenda":false,"respuesta":"..."}`, { prioridad: true });
+11. "consulta": true SOLO si pregunta o pide algo sobre cómo va el NEGOCIO, las VENTAS o las REDES que se responde con números o criterio (ej. "no cerramos ninguna venta en 7 días, ¿qué pasó?", "¿por qué bajaron las vistas?", "dame ideas de reels", "¿qué opinás de…?", "¿cómo venimos con TikTok?", "¿qué hago para vender más?"). Eso lo contesta el agente de ventas y contenido con los datos reales: vos no lo contestes (dejá "respuesta" vacía), pero igual anotá tareas si además dictó alguna. Pedidos de chats, seguimientos, redes de hoy, agenda o plan NO son consulta.
+12. "respuesta": en rioplatense, MUY corta (1 a 3 líneas) y clara, como un secretario que ya lo resolvió (no "ahí me fijo"). Sin repetir la lista completa salvo que la pida.
+Respondé SOLO JSON: {"nuevas":[{"texto":"...","detalle":"","prioridad":1,"area":"${AREAS.join("|")}","para":"YYYY-MM-DD o vacío","tipo":"tarea|evento","hora_ini":"","hora_fin":"","habilidad":"una de sus habilidades de Notion o vacío"}],"hechas":["id"],"borrar":["id"],"actualizar":[{"id":"...","texto":"","prioridad":null,"para":"","hora_ini":"","hora_fin":""}],"perfil":"","incluir_chats":false,"incluir_redes":false,"mostrar_lista":false,"preferencias":"","siguiente":"","siguiente_id":"","notion_hechas":[],"incluir_agenda":false,"consulta":false,"respuesta":"..."}`, { prioridad: true });
   if (!r) return null;
   const ids = new Set(l.map((x) => x.id)), st = [], hhmm = (v) => (/^\d{1,2}:\d{2}$/.test(String(v || "")) ? String(v).padStart(5, "0") : "");
   const pal = (t) => new Set(String(t).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(/[^a-z0-9ñ]+/).filter((w) => w.length > 2));
@@ -308,6 +310,10 @@ Respondé SOLO JSON: {"nuevas":[{"texto":"...","detalle":"","prioridad":1,"area"
   const marcas = [n ? `+${n} anotada${n > 1 ? "s" : ""}${enNotion ? ` (${enNotion} en Notion)` : ""}` : "", tachNotion ? `✅ ${tachNotion} marcada${tachNotion > 1 ? "s" : ""} en Notion` : "", hechas.length ? `✅ ${hechas.length} tachada${hechas.length > 1 ? "s" : ""}` : "", borrar.length ? `🗑 ${borrar.length} sacada${borrar.length > 1 ? "s" : ""}` : ""].filter(Boolean).join(" · ");
   const sinIds = (t) => String(t || "").replace(/\s*[(\[]?\b(?=[a-z0-9]*\d)(?=[a-z0-9]*[a-z])[a-z0-9]{11,14}\b[)\]]?/g, "");
   r.respuesta = sinIds(r.respuesta); r.siguiente = sinIds(r.siguiente);
+  if (r.consulta) {   // pregunta de negocio: la contesta el agente único (ventas + redes, con los números)
+    const a = await preguntarAgente(env, iaJSON, texto).catch(() => null);
+    if (a?.respuesta) return (a.respuesta + (marcas ? `\n\n(${marcas})` : "")).slice(0, 4000);
+  }
   let out = String(r.respuesta || "Listo.").slice(0, 2500) + (marcas ? `\n(${marcas})` : "");
   if (r.incluir_agenda && nt) out += "\n\n" + agendaNotion(nt) + (neg.calientes ? `\n\n💬 Negocio: ${neg.calientes} chats calientes del 805 esperando (decime "chats").` : "");
   if (r.incluir_chats) out += "\n\n" + chats;
@@ -483,7 +489,7 @@ async function atender(env, iaJSON, upd) {
   }
   if (!texto) return;
   const t = texto.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
-  if (/(esta(s)? configurad|funciona(s)?\b|andas\b|me escuchas|sos el asistente|que podes hacer|como te uso|como funciona)/.test(t) && t.length < 120) return decir(env, chat, `Sí ${nombreDe(quien)}, estoy andando y este es el chat correcto. Mandame audios o textos con todo lo que tengas que hacer y lo ordeno.\n\n• "lista": todo lo pendiente\n• "hoy": lo urgente\n• "plan": te armo el día en bloques\n• "chats": los del 805 sin contestar, con número\n• "seguimientos": cotizados que no contestaron, con el mensaje listo para mandar\n• Reenviame un video que funcione (de TikTok o Instagram) y lo miro para sacar ideas\n• "redes": qué hay que hacer hoy en redes\n• "negocio": lo que espera en el panel\n• "hecho 2", "subí 3", "borrar 4"\nTe escribo a las 8, a las 10 (seguimientos), a las 14 y a las 21.`);
+  if (/(esta(s)? configurad|funciona(s)?\b|andas\b|me escuchas|sos el asistente|que podes hacer|como te uso|como funciona)/.test(t) && t.length < 120) return decir(env, chat, `Sí ${nombreDe(quien)}, estoy andando y este es el chat correcto. Mandame audios o textos con todo lo que tengas que hacer y lo ordeno.\n\n• "lista": todo lo pendiente\n• "hoy": lo urgente\n• "plan": te armo el día en bloques\n• "chats": los del 805 sin contestar, con número\n• "seguimientos": cotizados que no contestaron, con el mensaje listo para mandar\n• Preguntame del negocio ("¿por qué no vendimos?", "¿por qué bajaron las vistas?", "dame ideas"): te contesta el agente con los números\n• Reenviame un video que funcione (de TikTok o Instagram) y lo miro para sacar ideas\n• "redes": qué hay que hacer hoy en redes\n• "negocio": lo que espera en el panel\n• "hecho 2", "subí 3", "borrar 4"\nTe escribo a las 8, a las 10 (seguimientos), a las 14 y a las 21.`);
   if (/^\/?(start|ayuda|help)\b/.test(t)) return decir(env, chat, `Hola ${nombreDe(quien)}. Mandame un audio o un texto con todo lo que tenés que hacer, desordenado, y te lo ordeno por prioridad.\n\n• "lista": todo lo pendiente\n• "hoy": solo lo urgente\n• "hecho 2" o "hecho 1,3": tachar\n• "subí 4" / "bajá 4": cambiar prioridad\n• "borrar 4"\n• "plan": te armo el día en bloques (tus tareas + lo que espera en el negocio + facu, gym, etc.)\n• "negocio": chats, videos, carruseles e historias pendientes\n• "seguimientos": a quién volver a escribirle, con el mensaje listo\n• Mandame un video que le funcionó a otro y lo guardo como referencia para las ideas\n• "perfil": lo que sé de tu rutina\nA las 8 te mando el plan, a las 10 los seguimientos, a las 14 cómo vas y a las 21 el cierre del día.`);
   if (/^\/?(lista|tareas|mis tareas|pendientes|todo|la lista)\s*$/.test(t)) return decir(env, chat, await textoLista(env, chat, quien));
   if (/^\/?hoy\s*$/.test(t)) return decir(env, chat, await textoLista(env, chat, quien, { titulo: "Para hoy", soloHoy: true }));
@@ -524,6 +530,13 @@ async function atender(env, iaJSON, upd) {
     await env.DB.batch(ids.map((i) => env.DB.prepare(sql).bind(Date.now(), i, quien)));
     const pre = /^(hech|list|ok|tach)/.test(v) ? `✅ Tachada${ids.length > 1 ? "s" : ""}.` : /^(borr|elim)/.test(v) ? "🗑 Borrada." : "↕️ Cambiada la prioridad.";
     return decir(env, chat, pre + "\n\n" + (await textoLista(env, chat, quien)));
+  }
+  // Pregunta clara sobre ventas o redes (sin nada para anotar): directo al agente, sin pasar por el secretario
+  if (/\?|\b(que paso|por que|porque|analiz|opin|ideas?|recomend)/.test(t) && /\b(vend|venta|cerr|cotiz|conversi|cliente|vistas|alcance|seguidor|reel|video|tiktok|instagram|redes|contenido|gancho|metric|numeros|negocio)/.test(t) && !/\b(anot|record|agend)|\b(tengo que|hay que|mañana|manana|hoy tengo|lista|plan|chats?|seguimientos?|pendientes?|urgentes?)\b/.test(t) && t.length < 600) {
+    await tg(env, "sendChatAction", { chat_id: chat, action: "typing" });
+    const avisoA = setTimeout(() => { decir(env, chat, "Dame un toque, estoy mirando los números…").catch(() => {}); }, 15000);
+    const a = await preguntarAgente(env, iaJSON, texto).catch(() => null).finally(() => clearTimeout(avisoA));
+    if (a?.respuesta) return decir(env, chat, (audio ? `🎙 "${texto.slice(0, 200)}${texto.length > 200 ? "…" : ""}"\n\n` : "") + a.respuesta);
   }
   await tg(env, "sendChatAction", { chat_id: chat, action: "typing" });
   const aviso = setTimeout(() => { decir(env, chat, "Dame un toque, lo estoy pensando…").catch(() => {}); }, 15000);
