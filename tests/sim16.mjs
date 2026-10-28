@@ -6,7 +6,7 @@ const L = await import("/tmp/lector16.js");
 const db = new DatabaseSync(":memory:");
 const stmt = (sql, b=[]) => ({ bind:(...x)=>stmt(sql,x), run: async()=>{db.prepare(sql).run(...b);return{}}, first: async()=>db.prepare(sql).get(...b)??null, all: async()=>({results:db.prepare(sql).all(...b)}) });
 const tg=[]; globalThis.fetch=async(u,o={})=>{ if(String(u).includes("telegram")){tg.push(JSON.parse(o.body).text);return new Response('{"ok":true}');} return new Response("{}"); };
-const env = { DB: { prepare:(s)=>stmt(s), batch: async(a)=>{for(const x of a) await x.run();} }, LECTOR_TOKEN:"t", TELEGRAM_TOKEN:"x", TELEGRAM_CHAT:"1" };
+const env = { DB: { prepare:(s)=>stmt(s), batch: async(a)=>{for(const x of a) await x.run();} }, LECTOR_TOKEN:"t", TELEGRAM_TOKEN:"x", TELEGRAM_CHAT:"1", TELEGRAM_AVISOS:"todos" };   // en producción el filtro solo deja pasar avisos críticos; acá se prueba la alerta en sí
 let ok=0, mal=0; const chk=(n,c)=>{c?ok++:(mal++,console.log("FALLA:",n));};
 await L.analizarChats(env, async()=>({chats:[]}));   // crea tablas
 const AR=3*3600e3, dia="2026-10-09", ini=Date.parse(dia+"T00:00:00Z")+AR;
