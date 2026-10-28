@@ -103,6 +103,47 @@ export function statsFormatos(posts) {
 async function posts(env, dias) {
   return (await env.DB.prepare("SELECT id, ts, tipo, media, en_feed, link, portada, texto, formato, gancho, alcance, vistas, guardados, compartidos, comentarios, likes, seguidores, tiempo_ms FROM ig_posts WHERE ts > ? ORDER BY ts DESC LIMIT 400").bind(Date.now() - dias * 86400e3).all()).results || [];
 }
+// ---------- Instagram vs TikTok ----------
+// Cada red se mide contra lo normal de esa red (su mediana): 50 mil en TikTok no vale lo mismo que 50 mil en Instagram.
+// El mismo video en las dos redes se empareja por fecha (hasta 4 días) y por el texto del posteo.
+const palabrasTxt = (t) => new Set(String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").split(/[^a-z0-9ñ]+/).filter((w) => w.length > 3));
+const parecidoTxt = (a, b) => { const A = palabrasTxt(a), B = palabrasTxt(b); if (!A.size || !B.size) return 0; let k = 0; for (const w of A) if (B.has(w)) k++; return k / Math.min(A.size, B.size); };
+const veredicto = (ig, tt) => ig == null ? (tt >= 1.5 ? "Rindió en TikTok" : tt <= 0.7 ? "Flojo en TikTok" : "Normal en TikTok") : tt == null ? (ig >= 1.5 ? "Rindió en Instagram" : ig <= 0.7 ? "Flojo en Instagram" : "Normal en Instagram")
+  : ig >= 1.5 && tt >= 1.5 ? "Funcionó en las dos" : ig >= 1.5 && tt < 1 ? "Solo Instagram" : tt >= 1.5 && ig < 1 ? "Solo TikTok" : ig <= 0.7 && tt <= 0.7 ? "No funcionó en ninguna" : "Normal";
+export async function cruceRedes(env, dias = 60) {
+  const desde = Date.now() - dias * 86400e3;
+  const ig = (await env.DB.prepare("SELECT id, ts, link, texto, gancho, formato, alcance, vistas, guardados, compartidos, tiempo_ms, en_feed FROM ig_posts WHERE tipo='REELS' AND ts>? ORDER BY ts DESC LIMIT 300").bind(desde).all().catch(() => ({ results: [] }))).results || [];
+  const tt = (await env.DB.prepare("SELECT * FROM tt_posts WHERE ts>? ORDER BY ts DESC LIMIT 300").bind(desde).all().catch(() => ({ results: [] }))).results || [];
+  const mIg = mediana(ig.map((p) => p.alcance)) || null, mTt = mediana(tt.map((p) => p.vistas)) || null;
+  const rel = (v, m) => (v == null || !m ? null : Math.round((v / m) * 10) / 10);
+  // Emparejar: el par con más texto en común y fechas más cercanas, sin repetir
+  const cands = [];
+  for (const t of tt) for (const i of ig) {
+    const dif = Math.abs(t.ts - i.ts) / 86400e3; if (dif > 4) continue;
+    const pt = parecidoTxt(t.texto, i.texto), mismoDia = dif < 1 && ig.filter((x) => Math.abs(x.ts - t.ts) < 86400e3).length === 1 && tt.filter((x) => Math.abs(x.ts - i.ts) < 86400e3).length === 1;
+    if (pt >= 0.35 || mismoDia) cands.push({ t, i, p: pt + (mismoDia ? 0.3 : 0) - dif * 0.05 });
+  }
+  const usadoT = new Set(), usadoI = new Set(), filas = [];
+  for (const c of cands.sort((a, b) => b.p - a.p)) { if (usadoT.has(c.t.id) || usadoI.has(c.i.id)) continue; usadoT.add(c.t.id); usadoI.add(c.i.id); filas.push({ ig: c.i, tt: c.t }); }
+  for (const i of ig) if (!usadoI.has(i.id)) filas.push({ ig: i, tt: null });
+  for (const t of tt) if (!usadoT.has(t.id)) filas.push({ ig: null, tt: t });
+  const out = filas.map(({ ig: i, tt: t }) => {
+    const rI = i ? rel(i.alcance, mIg) : null, rT = t ? rel(t.vistas, mTt) : null;
+    return { ts: Math.min(i?.ts ?? Infinity, t?.ts ?? Infinity), texto: String((i || t).texto || "").replace(/#\S+/g, "").trim().slice(0, 140), gancho: i?.gancho || "", formato: i?.formato || "",
+      ig: i ? { link: i.link, alcance: i.alcance, guardados: i.guardados, compartidos: i.compartidos, tiempo_s: i.tiempo_ms ? Math.round(i.tiempo_ms / 1000) : null, prueba: i.en_feed === 0, rel: rI } : null,
+      tt: t ? { link: t.link, vistas: t.vistas, likes: t.likes, compartidos: t.compartidos, guardados: t.guardados, comentarios: t.comentarios, rel: rT } : null,
+      veredicto: veredicto(rI, rT) };
+  }).sort((a, b) => b.ts - a.ts);
+  // Por formato: cómo rinde cada formato en cada red (promedio de "veces lo normal")
+  const g = {};
+  for (const f of out.filter((x) => x.formato)) { const k = (g[f.formato] ||= { formato: f.formato, nombre: FORMATOS[f.formato] || f.formato, ig: [], tt: [] }); if (f.ig?.rel != null) k.ig.push(f.ig.rel); if (f.tt?.rel != null) k.tt.push(f.tt.rel); }
+  const prom = (xs) => (xs.length ? Math.round((xs.reduce((a, b) => a + b, 0) / xs.length) * 10) / 10 : null);
+  const formatos = Object.values(g).map((k) => ({ formato: k.formato, nombre: k.nombre, n_ig: k.ig.length, n_tt: k.tt.length, ig: prom(k.ig), tt: prom(k.tt) })).sort((a, b) => (b.n_ig + b.n_tt) - (a.n_ig + a.n_tt));
+  let ultimo = null; try { ultimo = JSON.parse((await env.DB.prepare("SELECT v FROM kv WHERE k='tt_ultimo'").first())?.v || "null"); } catch {}
+  return { mediana_ig: mIg, mediana_tt: mTt, n_ig: ig.length, n_tt: tt.length, emparejados: filas.filter((x) => x.ig && x.tt).length, filas: out,
+    mejores_ig: out.filter((x) => x.ig).sort((a, b) => (b.ig.alcance || 0) - (a.ig.alcance || 0)).slice(0, 5), mejores_tt: out.filter((x) => x.tt).sort((a, b) => (b.tt.vistas || 0) - (a.tt.vistas || 0)).slice(0, 5), formatos, tiktok_ultimo: ultimo };
+}
+
 async function dmsPendientes(env, limite = 200) {
   return (await env.DB.prepare("SELECT conv, usuario, ult_texto, ult_ts FROM ig_dms WHERE ult_yo = 0 AND ult_ts > ? ORDER BY ult_ts DESC LIMIT ?").bind(Date.now() - 30 * 86400e3, limite).all()).results || [];
 }
@@ -656,6 +697,7 @@ export async function apiRedes(env, req, url, quien, iaJSON, base = "", T = null
     const dias = Math.min(365, Math.max(7, +url.searchParams.get("dias") || 60));
     return json((await posts(env, dias)).map((p) => ({ ...p, texto: String(p.texto || "").slice(0, 120) })));
   }
+  if (r === "cruce") return json(await cruceRedes(env, Math.min(365, Math.max(7, +url.searchParams.get("dias") || 60))));
   if (r === "post-formato" && req.method === "POST") {
     if (!FORMATOS[body.formato]) return json({ error: "formato inválido" }, 400);
     await env.DB.prepare("UPDATE ig_posts SET formato=? WHERE id=?").bind(body.formato, String(body.id || "")).run();
@@ -777,6 +819,7 @@ select{padding:5px 6px;border:1px solid var(--borde);border-radius:6px;font-size
   .aviso{bottom:calc(84px + env(safe-area-inset-bottom))}
   .clip{grid-template-columns:1fr}.clip .fila{justify-content:flex-start}
 }
+.cruce2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:6px}.top1{display:block;padding:8px 10px;border:1px solid #EEF0F2;border-radius:10px;margin:6px 0;color:inherit;text-decoration:none;font-size:13px}.top1 span{display:block;color:#6B7280;font-size:12.5px;margin-top:2px}.sub3{font-size:13.5px;margin:14px 0 6px}#fCruce{margin:4px 0 8px}#fCruce .on{background:#111827;color:#fff}@media (max-width:760px){.cruce2{grid-template-columns:1fr}#cruce table,#cruce tbody,#cruce tr,#cruce td{display:block;width:auto}#cruce tr:first-child{display:none}#cruce tr{border-bottom:1px solid #EEF0F2;padding:8px 0}#cruce td{border:0;padding:2px 4px;text-align:left!important}#cruce td[data-l]::before{content:attr(data-l) ": ";color:#6B7280}}
 </style></head><body>
 <header><a class="volver" href="/panel" aria-label="Volver al panel"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg><span>Panel</span></a><b>Te Importamos · <span>Redes</span></b><span class="sync" id="sync"></span></header>
 <main>
@@ -835,6 +878,11 @@ https://www.instagram.com/reel/abc"></textarea><p class="pq">Acá la IA no mira 
   <section class="card"><h2>Programados y publicados</h2><div id="vProx"></div></section>
 </div>
 <div id="m-reels" style="display:none">
+  <section class="card"><div class="fila" style="justify-content:space-between"><h2>Instagram vs TikTok</h2><span class="estado" id="ttEstado"></span></div>
+  <p class="estado" style="margin-top:0">Cada red se compara con lo normal de esa red: <b>x2</b> es el doble de lo que suele dar ese video en esa red. Si el mismo video está en las dos, va en la misma fila.</p>
+  <div class="cruce2" id="mejores"></div>
+  <h3 class="sub3">Qué formato rinde en cada red</h3><div class="tabla" id="porFormato"></div>
+  <h3 class="sub3">Video por video</h3><div class="chips" id="fCruce"><button class="btn ch on" data-v="">Todos</button><button class="btn ch" data-v="Solo TikTok">Solo TikTok</button><button class="btn ch" data-v="Solo Instagram">Solo Instagram</button><button class="btn ch" data-v="Funcionó en las dos">En las dos</button></div><div class="tabla" id="cruce"></div></section>
   <section class="card"><div class="fila" style="justify-content:space-between"><h2>Reels y publicaciones</h2><select id="fDias"><option value="30">30 días</option><option value="60" selected>60 días</option><option value="120">120 días</option></select></div>
   <p class="estado" style="margin-top:0">Si el formato está mal, cambialo: así las ideas aprenden de lo que de verdad funcionó.</p>
   <div class="tabla" id="reels"></div></section>
@@ -998,7 +1046,26 @@ function cargarDms() {
 }
 $("#bDmAct").onclick = function () { var b = this; b.disabled = true; api("actualizar", {}).then(function (r) { b.disabled = false; if (!r.ok) aviso("No se pudo: " + r.error); cargarDms(); }); };
 
+var CRUCE = null, F_CRUCE = "";
+function xN(r) { return r == null ? '<span class="estado">-</span>' : '<b style="color:' + (r >= 1.5 ? "#15803D" : r <= 0.7 ? "#B91C1C" : "#374151") + '">x' + r + "</b>"; }
+function pintarCruce() {
+  var d = CRUCE; if (!d) return;
+  var u = d.tiktok_ultimo;
+  $("#ttEstado").textContent = d.n_tt ? "TikTok: " + d.n_tt + " videos" + (u && u.ts ? " · actualizado " + fecha(u.ts) : "") + " · " + d.emparejados + " emparejados con Instagram" : (u && u.estado === "ERROR" ? "TikTok: error al leer (" + (u.error || "") + ")" : "TikTok: todavía sin datos (se leen cada 2 días a las 6)");
+  var top = function (l, red) { return l.length ? l.map(function (f) { var x = f[red]; return '<a class="top1" target="_blank" href="' + esc(x.link) + '"><b>' + num(red === "ig" ? x.alcance : x.vistas) + "</b> " + (red === "ig" ? "cuentas" : "vistas") + " " + xN(x.rel) + "<span>" + esc(f.texto || f.gancho || "(sin texto)") + "</span></a>"; }).join("") : '<div class="vacio">Sin datos</div>'; };
+  $("#mejores").innerHTML = '<div><h3 class="sub3">Mejores en TikTok</h3>' + top(d.mejores_tt, "tt") + '</div><div><h3 class="sub3">Mejores en Instagram</h3>' + top(d.mejores_ig, "ig") + "</div>";
+  $("#porFormato").innerHTML = d.formatos.length ? "<table><tr><th>Formato</th><th class=\"n\">Instagram</th><th class=\"n\">TikTok</th></tr>" + d.formatos.map(function (f) { return "<tr><td>" + esc(f.nombre) + '</td><td class="n">' + xN(f.ig) + ' <span class="estado">(' + f.n_ig + ')</span></td><td class="n">' + xN(f.tt) + ' <span class="estado">(' + f.n_tt + ")</span></td></tr>"; }).join("") + "</table>" : '<div class="vacio">Todavía no hay reels con formato en este período.</div>';
+  var l = d.filas.filter(function (f) { return !F_CRUCE || f.veredicto === F_CRUCE; });
+  $("#cruce").innerHTML = l.length ? "<table><tr><th>Fecha</th><th>Video</th><th class=\"n\">Instagram</th><th class=\"n\">TikTok</th><th>Resultado</th></tr>" + l.map(function (f) {
+    var ig = f.ig ? '<a target="_blank" href="' + esc(f.ig.link) + '">' + num(f.ig.alcance) + "</a> " + xN(f.ig.rel) : '<span class="estado">no está</span>';
+    var tt = f.tt ? '<a target="_blank" href="' + esc(f.tt.link) + '">' + num(f.tt.vistas) + "</a> " + xN(f.tt.rel) : '<span class="estado">no está</span>';
+    return '<tr><td style="white-space:nowrap">' + fecha(f.ts) + "</td><td>" + esc(f.texto || "(sin texto)") + (f.gancho ? '<div class="estado">Gancho: ' + esc(f.gancho) + "</div>" : "") + (f.formato ? '<div class="estado">' + esc(FORMATOS[f.formato] || f.formato) + "</div>" : "") + '</td><td class="n" data-l="Instagram">' + ig + '</td><td class="n" data-l="TikTok">' + tt + "</td><td data-l=\"Resultado\"><b>" + esc(f.veredicto) + "</b></td></tr>";
+  }).join("") + "</table>" : '<div class="vacio">Nada en este filtro.</div>';
+}
+function cargarCruce() { api("cruce?dias=" + $("#fDias").value).then(function (d) { CRUCE = d; pintarCruce(); }).catch(function () {}); }
+$("#fCruce").onclick = function (ev) { var b = ev.target.closest("button"); if (!b) return; F_CRUCE = b.dataset.v; document.querySelectorAll("#fCruce button").forEach(function (x) { x.classList.toggle("on", x === b); }); pintarCruce(); };
 function cargarReels() {
+  cargarCruce();
   api("reels?dias=" + $("#fDias").value).then(function (l) {
     var ops = Object.keys(FORMATOS).filter(function (k) { return k !== "sin_clasificar"; });
     $("#reels").className = "tabla cards"; $("#reels").innerHTML = l.length ? "<table><tr><th>Fecha</th><th>Tipo</th><th>Formato</th><th class=\"n\">Alcance</th><th class=\"n\">Tiempo visto</th><th class=\"n\">Guardados</th><th class=\"n\">Compartidos</th><th class=\"n\">Coment.</th><th></th></tr>" + l.map(function (p) {

@@ -1,3 +1,4 @@
+import { vueltaTikTok, gastoTikTokMes } from "./tiktok.js";
 /**
  * Buscador de proveedores · Te Importamos (v1.1: + búsqueda web multipaís con Tavily)
  *
@@ -259,8 +260,8 @@ export async function telegram(env, usuario, texto) {
 // ---------------------------------------------------------------------------
 // Paso 1: lanzar las búsquedas nuevas en Apify
 // ---------------------------------------------------------------------------
-async function gastoMes(env) {
-  return n((await env.DB.prepare("SELECT SUM(costo) c FROM busquedas WHERE lanzada_ts >= ?").bind(inicioMesAR()).first())?.c);
+async function gastoMes(env) {   // buscador + TikTok: un solo tope de Apify por mes
+  return n((await env.DB.prepare("SELECT SUM(costo) c FROM busquedas WHERE lanzada_ts >= ?").bind(inicioMesAR()).first())?.c) + (await gastoTikTokMes(env));
 }
 async function lanzadasHoy(env) {
   return n((await env.DB.prepare("SELECT COUNT(*) c FROM busquedas WHERE lanzada_ts >= ? AND runs LIKE '%\"id\":%'").bind(inicioDiaAR()).first())?.c);
@@ -589,6 +590,7 @@ export async function vuelta(env) {
   const log = [];
   await recogerResultados(env, log).catch((e) => log.push("Error recogiendo: " + (e?.stack || e)));
   await lanzarNuevas(env, log).catch((e) => log.push("Error lanzando: " + (e?.stack || e)));
+  await vueltaTikTok(env, { apify, gastoMes, topeMes: topes(env).usdPorMes }).then((x) => x && log.push(x)).catch((e) => log.push("Error TikTok: " + (e?.stack || e)));
   if (log.length) console.log(log.join("\n"));
   return log;
 }
@@ -607,6 +609,7 @@ export default {
     if (!env.VERIFY_TOKEN || clave !== env.VERIFY_TOKEN) return new Response("Falta ?clave=", { status: 401 });
     await prepararTablas(env);
     if (url.pathname === "/correr") return Response.json({ log: await vuelta(env) });
+    if (url.pathname === "/tiktok") return Response.json({ res: await vueltaTikTok(env, { apify, gastoMes, topeMes: topes(env).usdPorMes, forzar: true }), ultimo: JSON.parse((await env.DB.prepare("SELECT v FROM kv WHERE k='tt_ultimo'").first())?.v || "null") });
     if (url.pathname === "/estado") {
       const tp = topes(env);
       return Response.json({
