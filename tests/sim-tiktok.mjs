@@ -45,6 +45,12 @@ db.prepare("DELETE FROM kv WHERE k='tt_run'").run(); db.prepare("UPDATE kv SET v
 chk("no repite antes de 2 días", (await T.vueltaTikTok(env, { apify, gastoMes, topeMes: 4.5, ahora: a6 + 3 * D })) === "" && !lanz);
 gastoBuscador = 4.45;
 chk("respeta el tope de Apify del mes", (await T.vueltaTikTok(env, { apify, gastoMes, topeMes: 4.5, ahora: a6 + 4 * D })).includes("tope") && !lanz);
+chk("el tope queda anotado para el panel", JSON.parse(db.prepare("SELECT v FROM kv WHERE k='tt_aviso'").get()?.v || "{}").texto?.includes("tope de Apify"));
+chk("guarda la foto de la cuenta", db.prepare("SELECT seguidores FROM tt_cuenta").get()?.seguidores === 5000);
+gastoBuscador = 0; db.prepare("INSERT INTO kv VALUES ('tt_forzar','1',NULL)").run(); lanz = null;
+chk("Actualizar TikTok del panel lanza fuera de hora", (await T.vueltaTikTok(env, { apify, gastoMes, topeMes: 4.5, ahora: a10 + 4 * D })) === "TikTok: lectura lanzada" && lanz && !db.prepare("SELECT 1 FROM kv WHERE k='tt_forzar'").get());
+estado = "SUCCEEDED"; await T.vueltaTikTok(env, { apify, gastoMes, topeMes: 4.5, ahora: a10 + 4 * D + 120e3 });
+chk("una lectura buena borra el aviso", !db.prepare("SELECT 1 FROM kv WHERE k='tt_aviso'").get());
 items[0].playCount = 100; await T.guardarTikTok(env, items);
 chk("una lectura con menos vistas no pisa las anteriores", db.prepare("SELECT vistas FROM tt_posts WHERE id='t1'").get().vistas === 40000);
 // ---- Cruce con Instagram ----
@@ -63,4 +69,15 @@ chk("veredicto: funcionó en una sola red", f1.veredicto === "Solo TikTok" && f2
 chk("sin par queda solo", c.filas.some((f) => f.tt?.link.endsWith("/t3") && !f.ig) && c.filas.some((f) => f.ig?.link.endsWith("/i3") && !f.tt) && c.emparejados === 2);
 chk("por formato en cada red", c.formatos.find((f) => f.formato === "ml_vendi")?.tt === 8 && c.formatos.find((f) => f.formato === "reaccion")?.ig === 10);
 chk("mejores de cada red", c.mejores_tt[0].tt.vistas === 40000 && c.mejores_ig[0].ig.alcance === 30000);
+// ---- Resumen de TikTok en Redes › Inicio ----
+db.prepare("INSERT OR REPLACE INTO tt_cuenta VALUES ('2000-01-01',?,4800,0,0)").run(Date.now() - 8 * D);
+const rt = await R.resumenTikTok(env);
+chk("resumen: seguidores y crecimiento", rt.seguidores === 5000 && rt.seguidores_cambio === 200);
+chk("resumen: vistas y videos de 7 días", rt.vistas7 === 42000 && rt.videos7 === 2 && rt.videos7_ant === 1 && rt.vistas7_cambio === 740);
+chk("resumen: interacción y últimos videos", rt.interaccion > 0 && rt.ultimos[0].link.endsWith("/t1") && rt.ultimos[0].rel === 8 && rt.mejor7.id === "t1");
+const apiR = async (ruta, body) => (await R.apiRedes(env, { method: body ? "POST" : "GET", json: async () => body || {} }, new URL("https://x/panel/api/redes/" + ruta), "Manuel", async () => ({}))).json();
+chk("panel: no deja forzar si se leyó hace poco", (await apiR("tiktok-actualizar", {})).ok === false);
+db.prepare("UPDATE kv SET v=? WHERE k='tt_ultimo'").run(JSON.stringify({ ts: Date.now() - 7 * 3600e3, estado: "SUCCEEDED" }));
+chk("panel: Actualizar TikTok deja el pedido", (await apiR("tiktok-actualizar", {})).ok === true && db.prepare("SELECT 1 FROM kv WHERE k='tt_forzar'").get());
+chk("panel: Inicio muestra TikTok", R.PANEL_REDES.includes('id="ttKpis"') && R.PANEL_REDES.includes('api("tiktok")') && R.PANEL_REDES.includes("tiktok.com/messages"));
 console.log(`sim-tiktok: ${ok} ok, ${mal} fallas`);

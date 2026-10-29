@@ -53,7 +53,7 @@ db.prepare("INSERT OR REPLACE INTO kv VALUES ('asist_prefs:Manuel','No me mandes
 const n1 = enviados.length; await A.cronAsistente(env, t(17), ia); chk("respeta preferencia sin aviso 14", enviados.length === n1);
 await mandar({ text: "listo" }); chk("listo sin número tacha el foco", db.prepare("SELECT COUNT(*) n FROM mis_tareas WHERE estado='hecha'").get().n >= 1 && enviados.at(-1).includes("Bien ahí"));
 // ---- Seguimientos: cotizados que no contestan, con mensaje listo y botón al WhatsApp ----
-for (const c of ["perfil TEXT", "presup_usd INT", "ult_yo_ts INT", "seg_visto INT"]) db.exec("ALTER TABLE w_conv ADD COLUMN " + c);
+for (const c of ["perfil TEXT", "presup_usd INT", "ult_yo_ts INT", "seg_visto INT", "seg_no INT", "ult_ts INT", "analizado_ts INT"]) db.exec("ALTER TABLE w_conv ADD COLUMN " + c);
 db.exec("CREATE TABLE w_hito (id TEXT, conv TEXT, tipo TEXT, ts INT, dato TEXT, oculto INT DEFAULT 0); CREATE TABLE w_msg (id TEXT, conv TEXT, yo INT, texto TEXT, ts INT)");
 const dHace = (d) => Date.now() - d * 86400e3;
 db.prepare("INSERT INTO w_conv (conv, grupo, archivado, ult_yo, resp, prov, ult_cliente_ts, visto_ts, etapa, puntaje, cot_pend, nombre, producto, perfil, presup_usd, ult_yo_ts, seg_visto) VALUES ('5493410000001',0,0,1,1,0,?,0,'cotizado',7,0,'Ana','auriculares','B',800,?,0)").run(dHace(4), dHace(4));

@@ -58,7 +58,7 @@ export async function prepararLector(env) {
     env.DB.prepare("CREATE TABLE IF NOT EXISTS reportes (id TEXT PRIMARY KEY, tipo TEXT, desde INTEGER, hasta INTEGER, creado INTEGER, datos TEXT)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT, exp INTEGER)"),
   ]);
-    for (const col of ["resp INTEGER", "visto_ts INTEGER DEFAULT 0", "prov INTEGER DEFAULT 0", "visto_esc INTEGER DEFAULT 0", "visto_cot INTEGER DEFAULT 0", "nuevo_ok INTEGER", "perfil TEXT", "presup_usd INTEGER", "origen TEXT", "motivo TEXT", "seg_visto INTEGER DEFAULT 0"]) await env.DB.prepare(`ALTER TABLE w_conv ADD COLUMN ${col}`).run().catch(() => {});
+    for (const col of ["resp INTEGER", "visto_ts INTEGER DEFAULT 0", "prov INTEGER DEFAULT 0", "visto_esc INTEGER DEFAULT 0", "visto_cot INTEGER DEFAULT 0", "nuevo_ok INTEGER", "perfil TEXT", "presup_usd INTEGER", "origen TEXT", "motivo TEXT", "seg_visto INTEGER DEFAULT 0", "seg_no INTEGER DEFAULT 0"]) await env.DB.prepare(`ALTER TABLE w_conv ADD COLUMN ${col}`).run().catch(() => {});
   await env.DB.batch([
     env.DB.prepare("CREATE TABLE IF NOT EXISTS ag_chat (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, rol TEXT, texto TEXT)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS ag_mem (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, tipo TEXT, texto TEXT)"),
@@ -318,6 +318,20 @@ function pendienteOps(env, c, p) {
 // 3b) Auditoría de cotizaciones: la IA lee el día completo de cada chat y cuenta las cotizaciones que
 // mandamos (texto, capturas o PDF: los adjuntos llegan como "(archivo)", se deducen por el contexto)
 // ---------------------------------------------------------------------------
+// Una venta cuenta solo si es el primer pago (seña o total) de una compra nueva: envío, flete o saldo no son ventas,
+// y si el chat ya tiene una venta registrada en los últimos 60 días tiene que ser explícitamente otra compra.
+const RE_NO_VENTA = /env[ií]o|flete|correo|andreani|\boca\b|v[ií]a ?cargo|cadete|\bmoto\b|saldo|\bresto\b|diferencia|\bvap\w*|elf ?bar|ice king|ignite|\bpods?\b/i;
+export function esVentaReal(v, t = {}) {
+  if (!v || typeof v !== "object") return false;
+  const concepto = String(v.concepto || "").toLowerCase();
+  if (["saldo", "envio", "envío", "otro"].includes(concepto)) return false;
+  if (RE_NO_VENTA.test(`${v.producto || ""} ${v.monto || ""}`)) return false;
+  const m = (t.ms || [])[parseInt(v.msg)];
+  if (m && RE_NO_VENTA.test(String(m.texto || ""))) return false;
+  if ((t.ventasPrev || []).length && v.compra_nueva !== true) return false;
+  return true;
+}
+
 export async function auditarCotizaciones(env, iaJSON, { limite = 30, dia = null, conv = null, debug = false, rehacer = false } = {}) {
   await prepararLector(env);
   const desde = dia ? Date.parse(dia + "T00:00:00Z") + AR : inicioDiaAR(Date.now() - 86400e3);
@@ -341,18 +355,23 @@ export async function auditarCotizaciones(env, iaJSON, { limite = 30, dia = null
       const previo = await env.DB.prepare("SELECT 1 FROM w_msg WHERE conv=? AND ts<? LIMIT 1").bind(t.conv, ini - 6 * 3600e3).first();
       const ms = (await env.DB.prepare("SELECT id, yo, texto, ts FROM w_msg WHERE conv=? AND ts>=? AND ts<? ORDER BY ts LIMIT 160").bind(t.conv, ini - 6 * 3600e3, ini + 86400e3).all()).results || [];
       t.prov = c?.prov || 0; t.ini = ini; t.ms = ms;
+      // Lo que ya pasó antes en este chat: ventas registradas y pagos de los últimos 45 días (para no contar dos veces la misma compra)
+      t.ventasPrev = (await env.DB.prepare("SELECT ts, dato FROM w_hito WHERE conv=? AND tipo='venta' AND COALESCE(oculto,0)=0 AND ts<? AND ts>=? ORDER BY ts DESC LIMIT 3").bind(t.conv, ini, ini - 60 * 86400e3).all()).results || [];
+      const pagosPrev = (await env.DB.prepare("SELECT yo, texto, ts FROM w_msg WHERE conv=? AND ts<? AND ts>=? AND (lower(texto) LIKE '%comprobante%' OR lower(texto) LIKE '%seña%' OR lower(texto) LIKE '%sena%' OR lower(texto) LIKE '%transfer%' OR lower(texto) LIKE '%pag%' OR lower(texto) LIKE '%abon%') ORDER BY ts DESC LIMIT 6").bind(t.conv, ini - 6 * 3600e3, ini - 45 * 86400e3).all()).results || [];
       const k = `${t.conv}|${t.dia}`; mapa[k] = t;
+      const antes = [t.ventasPrev.length ? "VENTAS YA REGISTRADAS EN ESTE CHAT: " + t.ventasPrev.map((v) => `${fechaHora(v.ts).slice(0, 5)} ${v.dato || ""}`).join("; ") : "", pagosPrev.length ? "PAGOS O SEÑAS DE DÍAS ANTERIORES: " + pagosPrev.reverse().map((m) => `[${fechaHora(m.ts).slice(0, 5)}] ${m.yo ? "NOSOTROS" : "CLIENTE"}: ${String(m.texto).slice(0, 140)}`).join(" | ") : ""].filter(Boolean).join("\n");
       bloques.push(`### CHAT ${k} (${c?.nombre || "sin nombre"})${previo ? " [hay mensajes de días anteriores]" : t.empieza ? " [primer mensaje registrado este día]" : ""}
-` + ms.map((m, n) => `${m.ts < ini ? "(día anterior) " : ""}#${n} ${m.yo ? "NOSOTROS" : "CLIENTE"}: ${String(m.texto).slice(0, 300)}`).join("\n"));
+${antes ? antes + "\n" : ""}` + ms.map((m, n) => `${m.ts < ini ? "(día anterior) " : ""}#${n} ${m.yo ? "NOSOTROS" : "CLIENTE"}: ${String(m.texto).slice(0, 300)}`).join("\n"));
     }
     const r = await iaJSON(env, `Sos auditor de "Te Importamos" (importación por encargo). Contá las COTIZACIONES que NOSOTROS le mandamos al cliente en cada chat, solo en los mensajes que NO dicen "(día anterior)".
 Una cotización es cuando le pasamos al cliente el precio de lo que pidió (precio puesto en Argentina, total, unitario, por cantidad), ya sea en texto, en una captura o en un PDF.
 Los adjuntos (fotos, capturas, PDF) aparecen como "(archivo)" o con su texto al pie: deducí por el contexto si eran la cotización (ej. "ahi te cotizo" + (archivo); "ahi esta por 50 unidades"; (archivo) y después el cliente pregunta "¿ese precio es puesto acá?", "le falta un 0 al flete?", "me quedaria en..."; "te armo por 80 y 100" + (archivo)).
 Varios archivos seguidos del mismo producto = UNA cotización. Una cotización nueva por otra cantidad u otro producto = otra cotización.
 NO cuentan: catálogos o listas generales de precios ("PRECIOS MAYORISTA DE ZAPATILLAS", PDF de catálogo), fotos de productos de ejemplo, datos de pago o envío, mensajes automáticos, chats con proveedores (cuando NOSOTROS le compramos a ellos) ni charlas internas del equipo.
-VENTAS: marcá "venta" SOLO si ESE DÍA (mensajes sin "(día anterior)") el cliente nos PAGÓ por primera vez esa compra: mandó el comprobante de la seña o del total, o le confirmamos que recibimos su pago. NO es venta del día: pasarle el código de seguimiento, avisar que salió o llegó el pedido, datos de envío, reclamos, el saldo de una compra ya señada antes, pedir el alias sin pagar todavía, ni pagos que NOSOTROS le hacemos a un proveedor.
+VENTAS: marcá "venta" SOLO si ESE DÍA (mensajes sin "(día anterior)") el cliente nos PAGÓ por primera vez esa compra: mandó el comprobante de la seña o del total, o le confirmamos que recibimos su pago. NO es venta del día: pagar el ENVÍO, el flete o el correo (Andreani, OCA, Vía Cargo, moto, etc.), pagar el saldo o el resto de una compra ya señada, pasarle el código de seguimiento, avisar que salió o llegó el pedido, datos de envío, reclamos, pedir el alias sin pagar todavía, ni pagos que NOSOTROS le hacemos a un proveedor.
+Si el chat dice "VENTAS YA REGISTRADAS" o "PAGOS O SEÑAS DE DÍAS ANTERIORES", esa compra YA se contó: un comprobante nuevo es casi siempre envío o saldo de lo mismo → venta null. Solo es venta si se ve claramente que es una compra NUEVA de otro producto u otro pedido (y entonces "compra_nueva": true). Ante la duda, venta null: es peor inflar las ventas que perder una.
 CHAT NUEVO: "primer_contacto" true solo si este día es la primera vez que esta persona nos escribe (consulta inicial, sin señales de que ya nos conocía: compras anteriores, pedidos en curso, "como te dije", etc.).
-Devolvé JSON: {"chats":[{"chat":"id exacto","interno":true SOLO si es una charla entre socios del equipo o con un proveedor, forwarder, agente de carga, despachante o transportista (gente a la que NOSOTROS le pagamos) (si no, false),"primer_contacto":true|false,"cotizaciones":[{"msg":número del mensaje (#) donde se mandó,"producto":"2-5 palabras"}],"venta":null o {"msg":número del mensaje del pago o la confirmación,"producto":"2-5 palabras","monto":"si se ve, si no \"\""}}]}
+Devolvé JSON: {"chats":[{"chat":"id exacto","interno":true SOLO si es una charla entre socios del equipo o con un proveedor, forwarder, agente de carga, despachante o transportista (gente a la que NOSOTROS le pagamos) (si no, false),"primer_contacto":true|false,"cotizaciones":[{"msg":número del mensaje (#) donde se mandó,"producto":"2-5 palabras"}],"venta":null o {"msg":número del mensaje del pago o la confirmación,"producto":"2-5 palabras","monto":"si se ve, si no \"\"","concepto":"sena" | "total" | "saldo" | "envio" | "otro","compra_nueva":true si es un pedido distinto de las ventas ya registradas (si no hay ventas previas, true)}}]}
 
 ${bloques.join("\n\n")}`, { sinRespaldo: true });
     if (debug) return { r, prompt: bloques.join("\n\n").slice(0, 6000) };
@@ -374,7 +393,7 @@ ${bloques.join("\n\n")}`, { sinRespaldo: true });
       }
       // Venta del día: se reemplaza lo de ese día (lo que marcaste como "no es venta" queda oculto)
       ops.push(env.DB.prepare("DELETE FROM w_hito WHERE conv=? AND tipo='venta' AND ts>=? AND ts<? AND COALESCE(oculto,0)=0").bind(t.conv, t.ini, t.ini + 86400e3));
-      if (!t.prov && a.interno !== true && a.venta && !/\bvap\w*|elf ?bar|ice king|ignite|\bpods?\b/i.test(String(a.venta.producto || ""))) {
+      if (!t.prov && a.interno !== true && esVentaReal(a.venta, t)) {
         const m = t.ms[parseInt(a.venta.msg)], ts = m && m.ts >= t.ini ? m.ts : t.ini + 12 * 3600e3;
         ops.push(env.DB.prepare("INSERT OR IGNORE INTO w_hito (id,conv,tipo,ts,dato) VALUES (?,?,?,?,?)").bind(`vi:${t.conv}:${t.dia}`, t.conv, "venta", ts, `${String(a.venta.producto || "").slice(0, 80)}${a.venta.monto ? " · " + String(a.venta.monto).slice(0, 40) : ""}`));
       }
@@ -568,6 +587,18 @@ export async function cronLector(env, iaJSON, scheduledTime) {
   if (!(await kvGet(env, "lector_pend_v1"))) { await env.DB.prepare("UPDATE w_conv SET analizado_ts=0 WHERE grupo=0 AND ult_ts>=?").bind(Date.now() - 3 * 86400e3).run(); await kvPut(env, "lector_pend_v1", Date.now()); }
   if (!(await kvGet(env, "lector_cotiz_v2"))) await recalcularCotizaciones(env).catch((e) => console.log("lector cotiz", e?.stack || e));
   if (!(await kvGet(env, "lector_bot_v1"))) await repararBot(env).catch((e) => console.log("lector bot", e?.stack || e));
+  // Ventas v2 (29/10): se vuelven a revisar las ventas del último mes con las reglas nuevas (envío/saldo/compra repetida no cuentan)
+  if (!(await kvGet(env, "ventas_v2"))) {
+    const l = (await env.DB.prepare("SELECT DISTINCT conv, ts FROM w_hito WHERE tipo='venta' AND COALESCE(oculto,0)=0 AND ts>=? ORDER BY ts").bind(Date.now() - 35 * 86400e3).all()).results || [];
+    await kvPut(env, "ventas_v2_pend", JSON.stringify([...new Set(l.map((x) => x.conv + "|" + diaAR(x.ts)))])); await kvPut(env, "ventas_v2", Date.now());
+  }
+  {
+    const pend = JSON.parse((await kvGet(env, "ventas_v2_pend")) || "[]");
+    if (pend.length) {   // de a 2 por minuto, en orden (así las primeras quedan como "ya registradas" para las siguientes)
+      for (const x of pend.splice(0, 2)) { const [conv, dia] = x.split("|"); await auditarCotizaciones(env, iaJSON, { dia, conv, rehacer: true, limite: 1 }).catch((e) => console.log("ventas v2", e?.stack || e)); }
+      await kvPut(env, "ventas_v2_pend", JSON.stringify(pend));
+    }
+  }
   const t = new Date(scheduledTime);
   const m = t.getUTCMinutes(), hAR = (t.getUTCHours() + 21) % 24;
   if (m % 15 === 7) await analizarChats(env, iaJSON).catch((e) => console.log("lector analizar", e?.stack || e));
@@ -755,6 +786,7 @@ export async function apiLector(env, req, url, iaJSON) {
     const [objetivos, segs, perfil] = await Promise.all([avanceObjetivos(env), seguimientos(env), metricasPerfil(env, desde)]);
     return json({ objetivos, seguimientos: segs, perfil });
   }
+  if (r === "seguimiento-no" && req.method === "POST") { const b = await req.json().catch(() => ({})); await env.DB.prepare("UPDATE w_conv SET seg_no=? WHERE conv=?").bind(Date.now(), String(b.conv || "")).run(); return json({ ok: true }); }
   if (r === "seguimiento-listo" && req.method === "POST") { const b = await req.json().catch(() => ({})); await env.DB.prepare("UPDATE w_conv SET seg_visto=? WHERE conv=?").bind(Date.now(), String(b.conv || "")).run(); return json({ ok: true }); }
   if (r === "equipo") { const p = url.searchParams.get("p") || "semana", hoy = inicioDiaAR(); return json(await metricasEquipo(env, p === "dia" ? hoy : p === "mes" ? hoy - 29 * 86400e3 : hoy - 6 * 86400e3)); }
   if (r === "objetivo-borrar" && req.method === "POST") { const b = await req.json().catch(() => ({})); await env.DB.prepare("UPDATE ag_obj SET activo=0 WHERE id=?").bind(+b.id || 0).run(); return json({ ok: true }); }
@@ -841,23 +873,123 @@ PARTE 4 · COMO LE RESPONDES A MANUEL
 - Si pide objetivos: realistas, medibles con las metricas que existen y basados en los ultimos 30 dias.
 - Si te pregunta algo de negocio que no esta en los datos (ej. si conviene vender en Mercado Libre), das tu opinion marcada como OPINION, con los pros, los contras y que dato haria falta para decidir.
 `;
-// Cotizados que no respondieron: reglas en código (día 1, después cada 2 días, después cada 3, hasta 12 días)
-export async function seguimientos(env) {
-  const ahora = Date.now();
-  const filas = (await env.DB.prepare(`SELECT c.conv, c.nombre, c.perfil, c.presup_usd, c.producto, c.etapa, c.ult_yo_ts, c.seg_visto, c.ult_texto, MAX(h.ts) cot_ts
-    FROM w_hito h JOIN w_conv c ON c.conv=h.conv
-    WHERE h.tipo='cotizacion' AND h.ts>=? AND c.grupo=0 AND c.archivado=0 AND COALESCE(c.prov,0)=0 AND c.ult_yo=1
-      AND COALESCE(c.etapa,'') NOT IN ('vendido','perdido','no_cliente')
-      AND NOT EXISTS (SELECT 1 FROM w_hito v WHERE v.conv=c.conv AND v.tipo='venta' AND v.ts>=? AND COALESCE(v.oculto,0)=0)
-    GROUP BY c.conv LIMIT 200`).bind(ahora - 12 * 86400e3, ahora - 12 * 86400e3).all()).results || [];
+// ---------------------------------------------------------------------------
+// Seguimientos: SOLO clientes a los que les mandamos una cotización y no avanzaron
+// ---------------------------------------------------------------------------
+// 1) Código (exacto): hubo cotización nuestra (w_hito) en los últimos 21 días, no compró, no es proveedor,
+//    la pelota está del lado del cliente (lo último es nuestro, o un "gracias / lo veo" que no pide respuesta),
+//    no le debemos nada (cotización o promesa pendiente) y le toca según la cadencia: 1, 2, 4 y 7 días
+//    entre toques (máximo 4 toques; después se da por frío). Un chat = una fila (sin repetidos por número).
+// 2) IA (una vez por día por chat): lee la charla, descarta lo que no hace falta seguir (ya compró, dijo que no,
+//    quedó en escribir él en una fecha que no llegó, ya se resolvió) y saca producto, cantidad y monto cotizados
+//    + el mensaje listo. Lo que descarta no vuelve a aparecer ese día en ningún lado (Telegram, panel, agente).
+const RE_PREG_SEG = /seguimiento|(cotiz\w*).{0,80}(no (contest|respond)\w*|gracias|seguir|escribir)|(no (contest|respond)\w*|dijeron gracias).{0,80}cotiz|a quien (le )?(tengo|tenemos|hay) que (escribir|seguir)/;
+const SEG = { dias: 21, esperas: [1, 2, 4, 7], revisarPorDia: 30, porLlamada: 8 };
+const RE_ACUSE = /^\s*(ok(a|ey|is)?|dale|gracias|graciass*|muchas gracias|genial|perfecto|buen[ií]simo|b[aá]rbaro|joya|listo|lo veo|lo pienso|lo charlo|te aviso|te confirmo|cualquier cosa te (aviso|escribo)|despu[eé]s te (aviso|digo)|👍|🙏|🙌)\b/i;
+const ultimos10 = (x) => String(x || "").replace(/\D/g, "").slice(-10);
+const PRI_PERFIL = { A: 0, B: 0, C: 1, D: 2 };
+async function candidatosSeguimiento(env, ahora = Date.now()) {
+  const todas = async (sql, ...b) => ((await env.DB.prepare(sql).bind(...b).all()).results || []);
+  const desde = ahora - SEG.dias * 86400e3;
+  const filas = await todas(`SELECT c.*, MAX(h.ts) cot_ts FROM w_hito h JOIN w_conv c ON c.conv=h.conv
+    WHERE h.tipo='cotizacion' AND h.ts>=? AND c.grupo=0 AND c.archivado=0 AND COALESCE(c.prov,0)=0
+      AND COALESCE(c.etapa,'') NOT IN ('vendido','perdido','no_cliente') AND COALESCE(c.perfil,'')<>'E'
+    GROUP BY c.conv LIMIT 300`, desde);
+  if (!filas.length) return [];
+  const convs = filas.map((f) => f.conv);
+  const ventas = new Map(), deuda = new Set(), msgs = new Map(), cotTxt = new Map();
+  for (let i = 0; i < convs.length; i += 80) {
+    const parte = convs.slice(i, i + 80), q = parte.map(() => "?").join(",");
+    for (const v of await todas(`SELECT conv, MAX(ts) ts FROM w_hito WHERE tipo='venta' AND COALESCE(oculto,0)=0 AND conv IN (${q}) GROUP BY conv`, ...parte)) ventas.set(v.conv, v.ts);
+    for (const h of await todas(`SELECT conv, ts, dato FROM w_hito WHERE tipo='cotizacion' AND ts>=? AND conv IN (${q}) ORDER BY ts`, desde, ...parte)) cotTxt.set(h.conv, h.dato || "");
+    for (const t of await todas(`SELECT tel FROM tareas WHERE estado='abierta' AND tipo IN ('cotizacion','promesa','comprobante') AND tel IN (${q})`, ...parte).catch(() => [])) deuda.add(t.tel);
+    for (const m of await todas(`SELECT conv, yo, texto, ts FROM w_msg WHERE ts>=? AND conv IN (${q}) ORDER BY ts`, desde - 86400e3, ...parte)) { if (!msgs.has(m.conv)) msgs.set(m.conv, []); msgs.get(m.conv).push(m); }
+  }
   const lista = [];
   for (const f of filas) {
-    const dCot = (ahora - f.cot_ts) / 86400e3, dYo = (ahora - Math.max(f.ult_yo_ts || 0, f.seg_visto || 0)) / 86400e3;
-    const espera = dCot < 3 ? 1 : dCot < 7 ? 2 : 3;
-    if (dYo < espera) continue;
-    lista.push({ ...f, dias_cot: Math.floor(dCot), dias_sin: Math.floor(dYo), pri: { A: 0, B: 0, C: 1, D: 2, E: 3 }[f.perfil] ?? 2 });
+    const cot = f.cot_ts;
+    if ((ventas.get(f.conv) || 0) >= cot - 86400e3) continue;          // compró después (o el mismo día) de la cotización
+    if (deuda.has(f.conv) || f.cot_pend === 1) continue;              // le debemos algo: va a Pendientes, no a seguimientos
+    if ((f.seg_no || 0) >= cot) continue;                             // "No seguir" para esta cotización
+    const ms = (msgs.get(f.conv) || []).filter((m) => !(m.yo && esBot(m.texto)));
+    const ultCli = [...ms].reverse().find((m) => !m.yo && m.ts > cot) || null;
+    const ult = ms[ms.length - 1] || null;
+    const clienteUltimo = ult ? !ult.yo : f.ult_yo === 0;
+    if (clienteUltimo) {
+      // Si lo último es del cliente, solo sigue si es un acuse ("gracias", "lo veo") que no pide respuesta
+      const txt = String(ult?.texto ?? f.ult_texto ?? "");
+      const iaDiceQueNo = f.resp === 0 && (f.analizado_ts || 0) >= (f.ult_ts || 0);
+      if (!(iaDiceQueNo || (RE_ACUSE.test(txt) && txt.length < 80 && !/\?/.test(txt)))) continue;
+    }
+    // Toques = días distintos en que le escribimos después de la cotización (o de su última respuesta)
+    const base = Math.max(cot, ultCli?.ts || 0);
+    const dias = new Set(ms.filter((m) => m.yo && m.ts > base + 3 * 3600e3).map((m) => diaAR(m.ts)));
+    if ((f.seg_visto || 0) > base) dias.add(diaAR(f.seg_visto));       // "Listo" en el panel o en Telegram cuenta como toque
+    const toques = dias.size;
+    if (toques >= SEG.esperas.length) continue;                       // ya le escribimos 4 veces sin respuesta: frío
+    const movida = Math.max(f.ult_yo_ts || 0, f.ult_cliente_ts || 0, f.seg_visto || 0, ult?.ts || 0);
+    const diasSin = (ahora - movida) / 86400e3;
+    if (diasSin < SEG.esperas[toques]) continue;
+    const reaccion = ultCli ? `dijo "${String(ultCli.texto || "").replace(/\s+/g, " ").trim().slice(0, 40)}"` : "no respondió";
+    lista.push({ conv: f.conv, nombre: f.nombre, perfil: f.perfil, presup_usd: f.presup_usd, producto: f.producto || cotTxt.get(f.conv) || "", etapa: f.etapa, puntaje: f.puntaje,
+      ult_yo_ts: f.ult_yo_ts, seg_visto: f.seg_visto, ult_texto: f.ult_texto, ult_ts: f.ult_ts || movida, cot_ts: cot, cot_dato: cotTxt.get(f.conv) || "",
+      dias_cot: Math.floor((ahora - cot) / 86400e3), dias_sin: Math.floor(diasSin), toque: toques + 1, reaccion, pri: PRI_PERFIL[f.perfil] ?? 2 });
   }
-  return lista.sort((a, b) => a.pri - b.pri || (b.presup_usd || 0) - (a.presup_usd || 0)).slice(0, 40);
+  // Sin repetidos: el mismo número (aunque venga con otro formato) queda una sola vez, el de la cotización más nueva
+  const unicos = new Map();
+  for (const x of lista) { const k = ultimos10(x.conv) || x.conv, y = unicos.get(k); if (!y || x.cot_ts > y.cot_ts) unicos.set(k, x); }
+  return [...unicos.values()].sort((a, b) => a.pri - b.pri || (b.presup_usd || 0) - (a.presup_usd || 0) || b.cot_ts - a.cot_ts);
+}
+const claveSegIA = (ts = Date.now()) => "seg_ia:" + diaAR(ts);
+async function cacheSegIA(env) { try { return JSON.parse((await kvGet(env, claveSegIA())) || "{}"); } catch { return {}; } }
+const firmaSeg = (s) => `${s.cot_ts}:${s.ult_ts}`;
+// Lista sin IA nueva (usa lo que la IA ya revisó hoy): para contar, el reporte y el agente
+export async function seguimientos(env) {
+  const [l, cache] = await Promise.all([candidatosSeguimiento(env), cacheSegIA(env)]);
+  return l.filter((s) => { const c = cache[s.conv]; return !(c && c.f === firmaSeg(s) && c.seguir === false); }).map((s) => conDetalle(s, cache[s.conv]));
+}
+function conDetalle(s, c) {
+  const ok = c && c.f === firmaSeg(s);
+  return { ...s, producto: (ok && c.producto) || s.producto, cantidad: (ok && c.cantidad) || "", total: (ok && c.total) || "", borrador: (ok && c.mensaje) || "", revisado: !!ok };
+}
+// Una línea corta y útil: a quién, qué le cotizamos (cantidad y monto), cuándo y qué contestó
+export function lineaSeguimiento(s) {
+  const que = [s.cantidad, s.producto].filter(Boolean).join(" ") || "lo que pidió";
+  return `${s.nombre || "+" + s.conv} (+${s.conv}): le cotizamos ${que}${s.total ? " · " + s.total : ""} · cotizado hace ${s.dias_cot} d → ${s.reaccion}${s.toque > 1 ? ` (ya le escribimos ${s.toque - 1} ${s.toque === 2 ? "vez" : "veces"})` : ""}`;
+}
+// Revisa con IA los que faltan hoy y devuelve los que de verdad hay que seguir (con producto, cantidad, monto y mensaje)
+export async function revisarSeguimientos(env, iaJSON, { limite = 10 } = {}) {
+  const lista = await candidatosSeguimiento(env), k = claveSegIA(), cache = await cacheSegIA(env);
+  const faltan = lista.filter((s) => cache[s.conv]?.f !== firmaSeg(s)).slice(0, SEG.revisarPorDia);
+  if (faltan.length && iaJSON) {
+    for (let i = 0; i < faltan.length; i += SEG.porLlamada) {
+      const tanda = faltan.slice(i, i + SEG.porLlamada);
+      const charlas = await Promise.all(tanda.map((s) => env.DB.prepare("SELECT yo, texto, ts FROM w_msg WHERE conv=? AND COALESCE(texto,'')<>'' ORDER BY ts DESC LIMIT 16").bind(s.conv).all().then((r) => (r.results || []).reverse()).catch(() => [])));
+      const r = await iaJSON(env, `Atendés el WhatsApp de "Te Importamos" (importaciones por encargo de China a Argentina, para revendedores y negocios). A estos clientes les mandamos una cotización y dejaron de contestar (o solo dijeron "gracias", "lo veo"). Ahora es ${fechaHora(Date.now())} (hora Argentina).
+Para cada uno decidí si HOY hay que escribirle y, si sí, escribí el mensaje para que el dueño lo revise y lo mande él.
+"seguir": false si en la charla se ve que NO hace falta: ya compró o pagó, dijo que no o que lo deja, pidió que le escribamos en una fecha que todavía no llegó, quedó en escribirnos él en un plazo que todavía no pasó, el tema ya se resolvió, en realidad nunca le pasamos un precio (no hubo cotización), o no es un cliente (proveedor, conocido, socio). Ante la duda con un cliente cotizado que no contestó, true.
+"producto", "cantidad" y "total": lo que le COTIZAMOS según la charla (ej. "zapatillas Vans", "20 pares", "USD 640 total" o "USD 32 c/u"). Si no se ve, "".
+Reglas del mensaje:
+- Rioplatense, con voseo, cercano y corto (2 a 4 líneas), sin emojis, como lo escribiría una persona por WhatsApp. Sin "seguimiento", sin "estimado", sin "le escribo para".
+- Nombrá el producto que pidió y terminá con UNA pregunta concreta y fácil de contestar.
+- Según los días desde la cotización: 1-2 días → preguntá si le quedó alguna duda o si quiere ajustar cantidad; 3-6 días → sumá valor con algo real de la charla (tiempos, cómo es el proceso, que nos encargamos de todo, la ganancia si revende) y proponé el siguiente paso; 7 días o más → mensaje de cierre amable ("¿lo dejamos para más adelante o lo seguimos viendo?"), que suele reactivar.
+- Si ya le escribimos antes sin respuesta, no repitas lo mismo: traé algo nuevo.
+- Si en la charla dijo una objeción (caro, mínimo, plazo, desconfianza), respondela sin bajar el precio.
+- Nunca inventes precios, stock, descuentos ni fechas que no estén en la charla.
+CLIENTES:
+${tanda.map((s, j) => `#${j + 1} ${s.nombre || "sin nombre"} · producto: ${s.producto || "?"} · cotizado hace ${s.dias_cot} días · ${s.reaccion} · toque ${s.toque}${s.presup_usd ? " · aprox USD " + s.presup_usd : ""}${s.cot_dato ? " · cotización: " + String(s.cot_dato).replace(/\s+/g, " ").slice(0, 160) : ""}
+${charlas[j].map((m) => (m.yo ? "Nosotros: " : "Cliente: ") + String(m.texto).replace(/\s+/g, " ").slice(0, 300)).join("\n") || "(sin mensajes guardados)"}`).join("\n\n")}
+Respondé SOLO JSON: {"mensajes":[{"n":1,"seguir":true,"motivo":"si seguir es false, por qué en pocas palabras","producto":"","cantidad":"","total":"","mensaje":"..."}]}`).catch(() => null);
+      for (const x of Array.isArray(r?.mensajes) ? r.mensajes : []) {
+        const s = tanda[(parseInt(x?.n) || 0) - 1]; if (!s) continue;
+        cache[s.conv] = { f: firmaSeg(s), seguir: x.seguir !== false, motivo: String(x.motivo || "").slice(0, 120), producto: String(x.producto || "").slice(0, 60), cantidad: String(x.cantidad || "").slice(0, 40), total: String(x.total || "").slice(0, 50), mensaje: String(x.mensaje || "").trim().slice(0, 700) };
+      }
+    }
+    await env.DB.prepare("DELETE FROM kv WHERE k LIKE 'seg_ia:%' AND k<>?").bind(k).run().catch(() => {});
+    await kvPut(env, k, JSON.stringify(cache));
+  }
+  const ok = lista.filter((s) => !(cache[s.conv]?.f === firmaSeg(s) && cache[s.conv].seguir === false)).map((s) => conDetalle(s, cache[s.conv]));
+  return limite ? ok.slice(0, limite) : ok;
 }
 
 // Chats, cotizados y ventas por perfil, de dónde vienen y por qué se pierden
@@ -909,6 +1041,16 @@ export async function preguntarVendedor(env, iaJSON, pregunta, opts = {}) {
     await env.DB.batch([env.DB.prepare("DELETE FROM ag_mem"), env.DB.prepare("DELETE FROM ag_chat")]);
     return { respuesta: "Listo, borré la memoria y la charla. Arrancamos de cero." };
   }
+  // "¿A quién le hago seguimiento?" se contesta con la lista verificada por código (nada de nombres inventados)
+  if (RE_PREG_SEG.test(normalQ(q)) && !/\b(por que|porque|analiz|estrategia|opin)/.test(normalQ(q))) {
+    const l = await revisarSeguimientos(env, iaJSON, { limite: 15 });
+    const pideMsj = /mensaj|texto|que (le )?(escrib|mand|dig)/.test(normalQ(q));
+    const respuesta = l.length
+      ? `Cotizados que hay que seguir hoy (${l.length}), primero los que más valen:\n` + l.map((x, i) => `${i + 1}. ${lineaSeguimiento(x)}${pideMsj && x.borrador ? "\n   Mensaje: " + x.borrador : ""}`).join("\n") + `\n\nSolo entran los que tienen una cotización nuestra en el chat y no compraron, no los que todavía esperan respuesta nuestra (esos están en Responder ya o Pendientes).${pideMsj ? "" : " Los mensajes listos para mandar están en Hoy › Seguimientos o escribiendo \"seguimientos\" en Telegram."}`
+      : "Hoy no hay cotizados para seguir: los que cotizamos ya contestaron, compraron, les escribimos hace poco o todavía no les toca.";
+    await env.DB.batch([env.DB.prepare("INSERT INTO ag_chat (ts, rol, texto) VALUES (?,?,?)").bind(ahora, "u", q), env.DB.prepare("INSERT INTO ag_chat (ts, rol, texto) VALUES (?,?,?)").bind(ahora + 1, "a", respuesta)]);
+    return { respuesta, fuentes: { seguimientos: l.length } };
+  }
   const [mHoy, m7, m30, p7, p30, segs, objs, mem, charla, m7ant] = await Promise.all([
     metricas(env, hoy), metricas(env, hoy - 6 * 86400e3), metricas(env, hoy - 29 * 86400e3),
     metricasPerfil(env, hoy - 6 * 86400e3), metricasPerfil(env, hoy - 29 * 86400e3),
@@ -933,8 +1075,8 @@ ${mem.map((n) => `- [${fechaHora(n.ts)}] (${n.tipo}) ${n.texto}`).join("\n") || 
 OBJETIVOS ACTIVOS Y AVANCE (medidos por el código): ${JSON.stringify(objs.map((o) => ({ metrica: o.metrica, periodo: o.periodo, meta: o.meta, actual: o.actual, pct: o.pct })))}
 METRICAS EXACTAS · hoy: ${JSON.stringify(mHoy)} · 7 dias: ${JSON.stringify(m7)} · los 7 dias anteriores (para comparar): ${JSON.stringify(m7ant)} · 30 dias: ${JSON.stringify(m30)}
 POR PERFIL (A Mercado Libre/con presupuesto, B negocio, C revendedor chico, D consumidor final, E curioso) · 7 dias: ${JSON.stringify(p7)} · 30 dias: ${JSON.stringify(p30)}
-SEGUIMIENTOS PENDIENTES HOY (cotizados que no respondieron, ordenados por prioridad):
-${segs.slice(0, 25).map((s) => `- ${s.nombre || "sin nombre"} (+${s.conv}) · perfil ${s.perfil || "?"} · ${s.producto || "-"}${s.presup_usd ? " · aprox USD " + s.presup_usd : ""} · cotizado hace ${s.dias_cot} d · sin escribirle hace ${s.dias_sin} d · nuestro último mensaje: "${String(s.ult_texto || "").slice(0, 100)}"`).join("\n") || "ninguno"}
+SEGUIMIENTOS PENDIENTES HOY (verificados por código: SOLO clientes con una cotización nuestra en el chat que no compraron; es la ÚNICA lista válida de cotizados para seguir):
+${segs.slice(0, 25).map((s) => `- ${lineaSeguimiento(s)} · perfil ${s.perfil || "?"}`).join("\n") || "ninguno"}
 CHATS DE LOS ULTIMOS 14 DIAS (primero A y B):
 ${chats.map(fChat).join("\n").slice(0, 30000)}
 ${opts.redes || ""}
@@ -955,6 +1097,8 @@ Reglas:
 - Directo, español rioplatense con voseo, sin emojis, sin guiones largos. Primero la respuesta, después lo accionable. Cuando nombres un cliente, poné nombre y número (+549...).
 - Si pregunta por qué no vendimos o qué hicimos mal: analizalo con los datos (perfil de los chats, seguimientos pendientes, cotizaciones sin respuesta, tiempo de respuesta, motivos de pérdida, de dónde vienen) y cerrá con 3 acciones concretas.
 - No agregues mensajes para clientes si Manuel no los pidió en este mensaje. Si Manuel dice que un cliente ya está atendido o resuelto, no lo vuelvas a mencionar y guardalo en "guardar" como nota de tipo cliente.
+- Cotizados para seguir: nombrá SOLO a los de SEGUIMIENTOS PENDIENTES, nunca saques nombres de la lista de chats (que la IA marque "cotizado" no alcanza: tiene que haber una cotización nuestra). Formato corto: "Nombre (+549...): le cotizamos X por N, USD Y, hace D días → no respondió / dijo gracias".
+- Ventas: contá SOLO las de las MÉTRICAS EXACTAS. Pagar el envío, el flete o el saldo de una compra ya hecha NO es una venta nueva.
 - Si pide mensajes de seguimiento: escribí uno por cliente, corto (2 a 4 líneas), cercano, sin emojis, sin decir "tenemos stock" y sin inventar precios. Son para que Manuel los copie: nunca se mandan solos.
 - Objetivos: si te pide que los propongas, usá los últimos 30 días como base y proponé subir entre 20% y 50%, no más. Métricas posibles: ${METRICAS_OBJ.join(", ")}. Periodo: dia, semana o mes. Ponelos en "objetivos" SOLO si Manuel pidió explícitamente dejarlos, fijarlos o confirmarlos (puede ser confirmando algo que propusiste antes en la charla). Si solo pidió una propuesta, mostralos en el texto, devolvé "objetivos":[] y preguntá si los dejás.
 - Si algo del panel no aporta para vender, decíselo.

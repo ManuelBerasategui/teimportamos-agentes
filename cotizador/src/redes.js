@@ -103,6 +103,39 @@ export function statsFormatos(posts) {
 async function posts(env, dias) {
   return (await env.DB.prepare("SELECT id, ts, tipo, media, en_feed, link, portada, texto, formato, gancho, alcance, vistas, guardados, compartidos, comentarios, likes, seguidores, tiempo_ms FROM ig_posts WHERE ts > ? ORDER BY ts DESC LIMIT 400").bind(Date.now() - dias * 86400e3).all()).results || [];
 }
+// ---------- TikTok: resumen de la cuenta para Redes › Inicio ----------
+// Los datos los trae el worker "buscador" (Apify) cada 2 días a las 6, o cuando se toca "Actualizar TikTok".
+// Las vistas de TikTok se acumulan en cada video: "vistas 7 días" = vistas de los videos subidos en los últimos 7 días.
+export async function resumenTikTok(env, ahora = Date.now()) {
+  const todas = async (sql, ...b) => ((await env.DB.prepare(sql).bind(...b).all().catch(() => ({ results: [] }))).results || []);
+  const D = 86400e3;
+  const tt = await todas("SELECT id, ts, link, texto, duracion, vistas, likes, comentarios, compartidos, guardados, seguidores, actualizado FROM tt_posts WHERE ts>? ORDER BY ts DESC LIMIT 300", ahora - 60 * D);
+  const cuentas = await todas("SELECT dia, ts, seguidores, likes_total, videos_total FROM tt_cuenta ORDER BY dia DESC LIMIT 40");
+  const leer = async (k) => { try { return JSON.parse((await kvGet(env, k)) || "null"); } catch { return null; } };
+  const [ultimo, aviso, run, pedido] = await Promise.all([leer("tt_ultimo"), leer("tt_aviso"), leer("tt_run"), kvGet(env, "tt_forzar").catch(() => null)]);
+  const cta = cuentas[0] || null;
+  const segHoy = cta?.seguidores ?? (tt.length ? Math.max(...tt.map((p) => p.seguidores || 0)) || null : null);
+  const antes = cuentas.find((c) => cta && c.ts <= cta.ts - 6.5 * D) || null;
+  const v7 = tt.filter((p) => p.ts > ahora - 7 * D), v7ant = tt.filter((p) => p.ts <= ahora - 7 * D && p.ts > ahora - 14 * D);
+  const suma = (l, k) => l.reduce((s, p) => s + (p[k] || 0), 0);
+  const inter = (l) => { const v = suma(l, "vistas"); return v ? Math.round(((suma(l, "likes") + suma(l, "comentarios") + suma(l, "compartidos") + suma(l, "guardados")) / v) * 1000) / 10 : null; };
+  const med = mediana(tt.map((p) => p.vistas)) || null;
+  const rel = (v) => (v == null || !med ? null : Math.round((v / med) * 10) / 10);
+  const base = v7.length ? v7 : tt.slice(0, 10);
+  return {
+    hay_datos: tt.length > 0, usuario: env.TIKTOK_USUARIO || "te.importamos.arg",
+    seguidores: segHoy, seguidores_cambio: cta && antes ? cta.seguidores - antes.seguidores : null, likes_total: cta?.likes_total || null,
+    videos7: v7.length, videos7_ant: v7ant.length,
+    vistas7: v7.length ? suma(v7, "vistas") : null, vistas7_cambio: v7.length && v7ant.length ? pct(suma(v7, "vistas"), suma(v7ant, "vistas")) : null,
+    interaccion: inter(base), interaccion_de: v7.length ? "videos de esta semana" : "últimos 10 videos",
+    compartidos7: v7.length ? suma(v7, "compartidos") : null, guardados7: v7.length ? suma(v7, "guardados") : null,
+    mediana60: med, n60: tt.length,
+    mejor7: [...v7].sort((a, b) => (b.vistas || 0) - (a.vistas || 0))[0] || null,
+    ultimos: tt.slice(0, 8).map((p) => ({ ts: p.ts, link: p.link, texto: String(p.texto || "").replace(/#\S+/g, "").trim().slice(0, 120), vistas: p.vistas, likes: p.likes, comentarios: p.comentarios, compartidos: p.compartidos, guardados: p.guardados, rel: rel(p.vistas) })),
+    estado: { ultimo, aviso: aviso && (!ultimo?.ts || aviso.ts >= ultimo.ts) ? aviso : null, leyendo: !!run, pedido: !!pedido },
+  };
+}
+
 // ---------- Instagram vs TikTok ----------
 // Cada red se mide contra lo normal de esa red (su mediana): 50 mil en TikTok no vale lo mismo que 50 mil en Instagram.
 // El mismo video en las dos redes se empareja por fecha (hasta 4 días) y por el texto del posteo.
@@ -759,6 +792,15 @@ export async function apiRedes(env, req, url, quien, iaJSON, base = "", T = null
     const dias = Math.min(365, Math.max(7, +url.searchParams.get("dias") || 60));
     return json((await posts(env, dias)).map((p) => ({ ...p, texto: String(p.texto || "").slice(0, 120) })));
   }
+  if (r === "tiktok") return json(await resumenTikTok(env));
+  if (r === "tiktok-actualizar" && req.method === "POST") {
+    // No se puede forzar más de una vez cada 6 h (cada lectura gasta del tope de Apify)
+    let u = null; try { u = JSON.parse((await kvGet(env, "tt_ultimo")) || "null"); } catch {}
+    const espera = u?.ts && u.estado !== "ERROR" ? Math.ceil((u.ts + 6 * 3600e3 - Date.now()) / 60000) : 0;
+    if (espera > 0) return json({ ok: false, error: `Ya se leyó hace poco. Probá de nuevo en ${espera >= 60 ? Math.round(espera / 60) + " h" : espera + " min"}.` });
+    await kvPut(env, "tt_forzar", Date.now());
+    return json({ ok: true, texto: "Pedido. En 2 a 5 minutos se empieza a leer y en unos 10 minutos están los números." });
+  }
   if (r === "cruce") return json(await cruceRedes(env, Math.min(365, Math.max(7, +url.searchParams.get("dias") || 60))));
   if (r === "post-formato" && req.method === "POST") {
     if (!FORMATOS[body.formato]) return json({ error: "formato inválido" }, 400);
@@ -881,6 +923,7 @@ select{padding:5px 6px;border:1px solid var(--borde);border-radius:6px;font-size
   .aviso{bottom:calc(84px + env(safe-area-inset-bottom))}
   .clip{grid-template-columns:1fr}.clip .fila{justify-content:flex-start}
 }
+.red-tit{font-size:13px;margin:2px 0 8px;color:#6B7280;font-weight:700;text-transform:uppercase;letter-spacing:.04em}.red-ig,.red-tt{display:inline-flex;align-items:center;gap:6px}.red-ig::before,.red-tt::before{content:"";width:9px;height:9px;border-radius:50%;background:#C13584}.red-tt::before{background:#111827;box-shadow:2px 0 0 #25F4EE,-2px 0 0 #FE2C55}#ttKpis{margin:10px 0 4px}#ttKpis .kpi{background:#F9FAFB}.ttv{display:grid;grid-template-columns:1fr auto;gap:2px 12px;padding:9px 10px;border:1px solid #EEF0F2;border-radius:10px;margin:6px 0;color:inherit;text-decoration:none;font-size:13px}.ttv b{font-size:15px}.ttv .m{grid-column:1/-1;color:#6B7280;font-size:12.5px}.ttv .x{text-align:right;white-space:nowrap}
 .cruce2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:6px}.top1{display:block;padding:8px 10px;border:1px solid #EEF0F2;border-radius:10px;margin:6px 0;color:inherit;text-decoration:none;font-size:13px}.top1 span{display:block;color:#6B7280;font-size:12.5px;margin-top:2px}.sub3{font-size:13.5px;margin:14px 0 6px}#fCruce{margin:4px 0 8px}#fCruce .on{background:#111827;color:#fff}@media (max-width:760px){.cruce2{grid-template-columns:1fr}#cruce table,#cruce tbody,#cruce tr,#cruce td{display:block;width:auto}#cruce tr:first-child{display:none}#cruce tr{border-bottom:1px solid #EEF0F2;padding:8px 0}#cruce td{border:0;padding:2px 4px;text-align:left!important}#cruce td[data-l]::before{content:attr(data-l) ": ";color:#6B7280}}
 </style></head><body>
 <header><a class="volver" href="/panel" aria-label="Volver al panel"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 18l-6-6 6-6"/></svg><span>Panel</span></a><b>Te Importamos · <span>Redes</span></b><span class="sync" id="sync"></span></header>
@@ -891,7 +934,13 @@ select{padding:5px 6px;border:1px solid var(--borde);border-radius:6px;font-size
 
 <div id="m-resumen">
   <div class="nota" id="sinDatos" style="display:none">Todavía no hay datos guardados. El agente de Instagram los trae solo cada 2 horas, o tocá <b>Traer datos ahora</b>.</div>
+  <h3 class="red-tit"><span class="red-ig">Instagram</span></h3>
   <div class="kpis" id="kpis"></div>
+  <section class="card" id="ttCard"><div class="fila" style="justify-content:space-between"><h2><span class="red-tt">TikTok</span> <a class="estado" id="ttUser" target="_blank" rel="noopener" href="https://www.tiktok.com/@te.importamos.arg">@te.importamos.arg</a></h2><span class="fila acciones"><span class="estado" id="ttSync"></span><button class="btn" id="bTT"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16M20 20v-4h-4"/></svg>Actualizar TikTok</button></span></div>
+    <div class="nota" id="ttAviso" style="display:none"></div>
+    <div class="kpis" id="ttKpis"></div>
+    <h3 class="sub3">Últimos videos <span class="estado">x2 = el doble de lo normal en tu TikTok</span></h3>
+    <div id="ttVideos"><div class="vacio">Cargando...</div></div></section>
   <section class="card"><div class="fila" style="justify-content:space-between"><h2>Reporte semanal <span class="estado" id="repFecha"></span></h2><span class="fila acciones"><button class="btn" id="bTraer"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16M20 20v-4h-4"/></svg>Traer datos ahora</button><button class="btn p" id="bReporte"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M9 13h6M9 17h6"/></svg>Generar reporte</button></span></div>
     <div id="reporte" class="vacio">Sale solo los lunes a las 9 y te llega por Telegram.</div></section>
     <section class="card"><div class="fila" style="justify-content:space-between"><h2>Constancia <span class="estado">lo que marcaste como grabado o subido</span></h2><span class="fila"><button class="btn" id="calAnt">&lt;</button><b id="calMes"></b><button class="btn" id="calSig">&gt;</button></span></div><div class="cal" id="cal"></div></section>
@@ -920,6 +969,8 @@ https://www.instagram.com/reel/abc"></textarea><p class="pq">Acá la IA no mira 
   <div class="nota" id="dmErr" style="display:none"></div>
   <section class="card"><div class="fila" style="justify-content:space-between"><h2>DMs sin responder <span class="estado" id="dmTs"></span></h2><button class="btn" id="bDmAct"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 0 0-14.3-4.9L4 8M4 4v4h4M4 13a8 8 0 0 0 14.3 4.9L20 16M20 20v-4h-4"/></svg>Actualizar</button></div>
   <div id="dms"><div class="vacio">Cargando...</div></div></section>
+  <section class="card"><div class="fila" style="justify-content:space-between"><h2><span class="red-tt">Mensajes de TikTok</span></h2><a class="btn p" target="_blank" rel="noopener" href="https://www.tiktok.com/messages">Abrir bandeja de TikTok</a></div>
+  <p class="estado" style="margin-top:0">Los DMs de TikTok todavía no entran al panel: TikTok solo los da por su API de mensajes para empresas, que hay que pedir aparte (cuenta de empresa + app aprobada). Mientras tanto, para que las <b>solicitudes</b> no queden escondidas: en la app, Perfil › ☰ › Configuración y privacidad › Privacidad › Mensajes directos › <b>Todos</b>. Así entran directo a la bandeja en vez de a "Solicitudes".</p></section>
 </div>
 
 <div id="m-videos" style="display:none">
@@ -985,7 +1036,7 @@ function modo(m) {
 document.querySelectorAll("#modos-main button").forEach(function (b) { b.onclick = function () { modo(b.dataset.view); }; });
 document.querySelectorAll("#modos-sub button").forEach(function (b) { b.onclick = function () { modo(b.dataset.sub); }; });
 
-function cargarResumen() {   cargarCal();
+function cargarResumen() {   cargarCal(); cargarTikTok();
   api("resumen").then(function (r) {
     var k = r.kpis || {};
     $("#sinDatos").style.display = r.hay_datos ? "none" : "";
@@ -999,6 +1050,21 @@ function cargarResumen() {   cargarCal();
       return '<tr><td class="t1">' + esc(FORMATOS[x.formato] || x.nombre) + '</td><td class="n" data-l="Reels">' + x.reels + '</td><td class="n" data-l="Alcance mediano"><b>' + num(x.alcance_mediano) + '</b></td><td class="n" data-l="Mejor">' + num(x.mejor) + '</td><td class="n" data-l="Tiempo visto">' + (x.tiempo_s ? Math.round(x.tiempo_s) + " s" : "-") + '</td><td class="n" data-l="Guardados ‰">' + (x.guardados_mil == null ? "-" : x.guardados_mil) + "</td></tr>"; }).join("") + "</table>" : '<div class="vacio">Sin reels guardados todavía.</div>';
   }).catch(function () {});
 }
+function cargarTikTok() {
+  api("tiktok").then(function (t) {
+    var e = t.estado || {}, u = e.ultimo;
+    $("#ttUser").textContent = "@" + (t.usuario || "te.importamos.arg"); $("#ttUser").href = "https://www.tiktok.com/@" + (t.usuario || "te.importamos.arg");
+    $("#ttSync").textContent = e.leyendo ? "Leyendo ahora…" : e.pedido ? "Pedido, arranca en minutos" : u && u.ts ? "Actualizado " + hace(u.ts) : "";
+    var av = e.aviso ? e.aviso.texto : (!t.hay_datos && !e.leyendo && !e.pedido ? "Todavía no hay datos de TikTok. Se leen solos cada 2 días a las 6, o tocá Actualizar TikTok." : "");
+    $("#ttAviso").style.display = av ? "" : "none"; $("#ttAviso").textContent = String(av || "").replace(/^TikTok:\s*/, "");
+    var seg = t.seguidores_cambio == null ? (t.likes_total ? "<i>" + num(t.likes_total) + " likes en total</i>" : "") : '<i class="' + (t.seguidores_cambio >= 0 ? "sube" : "baja") + '">' + (t.seguidores_cambio >= 0 ? "+" : "") + num(t.seguidores_cambio) + " en 7 días</i>";
+    $("#ttKpis").innerHTML = !t.hay_datos ? "" : [["Vistas de los videos de esta semana", num(t.vistas7), t.vistas7 == null ? "<i>no subiste videos en 7 días</i>" : cambio(t.vistas7_cambio)], ["Seguidores", num(t.seguidores), seg],
+      ["Videos subidos 7 días", num(t.videos7), "<i>" + num(t.videos7_ant) + " la semana anterior</i>"], ["Interacción", t.interaccion == null ? "-" : String(t.interaccion).replace(".", ",") + "%", "<i>likes, coment., compart. y guardados / vistas · " + esc(t.interaccion_de) + "</i>"]].map(function (x) { return '<div class="kpi"><small>' + x[0] + "</small><b>" + x[1] + "</b>" + x[2] + "</div>"; }).join("");
+    var l = t.ultimos || [];
+    $("#ttVideos").innerHTML = l.length ? l.map(function (v) { return '<a class="ttv" target="_blank" rel="noopener" href="' + esc(v.link) + '"><span>' + esc(v.texto || "(sin texto)") + '</span><span class="x"><b>' + num(v.vistas) + "</b> vistas " + xN(v.rel) + '</span><span class="m">' + fecha(v.ts) + " · " + num(v.likes) + " likes · " + num(v.comentarios) + " coment. · " + num(v.compartidos) + " compart. · " + num(v.guardados) + " guardados</span></a>"; }).join("") + '<div class="estado" style="margin-top:6px">Lo normal: ' + num(t.mediana60) + " vistas por video (" + t.n60 + " videos de 60 días). La comparación con Instagram está en Contenido › Rendimiento.</div>" : '<div class="vacio">Sin videos de TikTok guardados todavía.</div>';
+  }).catch(function () { $("#ttVideos").innerHTML = '<div class="vacio">No se pudo cargar TikTok.</div>'; });
+}
+$("#bTT").onclick = function () { var b = this; b.disabled = true; api("tiktok-actualizar", {}).then(function (r) { b.disabled = false; aviso(r.ok ? r.texto : r.error); cargarTikTok(); }).catch(function () { b.disabled = false; }); };
 function badge(s, n) { var b = $(s); b.style.display = n ? "" : "none"; b.textContent = n || ""; }
 $("#bReporte").onclick = function () { var b = this; b.disabled = true; b.lastChild.textContent = "Generando..."; api("reporte", { telegram: confirm("¿Mandarlo también por Telegram?") }).then(function (r) { b.disabled = false; b.lastChild.textContent = "Generar reporte"; if (!r.ok) return aviso(r.error || "No se pudo"); cargarResumen(); aviso("Reporte listo"); }); };
 $("#bTraer").onclick = function () { var b = this; b.disabled = true; b.lastChild.textContent = "Trayendo..."; api("actualizar", { todo: true }).then(function (r) { b.disabled = false; b.lastChild.textContent = "Traer datos ahora"; aviso(r.ok ? "Listo: " + ((r.posts && r.posts.guardadas) || 0) + " publicaciones actualizadas" : "No se pudo: " + r.error); cargarResumen(); }); };

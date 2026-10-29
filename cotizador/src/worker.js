@@ -3200,8 +3200,9 @@ function pintarHacer() {
   if (HACER === "sin") { WA_LISTA = "sin"; pintarListaWA(); }
   if (HACER === "seg") $("#waTabla").innerHTML = SEGS === null ? '<tr><td class="vacio">Escribiendo los mensajes de seguimiento…</td></tr>' : SEGS.length ? SEGS.map(function (c) {
     var url = "https://wa.me/" + c.conv + (c.borrador ? "?text=" + encodeURIComponent(c.borrador) : "");
-    var info = (c.perfil ? "Perfil " + c.perfil + " · " : "") + (c.presup_usd ? "aprox USD " + c.presup_usd + " · " : "") + "sin escribirle hace " + c.dias_sin + " d";
-    return '<tr data-wc="' + esc(c.conv) + '"><td class="wn"><b>' + esc(c.nombre || "+" + c.conv) + "</b><small>" + esc(c.conv) + '</small></td><td class="wp">' + esc(c.producto || "") + '</td><td class="wa">' + esc(info) + (c.borrador ? '<span class="borr">' + esc(c.borrador) + "</span>" : "") + '</td><td class="wh">cotizado hace ' + c.dias_cot + ' d<a class="wa-btn" target="_blank" href="' + url + '">📲 Abrir WhatsApp</a><button class="wlisto" data-segl="' + esc(c.conv) + '">Listo</button></td></tr>';
+    var que = [c.cantidad, c.producto].filter(Boolean).join(" ") || "lo que pidió";
+    var info = "Le cotizamos " + que + (c.total ? " · " + c.total : "") + " → " + (c.reaccion || "no respondió") + (c.toque > 1 ? " · ya le escribimos " + (c.toque - 1) + (c.toque === 2 ? " vez" : " veces") : "") + (c.perfil ? " · perfil " + c.perfil : "");
+    return '<tr data-wc="' + esc(c.conv) + '"><td class="wn"><b>' + esc(c.nombre || "+" + c.conv) + "</b><small>" + esc(c.conv) + '</small></td><td class="wp">' + esc(que) + '</td><td class="wa">' + esc(info) + (c.borrador ? '<span class="borr">' + esc(c.borrador) + "</span>" : "") + '</td><td class="wh">cotizado hace ' + c.dias_cot + ' d<a class="wa-btn" target="_blank" href="' + url + '">📲 Abrir WhatsApp</a><button class="wlisto" data-segl="' + esc(c.conv) + '" title="Ya le escribí">Listo</button><button class="wlisto" data-segn="' + esc(c.conv) + '" title="No hace falta seguirlo por esta cotización">No seguir</button></td></tr>';
   }).join("") : '<tr><td class="vacio">No hay seguimientos pendientes. 🙌</td></tr>';
   if (HACER === "dms") $("#waTabla").innerHTML = DMS === null ? '<tr><td class="vacio">Cargando…</td></tr>' : DMS.length ? DMS.map(function (d) { return '<tr data-ig="' + esc(d.usuario || "") + '"><td class="wn"><b>@' + esc(d.usuario || "?") + '</b></td><td class="wa">' + esc(d.ult_texto || "") + '</td><td class="wh">' + hace(d.ult_ts) + (d.usuario ? '<a class="wa-btn" style="background:#C13584" target="_blank" href="https://ig.me/m/' + encodeURIComponent(d.usuario) + '">Responder</a>' : "") + "</td></tr>"; }).join("") : '<tr><td class="vacio">No hay DMs sin responder. 🙌</td></tr>';
 }
@@ -3211,6 +3212,7 @@ function cargarHacer() {
 }
 document.addEventListener("click", function (ev) {
   var h = ev.target.closest("[data-hacer]"); if (h) { verHacer(h.dataset.hacer); return; }
+  var sn = ev.target.closest("[data-segn]"); if (sn) { ev.stopPropagation(); sn.disabled = true; fetch("/panel/api/805/seguimiento-no", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conv: sn.dataset.segn }) }).then(function () { SEGS = (SEGS || []).filter(function (c) { return c.conv !== sn.dataset.segn; }); pintarHacer(); }); return; }
   var sl = ev.target.closest("[data-segl]"); if (sl) { ev.stopPropagation(); sl.disabled = true; fetch("/panel/api/805/seguimiento-listo", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ conv: sl.dataset.segl }) }).then(function () { SEGS = (SEGS || []).filter(function (c) { return c.conv !== sl.dataset.segl; }); pintarHacer(); }); return; }
   if (ev.target.closest(".wa-btn")) { ev.stopPropagation(); return; }
   var ig = ev.target.closest("tr[data-ig]"); if (ig) { ev.stopPropagation(); return; }

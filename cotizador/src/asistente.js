@@ -1,4 +1,4 @@
-import { seguimientos } from "./lector.js";
+import { seguimientos, revisarSeguimientos, lineaSeguimiento } from "./lector.js";
 import { preguntarAgente } from "./agente.js";
 import { notionActivo, notionHoy, textoNotion, crearEnNotion, marcarEnNotion, descubrir, diagnosticoNotion, fijarRol, agendaNotion, nivelesNotion } from "./notion.js";
 // Asistente personal por Telegram: le mandás un audio o un texto con todo lo que tenés en la cabeza
@@ -62,8 +62,8 @@ export async function secretoTG(env) {
 const tg = (env, metodo, body) => fetch(`https://api.telegram.org/bot${env.TELEGRAM_TOKEN}/${metodo}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json()).catch(() => null);
 const decir = (env, chat, texto) => env.__captura ? (env.__captura.push(String(texto)), Promise.resolve({ ok: true })) : tg(env, "sendMessage", { chat_id: chat, text: String(texto).slice(0, 4000), disable_web_page_preview: true });
 // Con botones que abren un link (ej. el WhatsApp del cliente con el mensaje ya escrito)
-const decirBotones = (env, chat, texto, botones = []) => env.__captura ? (env.__captura.push(String(texto) + botones.map((b) => `\n[${b.text}](${b.url})`).join("")), Promise.resolve({ ok: true }))
-  : tg(env, "sendMessage", { chat_id: chat, text: String(texto).slice(0, 4000), disable_web_page_preview: true, ...(botones.length ? { reply_markup: { inline_keyboard: botones.map((b) => [b]) } } : {}) });
+const decirBotones = (env, chat, texto, botones = []) => env.__captura ? (env.__captura.push(String(texto) + botones.flat().filter((b) => b.url).map((b) => `\n[${b.text}](${b.url})`).join("")), Promise.resolve({ ok: true }))
+  : tg(env, "sendMessage", { chat_id: chat, text: String(texto).slice(0, 4000), disable_web_page_preview: true, ...(botones.length ? { reply_markup: { inline_keyboard: botones.map((b) => (Array.isArray(b) ? b : [b])) } } : {}) });
 
 // Quién es cada chat: los que conectaron Telegram en el panel (telegram_chat:<nombre>) y el chat de alertas (telegram_chat)
 async function chatsConocidos(env) {
@@ -132,47 +132,34 @@ export async function chatsSinContestar(env, limite = 12) {
 // Van con el mensaje ya escrito por la IA y un botón que abre el WhatsApp del cliente con ese texto: se revisa y se manda.
 // Cuando se le escribe desde el 805, sale solo de la lista. La IA escribe una vez por día por cliente (se guarda).
 async function cuantosSeg(env) { try { return (await seguimientos(env)).length; } catch { return 0; } }
-async function borradoresSeg(env, iaJSON, lista) {
-  const k = "seg_borr:" + hoyAR(), cache = JSON.parse((await kvGet(env, k)) || "{}");
-  const faltan = lista.filter((s) => !cache[s.conv]);
-  if (faltan.length && iaJSON) {
-    const charlas = await Promise.all(faltan.map((s) => filas(env, "SELECT yo, texto FROM w_msg WHERE conv=? AND COALESCE(texto,'')<>'' ORDER BY ts DESC LIMIT 12", s.conv).then((m) => m.reverse())));
-    const r = await iaJSON(env, `Atendés el WhatsApp de "Te Importamos" (importaciones por encargo de China a Argentina, para revendedores y negocios). A estos clientes les mandamos una cotización y dejaron de contestar. Escribí UN mensaje de seguimiento para cada uno, para que el dueño lo revise y lo mande él.
-Reglas:
-- Rioplatense, con voseo, cercano y corto (2 a 4 líneas), sin emojis, como lo escribiría una persona por WhatsApp. Sin "seguimiento", sin "estimado", sin "le escribo para".
-- Nombrá el producto que pidió y terminá con UNA pregunta concreta y fácil de contestar.
-- Según los días desde la cotización: 1-2 días → preguntá si le quedó alguna duda o si quiere ajustar cantidad; 3-6 días → sumá valor con algo real de la charla (tiempos, cómo es el proceso, que nos encargamos de todo, la ganancia si revende) y proponé el siguiente paso; 7 días o más → mensaje de cierre amable ("¿lo dejamos para más adelante o lo seguimos viendo?"), que suele reactivar.
-- Si en la charla dijo una objeción (caro, mínimo, plazo, desconfianza), respondela sin bajar el precio.
-- Nunca inventes precios, stock, descuentos ni fechas que no estén en la charla.
-CLIENTES:
-${faltan.map((s, i) => `#${i + 1} ${s.nombre || "sin nombre"} · producto: ${s.producto || "?"} · cotizado hace ${s.dias_cot} días · sin escribirle hace ${s.dias_sin} días${s.presup_usd ? " · aprox USD " + s.presup_usd : ""}
-${charlas[i].map((m) => (m.yo ? "Nosotros: " : "Cliente: ") + String(m.texto).replace(/\s+/g, " ").slice(0, 300)).join("\n") || "(sin mensajes guardados)"}`).join("\n\n")}
-Respondé SOLO JSON: {"mensajes":[{"n":1,"mensaje":"..."}]}`);
-    for (const x of Array.isArray(r?.mensajes) ? r.mensajes : []) { const s = faltan[(parseInt(x?.n) || 0) - 1]; if (s && String(x.mensaje || "").trim()) cache[s.conv] = String(x.mensaje).trim().slice(0, 700); }
-    await env.DB.prepare("DELETE FROM kv WHERE k LIKE 'seg_borr:%' AND k<>?").bind(k).run().catch(() => {});
-    await kvPut(env, k, JSON.stringify(cache));
-  }
-  return cache;
-}
 export async function seguimientosHoy(env, iaJSON, limite = 10) {
-  let l = []; try { l = await seguimientos(env); } catch {}
+  let l = []; try { l = await revisarSeguimientos(env, iaJSON, { limite: 0 }); } catch (e) { console.log("seguimientos", e?.stack || e); }
   if (!l.length) return [];
-  const top = l.slice(0, limite), borr = await borradoresSeg(env, iaJSON, top), partes = [];
+  const top = l.slice(0, limite), partes = [];
   for (let i = 0; i < top.length; i += 5) {
     const g = top.slice(i, i + 5).map((s, j) => ({ ...s, n: i + j + 1 }));
-    const cab = i ? "" : `📌 Seguimientos de hoy: ${l.length}${l.length > top.length ? ` (acá los ${top.length} que más valen)` : ""}. Tocá el botón: se abre el WhatsApp con el mensaje escrito, lo revisás y lo mandás. Cuando le escribís, sale solo de la lista.\n`;
+    const cab = i ? "" : `📌 Seguimientos de hoy: ${l.length}${l.length > top.length ? ` (acá los ${top.length} que más valen)` : ""}. Solo cotizados que no compraron. 📲 abre el WhatsApp con el mensaje escrito; ✅ si ya le escribiste; 🚫 si no hay que seguirlo.\n`;
     partes.push({
-      texto: cab + g.map((s) => `\n${s.n}. ${s.nombre || "+" + s.conv}${s.perfil ? " · perfil " + s.perfil : ""} · ${s.producto || "-"}${s.presup_usd ? " · aprox USD " + s.presup_usd : ""} · cotizado hace ${s.dias_cot} d\n${borr[s.conv] ? "✍️ " + borr[s.conv] : "(no pude armar el mensaje: escribile vos)"}`).join("\n"),
-      botones: g.filter((s) => /^\d{8,}$/.test(s.conv)).map((s) => ({ text: `📲 ${s.n}. ${(s.nombre || "+" + s.conv).slice(0, 30)}`, url: `https://wa.me/${s.conv}${borr[s.conv] ? "?text=" + encodeURIComponent(borr[s.conv]) : ""}` })),
+      texto: cab + g.map((s) => `\n${s.n}. ${lineaSeguimiento(s)}\n${s.borrador ? "✍️ " + s.borrador : "(no pude armar el mensaje: escribile vos)"}`).join("\n"),
+      botones: g.filter((s) => /^\d{8,}$/.test(s.conv)).map((s) => [
+        { text: `📲 ${s.n}. ${(s.nombre || "+" + s.conv).slice(0, 24)}`, url: `https://wa.me/${s.conv}${s.borrador ? "?text=" + encodeURIComponent(s.borrador) : ""}` },
+        { text: "✅", callback_data: "seg:ok:" + s.conv }, { text: "🚫", callback_data: "seg:no:" + s.conv }]),
     });
   }
   return partes;
 }
-// Para el panel (Hoy › Seguimientos): todos los de la lista; los 10 primeros con el mensaje escrito (los mismos que van por Telegram)
+// Para el panel (Hoy › Seguimientos): los mismos que van por Telegram, con el mensaje escrito
 export async function seguimientosPanel(env, iaJSON) {
-  let l = []; try { l = await seguimientos(env); } catch {}
-  const borr = l.length ? await borradoresSeg(env, iaJSON, l.slice(0, 10)) : {};
-  return l.map((s) => ({ conv: s.conv, nombre: s.nombre, producto: s.producto, perfil: s.perfil, presup_usd: s.presup_usd, dias_cot: s.dias_cot, dias_sin: s.dias_sin, borrador: borr[s.conv] || "" }));
+  let l = []; try { l = await revisarSeguimientos(env, iaJSON, { limite: 0 }); } catch {}
+  return l.map((s) => ({ conv: s.conv, nombre: s.nombre, producto: s.producto, cantidad: s.cantidad, total: s.total, reaccion: s.reaccion, toque: s.toque, perfil: s.perfil, presup_usd: s.presup_usd, dias_cot: s.dias_cot, dias_sin: s.dias_sin, borrador: s.borrador || "", linea: lineaSeguimiento(s) }));
+}
+// Botones ✅ / 🚫 de la lista de Telegram
+async function botonSeguimiento(env, cb) {
+  const [, accion, conv] = String(cb.data || "").split(":");
+  const chat = String(cb.message?.chat?.id || cb.from?.id || "");
+  const ok = !!(await chatsConocidos(env))[chat];
+  if (ok && /^\d{6,}$/.test(conv || "")) await env.DB.prepare(`UPDATE w_conv SET ${accion === "no" ? "seg_no" : "seg_visto"}=? WHERE conv=?`).bind(Date.now(), conv).run();
+  await tg(env, "answerCallbackQuery", { callback_query_id: cb.id, text: !ok ? "Este chat no está conectado al panel" : accion === "no" ? "Listo, no lo vuelvo a mostrar por esta cotización" : "Listo, sale de la lista hasta el próximo toque" });
 }
 async function mandarSeguimientos(env, iaJSON, chat) {
   const p = await seguimientosHoy(env, iaJSON);
@@ -558,6 +545,7 @@ export async function rutaTelegram(env, req, url, ctx, iaJSON) {
   // Si pasa de 50 s, se le contesta a Telegram igual (para que no reintente) y se sigue en segundo plano.
   const trabajo = (async () => {
     await kvPut(env, "asist_ultimo", JSON.stringify({ ts: Date.now(), texto: String(upd?.message?.text || (upd?.message?.voice ? "[audio]" : "")).slice(0, 60) })).catch(() => {});
+    if (upd?.callback_query) return botonSeguimiento(env, upd.callback_query).catch((e) => console.log("Asistente boton:", e?.stack || e));
     await atender(env, iaJSON, upd).catch(async (e) => {
       const ch = upd?.message?.chat?.id; if (ch) await decir(env, String(ch), "Se me trabó procesando eso (" + String(e?.message || e).slice(0, 80) + "). Mandámelo de nuevo en un minuto.").catch(() => {}); console.log("Asistente:", e?.stack || e); await kvPut(env, "asist_error", JSON.stringify({ ts: Date.now(), error: String(e?.stack || e).slice(0, 800) })).catch(() => {}); });
   })();
@@ -574,14 +562,14 @@ export async function apiAsistente(env, req, url, quien, base, iaJSON = null) {
   if (r === "activar") {
     if (!env.TELEGRAM_TOKEN) return json({ ok: false, error: "Falta TELEGRAM_TOKEN" });
     const sec = await secretoTG(env);
-    const x = await tg(env, "setWebhook", { url: `${base}/tg/${sec}`, secret_token: sec, allowed_updates: ["message", "edited_message"], drop_pending_updates: false });
+    const x = await tg(env, "setWebhook", { url: `${base}/tg/${sec}`, secret_token: sec, allowed_updates: ["message", "edited_message", "callback_query"], drop_pending_updates: false });
     return json({ ok: !!x?.ok, telegram: x, chats: await chatsConocidos(env) });
   }
   // Diagnóstico (se abre desde el celu logueado en el panel): qué dice Telegram, último mensaje y último error. Si el webhook se cayó, lo vuelve a poner.
   if (r === "estado") {
     const sec = await secretoTG(env), info = await tg(env, "getWebhookInfo", {});
     let reactivado = null;
-    if (env.TELEGRAM_TOKEN && info?.result?.url !== `${base}/tg/${sec}`) reactivado = await tg(env, "setWebhook", { url: `${base}/tg/${sec}`, secret_token: sec, allowed_updates: ["message", "edited_message"], drop_pending_updates: false });
+    if (env.TELEGRAM_TOKEN && info?.result?.url !== `${base}/tg/${sec}`) reactivado = await tg(env, "setWebhook", { url: `${base}/tg/${sec}`, secret_token: sec, allowed_updates: ["message", "edited_message", "callback_query"], drop_pending_updates: false });
     return json({ version: VERSION_ASISTENTE, telegram: info?.result ? { url_ok: info.result.url === `${base}/tg/${sec}`, pendientes: info.result.pending_update_count, ultimo_error: info.result.last_error_message || "", error_hace_min: info.result.last_error_date ? Math.round((Date.now() / 1000 - info.result.last_error_date) / 60) : null } : info, reactivado, ultimo_mensaje: JSON.parse((await kvGet(env, "asist_ultimo")) || "null"), ultimo_error: JSON.parse((await kvGet(env, "asist_error")) || "null"), chats: await chatsConocidos(env) });
   }
   // Probar el asistente desde el panel sin mandar nada a Telegram (devuelve lo que contestaría)
@@ -601,6 +589,13 @@ export async function apiAsistente(env, req, url, quien, base, iaJSON = null) {
 // 8:00 plan del día · 10:00 seguimientos · 14:00 cómo vas · 21:00 cierre (hora Argentina = UTC-3)
 export async function cronAsistente(env, ts, iaJSON = null) {
   const d = new Date(ts), h = d.getUTCHours(), m = d.getUTCMinutes();
+  // Una vez: que el webhook de Telegram también reciba los toques en los botones ✅ / 🚫 de los seguimientos
+  if (env.TELEGRAM_TOKEN && m % 10 === 5 && !env.__captura && !(await kvGet(env, "tg_cb_v1").catch(() => "x"))) {
+    const info = await tg(env, "getWebhookInfo", {});
+    const url = info?.result?.url;
+    if (url && !(info.result.allowed_updates || []).includes("callback_query")) { const sec = await secretoTG(env); const x = await tg(env, "setWebhook", { url, secret_token: sec, allowed_updates: ["message", "edited_message", "callback_query"], drop_pending_updates: false }); if (x?.ok) await kvPut(env, "tg_cb_v1", Date.now()); }
+    else if (url) await kvPut(env, "tg_cb_v1", Date.now());
+  }
   if (m !== 0 || ![11, 13, 17, 0].includes(h) || !env.TELEGRAM_TOKEN) return;
   await preparar(env);
   // Seguimientos: solo al chat principal (el del dueño), así no le escriben dos personas al mismo cliente
