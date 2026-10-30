@@ -154,6 +154,18 @@ chk("Telegram: ningún mensaje pasa el límite", partes.every((p) => p.texto.len
 const p2 = await A.seguimientosHoy(env, ia, { desde: 12 });
 chk("Telegram: 'más seguimientos' trae los siguientes", p2[0].texto.includes("Mensajes listos del 13 al"));
 
+// ---- Reparto entre dos personas: listas distintas, sin repetidos, entre los dos están todos ----
+db.prepare("INSERT OR REPLACE INTO kv (k,v) VALUES ('telegram_chat:manuel','111'),('telegram_chat:juan','222'),('seg_equipo','[\"manuel\",\"juan\"]')").run();
+const pm = await A.seguimientosHoy(env, ia, { quien: "manuel", cuantos: 500 }), pj = await A.seguimientosHoy(env, ia, { quien: "juan", cuantos: 500 });
+const nums = (ps) => new Set(ps.flatMap((p) => p.botones.map((b) => b[0].url.match(/wa\.me\/(\d+)/)[1])));
+const nMan = nums(pm), nj = nums(pj);
+chk("reparto: ningún número en las dos listas", [...nMan].every((x) => !nj.has(x)));
+chk("reparto: entre los dos están todos", nMan.size + nj.size === total && Math.abs(nMan.size - nj.size) <= 1);
+chk("reparto: cada uno sabe que es su parte", pm[0].texto.includes("Esta es tu parte") && pm[0].texto.includes("Juan"));
+const pm2 = await A.seguimientosHoy(env, ia, { quien: "manuel", cuantos: 500 });
+chk("reparto: la asignación se mantiene", [...nums(pm2)].every((x) => nMan.has(x)));
+db.prepare("DELETE FROM kv WHERE k IN ('seg_equipo','seg_asig')").run();
+
 // ---- Ventas: envío o compra ya contada no son venta ----
 chk("pagar el envío no es venta", !L.esVentaReal({ msg: 0, producto: "pago envío", concepto: "envio" }, {}));
 chk("comprobante del flete no es venta", !L.esVentaReal({ msg: 0, producto: "vasos", concepto: "total" }, { ms: [{ texto: "(image) te paso el comprobante del flete" }] }));

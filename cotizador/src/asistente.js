@@ -132,17 +132,52 @@ export async function chatsSinContestar(env, limite = 12) {
 // Van con el mensaje ya escrito por la IA y un botón que abre el WhatsApp del cliente con ese texto: se revisa y se manda.
 // Cuando se le escribe desde el 805, sale solo de la lista. La IA escribe una vez por día por cliente (se guarda).
 async function cuantosSeg(env) { try { return (await seguimientos(env)).length; } catch { return 0; } }
+// ---- Reparto de seguimientos entre el equipo (cada número le toca a UNA sola persona) ----
+// "repartir seguimientos" (o "repartir seguimientos con juan") arma el equipo con los que tienen Telegram conectado.
+// Cada cliente queda asignado a la misma persona mientras siga en la lista; los nuevos van alternados
+// (la lista viene ordenada por valor, así a cada uno le tocan buenos y chicos por igual).
+const nom = (x) => String(x || "").trim().toLowerCase();
+export async function equipoSeguimientos(env) {
+  const conectados = [...new Set(Object.values(await chatsConocidos(env)).map(nom))];
+  let eq = []; try { eq = JSON.parse((await kvGet(env, "seg_equipo")) || "[]").map(nom); } catch {}
+  eq = eq.filter((n) => conectados.includes(n));
+  return eq.length > 1 ? eq : [];   // vacío = no se reparte (todo para el dueño, como siempre)
+}
+export async function repartirSeguimientos(env, lista) {
+  const eq = await equipoSeguimientos(env);
+  if (!eq.length) return null;
+  let asig = {}; try { asig = JSON.parse((await kvGet(env, "seg_asig")) || "{}"); } catch {}
+  const vivos = new Set(lista.map((s) => s.conv)), cuenta = Object.fromEntries(eq.map((n) => [n, 0]));
+  for (const c of Object.keys(asig)) if (!vivos.has(c) || !eq.includes(asig[c])) delete asig[c];
+  for (const c of Object.keys(asig)) cuenta[asig[c]]++;
+  for (const s of lista) if (!asig[s.conv]) { const n = eq.reduce((a, b) => (cuenta[b] < cuenta[a] ? b : a), eq[0]); asig[s.conv] = n; cuenta[n]++; }
+  await kvPut(env, "seg_asig", JSON.stringify(asig));
+  return asig;
+}
+async function chatDe(env, n) {
+  const m = await chatsConocidos(env);
+  return Object.keys(m).find((c) => nom(m[c]) === n) || null;
+}
+
 // Lista COMPLETA en pocas líneas (uno por renglón, sin repetidos) + los mensajes listos con botón, de a 12.
 // "más seguimientos" trae los 12 siguientes con su mensaje.
 const SEG_TG = { porMensaje: 6, conMensaje: 12, caracteres: 3800 };
 // tope: cuántos revisa la IA en el momento. Desde el chat va 8 (una sola llamada: Telegram corta a los ~80 s); el resto ya lo revisó el cron.
-export async function seguimientosHoy(env, iaJSON, { desde = 0, cuantos = SEG_TG.conMensaje, tope } = {}) {
+export async function seguimientosHoy(env, iaJSON, { desde = 0, cuantos = SEG_TG.conMensaje, tope, quien } = {}) {
   let l = []; try { l = await revisarSeguimientos(env, iaJSON, { limite: 0, ...(tope === undefined ? {} : { tope }) }); } catch (e) { console.log("seguimientos", e?.stack || e); }
+  // Con el equipo armado, cada uno ve SOLO los suyos (ningún número está en dos listas)
+  let parte = "";
+  const asig = quien && l.length ? await repartirSeguimientos(env, l) : null;
+  if (asig) {
+    const yo = nom(quien), total = l.length, otros = [...new Set(Object.values(asig))].filter((n) => n !== yo);
+    l = l.filter((s) => asig[s.conv] === yo);
+    parte = ` Esta es tu parte: ${l.length} de ${total} (el resto lo tiene${otros.length > 1 ? "n" : ""} ${otros.map((n) => n[0].toUpperCase() + n.slice(1)).join(" y ")}; nadie se repite).`;
+  }
   if (!l.length || desde >= l.length) return [];
   const partes = [], todos = l.map((s, i) => ({ ...s, n: i + 1 }));
   // 1) La lista entera, compacta (solo si no entran todos con su mensaje)
   if (desde === 0 && l.length > cuantos) {
-    let txt = `📌 Seguimientos de hoy: ${l.length} (la lista completa, sin repetidos, primero los que más valen). Son todos a los que les mandamos cotización, precio o info y no avanzaron.\n`;
+    let txt = `📌 Seguimientos de hoy: ${l.length} (la lista completa, sin repetidos, primero los que más valen). Son todos a los que les mandamos cotización, precio o info y no avanzaron.${parte}\n`;
     for (const s of todos) {
       const r = `\n${s.n}. ${lineaSeguimiento(s)}`;
       if (txt.length + r.length > SEG_TG.caracteres) { partes.push({ texto: txt, botones: [] }); txt = ""; }
@@ -156,7 +191,7 @@ export async function seguimientosHoy(env, iaJSON, { desde = 0, cuantos = SEG_TG
     const g = tramo.slice(i, i + SEG_TG.porMensaje);
     const cab = i ? "" : l.length > cuantos
       ? `✍️ Mensajes listos del ${tramo[0].n} al ${tramo[tramo.length - 1].n}. 📲 abre el WhatsApp con el mensaje escrito; ✅ si ya le escribiste; 🚫 si no hay que seguirlo.\n`
-      : `📌 Seguimientos de hoy: ${l.length}. Todos a los que les mandamos cotización, precio o info y no avanzaron, sin repetidos. 📲 abre el WhatsApp con el mensaje escrito; ✅ si ya le escribiste; 🚫 si no hay que seguirlo.\n`;
+      : `📌 Seguimientos de hoy: ${l.length}. Todos a los que les mandamos cotización, precio o info y no avanzaron, sin repetidos.${parte} 📲 abre el WhatsApp con el mensaje escrito; ✅ si ya le escribiste; 🚫 si no hay que seguirlo.\n`;
     const pie = i + SEG_TG.porMensaje >= tramo.length && desde + cuantos < l.length ? `\n\nQuedan ${l.length - desde - cuantos}: escribí "más seguimientos" y te paso los mensajes de los siguientes ${Math.min(cuantos, l.length - desde - cuantos)}.` : "";
     partes.push({
       texto: cab + g.map((s) => `\n${s.n}. ${lineaSeguimiento(s)}\n${s.borrador ? "✍️ " + s.borrador.slice(0, 380) : "(no pude armar el mensaje: escribile vos)"}`).join("\n") + pie,
@@ -185,7 +220,8 @@ async function mandarSeguimientos(env, iaJSON, chat, mas = false, callado = fals
   const k = "seg_tg_desde:" + chat, hoy = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
   let desde = 0;
   if (mas) { try { const x = JSON.parse((await env.DB.prepare("SELECT v FROM kv WHERE k=?").bind(k).first())?.v || "{}"); if (x.dia === hoy) desde = x.desde || 0; } catch {} }
-  const p = await seguimientosHoy(env, iaJSON, { desde, tope: callado ? 20 : 8 });
+  const quien = (await chatsConocidos(env))[chat] || "manuel";
+  const p = await seguimientosHoy(env, iaJSON, { desde, tope: callado ? 20 : 8, quien });
   if (!p.length) return callado ? null : decir(env, chat, mas ? "Ya te pasé todos los seguimientos de hoy. 🙌" : "No hay seguimientos pendientes hoy. 🙌");
   for (const x of p) await decirBotones(env, chat, x.texto, x.botones);
   await env.DB.prepare("INSERT INTO kv (k,v,exp) VALUES (?,?,NULL) ON CONFLICT(k) DO UPDATE SET v=excluded.v").bind(k, JSON.stringify({ dia: hoy, desde: desde + SEG_TG.conMensaje })).run().catch(() => {});
@@ -500,7 +536,7 @@ async function atender(env, iaJSON, upd) {
   }
   if (!texto) return;
   const t = texto.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
-  if (/(esta(s)? configurad|funciona(s)?\b|andas\b|me escuchas|sos el asistente|que podes hacer|como te uso|como funciona)/.test(t) && t.length < 120) return decir(env, chat, `Sí ${nombreDe(quien)}, estoy andando y este es el chat correcto. Mandame audios o textos con todo lo que tengas que hacer y lo ordeno.\n\n• "lista": todo lo pendiente\n• "hoy": lo urgente\n• "plan": te armo el día en bloques\n• "chats": los del 805 sin contestar, con número\n• "seguimientos": todos a los que les mandamos precio, cotización o info y no avanzaron, con el mensaje listo\n• Preguntame del negocio ("¿por qué no vendimos?", "¿por qué bajaron las vistas?", "dame ideas"): te contesta el agente con los números\n• Reenviame un video que funcione (de TikTok o Instagram) y lo miro para sacar ideas\n• "redes": qué hay que hacer hoy en redes\n• "negocio": lo que espera en el panel\n• "hecho 2", "subí 3", "borrar 4"\nTe escribo a las 8, a las 10 (seguimientos), a las 14 y a las 21.`);
+  if (/(esta(s)? configurad|funciona(s)?\b|andas\b|me escuchas|sos el asistente|que podes hacer|como te uso|como funciona)/.test(t) && t.length < 120) return decir(env, chat, `Sí ${nombreDe(quien)}, estoy andando y este es el chat correcto. Mandame audios o textos con todo lo que tengas que hacer y lo ordeno.\n\n• "lista": todo lo pendiente\n• "hoy": lo urgente\n• "plan": te armo el día en bloques\n• "chats": los del 805 sin contestar, con número\n• "seguimientos": todos a los que les mandamos precio, cotización o info y no avanzaron, con el mensaje listo\n• "más seguimientos": los mensajes de los 12 siguientes\n• "repartir seguimientos con <nombre>": divide la lista (cada número a uno solo)\n• Preguntame del negocio ("¿por qué no vendimos?", "¿por qué bajaron las vistas?", "dame ideas"): te contesta el agente con los números\n• Reenviame un video que funcione (de TikTok o Instagram) y lo miro para sacar ideas\n• "redes": qué hay que hacer hoy en redes\n• "negocio": lo que espera en el panel\n• "hecho 2", "subí 3", "borrar 4"\nTe escribo a las 8, a las 10 (seguimientos), a las 14 y a las 21.`);
   if (/^\/?(start|ayuda|help)\b/.test(t)) return decir(env, chat, `Hola ${nombreDe(quien)}. Mandame un audio o un texto con todo lo que tenés que hacer, desordenado, y te lo ordeno por prioridad.\n\n• "lista": todo lo pendiente\n• "hoy": solo lo urgente\n• "hecho 2" o "hecho 1,3": tachar\n• "subí 4" / "bajá 4": cambiar prioridad\n• "borrar 4"\n• "plan": te armo el día en bloques (tus tareas + lo que espera en el negocio + facu, gym, etc.)\n• "negocio": chats, videos, carruseles e historias pendientes\n• "seguimientos": a quién volver a escribirle, con el mensaje listo\n• Mandame un video que le funcionó a otro y lo guardo como referencia para las ideas\n• "perfil": lo que sé de tu rutina\nA las 8 te mando el plan, a las 10 los seguimientos, a las 14 cómo vas y a las 21 el cierre del día.`);
   if (/^\/?(lista|tareas|mis tareas|pendientes|todo|la lista)\s*$/.test(t)) return decir(env, chat, await textoLista(env, chat, quien));
   if (/^\/?hoy\s*$/.test(t)) return decir(env, chat, await textoLista(env, chat, quien, { titulo: "Para hoy", soloHoy: true }));
@@ -520,6 +556,16 @@ async function atender(env, iaJSON, upd) {
     return decir(env, chat, (nt ? agendaNotion(nt) : "No pude leer tu Notion ahora.") + (neg.calientes ? `\n\n💬 Negocio: ${neg.calientes} chats calientes del 805 (decime "chats").` : ""));
   }
   if (/^\/?(chats|whatsapp|wpp|805)\s*$/.test(t)) return decir(env, chat, await chatsSinContestar(env));
+  if (/^\/?(no repartir|dejar de repartir|sin repartir) (los )?seguimientos|^\/?seguimientos solo (para )?(mi|yo)\s*$/.test(t)) { await kvPut(env, "seg_equipo", "[]"); await kvPut(env, "seg_asig", "{}"); return decir(env, chat, "Listo: los seguimientos vuelven a ir enteros a una sola lista."); }
+  if (/^\/?repart(i|ir|ime|amos)( los)? seguimientos/.test(t)) {
+    const conectados = [...new Set(Object.values(await chatsConocidos(env)).map(nom))];
+    const pedidos = (t.split(/\bcon\b/)[1] || "").split(/,|\by\b/).map(nom).filter(Boolean);
+    const eq = [...new Set([nom(quien), ...(pedidos.length ? pedidos : conectados)])].filter((n) => conectados.includes(n));
+    const faltan = pedidos.filter((n) => !conectados.includes(n));
+    if (eq.length < 2) return decir(env, chat, `Para repartir hace falta que la otra persona tenga su Telegram conectado al panel${faltan.length ? ` (${faltan.join(", ")} todavía no lo conectó)` : ""}. Que entre al panel con su usuario, le escriba /start a este bot y toque "Conectar Telegram". Conectados hoy: ${conectados.join(", ") || "nadie"}.`);
+    await kvPut(env, "seg_equipo", JSON.stringify(eq)); await kvPut(env, "seg_asig", "{}");
+    return decir(env, chat, `Listo: los seguimientos se reparten entre ${eq.map((n) => n[0].toUpperCase() + n.slice(1)).join(" y ")}. Cada número le toca a uno solo y le queda asignado. Cada uno escribe "seguimientos" acá y le llega SU lista con sus botones; a las 10 le llega sola a cada uno.${faltan.length ? ` (${faltan.join(", ")} no tiene Telegram conectado, quedó afuera.)` : ""} Para volver a una sola lista: "no repartir seguimientos".`);
+  }
   if (/^\/?(mas|más|siguientes?|otros) (seguimientos?|seg|segs)\s*$|^\/?(seguimientos?|seg|segs) (mas|más|siguientes)\s*$/.test(t)) { await tg(env, "sendChatAction", { chat_id: chat, action: "typing" }); return mandarSeguimientos(env, iaJSON, chat, true); }
   if (/^\/?(seguimientos?|seg|segs)( de hoy)?\s*$/.test(t)) { await tg(env, "sendChatAction", { chat_id: chat, action: "typing" }); return mandarSeguimientos(env, iaJSON, chat); }
   if (/^\/?(redes|instagram)\s*$/.test(t)) return decir(env, chat, "📲 Hoy en redes:\n" + (await redesHoy(env)).map((x) => "• " + x).join("\n"));
@@ -627,6 +673,8 @@ export async function cronAsistente(env, ts, iaJSON = null) {
   if (h === 13) {
     const chat = env.TELEGRAM_CHAT || (await kvGet(env, "telegram_chat"));
     const pf = (await prefsDe(env, "Manuel")).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const eq = await equipoSeguimientos(env);
+    if (eq.length) { for (const n of eq) { const c = await chatDe(env, n); if (c) await mandarSeguimientos(env, iaJSON, c, false, true); } return; }   // repartidos: a cada uno lo suyo
     if (!chat || /(no|sin|sacame|saca)\b.{0,30}\b(10|diez|seguimiento)/.test(pf)) return;
     await mandarSeguimientos(env, iaJSON, chat, false, true);
     return;

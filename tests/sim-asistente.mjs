@@ -73,6 +73,7 @@ const nS = capS.length; await A.cronAsistente(env, t(13), iaS); chk("10 hs manda
 await A.cronAsistente(env, t(11), iaS); chk("8 hs avisa cuántos seguimientos vienen", capS.at(-1).text.includes("A las 10 te paso 1 seguimiento"));
 await A.cronAsistente(env, t(0), iaS); chk("21 hs avisa seguimientos sin hacer", capS.at(-1).text.includes("Quedaron 1 seguimiento sin hacer"));
 db.prepare("UPDATE w_conv SET ult_yo_ts=? WHERE conv='5493410000001'").run(Date.now());
+await mandarS("repartir seguimientos con juan"); chk("repartir sin la otra persona conectada avisa qué hacer", capS.at(-1).text.includes("Conectar Telegram") && capS.at(-1).text.includes("juan"));
 await mandarS("seguimientos"); chk("si ya le escribimos, sale de la lista", capS.at(-1).text.includes("No hay seguimientos pendientes"));
 const nS2 = capS.length; await A.cronAsistente(env, t(13), iaS); chk("10 hs sin seguimientos no manda nada", capS.length === nS2);
 globalThis.fetch = fetchS;
