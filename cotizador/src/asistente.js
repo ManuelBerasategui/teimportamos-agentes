@@ -132,15 +132,33 @@ export async function chatsSinContestar(env, limite = 12) {
 // Van con el mensaje ya escrito por la IA y un botón que abre el WhatsApp del cliente con ese texto: se revisa y se manda.
 // Cuando se le escribe desde el 805, sale solo de la lista. La IA escribe una vez por día por cliente (se guarda).
 async function cuantosSeg(env) { try { return (await seguimientos(env)).length; } catch { return 0; } }
-export async function seguimientosHoy(env, iaJSON, limite = 10) {
+// Lista COMPLETA en pocas líneas (uno por renglón, sin repetidos) + los mensajes listos con botón, de a 12.
+// "más seguimientos" trae los 12 siguientes con su mensaje.
+const SEG_TG = { porMensaje: 6, conMensaje: 12, caracteres: 3800 };
+export async function seguimientosHoy(env, iaJSON, { desde = 0, cuantos = SEG_TG.conMensaje } = {}) {
   let l = []; try { l = await revisarSeguimientos(env, iaJSON, { limite: 0 }); } catch (e) { console.log("seguimientos", e?.stack || e); }
-  if (!l.length) return [];
-  const top = l.slice(0, limite), partes = [];
-  for (let i = 0; i < top.length; i += 5) {
-    const g = top.slice(i, i + 5).map((s, j) => ({ ...s, n: i + j + 1 }));
-    const cab = i ? "" : `📌 Seguimientos de hoy: ${l.length}${l.length > top.length ? ` (acá los ${top.length} que más valen)` : ""}. Solo cotizados que no compraron. 📲 abre el WhatsApp con el mensaje escrito; ✅ si ya le escribiste; 🚫 si no hay que seguirlo.\n`;
+  if (!l.length || desde >= l.length) return [];
+  const partes = [], todos = l.map((s, i) => ({ ...s, n: i + 1 }));
+  // 1) La lista entera, compacta (solo si no entran todos con su mensaje)
+  if (desde === 0 && l.length > cuantos) {
+    let txt = `📌 Seguimientos de hoy: ${l.length} (la lista completa, sin repetidos, primero los que más valen). Son todos a los que les mandamos cotización, precio o info y no avanzaron.\n`;
+    for (const s of todos) {
+      const r = `\n${s.n}. ${lineaSeguimiento(s)}`;
+      if (txt.length + r.length > SEG_TG.caracteres) { partes.push({ texto: txt, botones: [] }); txt = ""; }
+      txt += r;
+    }
+    partes.push({ texto: txt, botones: [] });
+  }
+  // 2) Los mensajes listos con botón para abrir el WhatsApp
+  const tramo = todos.slice(desde, desde + cuantos);
+  for (let i = 0; i < tramo.length; i += SEG_TG.porMensaje) {
+    const g = tramo.slice(i, i + SEG_TG.porMensaje);
+    const cab = i ? "" : l.length > cuantos
+      ? `✍️ Mensajes listos del ${tramo[0].n} al ${tramo[tramo.length - 1].n}. 📲 abre el WhatsApp con el mensaje escrito; ✅ si ya le escribiste; 🚫 si no hay que seguirlo.\n`
+      : `📌 Seguimientos de hoy: ${l.length}. Todos a los que les mandamos cotización, precio o info y no avanzaron, sin repetidos. 📲 abre el WhatsApp con el mensaje escrito; ✅ si ya le escribiste; 🚫 si no hay que seguirlo.\n`;
+    const pie = i + SEG_TG.porMensaje >= tramo.length && desde + cuantos < l.length ? `\n\nQuedan ${l.length - desde - cuantos}: escribí "más seguimientos" y te paso los mensajes de los siguientes ${Math.min(cuantos, l.length - desde - cuantos)}.` : "";
     partes.push({
-      texto: cab + g.map((s) => `\n${s.n}. ${lineaSeguimiento(s)}\n${s.borrador ? "✍️ " + s.borrador : "(no pude armar el mensaje: escribile vos)"}`).join("\n"),
+      texto: cab + g.map((s) => `\n${s.n}. ${lineaSeguimiento(s)}\n${s.borrador ? "✍️ " + s.borrador.slice(0, 380) : "(no pude armar el mensaje: escribile vos)"}`).join("\n") + pie,
       botones: g.filter((s) => /^\d{8,}$/.test(s.conv)).map((s) => [
         { text: `📲 ${s.n}. ${(s.nombre || "+" + s.conv).slice(0, 24)}`, url: `https://wa.me/${s.conv}${s.borrador ? "?text=" + encodeURIComponent(s.borrador) : ""}` },
         { text: "✅", callback_data: "seg:ok:" + s.conv }, { text: "🚫", callback_data: "seg:no:" + s.conv }]),
@@ -161,10 +179,15 @@ async function botonSeguimiento(env, cb) {
   if (ok && /^\d{6,}$/.test(conv || "")) await env.DB.prepare(`UPDATE w_conv SET ${accion === "no" ? "seg_no" : "seg_visto"}=? WHERE conv=?`).bind(Date.now(), conv).run();
   await tg(env, "answerCallbackQuery", { callback_query_id: cb.id, text: !ok ? "Este chat no está conectado al panel" : accion === "no" ? "Listo, no lo vuelvo a mostrar por esta cotización" : "Listo, sale de la lista hasta el próximo toque" });
 }
-async function mandarSeguimientos(env, iaJSON, chat) {
-  const p = await seguimientosHoy(env, iaJSON);
-  if (!p.length) return decir(env, chat, "No hay seguimientos pendientes hoy. 🙌");
+async function mandarSeguimientos(env, iaJSON, chat, mas = false, callado = false) {
+  // "más seguimientos": los mensajes listos de los 12 siguientes a los que ya se pasaron hoy
+  const k = "seg_tg_desde:" + chat, hoy = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+  let desde = 0;
+  if (mas) { try { const x = JSON.parse((await env.DB.prepare("SELECT v FROM kv WHERE k=?").bind(k).first())?.v || "{}"); if (x.dia === hoy) desde = x.desde || 0; } catch {} }
+  const p = await seguimientosHoy(env, iaJSON, { desde });
+  if (!p.length) return callado ? null : decir(env, chat, mas ? "Ya te pasé todos los seguimientos de hoy. 🙌" : "No hay seguimientos pendientes hoy. 🙌");
   for (const x of p) await decirBotones(env, chat, x.texto, x.botones);
+  await env.DB.prepare("INSERT INTO kv (k,v,exp) VALUES (?,?,NULL) ON CONFLICT(k) DO UPDATE SET v=excluded.v").bind(k, JSON.stringify({ dia: hoy, desde: desde + SEG_TG.conMensaje })).run().catch(() => {});
 }
 
 // Qué hay que hacer HOY en redes, en acciones concretas (sale del panel)
@@ -243,7 +266,7 @@ SUS PENDIENTES (id · prioridad · fecha · horario · texto):
 ${l.map((x) => `[${x.id}] P${x.prioridad} · ${x.para || "-"} · ${x.hora_ini ? x.hora_ini + "-" + (x.hora_fin || "?") : "-"} · ${x.texto}`).join("\n") || "(ninguno)"}
 QUÉ HAY QUE HACER EN REDES (dato real del panel):
 ${redes.map((x) => "- " + x).join("\n")}
-WHATSAPP 805: ${neg.chats} chats sin contestar, ${neg.calientes} calientes. Seguimientos de cotizaciones pendientes (clientes cotizados que dejaron de contestar): ${await cuantosSeg(env)}. Si son lo siguiente, decile que escriba "seguimientos" y le llegan con el mensaje ya escrito para cada uno.
+WHATSAPP 805: ${neg.chats} chats sin contestar, ${neg.calientes} calientes. Seguimientos pendientes (clientes a los que les mandamos cotización, precio o info y no avanzaron): ${await cuantosSeg(env)}. Si son lo siguiente, decile que escriba "seguimientos" y le llegan con el mensaje ya escrito para cada uno.
 ${nt ? `SU NOTION (donde organiza su vida: tareas por categoría, hábitos y eventos; tenelo en cuenta para el plan y para "¿ahora qué hago?"):
 ${nItems.map((x) => `[${x.ref}] ${x.k === "habito" ? "hábito de hoy" : "actividad"}: ${x.hora ? x.hora + " " : ""}${x.texto}${x.categoria ? " [" + x.categoria + "]" : ""} · ${x.estado || ""}${x.fecha === "vencida" ? " · VENCIDA" : ""}`).join("\n") || "(nada abierto hoy)"}
 Ya hecho hoy en Notion: ${(nt.hoy || []).filter((x) => x.hecho).map((x) => x.texto).join(", ") || "nada"}
@@ -476,7 +499,7 @@ async function atender(env, iaJSON, upd) {
   }
   if (!texto) return;
   const t = texto.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").trim();
-  if (/(esta(s)? configurad|funciona(s)?\b|andas\b|me escuchas|sos el asistente|que podes hacer|como te uso|como funciona)/.test(t) && t.length < 120) return decir(env, chat, `Sí ${nombreDe(quien)}, estoy andando y este es el chat correcto. Mandame audios o textos con todo lo que tengas que hacer y lo ordeno.\n\n• "lista": todo lo pendiente\n• "hoy": lo urgente\n• "plan": te armo el día en bloques\n• "chats": los del 805 sin contestar, con número\n• "seguimientos": cotizados que no contestaron, con el mensaje listo para mandar\n• Preguntame del negocio ("¿por qué no vendimos?", "¿por qué bajaron las vistas?", "dame ideas"): te contesta el agente con los números\n• Reenviame un video que funcione (de TikTok o Instagram) y lo miro para sacar ideas\n• "redes": qué hay que hacer hoy en redes\n• "negocio": lo que espera en el panel\n• "hecho 2", "subí 3", "borrar 4"\nTe escribo a las 8, a las 10 (seguimientos), a las 14 y a las 21.`);
+  if (/(esta(s)? configurad|funciona(s)?\b|andas\b|me escuchas|sos el asistente|que podes hacer|como te uso|como funciona)/.test(t) && t.length < 120) return decir(env, chat, `Sí ${nombreDe(quien)}, estoy andando y este es el chat correcto. Mandame audios o textos con todo lo que tengas que hacer y lo ordeno.\n\n• "lista": todo lo pendiente\n• "hoy": lo urgente\n• "plan": te armo el día en bloques\n• "chats": los del 805 sin contestar, con número\n• "seguimientos": todos a los que les mandamos precio, cotización o info y no avanzaron, con el mensaje listo\n• Preguntame del negocio ("¿por qué no vendimos?", "¿por qué bajaron las vistas?", "dame ideas"): te contesta el agente con los números\n• Reenviame un video que funcione (de TikTok o Instagram) y lo miro para sacar ideas\n• "redes": qué hay que hacer hoy en redes\n• "negocio": lo que espera en el panel\n• "hecho 2", "subí 3", "borrar 4"\nTe escribo a las 8, a las 10 (seguimientos), a las 14 y a las 21.`);
   if (/^\/?(start|ayuda|help)\b/.test(t)) return decir(env, chat, `Hola ${nombreDe(quien)}. Mandame un audio o un texto con todo lo que tenés que hacer, desordenado, y te lo ordeno por prioridad.\n\n• "lista": todo lo pendiente\n• "hoy": solo lo urgente\n• "hecho 2" o "hecho 1,3": tachar\n• "subí 4" / "bajá 4": cambiar prioridad\n• "borrar 4"\n• "plan": te armo el día en bloques (tus tareas + lo que espera en el negocio + facu, gym, etc.)\n• "negocio": chats, videos, carruseles e historias pendientes\n• "seguimientos": a quién volver a escribirle, con el mensaje listo\n• Mandame un video que le funcionó a otro y lo guardo como referencia para las ideas\n• "perfil": lo que sé de tu rutina\nA las 8 te mando el plan, a las 10 los seguimientos, a las 14 cómo vas y a las 21 el cierre del día.`);
   if (/^\/?(lista|tareas|mis tareas|pendientes|todo|la lista)\s*$/.test(t)) return decir(env, chat, await textoLista(env, chat, quien));
   if (/^\/?hoy\s*$/.test(t)) return decir(env, chat, await textoLista(env, chat, quien, { titulo: "Para hoy", soloHoy: true }));
@@ -496,6 +519,7 @@ async function atender(env, iaJSON, upd) {
     return decir(env, chat, (nt ? agendaNotion(nt) : "No pude leer tu Notion ahora.") + (neg.calientes ? `\n\n💬 Negocio: ${neg.calientes} chats calientes del 805 (decime "chats").` : ""));
   }
   if (/^\/?(chats|whatsapp|wpp|805)\s*$/.test(t)) return decir(env, chat, await chatsSinContestar(env));
+  if (/^\/?(mas|más|siguientes?|otros) (seguimientos?|seg|segs)\s*$|^\/?(seguimientos?|seg|segs) (mas|más|siguientes)\s*$/.test(t)) { await tg(env, "sendChatAction", { chat_id: chat, action: "typing" }); return mandarSeguimientos(env, iaJSON, chat, true); }
   if (/^\/?(seguimientos?|seg|segs)( de hoy)?\s*$/.test(t)) { await tg(env, "sendChatAction", { chat_id: chat, action: "typing" }); return mandarSeguimientos(env, iaJSON, chat); }
   if (/^\/?(redes|instagram)\s*$/.test(t)) return decir(env, chat, "📲 Hoy en redes:\n" + (await redesHoy(env)).map((x) => "• " + x).join("\n"));
   if (/^\/?(negocio|pendientes del negocio|panel)\b/.test(t)) { const n = await negocioPendiente(env); return decir(env, chat, n.texto ? "Lo que está esperando en el negocio:\n" + n.texto : "En el negocio no hay nada esperando. 🙌"); }
@@ -603,7 +627,7 @@ export async function cronAsistente(env, ts, iaJSON = null) {
     const chat = env.TELEGRAM_CHAT || (await kvGet(env, "telegram_chat"));
     const pf = (await prefsDe(env, "Manuel")).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     if (!chat || /(no|sin|sacame|saca)\b.{0,30}\b(10|diez|seguimiento)/.test(pf)) return;
-    for (const x of await seguimientosHoy(env, iaJSON)) await decirBotones(env, chat, x.texto, x.botones);
+    await mandarSeguimientos(env, iaJSON, chat, false, true);
     return;
   }
   const [neg, nSeg] = await Promise.all([negocioPendiente(env), cuantosSeg(env)]);

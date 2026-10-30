@@ -49,6 +49,43 @@ db.prepare("UPDATE w_conv SET seg_no=? WHERE conv='5493410000010'").run(h(1));
 // Juli: cotizada, pero en la charla dijo que no (la IA lo descarta)
 conv("5493410000011", { nombre: "Juli", ult: h(2), ult_yo: 1, yo: h(2), etapa: "cotizado" }); msg("5493410000011", 1, "Total USD 600", h(3)); msg("5493410000011", 0, "no gracias, muy caro, lo dejo", h(2.2)); msg("5493410000011", 1, "dale, cualquier cosa avisame", h(2)); cot("5493410000011", h(3));
 
+// ---- Casos reales del 30/10: le pasamos precio o info SIN cotización registrada ----
+// Lucas: le pasamos catálogo y envío de 20 pares, dijo "dale muchas gracias ahora veo bien todo" → va
+conv("5493410000012", { nombre: "Lucas", ult: h(2.6), ult_yo: 0, cli: h(2.6), yo: h(2.6), etapa: "negociando", perfil: "C", texto: "Dale muchas gracias ahora veo bien todo y veo que se puede armar" });
+msg("5493410000012", 0, "precio de zapatillas por 20 pares?", h(3)); msg("5493410000012", 1, "el envio amigo te va a quedar en 15mil pesos aprox", h(2.7)); msg("5493410000012", 1, "si todas las del catalogo", h(2.6)); msg("5493410000012", 0, "Dale muchas gracias ahora veo bien todo y veo que se puede armar", h(2.6));
+// Lauti: le mandamos la lista de precios, dijo "okay" y le dijimos "avisame vos" → va
+conv("5493410000013", { nombre: "lauti", ult: h(2.6), ult_yo: 1, yo: h(2.6), perfil: "C" });
+msg("5493410000013", 0, "uno de cada uno", h(2.7)); msg("5493410000013", 1, "PRECIOS MAYORISTA DE ZAPATILLAS. Cada marca tiene su carpeta con los distintos precios", h(2.6)); msg("5493410000013", 0, "okay", h(2.6)); msg("5493410000013", 1, "avisame vos cuando decidas", h(2.6));
+// Martin: la IA lo marcó "perdido", pero le pasamos precio y dijo "dale muchas gracias" → va
+conv("5493410000014", { nombre: "Martin", ult: h(2), ult_yo: 0, cli: h(2), yo: h(2), etapa: "perdido", perfil: "D", texto: "Dale muchas gracias" });
+msg("5493410000014", 0, "Necesito para uso personal así que dos", h(2.1)); msg("5493410000014", 1, "Estimativo 200usd cada uno", h(2)); msg("5493410000014", 1, "Puesto en argentina", h(2)); msg("5493410000014", 0, "Dale muchas gracias", h(2));
+// Alexis: precio y "Ahí me fijo a ver" → va
+conv("5493410000015", { nombre: "Alexis", ult: h(3), ult_yo: 0, cli: h(3), yo: h(3.1), perfil: "C", texto: "Ahí me fijo a ver" });
+msg("5493410000015", 1, "50 cables te quedan en USD 2 c/u", h(3.1)); msg("5493410000015", 0, "Ahí me fijo a ver", h(3));
+// Lautaro: solo el saludo automático y un "quedamos atentos" del bot → nunca le mandamos nada, no va
+conv("5493410000016", { nombre: "Lautaro", ult: h(1.8), ult_yo: 1, yo: h(1.8), etapa: "perdido", perfil: "C" });
+msg("5493410000016", 0, "Hola! Quiero hacer una consulta.", h(1.9)); msg("5493410000016", 1, "Bienvenido!! Gracias por escribir 🙌 Contame, ¿qué estás buscando importar?", h(1.9)); msg("5493410000016", 1, "Lautaro, quedamos atentos a tu consulta para cuando quieras retomarla.", h(1.8));
+// Pato: le pasamos precio pero después preguntó algo → espera respuesta nuestra, no va
+conv("5493410000017", { nombre: "Pato", ult: h(2), ult_yo: 0, cli: h(2), yo: h(3), perfil: "C", resp: 1, texto: "y en cuanto llega?" });
+msg("5493410000017", 1, "te quedan en USD 5 c/u", h(3)); msg("5493410000017", 0, "y en cuanto llega?", h(2));
+// Nati: le pasamos precio y dijo "no gracias, ya conseguí" → no va
+conv("5493410000018", { nombre: "Nati", ult: h(2), ult_yo: 1, yo: h(2), perfil: "C" });
+msg("5493410000018", 1, "te quedan en USD 5 c/u", h(3)); msg("5493410000018", 0, "ya conseguí, gracias igual", h(2.5)); msg("5493410000018", 1, "dale, cualquier cosa avisame", h(2));
+// Bauti vendido: le pasamos el seguimiento del envío de su compra → no es seguimiento comercial
+conv("5493410000019", { nombre: "Rocio", ult: h(3), ult_yo: 1, yo: h(3), etapa: "vendido", perfil: "C" });
+db.prepare("INSERT INTO w_hito (id,conv,tipo,ts,dato) VALUES ('v19','5493410000019','venta',?, 'vasos')").run(h(10));
+msg("5493410000019", 1, "te paso el envío por Andreani, llega en 3 días", h(3));
+// Tomi: le pasamos precio hace 2 días; "Bueno pasame el de 100" no es un acuse (pide algo) → no va
+conv("5493410000020", { nombre: "Tomi", ult: h(1.5), ult_yo: 0, cli: h(1.5), yo: h(2), perfil: "C", resp: 1, texto: "Bueno pasame el de 100" });
+msg("5493410000020", 1, "50 te quedan USD 3 c/u", h(2)); msg("5493410000020", 0, "Bueno pasame el de 100", h(1.5));
+// Cami: le cotizamos hace 25 días, 2 toques sin respuesta → entra (la ventana ahora es de 30 días)
+conv("5493410000021", { nombre: "Cami", ult: h(8), ult_yo: 1, yo: h(8), perfil: "B", usd: 1200 });
+msg("5493410000021", 1, "Total USD 1200 puesto en Rosario", h(25)); cot("5493410000021", h(25)); msg("5493410000021", 1, "¿pudiste verlo?", h(20)); msg("5493410000021", 1, "¿lo seguimos viendo?", h(8));
+
+// Rami: 4 toques "¿pudiste evaluar la cotización?" (sin precio nuevo) → frío, no vuelve a arrancar la cuenta
+conv("5493410000022", { nombre: "Rami", ult: h(2), ult_yo: 1, yo: h(2) }); msg("5493410000022", 1, "Total USD 700", h(18)); cot("5493410000022", h(18));
+for (const d of [17, 14, 10, 2]) msg("5493410000022", 1, "Buenas, pudiste evaluar la cotización?", h(d));
+
 let llamadas = 0, prompt = "";
 const ia = async (_e, p) => {
   if (!p.includes("dejaron de contestar")) return null;
@@ -74,12 +111,26 @@ chk("después de 4 toques no se insiste", !nombres.includes("Hugo"));
 chk("No seguir lo saca", !nombres.includes("Ivan"));
 chk("la IA saca al que dijo que no", !nombres.includes("Juli"));
 chk("primero los que más valen", nombres[0] === "Bruno");
+chk("precio/catálogo sin cotización registrada también va", nombres.includes("Lucas") && nombres.includes("lauti"));
+chk("'perdido' que dijo gracias va", nombres.includes("Martin"));
+chk("'ahí me fijo' cuenta como acuse", nombres.includes("Alexis"));
+chk("solo el bot de bienvenida: no va", !nombres.includes("Lautaro"));
+chk("pregunta después del precio: no va", !nombres.includes("Pato"));
+chk("dijo que ya consiguió: no va", !nombres.includes("Nati"));
+chk("envío de una compra hecha: no va", !nombres.includes("Rocio"));
+chk("'bueno pasame…' pide algo: no va", !nombres.includes("Tomi"));
+chk("cotización de 25 días con toques pendientes va", nombres.includes("Cami"));
+chk("'¿pudiste ver la cotización?' es un toque, no una cotización nueva", !nombres.includes("Rami"));
+chk("sin números repetidos en toda la lista", new Set(l.map((x) => x.conv.slice(-10))).size === l.length);
+const lucas = l.find((x) => x.nombre === "Lucas");
+chk("línea: dice qué le pasamos", L.lineaSeguimiento(lucas).includes("le pasamos") && L.lineaSeguimiento(lucas).includes('dijo "Dale muchas gracias'));
 const ana = l.find((x) => x.nombre === "Ana"), bruno = l.find((x) => x.nombre === "Bruno");
 chk("línea: qué, cuánto, monto y no respondió", L.lineaSeguimiento(ana) === "Ana (+5493410000001): le cotizamos 50 u auriculares · USD 800 total · cotizado hace 4 d → no respondió");
 chk("línea: dijo gracias", L.lineaSeguimiento(bruno).includes('→ dijo "gracias!"') && L.lineaSeguimiento(bruno).includes("100 u termos · USD 2000"));
 chk("la IA ve la charla y la reacción", prompt.includes("Cliente: gracias!") && prompt.includes("dijo \"gracias!\""));
+const llamadas1 = llamadas;
 await L.revisarSeguimientos(env, ia, { limite: 0 });
-chk("la IA revisa una vez por día", llamadas === 1);
+chk("la IA revisa una vez por día", llamadas1 >= 1 && llamadas === llamadas1);
 chk("lo que la IA descartó tampoco cuenta en el resto del panel", !(await L.seguimientos(env)).some((x) => x.nombre === "Juli"));
 db.prepare("UPDATE w_conv SET ult_yo_ts=? WHERE conv='5493410000001'").run(ahora);
 chk("si ya le escribimos, sale", !(await L.seguimientos(env)).some((x) => x.nombre === "Ana"));
@@ -88,6 +139,20 @@ chk("si ya le escribimos, sale", !(await L.seguimientos(env)).some((x) => x.nomb
 const r = await L.preguntarVendedor(env, ia, 'de los que les mandamos cotizaciones en los ultimos dias, quienes no contestaron o dijeron "gracias" o algo por el estilo, y les tendriamos que hacer seguimiento?');
 chk("agente: lista corta con qué se cotizó", r.respuesta.includes("le cotizamos 100 u termos") && r.respuesta.includes('dijo "gracias!"'));
 chk("agente: no nombra a Sofía", !r.respuesta.includes("Sofia"));
+
+// ---- Telegram: lista completa aunque sean muchos, y los mensajes de a 12 ----
+for (let i = 0; i < 20; i++) { const c = "54934120000" + String(i).padStart(2, "0"); conv(c, { nombre: "Cliente" + i, ult: h(3), ult_yo: 1, yo: h(3), perfil: "C" }); msg(c, 1, "te quedan en USD " + (10 + i) + " c/u", h(3)); }
+const A = await import(dir + "/asistente.js");
+const total = (await L.revisarSeguimientos(env, ia, { limite: 0, tope: 200 })).length;
+const partes = await A.seguimientosHoy(env, ia);
+const textoTodo = partes.map((p) => p.texto).join("\n");
+chk("Telegram: arranca con la lista completa", partes[0].texto.includes(`Seguimientos de hoy: ${total}`) && total > 20);
+chk("Telegram: están todos en la lista", Array.from({ length: 20 }, (_, i) => "Cliente" + i).every((n) => textoTodo.includes(n + " (+")));
+chk("Telegram: cada número una sola vez en la lista", (textoTodo.split("\n✍️")[0].match(/\(\+5493412000007\)/g) || []).length <= 1);
+chk("Telegram: 12 con botón y aviso de 'más seguimientos'", partes.reduce((a, p) => a + p.botones.length, 0) === 12 && textoTodo.includes('"más seguimientos"'));
+chk("Telegram: ningún mensaje pasa el límite", partes.every((p) => p.texto.length <= 4096));
+const p2 = await A.seguimientosHoy(env, ia, { desde: 12 });
+chk("Telegram: 'más seguimientos' trae los siguientes", p2[0].texto.includes("Mensajes listos del 13 al"));
 
 // ---- Ventas: envío o compra ya contada no son venta ----
 chk("pagar el envío no es venta", !L.esVentaReal({ msg: 0, producto: "pago envío", concepto: "envio" }, {}));

@@ -604,6 +604,8 @@ export async function cronLector(env, iaJSON, scheduledTime) {
   if (m % 15 === 7) await analizarChats(env, iaJSON).catch((e) => console.log("lector analizar", e?.stack || e));
   // Pendientes viejos: si ya le escribimos después de crearse (y lo último es nuestro), o pasaron 4 días sin que el cliente escriba, se cierran solos (van a seguimientos)
   if (m % 15 === 9) await env.DB.prepare("UPDATE tareas SET estado='resuelta' WHERE estado='abierta' AND ref LIKE 'w805:%' AND EXISTS (SELECT 1 FROM w_conv c WHERE c.conv=tareas.tel AND ((c.ult_yo=1 AND COALESCE(c.ult_yo_ts,0)>tareas.ts) OR (tareas.ts<? AND COALESCE(c.ult_cliente_ts,0)<tareas.ts)))").bind(Date.now() - 4 * 86400e3).run().catch((e) => console.log("lector pend cierre", e?.stack || e));
+  // Seguimientos: la IA va revisando la lista de a 20 durante el día (8 a 21 h), así a las 10 ya está casi toda lista
+  if (m % 30 === 13 && hAR >= 8 && hAR < 21) await revisarSeguimientos(env, iaJSON, { limite: 0, tope: SEG.revisarPorCron }).catch((e) => console.log("lector seguimientos", e?.stack || e));
   if (m % 15 === 11) await auditarCotizaciones(env, iaJSON, { limite: 18 }).catch((e) => console.log("lector auditar", e?.stack || e));
   if (m % 15 === 4) {   // recálculo de días anteriores, de a uno, hasta terminar
     const pend = JSON.parse((await kvGet(env, "lector_backfill")) || "[]");
@@ -874,27 +876,54 @@ PARTE 4 · COMO LE RESPONDES A MANUEL
 - Si te pregunta algo de negocio que no esta en los datos (ej. si conviene vender en Mercado Libre), das tu opinion marcada como OPINION, con los pros, los contras y que dato haria falta para decidir.
 `;
 // ---------------------------------------------------------------------------
-// Seguimientos: SOLO clientes a los que les mandamos una cotización y no avanzaron
+// Seguimientos: clientes a los que les MANDAMOS ALGO (cotización, precios, catálogo o info) y no avanzaron
 // ---------------------------------------------------------------------------
-// 1) Código (exacto): hubo cotización nuestra (w_hito) en los últimos 21 días, no compró, no es proveedor,
-//    la pelota está del lado del cliente (lo último es nuestro, o un "gracias / lo veo" que no pide respuesta),
-//    no le debemos nada (cotización o promesa pendiente) y le toca según la cadencia: 1, 2, 4 y 7 días
-//    entre toques (máximo 4 toques; después se da por frío). Un chat = una fila (sin repetidos por número).
+// 1) Código (exacto): en los últimos 30 días le mandamos una cotización (w_hito) o, escrito por una persona
+//    (no el bot de bienvenida), un precio, un catálogo / lista de precios, un archivo o info del proceso
+//    (tiempos, envío, seña, mínimo). No compró después, no es proveedor, la pelota está del lado del cliente
+//    (lo último es nuestro, o un "gracias / después te digo / lo veo" que no pide respuesta), no le debemos
+//    nada (cotización o promesa pendiente) y le toca según la cadencia: 1, 2, 4 y 7 días entre toques
+//    (máximo 4 toques; después se da por frío). Un número = una fila (sin repetidos aunque cambie el formato).
 // 2) IA (una vez por día por chat): lee la charla, descarta lo que no hace falta seguir (ya compró, dijo que no,
-//    quedó en escribir él en una fecha que no llegó, ya se resolvió) y saca producto, cantidad y monto cotizados
-//    + el mensaje listo. Lo que descarta no vuelve a aparecer ese día en ningún lado (Telegram, panel, agente).
-const RE_PREG_SEG = /seguimiento|(cotiz\w*).{0,80}(no (contest|respond)\w*|gracias|seguir|escribir)|(no (contest|respond)\w*|dijeron gracias).{0,80}cotiz|a quien (le )?(tengo|tenemos|hay) que (escribir|seguir)/;
-const SEG = { dias: 21, esperas: [1, 2, 4, 7], revisarPorDia: 30, porLlamada: 8 };
-const RE_ACUSE = /^\s*(ok(a|ey|is)?|dale|gracias|graciass*|muchas gracias|genial|perfecto|buen[ií]simo|b[aá]rbaro|joya|listo|lo veo|lo pienso|lo charlo|te aviso|te confirmo|cualquier cosa te (aviso|escribo)|despu[eé]s te (aviso|digo)|👍|🙏|🙌)\b/i;
+//    quedó en escribir él en una fecha que no llegó, lo que le mandamos no era comercial, le debemos algo)
+//    y saca qué le mandamos (producto, cantidad y monto) + el mensaje listo. Lo que descarta no vuelve a
+//    aparecer ese día en ningún lado (Telegram, panel, agente).
+const RE_PREG_SEG = /seguimiento|(cotiz\w*|precio|info\w*).{0,80}(no (contest|respond)\w*|gracias|seguir|escribir)|(no (contest|respond)\w*|dijeron gracias).{0,80}(cotiz|precio|info)|a quien (le )?(tengo|tenemos|hay) que (escribir|seguir)/;
+const SEG = { dias: 30, esperas: [1, 2, 4, 7], revisarPorLlamada: 40, revisarPorCron: 20, porLlamada: 10 };
+// "Gracias", "dale", "lo veo", "después te digo", "ahí me fijo": no pide respuesta, la pelota sigue del lado del cliente
+const RE_ACUSE = /^\s*(ok(a|ey|is)?|okay|dale|gracias|graciass*|muchas gracias|mil gracias|genial|perfecto|buen[ií]simo|bueno|b[aá]rbaro|joya|listo|de una|lo veo|lo pienso|lo charlo|lo hablo|lo consulto|te aviso|te confirmo|cualquier cosa|despu[eé]s (te|vemos|lo)|ah[ií] (me fijo|veo|lo veo)|voy a ver|veo y te|ma[nñ]ana te|en la semana te|👍|🙏|🙌|👌)/i;
+const RE_ACUSE_EN = /(despu[eé]s te (respondo|aviso|digo|escribo|confirmo)|despu[eé]s vemos|lo veo y te|lo (pienso|charlo|hablo|consulto)|te (aviso|confirmo|digo)\b|ah[ií] me fijo|voy a ver|veo bien|en la semana|ma[nñ]ana te|cualquier cosa te|qu[eé] s[eé] yo)/i;
+const RE_PIDE = /pas[aá]me|mand[aá]me|cu[aá]nto|precio|quiero|necesito|ten[eé]s|tienen|hay (de|en)|y (el|la|los|las|si)\b/i;
+const esAcuse = (t) => { t = String(t || "").trim(); return t.length > 0 && t.length < 140 && !/\?/.test(t) && !RE_PIDE.test(t) && (RE_ACUSE.test(t) || RE_ACUSE_EN.test(t)); };
+// Dijo claramente que no, o que ya lo resolvió: no se le insiste (el resto lo decide la IA leyendo la charla)
+const RE_NO_SEGUIR = /\bno (me )?(interesa|sirve|gracias|va|voy a (comprar|seguir))|lo dejo\b|lo dejamos\b|ya (lo )?(compr[eé]|consegu[ií]|consegu[ií]|lo tengo|tengo proveedor)|no (estoy|ando) (buscando|interesad)|desisto|olvidate|no quise hacer(te|les)? perder|no me (genera|da) confianza|no me (cierra|conviene)|(abrazo|saludos?)\W{0,3}(y )?suerte|por ahora no\b|ya no (lo )?(necesito|quiero)/i;
+// Lo que mandamos que cuenta como "le pasamos algo" (escrito por una persona, no el bot automático)
+const RE_AUTO = /^(¡?bienvenid|gracias por (escribir|consultar|compartir|enviar|el dato|tu consulta)|te qued[oó] pendiente|quedamos atentos a tu consulta|te dejo la consulta abierta|ya pas[eé] tu|te voy a derivar|perfecto,? .{0,20}¿qu[eé] (modelo|producto|cantidad))/i;
+// Precio = un monto con número (un "¿pudiste ver la cotización?" sin números es un toque, no algo nuevo que le mandamos)
+const RE_PRECIO_ENV = /(\$|usd|u\$s|us\$|d[oó]lares?)\s*\d|\d[\d.,]*\s*(usd|u\$s|us\$|d[oó]lares|pesos|mil|lucas)\b|\d[\d.,]*\s*(c\/u|cada un[oa]|por unidad|el par|la unidad)/i;
+const RE_INFO_ENV = /cat[aá]logo|lista de precios|precios? mayorista|pdf|\d+\s*(a\s*\d+\s*)?d[ií]as|tarda|demora|env[ií]o|se[ñn]a\b|m[ií]nimo|despacho|aduana|como trabajamos|c[oó]mo es el proceso/i;
+function queMandamos(m) {
+  if (!m?.yo || esBot(m.texto)) return "";
+  const t = String(m.texto || "").trim();
+  if (!t || RE_AUTO.test(t)) return "";
+  if (RE_PRECIO_ENV.test(t)) return "precio";
+  if (/^\((archivo|image|imagen|document|documento|pdf)\)/i.test(t)) return "archivo";
+  if (RE_INFO_ENV.test(t) && t.length >= 25) return "info";
+  return "";
+}
 const ultimos10 = (x) => String(x || "").replace(/\D/g, "").slice(-10);
 const PRI_PERFIL = { A: 0, B: 0, C: 1, D: 2 };
 async function candidatosSeguimiento(env, ahora = Date.now()) {
   const todas = async (sql, ...b) => ((await env.DB.prepare(sql).bind(...b).all()).results || []);
   const desde = ahora - SEG.dias * 86400e3;
-  const filas = await todas(`SELECT c.*, MAX(h.ts) cot_ts FROM w_hito h JOIN w_conv c ON c.conv=h.conv
-    WHERE h.tipo='cotizacion' AND h.ts>=? AND c.grupo=0 AND c.archivado=0 AND COALESCE(c.prov,0)=0
-      AND COALESCE(c.etapa,'') NOT IN ('vendido','perdido','no_cliente') AND COALESCE(c.perfil,'')<>'E'
-    GROUP BY c.conv LIMIT 300`, desde);
+  // Chats con movimiento en la ventana (o con cotización en la ventana); 'perdido' entra igual (la IA mira si dijo que no),
+  // 'vendido' solo si lo volvimos a cotizar. Todo por índice (sin subconsultas por fila): D1 cobra filas leídas.
+  const cots = new Map((await todas(`SELECT conv, MAX(ts) ts FROM w_hito WHERE tipo='cotizacion' AND ts>=? GROUP BY conv`, desde)).map((x) => [x.conv, x.ts]));
+  const cond = `grupo=0 AND archivado=0 AND COALESCE(prov,0)=0 AND COALESCE(etapa,'')<>'no_cliente' AND COALESCE(perfil,'')<>'E'`;
+  const filas = await todas(`SELECT * FROM w_conv WHERE ult_ts>=? AND ${cond} ORDER BY ult_ts DESC LIMIT 1500`, desde);
+  const ya = new Set(filas.map((f) => f.conv)), faltanCot = [...cots.keys()].filter((c) => !ya.has(c));
+  for (let i = 0; i < faltanCot.length; i += 80) { const parte = faltanCot.slice(i, i + 80); filas.push(...(await todas(`SELECT * FROM w_conv WHERE conv IN (${parte.map(() => "?").join(",")}) AND ${cond}`, ...parte))); }
+  for (const f of filas) f.cot_ts = cots.get(f.conv) || null;
   if (!filas.length) return [];
   const convs = filas.map((f) => f.conv);
   const ventas = new Map(), deuda = new Set(), msgs = new Map(), cotTxt = new Map();
@@ -907,68 +936,93 @@ async function candidatosSeguimiento(env, ahora = Date.now()) {
   }
   const lista = [];
   for (const f of filas) {
-    const cot = f.cot_ts;
-    if ((ventas.get(f.conv) || 0) >= cot - 86400e3) continue;          // compró después (o el mismo día) de la cotización
     if (deuda.has(f.conv) || f.cot_pend === 1) continue;              // le debemos algo: va a Pendientes, no a seguimientos
-    if ((f.seg_no || 0) >= cot) continue;                             // "No seguir" para esta cotización
     const ms = (msgs.get(f.conv) || []).filter((m) => !(m.yo && esBot(m.texto)));
-    const ultCli = [...ms].reverse().find((m) => !m.yo && m.ts > cot) || null;
+    // Qué le mandamos: la cotización registrada, o lo último con precio / catálogo / archivo / info que escribió una persona
+    let envTs = 0, tipo = "";
+    for (const m of ms) { const q = queMandamos(m); if (q) { envTs = m.ts; tipo = q === "archivo" ? (tipo === "precio" ? "precio" : "archivo") : q; } }
+    let base = f.cot_ts || 0;
+    if (base && base >= envTs - 3600e3) tipo = "cotizacion";
+    else if (envTs) { base = envTs; if (f.cot_ts) tipo = "cotizacion"; }
+    if (!base) continue;                                              // nunca le mandamos nada concreto (solo saludo o preguntas)
+    if (tipo === "archivo" && !f.cot_ts && !ms.some((m) => !m.yo && m.ts > base)) {
+      // Un archivo suelto nuestro cuenta solo si antes el cliente pidió precio/cotización o info
+      const antes = ms.filter((m) => !m.yo && m.ts <= base).slice(-6).map((m) => m.texto).join(" ");
+      if (!/precio|cu[aá]nto|cotiz|sale|valor|cat[aá]logo|info|link|alibaba|1688|temu|quiero|busco|necesito|unidades|pares/i.test(antes)) continue;
+    }
+    const venta = ventas.get(f.conv) || 0;
+    if (venta >= base - 86400e3) continue;                            // compró después (o el mismo día) de lo que le mandamos
+    if (f.etapa === "vendido" && !(f.cot_ts && f.cot_ts > venta)) continue;   // cliente que ya compró: solo si hay cotización nueva
+    if ((f.seg_no || 0) >= base) continue;                            // "No seguir" para esto
     const ult = ms[ms.length - 1] || null;
+    if (!ult && !f.cot_ts) continue;
     const clienteUltimo = ult ? !ult.yo : f.ult_yo === 0;
     if (clienteUltimo) {
-      // Si lo último es del cliente, solo sigue si es un acuse ("gracias", "lo veo") que no pide respuesta
+      // Si lo último es del cliente, solo sigue si es un acuse ("gracias", "lo veo", "después te digo") que no pide respuesta
       const txt = String(ult?.texto ?? f.ult_texto ?? "");
-      const iaDiceQueNo = f.resp === 0 && (f.analizado_ts || 0) >= (f.ult_ts || 0);
-      if (!(iaDiceQueNo || (RE_ACUSE.test(txt) && txt.length < 80 && !/\?/.test(txt)))) continue;
+      const iaDiceQueNo = f.resp === 0 && (f.analizado_ts || 0) >= (f.ult_ts || 0) && !/\?/.test(txt);
+      if (!(esAcuse(txt) || iaDiceQueNo)) continue;
     }
-    // Toques = días distintos en que le escribimos después de la cotización (o de su última respuesta)
-    const base = Math.max(cot, ultCli?.ts || 0);
-    const dias = new Set(ms.filter((m) => m.yo && m.ts > base + 3 * 3600e3).map((m) => diaAR(m.ts)));
-    if ((f.seg_visto || 0) > base) dias.add(diaAR(f.seg_visto));       // "Listo" en el panel o en Telegram cuenta como toque
+    // Lo que dijo el cliente DESPUÉS de lo que le mandamos (por orden, así cuenta aunque sea el mismo minuto)
+    let corte = -1; ms.forEach((m, i) => { if (m.ts <= base && (m.yo || m.ts < base)) corte = i; });
+    const despues = ms.slice(corte + 1).filter((m) => !m.yo);
+    const ultCli = despues[despues.length - 1] || null;
+    if (despues.some((m) => RE_NO_SEGUIR.test(String(m.texto || "")))) continue;
+    // Toques = días distintos en que le escribimos después de mandarle (o de su última respuesta)
+    const desdeToque = Math.max(base, ultCli?.ts || 0);
+    const dias = new Set(ms.filter((m) => m.yo && m.ts > desdeToque + 3 * 3600e3).map((m) => diaAR(m.ts)));
+    if ((f.seg_visto || 0) > desdeToque) dias.add(diaAR(f.seg_visto));    // "Listo" en el panel o en Telegram cuenta como toque
     const toques = dias.size;
     if (toques >= SEG.esperas.length) continue;                       // ya le escribimos 4 veces sin respuesta: frío
     const movida = Math.max(f.ult_yo_ts || 0, f.ult_cliente_ts || 0, f.seg_visto || 0, ult?.ts || 0);
     const diasSin = (ahora - movida) / 86400e3;
     if (diasSin < SEG.esperas[toques]) continue;
-    const reaccion = ultCli ? `dijo "${String(ultCli.texto || "").replace(/\s+/g, " ").trim().slice(0, 40)}"` : "no respondió";
+    const t = ultCli ? String(ultCli.texto || "").replace(/\s+/g, " ").trim() : "";
+    const reaccion = !ultCli ? "no respondió" : /^\((archivo|audio|image|imagen|ptt|sticker)/i.test(t) ? "mandó un audio o archivo" : `dijo "${t.slice(0, 40)}"`;
     lista.push({ conv: f.conv, nombre: f.nombre, perfil: f.perfil, presup_usd: f.presup_usd, producto: f.producto || cotTxt.get(f.conv) || "", etapa: f.etapa, puntaje: f.puntaje,
-      ult_yo_ts: f.ult_yo_ts, seg_visto: f.seg_visto, ult_texto: f.ult_texto, ult_ts: f.ult_ts || movida, cot_ts: cot, cot_dato: cotTxt.get(f.conv) || "",
-      dias_cot: Math.floor((ahora - cot) / 86400e3), dias_sin: Math.floor(diasSin), toque: toques + 1, reaccion, pri: PRI_PERFIL[f.perfil] ?? 2 });
+      ult_yo_ts: f.ult_yo_ts, seg_visto: f.seg_visto, ult_texto: f.ult_texto, ult_ts: f.ult_ts || movida, cot_ts: base, cot_dato: cotTxt.get(f.conv) || "", tipo,
+      dias_cot: Math.floor((ahora - base) / 86400e3), dias_sin: Math.floor(diasSin), toque: toques + 1, reaccion, pri: PRI_PERFIL[f.perfil] ?? 2 });
   }
-  // Sin repetidos: el mismo número (aunque venga con otro formato) queda una sola vez, el de la cotización más nueva
+  // Sin repetidos: el mismo número (aunque venga con otro formato) queda una sola vez, el de lo más nuevo que le mandamos
   const unicos = new Map();
   for (const x of lista) { const k = ultimos10(x.conv) || x.conv, y = unicos.get(k); if (!y || x.cot_ts > y.cot_ts) unicos.set(k, x); }
   return [...unicos.values()].sort((a, b) => a.pri - b.pri || (b.presup_usd || 0) - (a.presup_usd || 0) || b.cot_ts - a.cot_ts);
 }
-const claveSegIA = (ts = Date.now()) => "seg_ia:" + diaAR(ts);
-async function cacheSegIA(env) { try { return JSON.parse((await kvGet(env, claveSegIA())) || "{}"); } catch { return {}; } }
+// Revisión de la IA guardada por chat (no por día): se reusa mientras la charla no cambie.
+// "No seguir" vale 3 días (por si quedó en escribir él en una fecha); el mensaje listo se rehace a los 2 días.
+const CLAVE_SEG_IA = "seg_ia";
+async function cacheSegIA(env) { try { return JSON.parse((await kvGet(env, CLAVE_SEG_IA)) || "{}"); } catch { return {}; } }
 const firmaSeg = (s) => `${s.cot_ts}:${s.ult_ts}`;
-// Lista sin IA nueva (usa lo que la IA ya revisó hoy): para contar, el reporte y el agente
+const vigente = (c, s, ahora = Date.now()) => !!c && c.f === firmaSeg(s) && ahora - (c.ts || 0) < (c.seguir === false ? 3 : 2) * 86400e3;
+// Lista sin IA nueva (usa lo que la IA ya revisó): para contar, el reporte y el agente
 export async function seguimientos(env) {
   const [l, cache] = await Promise.all([candidatosSeguimiento(env), cacheSegIA(env)]);
-  return l.filter((s) => { const c = cache[s.conv]; return !(c && c.f === firmaSeg(s) && c.seguir === false); }).map((s) => conDetalle(s, cache[s.conv]));
+  return l.filter((s) => !(vigente(cache[s.conv], s) && cache[s.conv].seguir === false)).map((s) => conDetalle(s, cache[s.conv]));
 }
 function conDetalle(s, c) {
-  const ok = c && c.f === firmaSeg(s);
+  const ok = vigente(c, s);
   return { ...s, producto: (ok && c.producto) || s.producto, cantidad: (ok && c.cantidad) || "", total: (ok && c.total) || "", borrador: (ok && c.mensaje) || "", revisado: !!ok };
 }
 // Una línea corta y útil: a quién, qué le cotizamos (cantidad y monto), cuándo y qué contestó
 export function lineaSeguimiento(s) {
   const que = [s.cantidad, s.producto].filter(Boolean).join(" ") || "lo que pidió";
-  return `${s.nombre || "+" + s.conv} (+${s.conv}): le cotizamos ${que}${s.total ? " · " + s.total : ""} · cotizado hace ${s.dias_cot} d → ${s.reaccion}${s.toque > 1 ? ` (ya le escribimos ${s.toque - 1} ${s.toque === 2 ? "vez" : "veces"})` : ""}`;
+  const nom = /\p{L}/u.test(String(s.nombre || "")) ? String(s.nombre).trim() : "Sin nombre";
+  const verbo = { precio: ["le pasamos precio de", "se lo pasamos"], info: ["le pasamos info de", "se la pasamos"], archivo: ["le mandamos precios/fotos de", "se lo mandamos"] }[s.tipo] || ["le cotizamos", "cotizado"];
+  return `${nom} (+${s.conv}): ${verbo[0]} ${que}${s.total ? " · " + s.total : ""} · ${verbo[1]} hace ${s.dias_cot} d → ${s.reaccion}${s.toque > 1 ? ` (ya le escribimos ${s.toque - 1} ${s.toque === 2 ? "vez" : "veces"})` : ""}`;
 }
 // Revisa con IA los que faltan hoy y devuelve los que de verdad hay que seguir (con producto, cantidad, monto y mensaje)
-export async function revisarSeguimientos(env, iaJSON, { limite = 10 } = {}) {
-  const lista = await candidatosSeguimiento(env), k = claveSegIA(), cache = await cacheSegIA(env);
-  const faltan = lista.filter((s) => cache[s.conv]?.f !== firmaSeg(s)).slice(0, SEG.revisarPorDia);
+// tope: cuántos revisa la IA en esta llamada (el resto lo va revisando el cron de a poco durante el día)
+export async function revisarSeguimientos(env, iaJSON, { limite = 10, tope = SEG.revisarPorLlamada } = {}) {
+  const lista = await candidatosSeguimiento(env), cache = await cacheSegIA(env), ahora = Date.now();
+  const faltan = lista.filter((s) => !vigente(cache[s.conv], s, ahora)).slice(0, tope);
   if (faltan.length && iaJSON) {
     for (let i = 0; i < faltan.length; i += SEG.porLlamada) {
       const tanda = faltan.slice(i, i + SEG.porLlamada);
       const charlas = await Promise.all(tanda.map((s) => env.DB.prepare("SELECT yo, texto, ts FROM w_msg WHERE conv=? AND COALESCE(texto,'')<>'' ORDER BY ts DESC LIMIT 16").bind(s.conv).all().then((r) => (r.results || []).reverse()).catch(() => [])));
-      const r = await iaJSON(env, `Atendés el WhatsApp de "Te Importamos" (importaciones por encargo de China a Argentina, para revendedores y negocios). A estos clientes les mandamos una cotización y dejaron de contestar (o solo dijeron "gracias", "lo veo"). Ahora es ${fechaHora(Date.now())} (hora Argentina).
+      const r = await iaJSON(env, `Atendés el WhatsApp de "Te Importamos" (importaciones por encargo de China a Argentina, para revendedores y negocios). A estos clientes les mandamos una cotización, precios, un catálogo o información (tiempos, envío, cómo trabajamos) y dejaron de contestar, o solo dijeron "gracias", "lo veo", "después te digo". Ahora es ${fechaHora(Date.now())} (hora Argentina).
 Para cada uno decidí si HOY hay que escribirle y, si sí, escribí el mensaje para que el dueño lo revise y lo mande él.
-"seguir": false si en la charla se ve que NO hace falta: ya compró o pagó, dijo que no o que lo deja, pidió que le escribamos en una fecha que todavía no llegó, quedó en escribirnos él en un plazo que todavía no pasó, el tema ya se resolvió, en realidad nunca le pasamos un precio (no hubo cotización), o no es un cliente (proveedor, conocido, socio). Ante la duda con un cliente cotizado que no contestó, true.
-"producto", "cantidad" y "total": lo que le COTIZAMOS según la charla (ej. "zapatillas Vans", "20 pares", "USD 640 total" o "USD 32 c/u"). Si no se ve, "".
+"seguir": false si en la charla se ve que NO hace falta: ya compró o pagó, dijo que no o que lo deja, pidió que le escribamos en una fecha que todavía no llegó, quedó en escribirnos él en un plazo que todavía no pasó, el tema ya se resolvió, lo que le mandamos no era comercial (solo un saludo, una pregunta nuestra sin precio ni info, el seguimiento de un envío de una compra ya hecha), le debemos algo nosotros (le dijimos que le pasábamos la cotización o un dato y no se lo pasamos), ya tiene un pedido en curso con nosotros (está esperando que llegue), le dijimos que eso no lo traemos o no lo conseguimos, o no es un cliente (proveedor, conocido, socio). Ante la duda con un cliente al que le pasamos precio o info y no contestó, true.
+"producto", "cantidad" y "total": lo que le COTIZAMOS o le pasamos según la charla (ej. "zapatillas Vans", "20 pares", "USD 640 total" o "USD 32 c/u"). Si no se ve, "".
 Reglas del mensaje:
 - Rioplatense, con voseo, cercano y corto (2 a 4 líneas), sin emojis, como lo escribiría una persona por WhatsApp. Sin "seguimiento", sin "estimado", sin "le escribo para".
 - Nombrá el producto que pidió y terminá con UNA pregunta concreta y fácil de contestar.
@@ -977,25 +1031,29 @@ Reglas del mensaje:
 - Si en la charla dijo una objeción (caro, mínimo, plazo, desconfianza), respondela sin bajar el precio.
 - Nunca inventes precios, stock, descuentos ni fechas que no estén en la charla.
 CLIENTES:
-${tanda.map((s, j) => `#${j + 1} ${s.nombre || "sin nombre"} · producto: ${s.producto || "?"} · cotizado hace ${s.dias_cot} días · ${s.reaccion} · toque ${s.toque}${s.presup_usd ? " · aprox USD " + s.presup_usd : ""}${s.cot_dato ? " · cotización: " + String(s.cot_dato).replace(/\s+/g, " ").slice(0, 160) : ""}
+${tanda.map((s, j) => `#${j + 1} ${s.nombre || "sin nombre"} · producto: ${s.producto || "?"} · le mandamos ${{ precio: "precio", info: "info", archivo: "un archivo (precios o fotos)" }[s.tipo] || "una cotización"} hace ${s.dias_cot} días · ${s.reaccion} · toque ${s.toque}${s.presup_usd ? " · aprox USD " + s.presup_usd : ""}${s.cot_dato ? " · cotización: " + String(s.cot_dato).replace(/\s+/g, " ").slice(0, 160) : ""}
 ${charlas[j].map((m) => (m.yo ? "Nosotros: " : "Cliente: ") + String(m.texto).replace(/\s+/g, " ").slice(0, 300)).join("\n") || "(sin mensajes guardados)"}`).join("\n\n")}
 Respondé SOLO JSON: {"mensajes":[{"n":1,"seguir":true,"motivo":"si seguir es false, por qué en pocas palabras","producto":"","cantidad":"","total":"","mensaje":"..."}]}`).catch(() => null);
+      // Los que la IA no devolvió quedan revisados igual (siguen en la lista, sin mensaje): no se re-preguntan en cada carga
+      if (Array.isArray(r?.mensajes)) for (const s of tanda) cache[s.conv] = { f: firmaSeg(s), ts: ahora, seguir: true, motivo: "", producto: "", cantidad: "", total: "", mensaje: "" };
       for (const x of Array.isArray(r?.mensajes) ? r.mensajes : []) {
         const s = tanda[(parseInt(x?.n) || 0) - 1]; if (!s) continue;
-        cache[s.conv] = { f: firmaSeg(s), seguir: x.seguir !== false, motivo: String(x.motivo || "").slice(0, 120), producto: String(x.producto || "").slice(0, 60), cantidad: String(x.cantidad || "").slice(0, 40), total: String(x.total || "").slice(0, 50), mensaje: String(x.mensaje || "").trim().slice(0, 700) };
+        cache[s.conv] = { f: firmaSeg(s), ts: ahora, seguir: x.seguir !== false, motivo: String(x.motivo || "").slice(0, 120), producto: String(x.producto || "").slice(0, 60), cantidad: String(x.cantidad || "").slice(0, 40), total: String(x.total || "").slice(0, 50), mensaje: String(x.mensaje || "").trim().slice(0, 700) };
       }
     }
-    await env.DB.prepare("DELETE FROM kv WHERE k LIKE 'seg_ia:%' AND k<>?").bind(k).run().catch(() => {});
-    await kvPut(env, k, JSON.stringify(cache));
+    const vivos = new Set(lista.map((s) => s.conv));
+    for (const c of Object.keys(cache)) if (!vivos.has(c)) delete cache[c];      // solo se guarda lo que sigue en la lista
+    await env.DB.prepare("DELETE FROM kv WHERE k LIKE 'seg_ia:%'").run().catch(() => {});
+    await kvPut(env, CLAVE_SEG_IA, JSON.stringify(cache));
   }
-  const ok = lista.filter((s) => !(cache[s.conv]?.f === firmaSeg(s) && cache[s.conv].seguir === false)).map((s) => conDetalle(s, cache[s.conv]));
+  const ok = lista.filter((s) => !(vigente(cache[s.conv], s, ahora) && cache[s.conv].seguir === false)).map((s) => conDetalle(s, cache[s.conv]));
   return limite ? ok.slice(0, limite) : ok;
 }
 
 // Chats, cotizados y ventas por perfil, de dónde vienen y por qué se pierden
 export async function metricasPerfil(env, desde) {
   const all = async (sql, ...b) => (await env.DB.prepare(sql).bind(...b).all()).results || [];
-  const base = "FROM w_conv c WHERE c.ult_ts>=? AND c.grupo=0 AND COALESCE(c.prov,0)=0 AND COALESCE(c.etapa,'')<>'no_cliente'";
+  const base = "FROM w_conv c WHERE (COALESCE(c.ult_ts,0)>=? OR EXISTS (SELECT 1 FROM w_hito h WHERE h.conv=c.conv AND h.tipo='cotizacion' AND h.ts>=?)) AND c.grupo=0 AND COALESCE(c.prov,0)=0 AND COALESCE(c.etapa,'')<>'no_cliente'";
   const [perfiles, origen, motivos] = await Promise.all([
     all(`SELECT COALESCE(c.perfil,'sin') perfil, COUNT(*) chats,
       SUM(CASE WHEN EXISTS (SELECT 1 FROM w_hito h WHERE h.conv=c.conv AND h.tipo='cotizacion' AND h.ts>=?) THEN 1 ELSE 0 END) cotizados,
@@ -1043,10 +1101,10 @@ export async function preguntarVendedor(env, iaJSON, pregunta, opts = {}) {
   }
   // "¿A quién le hago seguimiento?" se contesta con la lista verificada por código (nada de nombres inventados)
   if (RE_PREG_SEG.test(normalQ(q)) && !/\b(por que|porque|analiz|estrategia|opin)/.test(normalQ(q))) {
-    const l = await revisarSeguimientos(env, iaJSON, { limite: 15 });
+    const l = await revisarSeguimientos(env, iaJSON, { limite: 0 });
     const pideMsj = /mensaj|texto|que (le )?(escrib|mand|dig)/.test(normalQ(q));
     const respuesta = l.length
-      ? `Cotizados que hay que seguir hoy (${l.length}), primero los que más valen:\n` + l.map((x, i) => `${i + 1}. ${lineaSeguimiento(x)}${pideMsj && x.borrador ? "\n   Mensaje: " + x.borrador : ""}`).join("\n") + `\n\nSolo entran los que tienen una cotización nuestra en el chat y no compraron, no los que todavía esperan respuesta nuestra (esos están en Responder ya o Pendientes).${pideMsj ? "" : " Los mensajes listos para mandar están en Hoy › Seguimientos o escribiendo \"seguimientos\" en Telegram."}`
+      ? `Seguimientos de hoy: ${l.length} (la lista completa, primero los que más valen):\n` + l.map((x, i) => `${i + 1}. ${lineaSeguimiento(x)}${pideMsj && x.borrador ? "\n   Mensaje: " + x.borrador : ""}`).join("\n") + `\n\nEntran todos a los que les mandamos cotización, precio o info y no avanzaron (no contestaron, o dijeron \"gracias\" / \"después te digo\"), sin repetidos. No entran los que esperan respuesta nuestra (Responder ya o Pendientes), los que compraron ni los que dijeron que no.${pideMsj ? "" : " Los mensajes listos para mandar están en Hoy › Seguimientos o escribiendo \"seguimientos\" en Telegram."}`
       : "Hoy no hay cotizados para seguir: los que cotizamos ya contestaron, compraron, les escribimos hace poco o todavía no les toca.";
     await env.DB.batch([env.DB.prepare("INSERT INTO ag_chat (ts, rol, texto) VALUES (?,?,?)").bind(ahora, "u", q), env.DB.prepare("INSERT INTO ag_chat (ts, rol, texto) VALUES (?,?,?)").bind(ahora + 1, "a", respuesta)]);
     return { respuesta, fuentes: { seguimientos: l.length } };
@@ -1075,8 +1133,8 @@ ${mem.map((n) => `- [${fechaHora(n.ts)}] (${n.tipo}) ${n.texto}`).join("\n") || 
 OBJETIVOS ACTIVOS Y AVANCE (medidos por el código): ${JSON.stringify(objs.map((o) => ({ metrica: o.metrica, periodo: o.periodo, meta: o.meta, actual: o.actual, pct: o.pct })))}
 METRICAS EXACTAS · hoy: ${JSON.stringify(mHoy)} · 7 dias: ${JSON.stringify(m7)} · los 7 dias anteriores (para comparar): ${JSON.stringify(m7ant)} · 30 dias: ${JSON.stringify(m30)}
 POR PERFIL (A Mercado Libre/con presupuesto, B negocio, C revendedor chico, D consumidor final, E curioso) · 7 dias: ${JSON.stringify(p7)} · 30 dias: ${JSON.stringify(p30)}
-SEGUIMIENTOS PENDIENTES HOY (verificados por código: SOLO clientes con una cotización nuestra en el chat que no compraron; es la ÚNICA lista válida de cotizados para seguir):
-${segs.slice(0, 25).map((s) => `- ${lineaSeguimiento(s)} · perfil ${s.perfil || "?"}`).join("\n") || "ninguno"}
+SEGUIMIENTOS PENDIENTES HOY (verificados por código: clientes a los que les mandamos cotización, precio o info y no avanzaron; es la ÚNICA lista válida para seguir):
+${segs.slice(0, 60).map((s) => `- ${lineaSeguimiento(s)} · perfil ${s.perfil || "?"}`).join("\n") || "ninguno"}
 CHATS DE LOS ULTIMOS 14 DIAS (primero A y B):
 ${chats.map(fChat).join("\n").slice(0, 30000)}
 ${opts.redes || ""}
@@ -1097,7 +1155,7 @@ Reglas:
 - Directo, español rioplatense con voseo, sin emojis, sin guiones largos. Primero la respuesta, después lo accionable. Cuando nombres un cliente, poné nombre y número (+549...).
 - Si pregunta por qué no vendimos o qué hicimos mal: analizalo con los datos (perfil de los chats, seguimientos pendientes, cotizaciones sin respuesta, tiempo de respuesta, motivos de pérdida, de dónde vienen) y cerrá con 3 acciones concretas.
 - No agregues mensajes para clientes si Manuel no los pidió en este mensaje. Si Manuel dice que un cliente ya está atendido o resuelto, no lo vuelvas a mencionar y guardalo en "guardar" como nota de tipo cliente.
-- Cotizados para seguir: nombrá SOLO a los de SEGUIMIENTOS PENDIENTES, nunca saques nombres de la lista de chats (que la IA marque "cotizado" no alcanza: tiene que haber una cotización nuestra). Formato corto: "Nombre (+549...): le cotizamos X por N, USD Y, hace D días → no respondió / dijo gracias".
+- Seguimientos: nombrá SOLO a los de SEGUIMIENTOS PENDIENTES, nunca saques nombres de la lista de chats (que la IA marque "cotizado" no alcanza: tiene que haber algo que le mandamos). Formato corto: "Nombre (+549...): le cotizamos X por N, USD Y, hace D días → no respondió / dijo gracias".
 - Ventas: contá SOLO las de las MÉTRICAS EXACTAS. Pagar el envío, el flete o el saldo de una compra ya hecha NO es una venta nueva.
 - Si pide mensajes de seguimiento: escribí uno por cliente, corto (2 a 4 líneas), cercano, sin emojis, sin decir "tenemos stock" y sin inventar precios. Son para que Manuel los copie: nunca se mandan solos.
 - Objetivos: si te pide que los propongas, usá los últimos 30 días como base y proponé subir entre 20% y 50%, no más. Métricas posibles: ${METRICAS_OBJ.join(", ")}. Periodo: dia, semana o mes. Ponelos en "objetivos" SOLO si Manuel pidió explícitamente dejarlos, fijarlos o confirmarlos (puede ser confirmando algo que propusiste antes en la charla). Si solo pidió una propuesta, mostralos en el texto, devolvé "objetivos":[] y preguntá si los dejás.

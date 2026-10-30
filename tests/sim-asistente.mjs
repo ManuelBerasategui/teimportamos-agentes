@@ -67,7 +67,7 @@ await mandarS("seguimientos");
 const ms = capS.at(-1);
 chk("seguimientos: lista con mensaje listo", ms?.text.includes("Seguimientos de hoy: 1") && ms.text.includes("Ana") && ms.text.includes("cotizado hace 4 d") && ms.text.includes("¿pudiste ver lo de los auriculares?"));
 chk("seguimientos: botón abre WhatsApp con el texto", ms?.reply_markup?.inline_keyboard?.[0]?.[0]?.url === "https://wa.me/5493410000001?text=" + encodeURIComponent("Ana, ¿pudiste ver lo de los auriculares? ¿Te sirve que lo ajustemos a 30?"));
-chk("seguimientos: la IA ve la charla", promptSeg.includes("Cliente: cuanto me salen 50 auriculares?") && promptSeg.includes("cotizado hace 4 días"));
+chk("seguimientos: la IA ve la charla", promptSeg.includes("Cliente: cuanto me salen 50 auriculares?") && promptSeg.includes("le mandamos una cotización hace 4 días"));
 await mandarS("seg"); chk("seguimientos: el mensaje se escribe una vez por día", llamadasSeg === 1 && capS.at(-1).text.includes("¿pudiste ver"));
 const nS = capS.length; await A.cronAsistente(env, t(13), iaS); chk("10 hs manda los seguimientos al chat principal", capS.length === nS + 1 && capS.at(-1).chat_id === "111" && capS.at(-1).reply_markup);
 await A.cronAsistente(env, t(11), iaS); chk("8 hs avisa cuántos seguimientos vienen", capS.at(-1).text.includes("A las 10 te paso 1 seguimiento"));
