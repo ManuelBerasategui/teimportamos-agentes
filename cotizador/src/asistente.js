@@ -215,13 +215,13 @@ async function botonSeguimiento(env, cb) {
   if (ok && /^\d{6,}$/.test(conv || "")) await env.DB.prepare(`UPDATE w_conv SET ${accion === "no" ? "seg_no" : "seg_visto"}=? WHERE conv=?`).bind(Date.now(), conv).run();
   await tg(env, "answerCallbackQuery", { callback_query_id: cb.id, text: !ok ? "Este chat no está conectado al panel" : accion === "no" ? "Listo, no lo vuelvo a mostrar por esta cotización" : "Listo, sale de la lista hasta el próximo toque" });
 }
-async function mandarSeguimientos(env, iaJSON, chat, mas = false, callado = false) {
+async function mandarSeguimientos(env, iaJSON, chat, mas = false, callado = false, topeIA) {
   // "más seguimientos": los mensajes listos de los 12 siguientes a los que ya se pasaron hoy
   const k = "seg_tg_desde:" + chat, hoy = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
   let desde = 0;
   if (mas) { try { const x = JSON.parse((await env.DB.prepare("SELECT v FROM kv WHERE k=?").bind(k).first())?.v || "{}"); if (x.dia === hoy) desde = x.desde || 0; } catch {} }
   const quien = (await chatsConocidos(env))[chat] || "manuel";
-  const p = await seguimientosHoy(env, iaJSON, { desde, tope: callado ? 20 : 8, quien });
+  const p = await seguimientosHoy(env, iaJSON, { desde, tope: topeIA ?? (callado ? 20 : 8), quien });
   if (!p.length) return callado ? null : decir(env, chat, mas ? "Ya te pasé todos los seguimientos de hoy. 🙌" : "No hay seguimientos pendientes hoy. 🙌");
   for (const x of p) await decirBotones(env, chat, x.texto, x.botones);
   await env.DB.prepare("INSERT INTO kv (k,v,exp) VALUES (?,?,NULL) ON CONFLICT(k) DO UPDATE SET v=excluded.v").bind(k, JSON.stringify({ dia: hoy, desde: desde + SEG_TG.conMensaje })).run().catch(() => {});
@@ -520,6 +520,22 @@ async function atender(env, iaJSON, upd) {
   try { const u = JSON.parse((await kvGet(env, "tg_updates")) || "[]").filter((x) => String(x.message.chat.id) !== chat); u.push({ message: { chat: msg.chat } }); await kvPut(env, "tg_updates", JSON.stringify(u.slice(-10))); } catch {}
   const quien = (await chatsConocidos(env))[chat];
   if (!quien) {
+    // Socio invitado por número ("agregar socio +54 9 ... como Juan"): comparte su número con el botón y queda conectado
+    let inv = {}; try { inv = JSON.parse((await kvGet(env, "tg_invitados")) || "{}"); } catch {}
+    if (msg.contact) {
+      const propio = !msg.contact.user_id || String(msg.contact.user_id) === String(msg.from?.id || "");
+      const k = String(msg.contact.phone_number || "").replace(/\D/g, "").slice(-10), x = inv[k];
+      if (!propio || !x) return decir(env, chat, "Ese número no está invitado. Pedile al dueño que te agregue desde su Telegram: \"agregar socio +54 9 ... como <tu nombre>\".");
+      await kvPut(env, `telegram_chat:${x.nombre}`, chat);
+      delete inv[k]; await kvPut(env, "tg_invitados", JSON.stringify(inv));
+      let eq = []; try { eq = JSON.parse((await kvGet(env, "seg_equipo")) || "[]").map(nom); } catch {}
+      eq = [...new Set([...(eq.length ? eq : [nom(x.de)]), nom(x.nombre)])];
+      await kvPut(env, "seg_equipo", JSON.stringify(eq)); await kvPut(env, "seg_asig", "{}");
+      await tg(env, "sendMessage", { chat_id: chat, text: `✅ Listo ${x.nombre[0].toUpperCase() + x.nombre.slice(1)}, quedaste conectado. Cuando ${x.de} pida "seguimientos" (o a las 10), te llega TU lista con los botones para abrir cada WhatsApp con el mensaje escrito. También podés escribir "seguimientos" vos.`, reply_markup: { remove_keyboard: true } });
+      const cDe = await chatDe(env, nom(x.de)); if (cDe) await decir(env, cDe, `✅ ${x.nombre} se conectó. Los seguimientos ahora se reparten entre ${eq.join(" y ")}: cada número a uno solo.`);
+      return;
+    }
+    if (/^\/start/.test(msg.text || "") && Object.keys(inv).length) return tg(env, "sendMessage", { chat_id: chat, text: "Hola. Para conectarte tocá el botón de abajo y compartí tu número (así sé que sos vos).", reply_markup: { keyboard: [[{ text: "📱 Compartir mi número", request_contact: true }]], one_time_keyboard: true, resize_keyboard: true } });
     if (/^\/start/.test(msg.text || "")) return decir(env, chat, "Hola. Para conectarte, tocá \"Conectar Telegram\" en el panel ahora.");
     return decir(env, chat, "Este asistente es privado del equipo de Te Importamos. Si sos del equipo, conectá tu Telegram desde el panel.");
   }
@@ -556,6 +572,15 @@ async function atender(env, iaJSON, upd) {
     return decir(env, chat, (nt ? agendaNotion(nt) : "No pude leer tu Notion ahora.") + (neg.calientes ? `\n\n💬 Negocio: ${neg.calientes} chats calientes del 805 (decime "chats").` : ""));
   }
   if (/^\/?(chats|whatsapp|wpp|805)\s*$/.test(t)) return decir(env, chat, await chatsSinContestar(env));
+  if (/^\/?(agrega(r|me)?|suma(r|me)?|invita(r)?|conecta(r)?) (a )?(mi |al )?(socio|equipo|companero|compa)/.test(t)) {
+    const num = String(texto).replace(/\D/g, "");
+    if (num.length < 10) return decir(env, chat, 'Pasame el número así: "agregar socio +54 9 341 301-1600 como Juan".');
+    const nombre = nom((t.match(/\bcomo\s+([a-z]+)/) || [])[1] || "socio");
+    let inv = {}; try { inv = JSON.parse((await kvGet(env, "tg_invitados")) || "{}"); } catch {}
+    inv[num.slice(-10)] = { nombre, de: nombreDe(quien), ts: Date.now() }; await kvPut(env, "tg_invitados", JSON.stringify(inv));
+    const bot = (await tg(env, "getMe", {}))?.result?.username;
+    return decir(env, chat, `Listo, invité al +${num} como "${nombre}". Pasale este link para que abra el bot: ${bot ? "https://t.me/" + bot : "(el mismo bot que usás vos)"}\nÉl toca Iniciar y después "📱 Compartir mi número". Cuando se conecte te aviso, y desde ahí "seguimientos" les manda a los dos su lista (cada número a uno solo).`);
+  }
   if (/^\/?(no repartir|dejar de repartir|sin repartir) (los )?seguimientos|^\/?seguimientos solo (para )?(mi|yo)\s*$/.test(t)) { await kvPut(env, "seg_equipo", "[]"); await kvPut(env, "seg_asig", "{}"); return decir(env, chat, "Listo: los seguimientos vuelven a ir enteros a una sola lista."); }
   if (/^\/?repart(i|ir|ime|amos)( los)? seguimientos/.test(t)) {
     const conectados = [...new Set(Object.values(await chatsConocidos(env)).map(nom))];
@@ -567,7 +592,17 @@ async function atender(env, iaJSON, upd) {
     return decir(env, chat, `Listo: los seguimientos se reparten entre ${eq.map((n) => n[0].toUpperCase() + n.slice(1)).join(" y ")}. Cada número le toca a uno solo y le queda asignado. Cada uno escribe "seguimientos" acá y le llega SU lista con sus botones; a las 10 le llega sola a cada uno.${faltan.length ? ` (${faltan.join(", ")} no tiene Telegram conectado, quedó afuera.)` : ""} Para volver a una sola lista: "no repartir seguimientos".`);
   }
   if (/^\/?(mas|más|siguientes?|otros) (seguimientos?|seg|segs)\s*$|^\/?(seguimientos?|seg|segs) (mas|más|siguientes)\s*$/.test(t)) { await tg(env, "sendChatAction", { chat_id: chat, action: "typing" }); return mandarSeguimientos(env, iaJSON, chat, true); }
-  if (/^\/?(seguimientos?|seg|segs)( de hoy)?\s*$/.test(t)) { await tg(env, "sendChatAction", { chat_id: chat, action: "typing" }); return mandarSeguimientos(env, iaJSON, chat); }
+  if (/^\/?(seguimientos?|seg|segs)( de hoy)?\s*$/.test(t)) {
+    await tg(env, "sendChatAction", { chat_id: chat, action: "typing" });
+    const eq = await equipoSeguimientos(env);
+    if (!eq.length) return mandarSeguimientos(env, iaJSON, chat);
+    // Equipo armado: le llega a cada uno SU lista (empezando por el que la pidió)
+    const yo = nom(quien), orden = [yo, ...eq.filter((n) => n !== yo)].filter((n) => eq.includes(n));
+    const avisos = [];
+    for (const [i, n] of orden.entries()) { const c = n === yo ? chat : await chatDe(env, n); if (!c) continue; await mandarSeguimientos(env, iaJSON, c, false, false, i ? 0 : 8); if (n !== yo) avisos.push(n); }
+    if (avisos.length) await decir(env, chat, `📨 A ${avisos.map((n) => n[0].toUpperCase() + n.slice(1)).join(" y ")} también le${avisos.length > 1 ? "s" : ""} llegó su parte. Ningún número está en dos listas.`);
+    return;
+  }
   if (/^\/?(redes|instagram)\s*$/.test(t)) return decir(env, chat, "📲 Hoy en redes:\n" + (await redesHoy(env)).map((x) => "• " + x).join("\n"));
   if (/^\/?(negocio|pendientes del negocio|panel)\b/.test(t)) { const n = await negocioPendiente(env); return decir(env, chat, n.texto ? "Lo que está esperando en el negocio:\n" + n.texto : "En el negocio no hay nada esperando. 🙌"); }
   if (/^\/?notion\s*$/.test(t)) {

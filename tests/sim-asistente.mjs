@@ -73,6 +73,20 @@ const nS = capS.length; await A.cronAsistente(env, t(13), iaS); chk("10 hs manda
 await A.cronAsistente(env, t(11), iaS); chk("8 hs avisa cuántos seguimientos vienen", capS.at(-1).text.includes("A las 10 te paso 1 seguimiento"));
 await A.cronAsistente(env, t(0), iaS); chk("21 hs avisa seguimientos sin hacer", capS.at(-1).text.includes("Quedaron 1 seguimiento sin hacer"));
 db.prepare("UPDATE w_conv SET ult_yo_ts=? WHERE conv='5493410000001'").run(Date.now());
+// Socio invitado por número: comparte su contacto, queda conectado y "seguimientos" les manda a los dos
+const mandarDe = async (id, m) => { const ctx = { p: null, waitUntil(x) { this.p = x; } }; await A.rutaTelegram(env, { json: async () => ({ message: { chat: { id }, from: { id }, ...m } }), headers: { get: () => sec } }, new URL("https://x/tg/" + sec), ctx, iaS); await ctx.p; };
+await mandarS("agregar socio +54 9 3413 01-1600 como Facu");
+chk("invitar socio: confirma y explica", capS.at(-1).text.includes("invité") && capS.at(-1).text.includes("Compartir mi número"));
+await mandarDe(333, { text: "/start" });
+chk("el socio ve el botón para compartir su número", String(capS.at(-1).chat_id) === "333" && capS.at(-1).reply_markup?.keyboard?.[0]?.[0]?.request_contact === true);
+await mandarDe(444, { contact: { phone_number: "5491100000000", user_id: 444 } });
+chk("un número no invitado no entra", capS.at(-1).text.includes("no está invitado"));
+await mandarDe(333, { contact: { phone_number: "543413011600", user_id: 333 } });
+chk("el socio queda conectado y se avisa al dueño", capS.some((x) => String(x.chat_id) === "333" && x.text.includes("quedaste conectado")) && capS.at(-1).text.includes("se conectó"));
+const nAntes = capS.length; await mandarS("seguimientos");
+const nuevos = capS.slice(nAntes);
+chk("'seguimientos' le manda a los dos (cada uno lo suyo)", nuevos.some((x) => x.chat_id === 111 || x.chat_id === "111") && nuevos.some((x) => String(x.chat_id) === "333") && nuevos.at(-1).text.includes("Facu"));
+await mandarS("no repartir seguimientos");
 await mandarS("repartir seguimientos con juan"); chk("repartir sin la otra persona conectada avisa qué hacer", capS.at(-1).text.includes("Conectar Telegram") && capS.at(-1).text.includes("juan"));
 await mandarS("seguimientos"); chk("si ya le escribimos, sale de la lista", capS.at(-1).text.includes("No hay seguimientos pendientes"));
 const nS2 = capS.length; await A.cronAsistente(env, t(13), iaS); chk("10 hs sin seguimientos no manda nada", capS.length === nS2);
