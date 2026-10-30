@@ -605,7 +605,7 @@ export async function cronLector(env, iaJSON, scheduledTime) {
   // Pendientes viejos: si ya le escribimos después de crearse (y lo último es nuestro), o pasaron 4 días sin que el cliente escriba, se cierran solos (van a seguimientos)
   if (m % 15 === 9) await env.DB.prepare("UPDATE tareas SET estado='resuelta' WHERE estado='abierta' AND ref LIKE 'w805:%' AND EXISTS (SELECT 1 FROM w_conv c WHERE c.conv=tareas.tel AND ((c.ult_yo=1 AND COALESCE(c.ult_yo_ts,0)>tareas.ts) OR (tareas.ts<? AND COALESCE(c.ult_cliente_ts,0)<tareas.ts)))").bind(Date.now() - 4 * 86400e3).run().catch((e) => console.log("lector pend cierre", e?.stack || e));
   // Seguimientos: la IA va revisando la lista de a 20 durante el día (8 a 21 h), así a las 10 ya está casi toda lista
-  if (m % 30 === 13 && hAR >= 8 && hAR < 21) await revisarSeguimientos(env, iaJSON, { limite: 0, tope: SEG.revisarPorCron }).catch((e) => console.log("lector seguimientos", e?.stack || e));
+  if (m === 43 && hAR >= 8 && hAR < 21 && hAR % 2 === 0) await revisarSeguimientos(env, iaJSON, { limite: 0, tope: SEG.revisarPorCron }).catch((e) => console.log("lector seguimientos", e?.stack || e));
   if (m % 15 === 11) await auditarCotizaciones(env, iaJSON, { limite: 18 }).catch((e) => console.log("lector auditar", e?.stack || e));
   if (m % 15 === 4) {   // recálculo de días anteriores, de a uno, hasta terminar
     const pend = JSON.parse((await kvGet(env, "lector_backfill")) || "[]");
