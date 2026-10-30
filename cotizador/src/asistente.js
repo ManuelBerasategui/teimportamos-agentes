@@ -135,8 +135,9 @@ async function cuantosSeg(env) { try { return (await seguimientos(env)).length; 
 // Lista COMPLETA en pocas líneas (uno por renglón, sin repetidos) + los mensajes listos con botón, de a 12.
 // "más seguimientos" trae los 12 siguientes con su mensaje.
 const SEG_TG = { porMensaje: 6, conMensaje: 12, caracteres: 3800 };
-export async function seguimientosHoy(env, iaJSON, { desde = 0, cuantos = SEG_TG.conMensaje } = {}) {
-  let l = []; try { l = await revisarSeguimientos(env, iaJSON, { limite: 0 }); } catch (e) { console.log("seguimientos", e?.stack || e); }
+// tope: cuántos revisa la IA en el momento. Desde el chat va 8 (una sola llamada: Telegram corta a los ~80 s); el resto ya lo revisó el cron.
+export async function seguimientosHoy(env, iaJSON, { desde = 0, cuantos = SEG_TG.conMensaje, tope } = {}) {
+  let l = []; try { l = await revisarSeguimientos(env, iaJSON, { limite: 0, ...(tope === undefined ? {} : { tope }) }); } catch (e) { console.log("seguimientos", e?.stack || e); }
   if (!l.length || desde >= l.length) return [];
   const partes = [], todos = l.map((s, i) => ({ ...s, n: i + 1 }));
   // 1) La lista entera, compacta (solo si no entran todos con su mensaje)
@@ -184,7 +185,7 @@ async function mandarSeguimientos(env, iaJSON, chat, mas = false, callado = fals
   const k = "seg_tg_desde:" + chat, hoy = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
   let desde = 0;
   if (mas) { try { const x = JSON.parse((await env.DB.prepare("SELECT v FROM kv WHERE k=?").bind(k).first())?.v || "{}"); if (x.dia === hoy) desde = x.desde || 0; } catch {} }
-  const p = await seguimientosHoy(env, iaJSON, { desde });
+  const p = await seguimientosHoy(env, iaJSON, { desde, tope: callado ? 20 : 8 });
   if (!p.length) return callado ? null : decir(env, chat, mas ? "Ya te pasé todos los seguimientos de hoy. 🙌" : "No hay seguimientos pendientes hoy. 🙌");
   for (const x of p) await decirBotones(env, chat, x.texto, x.botones);
   await env.DB.prepare("INSERT INTO kv (k,v,exp) VALUES (?,?,NULL) ON CONFLICT(k) DO UPDATE SET v=excluded.v").bind(k, JSON.stringify({ dia: hoy, desde: desde + SEG_TG.conMensaje })).run().catch(() => {});
