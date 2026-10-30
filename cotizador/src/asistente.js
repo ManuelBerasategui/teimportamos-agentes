@@ -572,7 +572,7 @@ async function atender(env, iaJSON, upd) {
     return decir(env, chat, (nt ? agendaNotion(nt) : "No pude leer tu Notion ahora.") + (neg.calientes ? `\n\n💬 Negocio: ${neg.calientes} chats calientes del 805 (decime "chats").` : ""));
   }
   if (/^\/?(chats|whatsapp|wpp|805)\s*$/.test(t)) return decir(env, chat, await chatsSinContestar(env));
-  if (/^\/?(agrega(r|me)?|suma(r|me)?|invita(r)?|conecta(r)?) (a )?(mi |al )?(socio|equipo|companero|compa)/.test(t)) {
+  if (/^\/?(agrega(r|me)?|suma(r|me)?|invita(r)?|conecta(r)?) (a )?(mi |al )?(socio|equipo|companero|compa)/.test(t) || (t.length < 200 && String(texto).replace(/\D/g, "").length >= 10 && /\b(agreg|sum[ae]|invit|conect|anot|da(r|le)? de alta)\w*\b.{0,30}\b(socio|equipo|companero|compa|amigo)/.test(t))) {
     const num = String(texto).replace(/\D/g, "");
     if (num.length < 10) return decir(env, chat, 'Pasame el número así: "agregar socio +54 9 341 301-1600 como Juan".');
     const nombre = nom((t.match(/\bcomo\s+([a-z]+)/) || [])[1] || "socio");

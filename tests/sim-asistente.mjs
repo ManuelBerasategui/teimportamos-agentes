@@ -77,6 +77,8 @@ db.prepare("UPDATE w_conv SET ult_yo_ts=? WHERE conv='5493410000001'").run(Date.
 const mandarDe = async (id, m) => { const ctx = { p: null, waitUntil(x) { this.p = x; } }; await A.rutaTelegram(env, { json: async () => ({ message: { chat: { id }, from: { id }, ...m } }), headers: { get: () => sec } }, new URL("https://x/tg/" + sec), ctx, iaS); await ctx.p; };
 await mandarS("agregar socio +54 9 3413 01-1600 como Facu");
 chk("invitar socio: confirma y explica", capS.at(-1).text.includes("invité") && capS.at(-1).text.includes("Compartir mi número"));
+await mandarS("Che, anotá a mi amigo +54 9 3413 01-1600 como Buko"); chk("invitar socio dicho de otra forma (audio)", capS.at(-1).text.includes("invité") && capS.at(-1).text.includes("buko"));
+await mandarS("agregar socio +54 9 3413 01-1600 como Facu");
 await mandarDe(333, { text: "/start" });
 chk("el socio ve el botón para compartir su número", String(capS.at(-1).chat_id) === "333" && capS.at(-1).reply_markup?.keyboard?.[0]?.[0]?.request_contact === true);
 await mandarDe(444, { contact: { phone_number: "5491100000000", user_id: 444 } });
