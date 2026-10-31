@@ -1001,7 +1001,16 @@ export async function seguimientos(env) {
 }
 function conDetalle(s, c) {
   const ok = vigente(c, s);
-  return { ...s, producto: (ok && c.producto) || s.producto, cantidad: (ok && c.cantidad) || "", total: (ok && c.total) || "", borrador: (ok && c.mensaje) || "", revisado: !!ok };
+  return { ...s, producto: (ok && c.producto) || s.producto, cantidad: (ok && c.cantidad) || "", total: (ok && c.total) || "", borrador: (ok && c.mensaje) || borradorBase(s), revisado: !!ok };
+}
+// Mensaje de base cuando la IA todavía no revisó el chat (así el botón nunca abre el WhatsApp vacío)
+export function borradorBase(s) {
+  const n = /\p{L}/u.test(String(s.nombre || "")) ? " " + String(s.nombre).trim().split(/\s+/)[0] : "";
+  const que = s.producto ? ` de ${s.producto}` : "";
+  const cosa = { precio: `los precios${que}`, info: `la info${que}`, archivo: `lo que te mandé${que}` }[s.tipo] || `la cotización${que}`;
+  if ((s.toque || 1) >= 3) return `Hola${n}! Último mensajito por ${cosa} 🙌 Si ahora no es el momento no hay drama, cuando quieras lo retomamos.`;
+  if ((s.toque || 1) === 2) return `Hola${n}! ¿Cómo va? Te escribo de nuevo por ${cosa}. ¿La seguís pensando? Si querés lo ajustamos a lo que necesites.`;
+  return `Hola${n}! ¿Cómo va? ¿Pudiste ver ${cosa}? Cualquier duda te ayudo 🙌`;
 }
 // Una línea corta y útil: a quién, qué le cotizamos (cantidad y monto), cuándo y qué contestó
 export function lineaSeguimiento(s) {

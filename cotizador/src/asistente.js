@@ -215,16 +215,16 @@ async function botonSeguimiento(env, cb) {
   if (ok && /^\d{6,}$/.test(conv || "")) await env.DB.prepare(`UPDATE w_conv SET ${accion === "no" ? "seg_no" : "seg_visto"}=? WHERE conv=?`).bind(Date.now(), conv).run();
   await tg(env, "answerCallbackQuery", { callback_query_id: cb.id, text: !ok ? "Este chat no está conectado al panel" : accion === "no" ? "Listo, no lo vuelvo a mostrar por esta cotización" : "Listo, sale de la lista hasta el próximo toque" });
 }
-async function mandarSeguimientos(env, iaJSON, chat, mas = false, callado = false, topeIA) {
+async function mandarSeguimientos(env, iaJSON, chat, mas = false, callado = false, topeIA, cuantos = SEG_TG.conMensaje) {
   // "más seguimientos": los mensajes listos de los 12 siguientes a los que ya se pasaron hoy
   const k = "seg_tg_desde:" + chat, hoy = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
   let desde = 0;
   if (mas) { try { const x = JSON.parse((await env.DB.prepare("SELECT v FROM kv WHERE k=?").bind(k).first())?.v || "{}"); if (x.dia === hoy) desde = x.desde || 0; } catch {} }
   const quien = (await chatsConocidos(env))[chat] || "manuel";
-  const p = await seguimientosHoy(env, iaJSON, { desde, tope: topeIA ?? (callado ? 20 : 8), quien });
+  const p = await seguimientosHoy(env, iaJSON, { desde, cuantos, tope: topeIA ?? (callado ? 20 : 8), quien });
   if (!p.length) return callado ? null : decir(env, chat, mas ? "Ya te pasé todos los seguimientos de hoy. 🙌" : "No hay seguimientos pendientes hoy. 🙌");
   for (const x of p) await decirBotones(env, chat, x.texto, x.botones);
-  await env.DB.prepare("INSERT INTO kv (k,v,exp) VALUES (?,?,NULL) ON CONFLICT(k) DO UPDATE SET v=excluded.v").bind(k, JSON.stringify({ dia: hoy, desde: desde + SEG_TG.conMensaje })).run().catch(() => {});
+  await env.DB.prepare("INSERT INTO kv (k,v,exp) VALUES (?,?,NULL) ON CONFLICT(k) DO UPDATE SET v=excluded.v").bind(k, JSON.stringify({ dia: hoy, desde: desde + cuantos })).run().catch(() => {});
 }
 
 // Qué hay que hacer HOY en redes, en acciones concretas (sale del panel)
@@ -592,7 +592,14 @@ async function atender(env, iaJSON, upd) {
     return decir(env, chat, `Listo: los seguimientos se reparten entre ${eq.map((n) => n[0].toUpperCase() + n.slice(1)).join(" y ")}. Cada número le toca a uno solo y le queda asignado. Cada uno escribe "seguimientos" acá y le llega SU lista con sus botones; a las 10 le llega sola a cada uno.${faltan.length ? ` (${faltan.join(", ")} no tiene Telegram conectado, quedó afuera.)` : ""} Para volver a una sola lista: "no repartir seguimientos".`);
   }
   if (/^\/?(mas|más|siguientes?|otros) (seguimientos?|seg|segs)\s*$|^\/?(seguimientos?|seg|segs) (mas|más|siguientes)\s*$/.test(t)) { await tg(env, "sendChatAction", { chat_id: chat, action: "typing" }); return mandarSeguimientos(env, iaJSON, chat, true); }
-  if (/^\/?(seguimientos?|seg|segs)( de hoy)?\s*$/.test(t)) {
+  // Pedido libre: "pasame una lista de 100 números para hacer seguimiento" → la lista con botones (cantidad pedida, hasta 100)
+  const pideSeg = /^\/?(seguimientos?|seg|segs)( de hoy)?\s*$/.test(t) || (t.length < 300 && /seguimiento/.test(t) && /\b(lista|pasa|pasame|dame|mandame|tira|tirame|quiero|necesito|cuales|quienes|numeros|chats|a quien)/.test(t) && !/\b(por que|porque|analiz|estrategia|opin|como (hago|se hace))/.test(t));
+  if (pideSeg && !/^\/?(seguimientos?|seg|segs)( de hoy)?\s*$/.test(t)) {
+    const n = Number((t.match(/\b(\d{1,3})\b/) || [])[1]) || 0;
+    await tg(env, "sendChatAction", { chat_id: chat, action: "typing" });
+    return mandarSeguimientos(env, iaJSON, chat, false, false, 8, n ? Math.min(Math.max(n, 1), 100) : SEG_TG.conMensaje);
+  }
+  if (pideSeg) {
     await tg(env, "sendChatAction", { chat_id: chat, action: "typing" });
     const eq = await equipoSeguimientos(env);
     if (!eq.length) return mandarSeguimientos(env, iaJSON, chat);
