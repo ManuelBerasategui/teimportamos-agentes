@@ -48,8 +48,16 @@ code{display:block;background:var(--neg);color:#25D366;padding:8px;border-radius
  .conv{display:none!important}body.abierto{overflow:hidden}body.abierto .conv{display:flex!important;position:fixed;inset:0;z-index:20;border:0;border-radius:0;min-height:0;padding:12px 10px calc(12px + env(safe-area-inset-bottom))}
  .cbar{margin:-12px -10px 6px;padding:8px 10px;padding-top:calc(8px + env(safe-area-inset-top));top:-12px}.cvolver{display:block}.m{max-width:85%;font-size:15px}.ficha{font-size:14px}}
 @media(max-width:1000px){.kpis{grid-template-columns:repeat(3,1fr)}.grid{grid-template-columns:1fr}.asis{height:460px}.chats{grid-template-columns:1fr;height:auto}.lista{max-height:45vh}.conv{min-height:60vh}td.p{display:none}main{padding:10px}header{padding:0 10px}header b{margin-right:4px}.tab{padding:6px 8px;font-size:13px}}
+.gr{max-width:900px}.gr .top{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}.gr .top h2{margin:0;font-size:17px;flex:1;min-width:200px}
+.gm{background:#fff;border:1px solid var(--borde);border-radius:12px;padding:12px 14px;margin-bottom:12px}.gm.env{border-color:var(--ver);background:#F6FCF8}.gm.desc{opacity:.55}
+.gm .gh{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:6px}.gm .hr{font-weight:800;font-size:15px}.gm .tp{background:var(--fondo);border-radius:99px;padding:2px 9px;font-size:12px;color:var(--gris);font-weight:600}.gm .pr{font-weight:700;flex:1;min-width:140px}
+.gm .ok{color:var(--ver);font-weight:700;font-size:12.5px}.gm .pq{font-size:12.5px;color:var(--gris);margin:2px 0}.gm .ft{font-size:12.5px;color:#92400E;background:#FFFBEB;border-radius:8px;padding:5px 9px;margin:6px 0}
+.gm textarea{width:100%;box-sizing:border-box;min-height:170px;border:1px solid var(--borde);border-radius:10px;padding:10px;font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;resize:vertical;background:#FAFAF9}
+.gm .ac{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.gm .falta{font-size:12.5px;color:#B45309;font-weight:600}
+.gconf{font-size:12.5px;color:var(--gris);background:#fff;border:1px dashed var(--borde);border-radius:10px;padding:10px 12px;margin-top:16px;line-height:1.6}
+.ghist{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.ghist button{border:1px solid var(--borde);background:#fff;border-radius:99px;padding:3px 10px;font-size:12px;cursor:pointer}
 </style><script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script></head><body>
-<header><b>WhatsApp</b><button class="tab on" data-v="chats">Chats</button><button class="tab" data-v="conf">Conexión</button><a href="/panel">Panel principal</a></header>
+<header><b>WhatsApp</b><button class="tab on" data-v="chats">Chats</button><button class="tab" data-v="grupos">Grupos</button><button class="tab" data-v="conf">Conexión</button><a href="/panel">Panel principal</a></header>
 <main>
 <section id="v-res" hidden>
   <div class="barra"><span class="estado" id="estado"></span><span style="flex:1"></span><div class="seg" id="periodo"><button data-p="dia" class="on">Hoy</button><button data-p="semana">7 días</button><button data-p="mes">30 días</button></div><button class="btn" id="bAnalizar">Analizar ahora</button></div>
@@ -79,6 +87,16 @@ code{display:block;background:var(--neg);color:#25D366;padding:8px;border-radius
   <div class="barra"><button class="btn p" id="bDiario">Generar reporte de hoy</button><button class="btn" id="bSemanal">Generar reporte semanal</button><span class="estado">Se generan solos a las 21:00, y los domingos el semanal.</span></div>
   <div id="reps"></div>
 </section>
+<section id="v-grupos" hidden><div class="gr">
+  <div class="top"><h2 id="gTit">Mensajes para los grupos</h2><button class="btn" id="gHoy" hidden>Volver a hoy</button><button class="btn" id="gGen">Generar de nuevo</button></div>
+  <div class="estado" id="gEst" style="margin:-4px 0 12px">Se generan solos todos los días a las 7:00 con el estilo de lo que ya mandamos, los reportes y lo que más piden. Las fotos las ponen ustedes.</div>
+  <div id="gLista"><div class="vacio">Cargando…</div></div>
+  <div class="ghist" id="gHist"></div>
+  <div class="gconf"><b>Cómo aprende.</b> Usa como ejemplos los mensajes que mandamos en los grupos: el chat exportado que se sube acá, los que el lector ve salir del 805 y los que marcás como enviados (si los editaste, aprende de tu corrección). Lo que descartás no lo vuelve a proponer.<br>
+  <span id="gEstilo"></span><br>
+  <label class="btn" style="display:inline-block;margin-top:6px">Subir chat exportado (.zip o .txt)<input type="file" id="gFile" accept=".zip,.txt" hidden></label> <span id="gImp"></span><br>
+  <label style="display:inline-flex;gap:6px;align-items:center;margin-top:8px"><input type="checkbox" id="gTg"> Avisarme por Telegram cuando estén listos</label></div>
+</div></section>
 <section id="v-conf" hidden><div class="conf">
   <div class="card"><h4>Estado del lector</h4><div id="confEstado" class="estado"></div></div>
   <div class="card"><h4>Vincular con QR</h4>
@@ -140,6 +158,37 @@ async function reportes(){const l=await api('reportes');$('#reps').innerHTML=l.m
  (ia.claves?.length?'<h5>Claves</h5><ul>'+ia.claves.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>':'')+(ia.oportunidades?.length?'<h5>A quién escribir</h5><ul>'+ia.oportunidades.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>':'')+(ia.problemas?.length?'<h5>A mejorar</h5><ul>'+ia.problemas.map(x=>'<li>'+esc(x)+'</li>').join('')+'</ul>':'')+(ia.grupos?'<h5>Grupos</h5><p>'+esc(ia.grupos)+'</p>':'')+(ia.recomendacion?'<h5>Recomendación</h5><p>'+esc(ia.recomendacion)+'</p>':'')+(dif?'<h5>Para mandar en los grupos</h5>'+dif:'')+'</div></details>'}).join('')||'<div class="vacio">Todavía no hay reportes</div>'}
 document.addEventListener('click',async e=>{const b=e.target.closest('[data-borrar]');if(b){e.preventDefault();if(!confirm('¿Borrar este reporte?'))return;await api('borrar-reporte',{id:b.dataset.borrar});reportes();return}
  const c=e.target.closest('[data-copiar]');if(c){const t=$('#m-'+c.dataset.copiar).textContent;try{await navigator.clipboard.writeText(t);c.textContent='Copiado'}catch(x){c.textContent='No se pudo copiar'}setTimeout(()=>c.textContent='Copiar mensaje',1500)}});
+// Grupos: 4 mensajes por día
+let gDia='';const gApi=(p,b)=>api('grupos/'+p,b);
+const TIPOS={combo:'Combo',lista:'Lista de precios',producto:'Producto',tendencia:'Tendencia',comunidad:'Comunidad',urgencia:'Urgencia',estacional:'Estacional'};
+function gCard(m){const env=m.estado==='enviado',des=m.estado==='descartado',txt=env&&m.final?m.final:m.texto,falta=/\\[(PRECIO|TOTAL)\\]/.test(txt);
+ return '<div class="gm'+(env?' env':'')+(des?' desc':'')+'" data-g="'+esc(m.id)+'"><div class="gh"><span class="hr">'+esc(m.hora||'')+'</span><span class="tp">'+esc(TIPOS[m.tipo]||m.tipo||'Mensaje')+'</span><span class="pr">'+esc(m.producto||'')+'</span>'+(env?'<span class="ok">✓ Enviado</span>':des?'<span class="estado">Descartado</span>':'')+'</div>'+
+ (m.por_que?'<div class="pq">'+esc(m.por_que)+'</div>':'')+(m.foto?'<div class="ft">📷 '+esc(m.foto)+'</div>':'')+
+ '<textarea data-t>'+esc(txt)+'</textarea>'+(falta?'<div class="falta">Completá los [PRECIO] antes de mandarlo.</div>':'')+
+ '<div class="ac"><button class="btn p" data-ga="copiar">Copiar</button>'+(env?'<button class="btn" data-ga="nuevo">Desmarcar</button>':'<button class="btn" data-ga="enviado">Marcar enviado</button>')+'<button class="btn" data-ga="otra">Otra versión</button>'+(des?'':'<button class="btn" data-ga="descartado">Descartar</button>')+'</div></div>'}
+async function grupos(dia){gDia=dia||'';const d=await gApi(gDia?'?dia='+gDia:'');gDia=d.dia;const hoy=d.dia===d.hoy;
+ $('#gTit').textContent='Mensajes para los grupos · '+(hoy?'hoy':d.dia.split('-').reverse().join('/'));$('#gHoy').hidden=hoy;$('#gGen').hidden=!hoy;
+ $('#gLista').innerHTML=d.mensajes.length?d.mensajes.map(gCard).join(''):'<div class="vacio">'+(hoy?'Todavía no están los de hoy (se arman desde las 7:00). Tocá Generar de nuevo para hacerlos ya.':'Ese día no hubo mensajes.')+'</div>';
+ $('#gHist').innerHTML=d.historial.length?'<span class="estado" style="align-self:center">Días anteriores:</span>'+d.historial.map(h=>'<button data-gd="'+h.dia+'">'+h.dia.slice(8)+'/'+h.dia.slice(5,7)+' · '+(h.env||0)+'/'+h.n+' enviados</button>').join(''):'';
+ const e=d.estilo;$('#gEstilo').textContent='Ejemplos de estilo: '+e.exportados+' del chat exportado, '+e.del_lector+' vistos por el lector en grupos, '+e.del_panel+' marcados desde acá.'+(e.exportados?'':' Subí el chat exportado de un grupo para que copie mejor el estilo.');
+ $('#gTg').checked=d.telegram}
+$('#gGen').onclick=async e=>{if($('#gLista .gm')&&!confirm('¿Rehacer los mensajes de hoy? Los que ya marcaste enviados se quedan.'))return;e.target.disabled=true;e.target.textContent='Generando… (hasta 1 min)';const r=await gApi('generar',{dia:gDia}).catch(()=>({}));e.target.disabled=false;e.target.textContent='Generar de nuevo';if(!r.ok)alert(r.error||'No se pudo generar');grupos(gDia)};
+$('#gHoy').onclick=()=>grupos('');
+$('#gTg').onchange=e=>gApi('telegram',{si:e.target.checked});
+document.addEventListener('click',async e=>{const h=e.target.closest('[data-gd]');if(h){grupos(h.dataset.gd);return}
+ const b=e.target.closest('[data-ga]');if(!b)return;const card=b.closest('[data-g]'),id=card.dataset.g,ta=card.querySelector('[data-t]'),a=b.dataset.ga;
+ if(a==='copiar'){try{await navigator.clipboard.writeText(ta.value);b.textContent='Copiado ✓'}catch(x){ta.select();document.execCommand('copy');b.textContent='Copiado ✓'}setTimeout(()=>b.textContent='Copiar',1600);return}
+ if(a==='otra'){const p=prompt('¿Qué querés distinto? (opcional: otro producto, más corto, con urgencia…)','');if(p===null)return;b.disabled=true;b.textContent='Pensando…';const r=await gApi('otra',{id,pedido:p}).catch(()=>({}));if(!r.ok)alert(r.error||'No se pudo');grupos(gDia);return}
+ b.disabled=true;await gApi('marcar',{id,estado:a,texto:a==='enviado'?ta.value:undefined});grupos(gDia)});
+async function zipTxt(buf){const v=new DataView(buf),u=new Uint8Array(buf);let i=buf.byteLength-22;while(i>=0&&v.getUint32(i,true)!==0x06054b50)i--;if(i<0)throw new Error('zip');
+ let p=v.getUint32(i+16,true),n=v.getUint16(i+10,true),cand=null;const dec=new TextDecoder();
+ for(let k=0;k<n;k++){const met=v.getUint16(p+10,true),cs=v.getUint32(p+20,true),ln=v.getUint16(p+28,true),lx=v.getUint16(p+30,true),lc=v.getUint16(p+32,true),off=v.getUint32(p+42,true),nom=dec.decode(u.subarray(p+46,p+46+ln));
+  if(/\\.txt$/i.test(nom)&&(!cand||/_chat\\.txt$/i.test(nom)))cand={met,cs,off};p+=46+ln+lx+lc}
+ if(!cand)throw new Error('sin txt');const ini=cand.off+30+v.getUint16(cand.off+26,true)+v.getUint16(cand.off+28,true),datos=u.subarray(ini,ini+cand.cs);
+ if(cand.met===0)return dec.decode(datos);const s=new Blob([datos]).stream().pipeThrough(new DecompressionStream('deflate-raw'));return await new Response(s).text()}
+$('#gFile').onchange=async e=>{const f=e.target.files[0];if(!f)return;$('#gImp').textContent='Leyendo…';
+ try{const t=/\\.zip$/i.test(f.name)?await zipTxt(await f.arrayBuffer()):await f.text();const r=await gApi('importar',{texto:t});$('#gImp').textContent=r.ok?'Listo: '+r.leidos+' mensajes de '+r.remitente+' ('+r.nuevos+' nuevos).':r.error;grupos(gDia)}
+ catch(x){$('#gImp').textContent='No pude leer el archivo. Probá con el .txt de adentro del zip.'}e.target.value=''};
 // Asistente
 const hist=[];
 function burbuja(t,quien){const d=document.createElement('div');d.className='b '+quien;d.innerHTML=quien==='a'?esc(t).replace(/\\+?(549\\d{8,11})/g,(m,n)=>'<a data-c="'+n+'">+'+n+'</a>'):esc(t);$('#msgs').appendChild(d);$('#msgs').scrollTop=1e9;return d}
@@ -147,7 +196,7 @@ async function preguntar(q){if(!q.trim())return;burbuja(q,'u');$('#pregunta').va
  try{const r=await api('preguntar',{pregunta:q,historial:hist});w.remove();burbuja(r.respuesta,'a');hist.push({r:'u',t:q},{r:'a',t:r.respuesta})}catch(e){w.textContent='No pude responder. Probá de nuevo.'}}
 $('#fAsis').onsubmit=e=>{e.preventDefault();preguntar($('#pregunta').value)};
 document.querySelectorAll('#sug button').forEach(b=>b.onclick=()=>preguntar(b.textContent));
-function vista(v){document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.dataset.v===v));document.querySelectorAll('main>section').forEach(s=>s.hidden=s.id!=='v-'+v);if(v==='chats')listar();if(v==='reps')reportes()}
+function vista(v){document.querySelectorAll('.tab').forEach(t=>t.classList.toggle('on',t.dataset.v===v));document.querySelectorAll('main>section').forEach(s=>s.hidden=s.id!=='v-'+v);if(v==='chats')listar();if(v==='reps')reportes();if(v==='grupos')grupos('')}
 document.querySelectorAll('.tab').forEach(t=>t.onclick=()=>vista(t.dataset.v));
 $('#f').onchange=listar;let tq;$('#q').oninput=()=>{clearTimeout(tq);tq=setTimeout(listar,300)};
 $('#bAnalizar').onclick=async e=>{e.target.disabled=true;e.target.textContent='Analizando…';const r=await api('analizar',{});e.target.textContent='Analizados '+(r.analizados||0);e.target.disabled=false;cargar()};
@@ -157,5 +206,5 @@ $('#bTg').onclick=async()=>{const r=await api('telegram',{});$('#tgRes').textCon
 $('#bProbar').onclick=async()=>{const r=await api('probar-alertas',{});$('#tgRes').textContent='Alertas enviadas: '+r.alertas};
 let qrUlt='';async function qrPoll(){if($('#v-conf').hidden)return;const q=await api('qr');const box=$('#qrBox');if(q.estado==='paired'){box.innerHTML='<b style="color:#1FA855">Vinculado</b>';return}if(!q.qr){box.textContent='Esperando QR (corré el comando en Termux)';qrUlt='';return}if(q.qr===qrUlt)return;qrUlt=q.qr;box.innerHTML='';if(typeof QRCode==='undefined'){box.textContent='No cargó el dibujador de QR: recargá la página';qrUlt='';return}new QRCode(box,{text:q.qr,width:260,height:260,correctLevel:QRCode.CorrectLevel.L})}
 setInterval(qrPoll,3000);
-cargar();if(!location.hash)vista('chats');if(location.hash)abrir(decodeURIComponent(location.hash.slice(1)));
+cargar();if(new URLSearchParams(location.search).get('v')==='grupos')vista('grupos');else if(!location.hash)vista('chats');if(location.hash)abrir(decodeURIComponent(location.hash.slice(1)));
 </script></body></html>`;

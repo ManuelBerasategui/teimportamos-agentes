@@ -7,6 +7,7 @@ import { apiVideos, rutaVideosEditor, cronVideos, despertarEditor } from "./vide
 import { conApp, rutaApp } from "./app.js";
 import { rutaTelegram, apiAsistente, cronAsistente } from "./asistente.js";
 import { preguntarAgente, charlaAgente } from "./agente.js";
+import { apiGrupos, cronGrupos } from "./grupos.js";
 /**
  * Agente de WhatsApp · Te Importamos (v15.0: + pestaña Búsquedas de proveedores)
  * Cloudflare Workers + Gemini (gratis) con respaldo de Cloudflare AI.
@@ -3559,6 +3560,7 @@ export default {
       if (m % 5 === 4 && env.LECTOR_TOKEN) await cotizarAuto(env, { T, leerPagina, iaJSON, iaConImagenes }).catch((e) => console.log("Error cotización automática:", e?.stack || e));
       if (env.DB) await cronVideos(env, evento.scheduledTime || Date.now()).catch((e) => console.log("Error videos:", e?.stack || e));
       if (env.DB) await cronAsistente(env, evento.scheduledTime || Date.now(), iaJSON).catch((e) => console.log("Error asistente:", e?.stack || e));
+      if (env.DB) await cronGrupos(env, iaJSON, evento.scheduledTime || Date.now(), BASE_URL).catch((e) => console.log("Error grupos:", e?.stack || e));
       if (env.DB) await cronRedes(env, iaJSON, evento.scheduledTime || Date.now(), BASE_URL, T).catch((e) => console.log("Error redes:", e?.stack || e));
     })());
   },
@@ -3635,6 +3637,7 @@ export default {
     // Un solo agente: el chat de la pestaña Agente, el asistente del 805 y el de Redes van al mismo (ventas + contenido, misma memoria)
     if (req.method === "POST" && ["/panel/api/agente/preguntar", "/panel/api/805/preguntar", "/panel/api/redes/preguntar"].includes(url.pathname)) { const b = await req.json().catch(() => ({})); return Response.json(await preguntarAgente(env, iaJSON, String(b.pregunta || ""))); }
     if (url.pathname === "/panel/api/agente/charla") return Response.json(await charlaAgente(env));
+    if (url.pathname.startsWith("/panel/api/805/grupos")) return apiGrupos(env, req, url, iaJSON);
     if (url.pathname.startsWith("/panel/api/805/")) return apiLector(env, req, url, iaJSON);
     if (url.pathname.startsWith("/panel/api/cotizar/")) return apiCotizar(env, req, url, url.searchParams.get("quien"), { T, leerPagina, iaJSON, iaConImagenes });
     if (url.pathname === "/panel/cotizar/pdf") return paginaCotizacion(env, url.searchParams.get("id") || "", T);
