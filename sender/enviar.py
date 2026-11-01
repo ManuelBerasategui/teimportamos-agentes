@@ -1,6 +1,7 @@
 """Envía los seguimientos del panel por WhatsApp Web, uno por uno, con pausas largas.
 Uso:  python enviar.py            -> pide confirmación en cada mensaje (recomendado al empezar)
       python enviar.py --auto     -> envía solo, con límites y pausas
+      python enviar.py --escritorio -> usa la app de WhatsApp de Windows ya abierta (sin Chrome)
       python enviar.py --seco     -> no envía nada, solo muestra qué haría
 Ctrl+C o crear un archivo llamado STOP en esta carpeta corta todo."""
 import json, os, random, sys, time, urllib.parse, urllib.request
@@ -54,6 +55,34 @@ def variar(s):
 def parar():
     return (AQUI / "STOP").exists()
 
+def main_escritorio(lista, auto):
+    """Usa la app de WhatsApp de Windows que ya tenés abierta y con sesión: abre el chat con el texto puesto y aprieta Enter."""
+    import pyautogui, pygetwindow as gw
+    enviados = 0
+    for i, s in enumerate(lista, 1):
+        if parar(): print("STOP detectado."); break
+        texto = variar(s)
+        print(f"\n[{i}/{len(lista)}] {s['nombre']} ({s['conv']})\n  {texto}")
+        if not auto:
+            r = input("  Enter = enviar | n = marcar 'no seguir' | s = saltar | q = salir: ").strip().lower()
+            if r == "q": break
+            if r == "s": continue
+            if r == "n": api("/enviar/no", {"conv": s["conv"]}); continue
+        os.startfile(f"whatsapp://send?phone={s['conv']}&text={urllib.parse.quote(texto)}")
+        time.sleep(5)
+        ventanas = [w for w in gw.getWindowsWithTitle("WhatsApp") if w.title.strip() == "WhatsApp"]
+        if not ventanas: print("  No encuentro la ventana de WhatsApp. Frenando para no apretar Enter en otra cosa."); break
+        try: ventanas[0].activate()
+        except Exception: pass
+        time.sleep(1.5)
+        if gw.getActiveWindow() is None or gw.getActiveWindow().title.strip() != "WhatsApp":
+            print("  WhatsApp no quedó al frente. Frenando."); break
+        pyautogui.press("enter"); time.sleep(2)
+        api("/enviar/hecho", {"conv": s["conv"]}); enviados += 1; print("  Enviado ✅")
+        if i < len(lista):
+            t = random.randint(PAUSA_MIN, PAUSA_MAX); print(f"  Pausa {t}s... (no toques el teclado cuando termine)"); time.sleep(t)
+    print(f"\nListo. Enviados: {enviados}")
+
 def main():
     seco, auto = "--seco" in sys.argv, "--auto" in sys.argv
     if not seco and not (H_DESDE <= datetime.now().hour < H_HASTA):
@@ -64,6 +93,7 @@ def main():
     if seco:
         for s in lista: print(f"- {s['nombre']} ({s['conv']}): {variar(s)}")
         return
+    if "--escritorio" in sys.argv: return main_escritorio(lista, auto)
     with sync_playwright() as p:
         ctx = p.chromium.launch_persistent_context(str(AQUI / "perfil"), headless=False, viewport={"width": 1200, "height": 800})
         pg = ctx.pages[0] if ctx.pages else ctx.new_page()

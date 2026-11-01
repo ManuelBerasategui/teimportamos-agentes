@@ -21,3 +21,8 @@ Cada envío queda marcado como hecho en el panel; "n" lo marca como "no seguir".
 ## Ojo
 - No está probado contra WhatsApp Web real: si cambian la página puede fallar. Empezá con `--seco` y luego con confirmación.
 - El riesgo de bloqueo depende del volumen y de que te marquen como spam, no de quién aprieta el botón. Mantené pocos por día, pausas largas, y mensajes a gente que ya habló con vos.
+
+## Usar la app de escritorio de WhatsApp (sin Chrome ni QR)
+`python enviar.py --escritorio` (agregá `--auto` para que no pida confirmación). Usa la app que ya tenés abierta con sesión: abre cada chat con el mensaje puesto y aprieta Enter.
+Necesita `python -m pip install pyautogui pygetwindow` (ya incluido en `instalar.bat`). Mientras corre, no uses la PC (el Enter va a la ventana que esté al frente; si WhatsApp no queda al frente, frena solo).
+Limitación: no puede saber si el número existe en WhatsApp. Con el modo Chrome sí.
