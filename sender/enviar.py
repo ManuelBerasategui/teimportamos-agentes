@@ -21,9 +21,9 @@ def cargar_env():
 cargar_env()
 URL = os.environ["PANEL_URL"].rstrip("/")          # ej: https://tu-worker.workers.dev
 TOKEN = os.environ["LECTOR_TOKEN"]
-MAX = int(os.environ.get("MAX_POR_CORRIDA", "15"))
-PAUSA_MIN = int(os.environ.get("PAUSA_MIN_SEG", "60"))
-PAUSA_MAX = int(os.environ.get("PAUSA_MAX_SEG", "150"))
+MAX = int(os.environ.get("MAX_POR_CORRIDA", "50"))
+PAUSA_MIN = int(os.environ.get("PAUSA_MIN_SEG", "45"))
+PAUSA_MAX = int(os.environ.get("PAUSA_MAX_SEG", "130"))
 H_DESDE = int(os.environ.get("HORA_DESDE", "9"))
 H_HASTA = int(os.environ.get("HORA_HASTA", "20"))
 
@@ -32,6 +32,24 @@ def api(path, body=None):
                                  data=json.dumps(body).encode() if body is not None else None, method="POST" if body is not None else "GET")
     with urllib.request.urlopen(req, timeout=30) as r:
         return json.load(r)
+
+SALUDOS = ["Hola", "Hola!", "Buenas", "Buenas!", "Hola, ¿cómo andás?", "Hola, ¿todo bien?", "Qué tal", "Buen día"]
+CIERRES = ["", "", " 🙂", " Cualquier cosa avisame.", " Quedo atento.", " Te leo."]
+EMPIEZA_SALUDO = ("hola", "buen", "qué tal", "que tal")
+
+def variar(s):
+    """Cambia un poco cada mensaje (saludo/cierre/puntuación) sin tocar el contenido, para que no salgan todos idénticos."""
+    t = s["borrador"].strip()
+    nombre = (s.get("nombre") or "").split(" ")[0] if s.get("nombre") and not s["nombre"].lstrip("+").replace(" ", "").isdigit() else ""
+    if not t.lower().startswith(EMPIEZA_SALUDO) and random.random() < 0.85:
+        g = random.choice(SALUDOS)
+        g = g + (f" {nombre}" if nombre and random.random() < 0.5 and not g.endswith("?") else "")
+        t = f"{g.rstrip('!?,')}{'!' if g.endswith('!') else ','} {t[0].lower() + t[1:] if t[:2].isalpha() and not t[1].isupper() else t}"
+    if t[-1] in ".?!" and random.random() < 0.3 and not t.endswith("?"):
+        t = t[:-1]
+    if not t.endswith("?") or random.random() < 0.3:
+        t += random.choice(CIERRES)
+    return t.strip()
 
 def parar():
     return (AQUI / "STOP").exists()
@@ -44,7 +62,7 @@ def main():
     print(f"{len(lista)} seguimientos para hoy.")
     if not lista: return
     if seco:
-        for s in lista: print(f"- {s['nombre']} ({s['conv']}): {s['borrador']}")
+        for s in lista: print(f"- {s['nombre']} ({s['conv']}): {variar(s)}")
         return
     with sync_playwright() as p:
         ctx = p.chromium.launch_persistent_context(str(AQUI / "perfil"), headless=False, viewport={"width": 1200, "height": 800})
@@ -55,13 +73,14 @@ def main():
         enviados = 0
         for i, s in enumerate(lista, 1):
             if parar(): print("STOP detectado."); break
-            print(f"\n[{i}/{len(lista)}] {s['nombre']} ({s['conv']})\n  {s['borrador']}")
+            texto = variar(s)
+            print(f"\n[{i}/{len(lista)}] {s['nombre']} ({s['conv']})\n  {texto}")
             if not auto:
                 r = input("  Enter = enviar | n = marcar 'no seguir' | s = saltar | q = salir: ").strip().lower()
                 if r == "q": break
                 if r == "s": continue
                 if r == "n": api("/enviar/no", {"conv": s["conv"]}); continue
-            pg.goto(f"https://web.whatsapp.com/send?phone={s['conv']}&text={urllib.parse.quote(s['borrador'])}")
+            pg.goto(f"https://web.whatsapp.com/send?phone={s['conv']}&text={urllib.parse.quote(texto)}")
             try:
                 caja = pg.wait_for_selector('footer div[contenteditable="true"]', timeout=45000)
                 pg.wait_for_timeout(2500)

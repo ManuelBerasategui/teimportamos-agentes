@@ -11,10 +11,11 @@ El lector del celular sigue siendo solo de lectura; esto es aparte.
 ## Uso
 - `python enviar.py --seco`: muestra la lista sin enviar nada (probá esto primero).
 - `enviar.bat`: te pide confirmación (Enter) en cada mensaje. Usalo los primeros días.
-- `python enviar.py --auto`: envía solo con pausas de 60–150 s, hasta 15 por corrida, entre las 9 y las 20 h.
+- `python enviar.py --auto`: envía solo con pausas al azar de 45–130 s, hasta 50 por corrida (después frena; lo volvés a correr más tarde), entre las 9 y las 20 h.
 - Para frenar: Ctrl+C o crear un archivo `STOP` en esta carpeta.
 
 La primera vez abre una ventana de Chrome propia: escaneá el QR con el celular (usa su propia sesión de WhatsApp Web, no toca la tuya).
+Cada mensaje se varía un poco (saludo, cierre, puntuación) para que no salgan idénticos.
 Cada envío queda marcado como hecho en el panel; "n" lo marca como "no seguir".
 
 ## Ojo
