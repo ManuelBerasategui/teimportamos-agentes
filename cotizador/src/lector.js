@@ -117,6 +117,18 @@ export async function rutaLector(env, req, url, ctx) {
     if (!lote.history && n.clienteNuevo) ctx?.waitUntil(alertasRapidas(env).catch(() => {}));
     return Response.json({ ok: true, guardados: n.mensajes });
   }
+  // Programita de la PC (carpeta sender/): pide la lista de seguimientos y marca cada uno. Acá NO se envía nada.
+  if (p === "/enviar/lista") {
+    const lim = Math.min(Math.max(+url.searchParams.get("limite") || 20, 1), 100);
+    const lista = (await seguimientos(env)).filter((s) => /^\d{8,15}$/.test(String(s.conv)) && s.borrador).slice(0, lim)
+      .map((s) => ({ conv: s.conv, nombre: s.nombre, producto: s.producto, toque: s.toque, borrador: s.borrador }));
+    return Response.json({ ok: true, lista });
+  }
+  if ((p === "/enviar/hecho" || p === "/enviar/no") && req.method === "POST") {
+    const b = await req.json().catch(() => ({}));
+    await env.DB.prepare(p === "/enviar/hecho" ? "UPDATE w_conv SET seg_visto=? WHERE conv=?" : "UPDATE w_conv SET seg_no=? WHERE conv=?").bind(Date.now(), String(b.conv || "")).run();
+    return Response.json({ ok: true });
+  }
   return new Response("no existe", { status: 404 });
 }
 

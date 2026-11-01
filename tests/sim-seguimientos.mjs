@@ -181,4 +181,11 @@ const iaAud = async (_e, p) => { pAud = p; return { chats: [{ chat: "54924774697
 await L.auditarCotizaciones(env, iaAud, { dia, conv: "5492477469751", rehacer: true, limite: 1 });
 chk("la auditoría ve la venta anterior", pAud.includes("VENTAS YA REGISTRADAS EN ESTE CHAT") && pAud.includes("ENVÍO"));
 chk("el comprobante de una compra ya contada no suma otra venta", db.prepare("SELECT COUNT(*) n FROM w_hito WHERE conv='5492477469751' AND tipo='venta'").get().n === 1);
+// Endpoints del programita de la PC
+env.LECTOR_TOKEN = "tok";
+const rq = (path, method = "GET", body) => L.rutaLector(env, new Request("https://x/lector" + path, { method, headers: { Authorization: "Bearer tok" }, body: body ? JSON.stringify(body) : undefined }), new URL("https://x/lector" + path), {});
+const rl = await (await rq("/enviar/lista?limite=50")).json();
+chk("enviar/lista devuelve seguimientos con borrador", rl.ok && rl.lista.length > 0 && rl.lista.every((x) => x.borrador && /^\d+$/.test(x.conv)));
+if (rl.lista[0]) { await rq("/enviar/hecho", "POST", { conv: rl.lista[0].conv }); const rl2 = await (await rq("/enviar/lista?limite=50")).json(); chk("enviar/hecho lo saca de la lista", !rl2.lista.some((x) => x.conv === rl.lista[0].conv)); }
+if (rl.lista[1]) { await rq("/enviar/no", "POST", { conv: rl.lista[1].conv }); const rl3 = await (await rq("/enviar/lista?limite=50")).json(); chk("enviar/no lo saca de la lista", !rl3.lista.some((x) => x.conv === rl.lista[1].conv)); }
 console.log(`sim-seguimientos: ${ok} ok, ${mal} fallas`);

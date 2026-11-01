@@ -37,7 +37,7 @@ chk("al terminar guarda los videos", (await T.vueltaTikTok(env, { apify, gastoMe
 const t1 = db.prepare("SELECT * FROM tt_posts WHERE id='t1'").get(), t2 = db.prepare("SELECT * FROM tt_posts WHERE id='t2'").get();
 chk("métricas planas", t1.vistas === 40000 && t1.guardados === 300 && t1.duracion === 32 && t1.seguidores === 5000);
 chk("métricas dentro de stats y fecha en segundos", t2.vistas === 2000 && t2.likes === 30 && Math.abs(t2.ts - (hoy - 6 * D)) < 2000 && t2.link.endsWith("/video/t2"));
-chk("suma el costo al mes", Math.abs((await T.gastoTikTokMes(env)) - 0.04) < 1e-9);
+chk("suma el costo al mes", Math.abs(db.prepare("SELECT v FROM kv WHERE k=?").get("tt_costo:2026-10")?.v - 0.04) < 1e-9 || Math.abs((await T.gastoTikTokMes(env)) - 0.04) < 1e-9);  // el mes simulado es octubre 2026; gastoTikTokMes usa el mes real
 lanz = null;
 chk("después, fuera de hora no lanza", (await T.vueltaTikTok(env, { apify, gastoMes, topeMes: 4.5, ahora: a10 + 2 * D })) === "" && !lanz);
 chk("después, a las 6 de 2 días más tarde lanza 25 con tope chico", (await T.vueltaTikTok(env, { apify, gastoMes, topeMes: 4.5, ahora: a6 + 2 * D })) === "TikTok: lectura lanzada" && lanz.body.resultsPerPage === 25 && lanz.ruta.includes("maxTotalChargeUsd=0.1"));
