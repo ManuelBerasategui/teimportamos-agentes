@@ -2,6 +2,7 @@
 Uso:  python enviar.py            -> pide confirmación en cada mensaje (recomendado al empezar)
       python enviar.py --auto     -> envía solo, con límites y pausas
       python enviar.py --escritorio -> usa la app de WhatsApp de Windows ya abierta (sin Chrome)
+      python enviar.py --escritorio --prueba -> prueba con 4, sin pausas largas y sin marcar nada
       python enviar.py --seco     -> no envía nada, solo muestra qué haría
 Ctrl+C o crear un archivo llamado STOP en esta carpeta corta todo."""
 import json, os, random, re, sys, time, urllib.parse, urllib.request
@@ -60,6 +61,8 @@ def variar(s):
 def parar():
     return (AQUI / "STOP").exists()
 
+PRUEBA = "--prueba" in sys.argv   # prueba rápida: pocos mensajes, pausas de 4 s, no marca nada en el panel
+
 def main_escritorio(lista, auto):
     """Usa la app de WhatsApp de Windows que ya tenés abierta y con sesión: abre el chat con el texto puesto y aprieta Enter."""
     import pyautogui, pygetwindow as gw
@@ -68,7 +71,7 @@ def main_escritorio(lista, auto):
         if parar(): print("STOP detectado."); break
         texto = variar(s)
         print(f"\n[{i}/{len(lista)}] {s['nombre']} ({s['conv']})\n  {texto}")
-        if not auto:
+        if not auto and not PRUEBA:
             r = input("  Enter = enviar | n = marcar 'no seguir' | s = saltar | q = salir: ").strip().lower()
             if r == "q": break
             if r == "s": continue
@@ -82,17 +85,20 @@ def main_escritorio(lista, auto):
         time.sleep(1.5)
         if gw.getActiveWindow() is None or gw.getActiveWindow().title.strip() != "WhatsApp":
             print("  WhatsApp no quedó al frente. Frenando."); break
+        print(f"  Ventana al frente: {gw.getActiveWindow().title!r}")
         pyautogui.press("enter"); time.sleep(2)
-        api("/enviar/hecho", {"conv": s["conv"]}); enviados += 1; print("  Enviado ✅")
+        enviados += 1
+        if PRUEBA: print("  Enter apretado (PRUEBA: no se marca en el panel). Mirá en WhatsApp si salió.")
+        else: api("/enviar/hecho", {"conv": s["conv"]}); print("  Enter apretado ✅ (verificá en WhatsApp que salió)")
         if i < len(lista):
-            t = random.randint(PAUSA_MIN, PAUSA_MAX); print(f"  Pausa {t}s... (no toques el teclado cuando termine)"); time.sleep(t)
+            t = 4 if PRUEBA else random.randint(PAUSA_MIN, PAUSA_MAX); print(f"  Pausa {t}s... (no toques el teclado ni el mouse)"); time.sleep(t)
     print(f"\nListo. Enviados: {enviados}")
 
 def main():
     seco, auto = "--seco" in sys.argv, "--auto" in sys.argv
     if not seco and not (H_DESDE <= datetime.now().hour < H_HASTA):
         sys.exit(f"Fuera de horario ({H_DESDE}:00 a {H_HASTA}:00). Cambialo en .env si querés.")
-    lista = api(f"/enviar/lista?limite={MAX}")["lista"]
+    lista = api(f"/enviar/lista?limite={4 if PRUEBA else MAX}")["lista"]
     print(f"{len(lista)} seguimientos para hoy.")
     if not lista: return
     if seco:
