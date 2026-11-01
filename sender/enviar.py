@@ -4,7 +4,7 @@ Uso:  python enviar.py            -> pide confirmación en cada mensaje (recomen
       python enviar.py --escritorio -> usa la app de WhatsApp de Windows ya abierta (sin Chrome)
       python enviar.py --seco     -> no envía nada, solo muestra qué haría
 Ctrl+C o crear un archivo llamado STOP en esta carpeta corta todo."""
-import json, os, random, sys, time, urllib.parse, urllib.request
+import json, os, random, re, sys, time, urllib.parse, urllib.request
 from datetime import datetime
 from pathlib import Path
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
@@ -34,21 +34,26 @@ def api(path, body=None):
     with urllib.request.urlopen(req, timeout=30) as r:
         return json.load(r)
 
-SALUDOS = ["Hola", "Hola!", "Buenas", "Buenas!", "Hola, ¿cómo andás?", "Hola, ¿todo bien?", "Qué tal", "Buen día"]
-CIERRES = ["", "", " 🙂", " Cualquier cosa avisame.", " Quedo atento.", " Te leo."]
+SALUDOS = ["Hola!", "Hola,", "Buenas!", "Buenas,", "Buen día!", "Qué tal,", "Hola, ¿todo bien?", "Hola, ¿cómo andás?"]
+CIERRES = ["", "", "", " 🙂", " Cualquier cosa avisame.", " Quedo atento.", " Te leo."]
 EMPIEZA_SALUDO = ("hola", "buen", "qué tal", "que tal")
+
+def _nombre(s):
+    n = re.sub(r"[^\W\d_ ]", "", str(s.get("nombre") or "")).strip().split(" ")[0]
+    return n.capitalize() if len(n) >= 3 and n.lower() != "none" else ""
 
 def variar(s):
     """Cambia un poco cada mensaje (saludo/cierre/puntuación) sin tocar el contenido, para que no salgan todos idénticos."""
     t = s["borrador"].strip()
-    nombre = (s.get("nombre") or "").split(" ")[0] if s.get("nombre") and not s["nombre"].lstrip("+").replace(" ", "").isdigit() else ""
-    if not t.lower().startswith(EMPIEZA_SALUDO) and random.random() < 0.85:
+    if not t.lower().startswith(EMPIEZA_SALUDO) and random.random() < 0.8:
         g = random.choice(SALUDOS)
-        g = g + (f" {nombre}" if nombre and random.random() < 0.5 and not g.endswith("?") else "")
-        t = f"{g.rstrip('!?,')}{'!' if g.endswith('!') else ','} {t[0].lower() + t[1:] if t[:2].isalpha() and not t[1].isupper() else t}"
-    if t[-1] in ".?!" and random.random() < 0.3 and not t.endswith("?"):
+        n = _nombre(s)
+        if n and n.lower() not in t.lower() and not g.endswith("?") and random.random() < 0.5:
+            g = g[:-1] + f" {n}" + g[-1]
+        t = f"{g} {t}"
+    if t.endswith(".") and random.random() < 0.3:
         t = t[:-1]
-    if not t.endswith("?") or random.random() < 0.3:
+    if (not t.endswith("?") or random.random() < 0.3) and not t.endswith(("avisame.", "atento.", "leo.", "🙂")):
         t += random.choice(CIERRES)
     return t.strip()
 
