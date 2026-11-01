@@ -39,7 +39,7 @@ CIERRES = ["", "", "", " 🙂", " Cualquier cosa avisame.", " Quedo atento.", " 
 EMPIEZA_SALUDO = ("hola", "buen", "qué tal", "que tal")
 
 def _nombre(s):
-    n = re.sub(r"[^\W\d_ ]", "", str(s.get("nombre") or "")).strip().split(" ")[0]
+    n = re.sub(r"[^\w ]|[\d_]", "", str(s.get("nombre") or "")).strip().split(" ")[0]
     return n.capitalize() if len(n) >= 3 and n.lower() != "none" else ""
 
 def variar(s):
