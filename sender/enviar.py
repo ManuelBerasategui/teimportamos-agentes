@@ -29,7 +29,7 @@ H_DESDE = int(os.environ.get("HORA_DESDE", "9"))
 H_HASTA = int(os.environ.get("HORA_HASTA", "20"))
 
 def api(path, body=None):
-    req = urllib.request.Request(f"{URL}/lector{path}", headers={"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"},
+    req = urllib.request.Request(f"{URL}/lector{path}", headers={"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) TeImportamos-Sender/1.0"},
                                  data=json.dumps(body).encode() if body is not None else None, method="POST" if body is not None else "GET")
     with urllib.request.urlopen(req, timeout=30) as r:
         return json.load(r)
