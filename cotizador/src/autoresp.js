@@ -67,6 +67,7 @@ export function revisarMensaje(m) {
   for (const u of t.match(/https?:\/\/\S+/gi) || []) if (!URL_OK.test(u)) return "link ajeno";
   if (/vap(e|er)|elf ?bar|pod\b|tabaco/i.test(t)) return "tema prohibido";
   if (/\binforme\b|5\.?000/i.test(t)) return "ofrece el informe (lo decide el dueño)";
+  if (/\b(te|ah[ií]) (paso|mando|env[ií]o|comparto|va)\b|\bahí te\b/i.test(t) && !/https?:\/\//.test(t)) return "promete mandar algo que no tiene";
   if (/te paso con|te derivo|te deriv|alguien del equipo|el equipo|te llam(o|amos)|te escribe/i.test(t)) return "promete derivar";
   return "";
 }
@@ -115,7 +116,7 @@ ${charla}
 
 REGLAS (seguí este orden; la primera que aplica manda):
 1. CIERRES Y COTIZACIÓN EN CAMINO: si el cliente mandó link de Alibaba Y cantidad, o contestó la cantidad de un link de Alibaba que mandó antes (la cotización se arma sola y se la mandamos) → accion "nada". También "nada" si lo último del cliente no pide respuesta ("gracias", "ok", "dale", "👍", "listo", "ya te paso", "después te mando", "lo veo y te aviso") → accion "nada".
-2. PARA EL DUEÑO → accion "humano" (no contestes): pagos, transferencias, comprobantes, señas; reclamos o enojo; pide una llamada; negocia o compara precios; preguntas sobre una cotización que YA le pasamos; condiciones del servicio (garantías, envíos a terceros, venta sin stock, dropshipping, formas de pago, plazos, mínimos, aduana); pide recomendaciones u opciones; pregunta si sos un bot o una persona; ya dio peso + cantidad + precio FOB (hay que cotizarle);  proveedores que nos ofrecen algo; algo que no entendés o cualquier duda.
+2. PARA EL DUEÑO → accion "humano" (no contestes): pagos, transferencias, comprobantes, señas; reclamos o enojo; pide una llamada; negocia o compara precios; preguntas sobre una cotización que YA le pasamos; condiciones del servicio (garantías, envíos a terceros, venta sin stock, dropshipping, formas de pago, plazos, mínimos, aduana); pide recomendaciones u opciones; pregunta si sos un bot o una persona; pide datos nuestros (dirección del depósito, CBU, alias, datos para el envío, ubicación); ya dio peso + cantidad + precio FOB (hay que cotizarle);  proveedores que nos ofrecen algo; algo que no entendés o cualquier duda.
 3a. LINK DE ALIBABA SIN CANTIDAD: preguntale solo cuántas unidades quiere (el precio y el peso los sacamos nosotros del link; la cotización se arma sola cuando diga la cantidad). Si ya se lo preguntaste y no contestó, recordáselo corto.
 3b. LINK DE 1688 (o de otro proveedor) sin datos: pedile "${FRASE_COTIZAR} de 1688" (o "del proveedor"). Si ya se lo pediste y no contestó, recordáselo corto.
 4. NOMBRA UN PRODUCTO SIN LINK NI FOTOS (ej: "Xiaomi note 15", "necesito traer 45 pestillos electrónicos", "quiero importar parlantes"): preguntale si tiene el link de Alibaba o 1688, o de algún proveedor; y si no lo tiene, que te mande fotos de referencia del producto. NO ofrezcas el informe de búsqueda, NO pidas peso ni FOB todavía.
@@ -124,7 +125,7 @@ REGLAS (seguí este orden; la primera que aplica manda):
 7. SALUDO O "QUIERO INFO" sin decir qué: saludalo y preguntale qué producto quiere traer y si tiene link de Alibaba/1688 o fotos de referencia.
 8. Cualquier otra cosa → accion "humano".
 ESTILO: 1 a 3 líneas, voseo argentino, como escribo yo (ver ejemplos), sin listas ni títulos, sin muletillas al arrancar ("claro", "dale", "buenísimo", "genial"). Si ya hubo charla hoy, no saludes de nuevo. Si el último mensaje del cliente es de hace más de 12 horas, arrancá con un "Perdón la demora!" corto. Usá el nombre del producto que dijo el cliente.
-PROHIBIDO: dar precios, comisiones, plazos o cualquier número de plata; ofrecer el informe de búsqueda (eso lo hace el dueño cuando ve las fotos); decir "te paso con alguien", "te derivo", "el equipo", "te llamamos" o prometer que alguien le va a escribir; nombrar vapers, pods o tabaco.
+PROHIBIDO: prometer que le vas a pasar o mandar algo ("te paso la dirección", "ahí te mando") salvo el link del catálogo en ese mismo mensaje; dar precios, comisiones, plazos o cualquier número de plata; ofrecer el informe de búsqueda (eso lo hace el dueño cuando ve las fotos); decir "te paso con alguien", "te derivo", "el equipo", "te llamamos" o prometer que alguien le va a escribir; nombrar vapers, pods o tabaco.
 Devolvé JSON: {"accion":"responder"|"humano"|"nada","mensaje":"texto a enviar (vacío si no es responder)","motivo":"una frase corta","resumen":"3 a 5 palabras: de qué trata el chat y qué debo hacer yo (ej: \"quiere vender sin stock, explicarle dropshipping\")"}`, { prioridad: true });
   if (!ia || !["responder", "humano", "nada"].includes(ia.accion)) return fin({ accion: "humano", motivo: "la IA no pudo decidir" }, c.nombre);
   if (ia.accion !== "responder") return fin({ accion: ia.accion, motivo: String(ia.motivo || "").slice(0, 120), resumen: ia.resumen }, c.nombre);

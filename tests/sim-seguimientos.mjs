@@ -220,7 +220,7 @@ if (rl.lista[1]) { await rq("/enviar/no", "POST", { conv: rl.lista[1].conv }); c
   await rqi("/enviar/pausa", { pausa: false });
   chk("reanudar: vuelve a andar", (await (await rq("/enviar/responder?limite=20")).json()).pausado === false);
   // Derivados ("Para vos") y promesas de derivar
-  chk("revisarMensaje: no promete que alguien lo va a escribir", (await import(dir + "/autoresp.js")).revisarMensaje("Te paso con alguien del equipo") === "promete derivar");
+  chk("revisarMensaje: no promete que alguien lo va a escribir", (await import(dir + "/autoresp.js")).revisarMensaje("Te paso con alguien del equipo") !== "");
   resp = { accion: "humano", mensaje: "", motivo: "pagó", resumen: "mandó comprobante, confirmar pago" };
   db.prepare("DELETE FROM kv WHERE k=?").run("resp_auto:" + tel(2));   // el cliente escribió de nuevo
   await rqi("/enviar/redactar", { conv: tel(2) });
@@ -264,6 +264,7 @@ if (rl.lista[1]) { await rq("/enviar/no", "POST", { conv: rl.lista[1].conv }); c
     chk("y no se lo vuelve a pedir", rb2.accion !== "responder" || !/FOB que figura/.test(rb2.mensaje));
     const otraPC = await (await red(tel(8))).json();
     chk("dos PCs: si una ya decidió ese chat, la otra no lo contesta", otraPC.accion === "nada" && /otra PC/.test(otraPC.motivo));
+    chk("no promete mandar algo que no tiene", (await import(dir + "/autoresp.js")).revisarMensaje("Perdón la demora! Ahí te paso la dirección del depósito en China") === "promete mandar algo que no tiene" && (await import(dir + "/autoresp.js")).revisarMensaje("Te paso el catálogo: https://www.teimportamosarg.com/catalogo") === "");
     chk("el bot no ofrece el informe (lo decide el dueño) ni da precios", (await import(dir + "/autoresp.js")).revisarMensaje("El informe cuesta $5.000, te sirve?").startsWith("ofrece el informe") && (await import(dir + "/autoresp.js")).revisarMensaje("te sale $6.000") === "tiene un precio" && (await import(dir + "/autoresp.js")).revisarMensaje("Tenés el link de Alibaba o 1688? Si no, mandame fotos de referencia") === "");
   }
   const lg = await (await rq("/enviar/log")).json();
