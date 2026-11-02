@@ -243,8 +243,10 @@ if (rl.lista[1]) { await rq("/enviar/no", "POST", { conv: rl.lista[1].conv }); c
     chk("cotizaciones: la de peso estimado queda para vos", !lr.cotizaciones.some((x) => x.id === "cotest") && (await (await hh("/enviar/derivados")).json()).lista.some((x) => x.conv === tel(6) && /peso estimado/.test(x.resumen)));
     const rh = await hh("/enviar/cotizacion-html", { id: "cotreal" });
     chk("cotizacion-html: devuelve la página para armar el PDF", rh.status === 200 && (await rh.text()).includes("Auriculares"));
+    await hh("/enviar/cotizacion-guardada", { id: "cotreal" });
+    chk("cotizacion-guardada: no se reofrece y la tarea sigue abierta en Pendientes", !(await (await hh("/enviar/responder?limite=20")).json()).cotizaciones.length && db.prepare("SELECT estado FROM tareas WHERE ref='cotauto:cotreal'").get().estado === "abierta");
     await hh("/enviar/cotizacion-enviada", { id: "cotreal" });
-    chk("cotizacion-enviada: no se vuelve a ofrecer", !(await (await hh("/enviar/responder?limite=20")).json()).cotizaciones.length);
+    chk("cotizacion-enviada: la tarea queda resuelta", db.prepare("SELECT estado FROM tareas WHERE ref='cotauto:cotreal'").get().estado === "resuelta");
     await hh("/enviar/redactar", { conv: tel(2) }); await hh("/enviar/reintentar", { conv: tel(2) });
     chk("reintentar: un chat cuyo envío falló vuelve a la lista", db.prepare("SELECT 1 FROM kv WHERE k=?").get("resp_auto:" + tel(2)) === undefined);
     cv(tel(7), { nombre: "Fotos", ult: ahoraR - 200e3, cli: ahoraR - 200e3, texto: "(image)" }); mm(tel(7), 0, "(image) este busco", ahoraR - 200e3, "image");

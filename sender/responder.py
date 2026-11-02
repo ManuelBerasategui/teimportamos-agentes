@@ -12,6 +12,7 @@ from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 EXTRA_SEG = int(os.environ.get("RESP_EXTRA_SEG", "10"))          # segundos de más "leyendo" antes de escribir
 PAUSA_MIN = int(os.environ.get("RESP_PAUSA_MIN_SEG", "25"))      # pausa entre un chat y el siguiente
 PAUSA_MAX = int(os.environ.get("RESP_PAUSA_MAX_SEG", "70"))
+COTIZ_MODO = os.environ.get("COTIZ_MODO", "revisar")             # revisar (guarda el PDF para que lo mandes vos) | enviar (lo manda solo)
 VENTANA = os.environ.get("VENTANA", "minimizada")                # minimizada | oculta | visible
 CAJA = 'footer div[contenteditable="true"]'
 
@@ -125,6 +126,15 @@ def main():
                     if parar(): break
                     if c["id"] in fallidas: continue
                     print(f"\nCotización N° {c['num']} para {c['nombre']} ({c['conv']}) · total USD {c['total']}")
+                    if COTIZ_MODO != "enviar":   # modo revisión: deja el PDF en la carpeta "cotizaciones" y no manda nada
+                        try:
+                            ruta = hacer_pdf(p, c); (AQUI / "cotizaciones").mkdir(exist_ok=True)
+                            nombre_pdf = re.sub(r"[^\w.-]+", "_", f"Cotizacion_{c['num']}_{c['nombre']}") + ".pdf"
+                            destino = AQUI / "cotizaciones" / nombre_pdf; ruta.replace(destino)
+                            with open(AQUI / "para_vos.txt", "a", encoding="utf-8") as f: f.write(f"{datetime.now():%d/%m %H:%M} | {c['nombre']} | +{c['conv']} | cotización N° {c['num']} (USD {c['total']}) lista para revisar y mandar: cotizaciones\\{nombre_pdf}\n")
+                            api("/enviar/cotizacion-guardada", {"id": c["id"]}); print(f"  Guardada para revisar: cotizaciones\\{nombre_pdf}")
+                        except Exception as e: print(f"  No pude guardar el PDF ({str(e).splitlines()[0]})."); fallidas.add(c["id"])
+                        continue
                     try:
                         ruta = hacer_pdf(p, c)
                         pg.goto(f"https://web.whatsapp.com/send?phone={c['conv']}")

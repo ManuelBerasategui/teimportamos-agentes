@@ -150,6 +150,7 @@ export async function rutaAutoresp(env, req, p, url, iaJSON, h = {}) {
     return json({ ok: true });
   }
   if (p === "/enviar/reintentar" && req.method === "POST") { await env.DB.prepare("DELETE FROM kv WHERE k=?").bind("resp_auto:" + String((await body()).conv || "")).run(); return json({ ok: true }); }   // falló el envío: que se vuelva a intentar
+  if (p === "/enviar/cotizacion-guardada" && req.method === "POST") { await kvPut(env, "cotsent:" + String((await body()).id || ""), "guardada"); return json({ ok: true }); }   // PDF guardado en la PC para revisar: no se vuelve a ofrecer, pero sigue en Pendientes del panel
   if (p === "/enviar/pausa" && req.method === "POST") { await pausaAutoresp(env, !!(await body()).pausa); return json({ ok: true }); }
   if (p === "/enviar/derivados") return json({ ok: true, lista: await derivados(env) });
   if (p === "/enviar/log") return json({ ok: true, pausado: (await kvGet(env, "resp_pausa")) === "1", log: JSON.parse((await kvGet(env, "resp_log")) || "[]") });
