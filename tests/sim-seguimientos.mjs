@@ -219,6 +219,14 @@ if (rl.lista[1]) { await rq("/enviar/no", "POST", { conv: rl.lista[1].conv }); c
   chk("pausa: no devuelve nada", pz.pausado === true && pz.lista.length === 0);
   await rqi("/enviar/pausa", { pausa: false });
   chk("reanudar: vuelve a andar", (await (await rq("/enviar/responder?limite=20")).json()).pausado === false);
+  // Derivados ("Para vos") y promesas de derivar
+  chk("revisarMensaje: no promete que alguien lo va a escribir", (await import(dir + "/autoresp.js")).revisarMensaje("Te paso con alguien del equipo") === "promete derivar");
+  resp = { accion: "humano", mensaje: "", motivo: "pagó", resumen: "mandó comprobante, confirmar pago" };
+  await rqi("/enviar/redactar", { conv: tel(2) });
+  const dv = await (await rq("/enviar/derivados")).json();
+  chk("derivados: queda anotado con resumen corto", dv.lista.some((x) => x.conv === tel(2) && /comprobante/.test(x.resumen)));
+  db.prepare("UPDATE w_conv SET ult_yo=1 WHERE conv=?").run(tel(2));
+  chk("derivados: sale cuando contestás vos", !(await (await rq("/enviar/derivados")).json()).lista.some((x) => x.conv === tel(2)));
   const lg = await (await rq("/enviar/log")).json();
   chk("log guarda las decisiones", lg.log.length >= 2 && lg.log.some((x) => x.accion === "humano"));
 }

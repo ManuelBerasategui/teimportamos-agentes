@@ -3192,11 +3192,11 @@ function registroEq(eq) {
   return '<details style="border-radius:10px;margin:6px 0;background:#F9FAFB;border:1px solid #EEF0F2"><summary style="cursor:pointer;padding:10px 12px;font-weight:700;font-size:13.5px">Registro diario <span style="font-weight:400;color:#9CA3AF;font-size:12px">· chats que contestó cada uno por día</span></summary><div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:13px">' + cab + fil + "</table></div></details>";
 }
 // ---------- Para hacer hoy: responder, seguimientos (con el mensaje listo), pendientes y DMs de Instagram ----------
-var HACER = "sin", SEGS = null, DMS = null, NPEND = 0;
+var HACER = "sin", SEGS = null, DMS = null, NPEND = 0, DER = null;
 function verHacer(k) { HACER = k; pintarHacer(); if (k === "pend") cargarTareas(); }
 function pintarHacer() {
-  var n = { sin: WA ? (WA.sinResponder || []).length : 0, seg: SEGS ? SEGS.length : 0, pend: NPEND, dms: DMS ? DMS.length : 0 };
-  $("#hacerTabs").innerHTML = [["sin", "Responder ya"], ["seg", "Seguimientos"], ["pend", "Pendientes"], ["dms", "DMs de Instagram"]].map(function (t) { return '<button data-hacer="' + t[0] + '"' + (HACER === t[0] ? ' class="on"' : "") + ">" + t[1] + "<span>" + n[t[0]] + "</span></button>"; }).join("");
+  var n = { sin: WA ? (WA.sinResponder || []).length : 0, seg: SEGS ? SEGS.length : 0, pend: NPEND, dms: DMS ? DMS.length : 0, der: DER ? DER.length : 0 };
+  $("#hacerTabs").innerHTML = [["sin", "Responder ya"], ["seg", "Seguimientos"], ["der", "Para vos"], ["pend", "Pendientes"], ["dms", "DMs de Instagram"]].map(function (t) { return '<button data-hacer="' + t[0] + '"' + (HACER === t[0] ? ' class="on"' : "") + ">" + t[1] + "<span>" + n[t[0]] + "</span></button>"; }).join("");
   $("#hacerPend").style.display = HACER === "pend" ? "" : "none"; $("#hacerLista").style.display = HACER === "pend" ? "none" : "";
   if (HACER === "sin") { WA_LISTA = "sin"; pintarListaWA(); }
   if (HACER === "seg") $("#waTabla").innerHTML = SEGS === null ? '<tr><td class="vacio">Escribiendo los mensajes de seguimiento…</td></tr>' : SEGS.length ? SEGS.map(function (c) {
@@ -3205,10 +3205,12 @@ function pintarHacer() {
     var info = "Le cotizamos " + que + (c.total ? " · " + c.total : "") + " → " + (c.reaccion || "no respondió") + (c.toque > 1 ? " · ya le escribimos " + (c.toque - 1) + (c.toque === 2 ? " vez" : " veces") : "") + (c.perfil ? " · perfil " + c.perfil : "");
     return '<tr data-wc="' + esc(c.conv) + '"><td class="wn"><b>' + esc(c.nombre || "+" + c.conv) + "</b><small>" + esc(c.conv) + '</small></td><td class="wp">' + esc(que) + '</td><td class="wa">' + esc(info) + (c.borrador ? '<span class="borr">' + esc(c.borrador) + "</span>" : "") + '</td><td class="wh">cotizado hace ' + c.dias_cot + ' d<a class="wa-btn" target="_blank" href="' + url + '">📲 Abrir WhatsApp</a><button class="wlisto" data-segl="' + esc(c.conv) + '" title="Ya le escribí">Listo</button><button class="wlisto" data-segn="' + esc(c.conv) + '" title="No hace falta seguirlo por esta cotización">No seguir</button></td></tr>';
   }).join("") : '<tr><td class="vacio">No hay seguimientos pendientes. 🙌</td></tr>';
+  if (HACER === "der") $("#waTabla").innerHTML = DER === null ? '<tr><td class="vacio">Cargando…</td></tr>' : DER.length ? DER.map(function (c) { return '<tr data-wc="' + esc(c.conv) + '"><td class="wn"><b>' + esc(c.nombre || "+" + c.conv) + "</b><small>" + esc(c.conv) + '</small></td><td class="wp"><b>' + esc(c.resumen || "") + '</b></td><td class="wa">' + esc(c.ultimo || "") + '</td><td class="wh">' + hace(c.ts) + '<a class="wa-btn" target="_blank" href="https://wa.me/' + esc(c.conv) + '">📲 Abrir WhatsApp</a></td></tr>'; }).join("") : '<tr><td class="vacio">No hay chats derivados. 🙌</td></tr>';
   if (HACER === "dms") $("#waTabla").innerHTML = DMS === null ? '<tr><td class="vacio">Cargando…</td></tr>' : DMS.length ? DMS.map(function (d) { return '<tr data-ig="' + esc(d.usuario || "") + '"><td class="wn"><b>@' + esc(d.usuario || "?") + '</b></td><td class="wa">' + esc(d.ult_texto || "") + '</td><td class="wh">' + hace(d.ult_ts) + (d.usuario ? '<a class="wa-btn" style="background:#C13584" target="_blank" href="https://ig.me/m/' + encodeURIComponent(d.usuario) + '">Responder</a>' : "") + "</td></tr>"; }).join("") : '<tr><td class="vacio">No hay DMs sin responder. 🙌</td></tr>';
 }
 function cargarHacer() {
   fetch("/panel/api/asistente/seguimientos").then(function (r) { return r.json(); }).then(function (l) { SEGS = Array.isArray(l) ? l : []; pintarHacer(); }).catch(function () { SEGS = []; pintarHacer(); });
+  fetch("/panel/api/asistente/derivados").then(function (r) { return r.json(); }).then(function (l) { DER = Array.isArray(l) ? l : []; pintarHacer(); }).catch(function () { DER = []; pintarHacer(); });
   fetch("/panel/api/redes/dms").then(function (r) { return r.json(); }).then(function (d) { DMS = (d && d.dms) || []; pintarHacer(); }).catch(function () { DMS = []; pintarHacer(); });
 }
 document.addEventListener("click", function (ev) {

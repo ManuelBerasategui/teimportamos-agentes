@@ -1,4 +1,4 @@
-import { pausaAutoresp } from "./autoresp.js";
+import { pausaAutoresp, derivados } from "./autoresp.js";
 import { seguimientos, revisarSeguimientos, lineaSeguimiento } from "./lector.js";
 import { preguntarAgente } from "./agente.js";
 import { notionActivo, notionHoy, textoNotion, crearEnNotion, marcarEnNotion, descubrir, diagnosticoNotion, fijarRol, agendaNotion, nivelesNotion } from "./notion.js";
@@ -699,6 +699,7 @@ export async function apiAsistente(env, req, url, quien, base, iaJSON = null) {
     return json({ respuestas: e2.__captura });
   }
   if (r === "seguimientos") return json(await seguimientosPanel(env, iaJSON));
+  if (r === "derivados") return json(await derivados(env));
   if (r === "tareas") return json(await pendientes(env, url.searchParams.get("de") || quien));
   return json({ error: "ruta desconocida" }, 404);
 }

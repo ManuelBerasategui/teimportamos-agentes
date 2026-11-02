@@ -36,6 +36,11 @@ def escribir(pg, caja, texto):
         time.sleep(d)
     return True
 
+def anotar_para_vos(it, d):
+    """Deja en para_vos.txt (y en el panel, pestaña 'Para vos') los chats que quedaron para contestar a mano."""
+    with open(AQUI / "para_vos.txt", "a", encoding="utf-8") as f:
+        f.write(f"{datetime.now():%d/%m %H:%M} | {it['nombre'] or '?'} | +{it['conv']} | {d.get('resumen') or d.get('motivo', '')}\n")
+
 def hay_pendientes():
     r = api("/enviar/responder?limite=10")
     if r.get("pausado"): print("⏸  Pausado desde el bot de Telegram. Escribí 'reanudar respuestas' para seguir."); return None
@@ -51,7 +56,7 @@ def main():
         print(f"{len(lista)} chats esperando respuesta (vista previa, no se envía nada).")
         for it in lista:
             d = api("/enviar/redactar", {"conv": it["conv"], "prueba": True})
-            print(f"\n- {it['nombre']} ({it['conv']}) dijo: {it['ultimo']}\n  → {d['accion'].upper()}: {d.get('mensaje') or d.get('motivo', '')}")
+            print(f"\n- {it['nombre']} ({it['conv']}) dijo: {it['ultimo']}\n  → {d['accion'].upper()}: {d.get('mensaje') or d.get('motivo', '')}" + (f"\n  PARA VOS: {d.get('resumen') or d.get('motivo', '')}" if d['accion'] == 'humano' else ""))
         return
     args = {"minimizada": ["--start-minimized"], "oculta": ["--window-position=-32000,-32000"]}.get(VENTANA, [])
     with sync_playwright() as p:
@@ -74,6 +79,7 @@ def main():
                     if parar(): break
                     d = api("/enviar/redactar", {"conv": it["conv"]})
                     print(f"\n{it['nombre']} ({it['conv']}): {it['ultimo']}\n  → {d['accion']}: {d.get('mensaje') or d.get('motivo', '')}")
+                    if d["accion"] == "humano": anotar_para_vos(it, d)
                     if d["accion"] != "responder": continue
                     pg.goto(f"https://web.whatsapp.com/send?phone={it['conv']}")
                     try: caja = pg.wait_for_selector(CAJA, timeout=45000)
