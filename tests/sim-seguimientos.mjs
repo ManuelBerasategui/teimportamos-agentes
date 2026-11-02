@@ -247,6 +247,10 @@ if (rl.lista[1]) { await rq("/enviar/no", "POST", { conv: rl.lista[1].conv }); c
     chk("cotizacion-enviada: no se vuelve a ofrecer", !(await (await hh("/enviar/responder?limite=20")).json()).cotizaciones.length);
     await hh("/enviar/redactar", { conv: tel(2) }); await hh("/enviar/reintentar", { conv: tel(2) });
     chk("reintentar: un chat cuyo envío falló vuelve a la lista", db.prepare("SELECT 1 FROM kv WHERE k=?").get("resp_auto:" + tel(2)) === undefined);
+    cv(tel(7), { nombre: "Fotos", ult: ahoraR - 200e3, cli: ahoraR - 200e3, texto: "(image)" }); mm(tel(7), 0, "(image) este busco", ahoraR - 200e3, "image");
+    let llamoIA = 0; resp = { accion: "responder", mensaje: "hola", motivo: "x" }; const iaF = async () => { llamoIA++; return resp; };
+    const rf = await (await L.rutaLector(env, new Request("https://x/lector/enviar/redactar", { method: "POST", headers: { Authorization: "Bearer tok" }, body: JSON.stringify({ conv: tel(7) }) }), new URL("https://x/lector/enviar/redactar"), {}, iaF, { T })).json();
+    chk("fotos: no contesta, lo deja para vos con qué hacer (y sin gastar IA)", rf.accion === "humano" && /Alibaba/.test(rf.resumen) && llamoIA === 0);
     chk("el precio del informe ($5.000) está permitido y otros no", (await import(dir + "/autoresp.js")).revisarMensaje("El informe cuesta $5.000, te sirve?") === "" && (await import(dir + "/autoresp.js")).revisarMensaje("te sale $6.000") === "tiene un precio");
   }
   const lg = await (await rq("/enviar/log")).json();
