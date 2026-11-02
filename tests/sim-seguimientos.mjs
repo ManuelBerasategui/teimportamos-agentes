@@ -208,7 +208,7 @@ if (rl.lista[1]) { await rq("/enviar/no", "POST", { conv: rl.lista[1].conv }); c
   let r1 = await (await rqi("/enviar/redactar", { conv: tel(1) })).json();
   chk("redactar: pide peso, cantidad y FOB de Alibaba", r1.accion === "responder" && /peso del producto en kg, cantidad y precio FOB de Alibaba/.test(r1.mensaje));
   chk("redactar: el prompt lleva tu estilo y la charla", prompt.includes("Te paso la info en un rato") && prompt.includes("CLIENTE: me pasas el precio"));
-  chk("redactar: la regla de 1688 y del catálogo están en el prompt", prompt.includes("precio FOB de 1688") && prompt.includes("teimportamosarg.com/catalogo") && prompt.includes("búsqueda de proveedores") && prompt.includes("NO le pidas peso ni FOB") && prompt.includes("qué producto vio") && prompt.includes("dropshipping"));
+  chk("redactar: reglas nuevas en el prompt (link → FOB, producto suelto → link o fotos, sin informe)", prompt.includes('"de 1688" si el link es de 1688') && prompt.includes("teimportamosarg.com/catalogo") && prompt.includes("fotos de referencia") && prompt.includes("NO ofrezcas el informe") && prompt.includes("qué producto vio") && prompt.includes("dropshipping") && /escrito hace \d+ horas/.test(prompt));
   chk("después de decidir no vuelve a aparecer", !(await (await rq("/enviar/responder?limite=20")).json()).lista.some((x) => x.conv === tel(1)));
   resp = { accion: "responder", mensaje: "Te sale USD 450 el total", motivo: "x" };
   let r2 = await (await rqi("/enviar/redactar", { conv: tel(2) })).json();
@@ -253,7 +253,7 @@ if (rl.lista[1]) { await rq("/enviar/no", "POST", { conv: rl.lista[1].conv }); c
     let llamoIA = 0; resp = { accion: "responder", mensaje: "hola", motivo: "x" }; const iaF = async () => { llamoIA++; return resp; };
     const rf = await (await L.rutaLector(env, new Request("https://x/lector/enviar/redactar", { method: "POST", headers: { Authorization: "Bearer tok" }, body: JSON.stringify({ conv: tel(7) }) }), new URL("https://x/lector/enviar/redactar"), {}, iaF, { T })).json();
     chk("fotos: no contesta, lo deja para vos con qué hacer (y sin gastar IA)", rf.accion === "humano" && /Alibaba/.test(rf.resumen) && llamoIA === 0);
-    chk("el precio del informe ($5.000) está permitido y otros no", (await import(dir + "/autoresp.js")).revisarMensaje("El informe cuesta $5.000, te sirve?") === "" && (await import(dir + "/autoresp.js")).revisarMensaje("te sale $6.000") === "tiene un precio");
+    chk("el bot no ofrece el informe (lo decide el dueño) ni da precios", (await import(dir + "/autoresp.js")).revisarMensaje("El informe cuesta $5.000, te sirve?").startsWith("ofrece el informe") && (await import(dir + "/autoresp.js")).revisarMensaje("te sale $6.000") === "tiene un precio" && (await import(dir + "/autoresp.js")).revisarMensaje("Tenés el link de Alibaba o 1688? Si no, mandame fotos de referencia") === "");
   }
   const lg = await (await rq("/enviar/log")).json();
   chk("log guarda las decisiones", lg.log.length >= 2 && lg.log.some((x) => x.accion === "humano"));
