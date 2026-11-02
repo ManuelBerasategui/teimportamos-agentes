@@ -152,16 +152,21 @@ def main():
                     print(f"\n{it['nombre']} ({it['conv']}): {it['ultimo']}\n  → {d['accion']}: {d.get('mensaje') or d.get('motivo', '')}")
                     if d["accion"] == "humano": anotar_para_vos(it, d)
                     if d["accion"] != "responder": continue
-                    pg.goto(f"https://web.whatsapp.com/send?phone={it['conv']}")
-                    try: caja = pg.wait_for_selector(CAJA, timeout=45000)
-                    except PWTimeout: print("  No abrió el chat (¿número sin WhatsApp?). Salto."); continue
-                    lee = random.uniform(6, 14) + len(it["ultimo"]) * 0.05 + EXTRA_SEG
-                    print(f"  leyendo {lee:.0f}s...")
-                    if not dormir(lee): break
-                    if caja.inner_text().strip(): print("  La caja ya tenía texto (¿lo estás escribiendo vos?). Salto."); continue
-                    if not escribir(pg, caja, d["mensaje"]): break
-                    time.sleep(random.uniform(1.0, 3.0)); caja.press("Enter"); time.sleep(3)
-                    if caja.inner_text().strip(): print("  No se envió (la caja sigue con texto). Frenando por seguridad."); return
+                    try:
+                        pg.goto(f"https://web.whatsapp.com/send?phone={it['conv']}")
+                        try: pg.wait_for_selector(CAJA, timeout=45000)
+                        except PWTimeout: print("  No abrió el chat (¿número sin WhatsApp?). Salto."); continue
+                        lee = random.uniform(6, 14) + len(it["ultimo"]) * 0.05 + EXTRA_SEG
+                        print(f"  leyendo {lee:.0f}s...")
+                        if not dormir(lee): break
+                        caja = pg.locator(CAJA).first   # se vuelve a buscar: WhatsApp redibuja la caja mientras "lee"
+                        if caja.inner_text().strip(): print("  La caja ya tenía texto (¿lo estás escribiendo vos?). Salto."); continue
+                        if not escribir(pg, caja, d["mensaje"]): break
+                        time.sleep(random.uniform(1.0, 3.0)); caja.press("Enter"); time.sleep(3)
+                        if pg.locator(CAJA).first.inner_text().strip(): print("  No se envió (la caja sigue con texto). Frenando por seguridad."); return
+                    except Exception as e:
+                        debug_pantalla(pg, f"chat {it['conv']}: {e}")
+                        print(f"  Falló este chat ({str(e).splitlines()[0]}). Lo salto; queda en 'Responder ya'."); continue
                     api("/enviar/respondido", {"conv": it["conv"]}); enviados += 1; print("  Enviado ✅")
                     if not dormir(random.randint(PAUSA_MIN, PAUSA_MAX)): break
         except KeyboardInterrupt:
