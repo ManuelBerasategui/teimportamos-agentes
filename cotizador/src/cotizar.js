@@ -82,17 +82,18 @@ ${String(indicaciones || "").slice(0, 3000)}`;
 // ---------------------------------------------------------------------------
 // Cotización AUTOMÁTICA desde el 805: si un cliente mandó link(s) de Alibaba.com + cantidad, se arma sola
 // y queda en Pendientes ("Cotización lista") con el PDF. No se le manda nada al cliente.
+// Solo mira lo que el cliente mandó DESPUÉS de tu último mensaje (lo anterior ya lo atendiste vos).
 // Fotos, nombres sueltos y links de 1688 NO se cotizan solos (siguen como "esperan cotización").
 // ---------------------------------------------------------------------------
 const RE_ALIBABA = /https?:\/\/(?:[a-z0-9-]+\.)*alibaba\.com\/[^\s<>"']+/gi;
 export async function cotizarAuto(env, h, { limite = 2 } = {}) {
   await tabla(env);
   const hasta = Date.now() - 3 * 86400e3;
-  const convs = (await env.DB.prepare("SELECT conv, nombre FROM w_conv WHERE grupo=0 AND archivado=0 AND ult_cliente_ts>=? AND ult_cliente_ts>=ult_yo_ts - 3*86400000 ORDER BY ult_cliente_ts DESC LIMIT 60").bind(hasta).all().catch(() => ({ results: [] }))).results || [];
+  const convs = (await env.DB.prepare("SELECT conv, nombre, COALESCE(ult_yo_ts,0) yo_ts FROM w_conv WHERE grupo=0 AND archivado=0 AND ult_cliente_ts>=? AND ult_cliente_ts>COALESCE(ult_yo_ts,0) ORDER BY ult_cliente_ts DESC LIMIT 60").bind(hasta).all().catch(() => ({ results: [] }))).results || [];
   const hechos = [];
   for (const c of convs) {
     if (hechos.length >= limite) break;
-    const ms = (await env.DB.prepare("SELECT texto, ts FROM w_msg WHERE conv=? AND yo=0 AND ts>=? ORDER BY ts").bind(c.conv, hasta).all()).results || [];
+    const ms = (await env.DB.prepare("SELECT texto, ts FROM w_msg WHERE conv=? AND yo=0 AND ts>=? AND ts>? ORDER BY ts").bind(c.conv, hasta, c.yo_ts).all()).results || [];
     const texto = ms.map((m) => m.texto).join("\n");
     const links = [...new Set((texto.match(RE_ALIBABA) || []).map((l) => l.replace(/[),.;]+$/, "").split("?")[0]))];
     if (!links.length) continue;

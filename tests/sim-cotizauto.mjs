@@ -28,4 +28,11 @@ msg("549342", "30 unidades", 1);
 h.iaJSON = async (e, p) => p.includes("Lampara") ? { items: [{ link: "https://www.alibaba.com/product-detail/Lampara_77.html", nombre: "Lámpara", cantidad: 30 }] } : { pesos: [0.5] };
 r = await C.cotizarAuto(env, h); assert.equal(r.length, 1); assert.equal(r[0].conv, "549342"); console.log("✓ cuando el cliente después dice la cantidad, la cotiza");
 const html = await (await C.paginaCotizacion(env, r[0].id, T)).text(); assert.match(html, /Lámpara/); assert.match(html, /peso/i); console.log("✓ PDF listo (/panel/cotizar/pdf)");
+// Caso Palito: ya le contestaste un pedido viejo (link + 5 unidades); ahora manda otro link SIN cantidad → no se cotiza nada
+db.prepare("INSERT INTO w_conv VALUES ('549345','Palito',0,0,?,?)").run(now - 60000, now - 120000);
+msg("549345", "mirá este https://www.alibaba.com/product-detail/CajasViejas_1.html quiero 5 unidades", 600);
+msg("549345", "mirá este otro https://www.alibaba.com/product-detail/NFC_Google_2.html", 1);
+let aviso = 0; h.iaJSON = async () => { aviso++; return { items: [{ link: "https://www.alibaba.com/product-detail/CajasViejas_1.html", nombre: "Cajas", cantidad: 5 }] }; };
+r = await C.cotizarAuto(env, h);
+assert.equal(db.prepare("SELECT COUNT(*) n FROM tareas WHERE tel='549345'").get().n, 0); assert.equal(aviso, 0); console.log("✓ no recotiza lo que ya contestaste ni inventa cantidad: espera a que diga cuántos");
 console.log("TODO OK");
