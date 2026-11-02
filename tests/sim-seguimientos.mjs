@@ -188,4 +188,38 @@ const rl = await (await rq("/enviar/lista?limite=50")).json();
 chk("enviar/lista devuelve seguimientos con borrador", rl.ok && rl.lista.length > 0 && rl.lista.every((x) => x.borrador && /^\d+$/.test(x.conv)));
 if (rl.lista[0]) { await rq("/enviar/hecho", "POST", { conv: rl.lista[0].conv }); const rl2 = await (await rq("/enviar/lista?limite=50")).json(); chk("enviar/hecho lo saca de la lista", !rl2.lista.some((x) => x.conv === rl.lista[0].conv)); }
 if (rl.lista[1]) { await rq("/enviar/no", "POST", { conv: rl.lista[1].conv }); const rl3 = await (await rq("/enviar/lista?limite=50")).json(); chk("enviar/no lo saca de la lista", !rl3.lista.some((x) => x.conv === rl.lista[1].conv)); }
+// Contestador automático (rutas /enviar/responder, redactar, pausa)
+{
+  const ahoraR = Date.now(), tel = (n) => "54934100099" + n;
+  const cv = (c, o) => db.prepare("INSERT INTO w_conv (conv,nombre,grupo,primer_ts,ult_ts,ult_yo,ult_cliente_ts,ult_yo_ts,ult_texto,n,archivado,prov) VALUES (?,?,0,?,?,?,?,?,?,3,0,0)").run(c, o.nombre, ahoraR - 9e6, o.ult, o.yo ? 1 : 0, o.cli, o.yo ? o.ult : 0, o.texto);
+  const mm = (c, yo, texto, ts, tipo = "text") => db.prepare("INSERT INTO w_msg (id,conv,grupo,yo,texto,ts,hist,tipo) VALUES (?,?,0,?,?,?,0,?)").run("r" + nm++, c, yo, texto, ts, tipo);
+  cv(tel(1), { nombre: "Pedro", ult: ahoraR - 600e3, cli: ahoraR - 600e3, texto: "me pasas el precio de estos auriculares? https://www.alibaba.com/product-detail/x" });
+  mm(tel(1), 1, "Hola Pedro, cómo andás? Te paso la info en un rato", ahoraR - 3e6); mm(tel(1), 0, "me pasas el precio de estos auriculares? https://www.alibaba.com/product-detail/x", ahoraR - 600e3);
+  cv(tel(2), { nombre: "Lu", ult: ahoraR - 300e3, cli: ahoraR - 300e3, texto: "transferí recién" }); mm(tel(2), 0, "transferí recién", ahoraR - 300e3);
+  cv(tel(3), { nombre: "Recién", ult: ahoraR - 10e3, cli: ahoraR - 10e3, texto: "hola" }); mm(tel(3), 0, "hola", ahoraR - 10e3);
+  cv(tel(4), { nombre: "YaContesté", ult: ahoraR - 100e3, yo: 1, cli: ahoraR - 900e3, texto: "dale" });
+  const sin = await (await rq("/enviar/responder?limite=20")).json();
+  const cs = sin.lista.map((x) => x.conv);
+  chk("responder: lista chats esperando", cs.includes(tel(1)) && cs.includes(tel(2)));
+  chk("responder: no los que ya contestaste ni los de hace segundos", !cs.includes(tel(4)) && !cs.includes(tel(3)));
+  let prompt = "", resp = { accion: "responder", mensaje: "Dale Pedro! Necesito que me digas peso del producto en kg, cantidad y precio FOB de Alibaba", motivo: "quiere cotizar" };
+  const iaR = async (_e, p) => { prompt = p; return resp; };
+  const rqi = (path, body) => L.rutaLector(env, new Request("https://x/lector" + path, { method: "POST", headers: { Authorization: "Bearer tok" }, body: JSON.stringify(body) }), new URL("https://x/lector" + path), {}, iaR);
+  let r1 = await (await rqi("/enviar/redactar", { conv: tel(1) })).json();
+  chk("redactar: pide peso, cantidad y FOB de Alibaba", r1.accion === "responder" && /peso del producto en kg, cantidad y precio FOB de Alibaba/.test(r1.mensaje));
+  chk("redactar: el prompt lleva tu estilo y la charla", prompt.includes("Te paso la info en un rato") && prompt.includes("CLIENTE: me pasas el precio"));
+  chk("redactar: la regla de 1688 y del catálogo están en el prompt", prompt.includes("precio FOB de 1688") && prompt.includes("teimportamosarg.com/catalogo"));
+  chk("después de decidir no vuelve a aparecer", !(await (await rq("/enviar/responder?limite=20")).json()).lista.some((x) => x.conv === tel(1)));
+  resp = { accion: "responder", mensaje: "Te sale USD 450 el total", motivo: "x" };
+  let r2 = await (await rqi("/enviar/redactar", { conv: tel(2) })).json();
+  chk("un mensaje con precio no se manda (queda para vos)", r2.accion === "humano" && /precio/.test(r2.motivo));
+  chk("revisarMensaje: link ajeno y precios en pesos", L.rutaLector && (await import(dir + "/autoresp.js")).revisarMensaje("mirá https://malo.com") === "link ajeno" && (await import(dir + "/autoresp.js")).revisarMensaje("son $ 5000") === "tiene un precio" && (await import(dir + "/autoresp.js")).revisarMensaje("pasame kg, cantidad y precio FOB") === "");
+  await rqi("/enviar/pausa", { pausa: true });
+  const pz = await (await rq("/enviar/responder?limite=20")).json();
+  chk("pausa: no devuelve nada", pz.pausado === true && pz.lista.length === 0);
+  await rqi("/enviar/pausa", { pausa: false });
+  chk("reanudar: vuelve a andar", (await (await rq("/enviar/responder?limite=20")).json()).pausado === false);
+  const lg = await (await rq("/enviar/log")).json();
+  chk("log guarda las decisiones", lg.log.length >= 2 && lg.log.some((x) => x.accion === "humano"));
+}
 console.log(`sim-seguimientos: ${ok} ok, ${mal} fallas`);

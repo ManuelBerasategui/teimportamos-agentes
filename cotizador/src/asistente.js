@@ -1,3 +1,4 @@
+import { pausaAutoresp } from "./autoresp.js";
 import { seguimientos, revisarSeguimientos, lineaSeguimiento } from "./lector.js";
 import { preguntarAgente } from "./agente.js";
 import { notionActivo, notionHoy, textoNotion, crearEnNotion, marcarEnNotion, descubrir, diagnosticoNotion, fijarRol, agendaNotion, nivelesNotion } from "./notion.js";
@@ -582,6 +583,9 @@ async function atender(env, iaJSON, upd) {
     return decir(env, chat, `Listo, invité al +${num} como "${nombre}". Pasale este link para que abra el bot: ${bot ? "https://t.me/" + bot : "(el mismo bot que usás vos)"}\nÉl toca Iniciar y después "📱 Compartir mi número". Cuando se conecte te aviso, y desde ahí "seguimientos" les manda a los dos su lista (cada número a uno solo).`);
   }
   if (/^\/?(no repartir|dejar de repartir|sin repartir) (los )?seguimientos|^\/?seguimientos solo (para )?(mi|yo)\s*$/.test(t)) { await kvPut(env, "seg_equipo", "[]"); await kvPut(env, "seg_asig", "{}"); return decir(env, chat, "Listo: los seguimientos vuelven a ir enteros a una sola lista."); }
+  // Freno del contestador automático de la PC (se corta desde el celular)
+  if (t.length < 80 && /\b(pausa|pausar|pausame|frena|frenar|frenalo|para|parar|paralo|detene|detener|apaga|apagar|stop)\b.{0,25}\b(respuestas?|contestador|contestar|bot|automatic\w*|todo)\b|^\/?(pausa|stop|frenar)$/.test(t) && /respuesta|contest|autom|bot|todo|^\/?(pausa|stop|frenar)$/.test(t)) { await pausaAutoresp(env, true); return decir(env, chat, "Listo, frené las respuestas automáticas. La PC deja de contestar en cuanto termine el mensaje que está escribiendo. Para volver a activarlas escribí: reanudar respuestas."); }
+  if (t.length < 80 && /\b(reanuda|reanudar|reactiva|reactivar|activa|activar|prende|prender|segui|seguir|arranca|arrancar)\b.{0,25}\b(respuestas?|contestador|contestar|automatic\w*)\b/.test(t)) { await pausaAutoresp(env, false); return decir(env, chat, "Listo, las respuestas automáticas quedan activas: la PC retoma cuando vuelva a pedir la lista."); }
   if (/^\/?repart(i|ir|ime|amos)( los)? seguimientos/.test(t)) {
     const conectados = [...new Set(Object.values(await chatsConocidos(env)).map(nom))];
     const pedidos = (t.split(/\bcon\b/)[1] || "").split(/,|\by\b/).map(nom).filter(Boolean);

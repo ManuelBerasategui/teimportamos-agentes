@@ -79,6 +79,11 @@ db.prepare("UPDATE w_conv SET ult_yo_ts=? WHERE conv='5493410000001'").run(Date.
 const mandarDe = async (id, m) => { const ctx = { p: null, waitUntil(x) { this.p = x; } }; await A.rutaTelegram(env, { json: async () => ({ message: { chat: { id }, from: { id }, ...m } }), headers: { get: () => sec } }, new URL("https://x/tg/" + sec), ctx, iaS); await ctx.p; };
 await mandarS("agregar socio +54 9 3413 01-1600 como Facu");
 chk("invitar socio: confirma y explica", capS.at(-1).text.includes("invité") && capS.at(-1).text.includes("Compartir mi número"));
+// Freno del contestador automático desde Telegram
+await mandarS("pausar respuestas"); chk("pausar respuestas automáticas por Telegram", capS.at(-1).text.includes("frené") && db.prepare("SELECT v FROM kv WHERE k='resp_pausa'").get()?.v === "1");
+await mandarS("reanudar respuestas"); chk("reanudar respuestas automáticas", capS.at(-1).text.includes("activas") && db.prepare("SELECT v FROM kv WHERE k='resp_pausa'").get()?.v === "0");
+await mandarS("frená todo"); chk("'frená todo' también las corta", db.prepare("SELECT v FROM kv WHERE k='resp_pausa'").get()?.v === "1");
+await mandarS("reanudar respuestas");
 await mandarS("Che, anotá a mi amigo +54 9 3413 01-1600 como Buko"); chk("invitar socio dicho de otra forma (audio)", capS.at(-1).text.includes("invité") && capS.at(-1).text.includes("buko"));
 await mandarS("agregar socio +54 9 3413 01-1600 como Facu");
 await mandarDe(333, { text: "/start" });

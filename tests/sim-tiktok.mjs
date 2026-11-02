@@ -76,6 +76,7 @@ chk("resumen: seguidores y crecimiento", rt.seguidores === 5000 && rt.seguidores
 chk("resumen: vistas y videos de 7 días", rt.vistas7 === 42000 && rt.videos7 === 2 && rt.videos7_ant === 1 && rt.vistas7_cambio === 740);
 chk("resumen: interacción y últimos videos", rt.interaccion > 0 && rt.ultimos[0].link.endsWith("/t1") && rt.ultimos[0].rel === 8 && rt.mejor7.id === "t1");
 const apiR = async (ruta, body) => (await R.apiRedes(env, { method: body ? "POST" : "GET", json: async () => body || {} }, new URL("https://x/panel/api/redes/" + ruta), "Manuel", async () => ({}))).json();
+db.prepare("UPDATE kv SET v=? WHERE k='tt_ultimo'").run(JSON.stringify({ ts: Date.now() - 3600e3, estado: "SUCCEEDED" }));   // "hace poco" relativo a hoy, no a la fecha simulada
 chk("panel: no deja forzar si se leyó hace poco", (await apiR("tiktok-actualizar", {})).ok === false);
 db.prepare("UPDATE kv SET v=? WHERE k='tt_ultimo'").run(JSON.stringify({ ts: Date.now() - 7 * 3600e3, estado: "SUCCEEDED" }));
 chk("panel: Actualizar TikTok deja el pedido", (await apiR("tiktok-actualizar", {})).ok === true && db.prepare("SELECT 1 FROM kv WHERE k='tt_forzar'").get());

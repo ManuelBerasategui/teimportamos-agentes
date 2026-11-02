@@ -26,3 +26,13 @@ Cada envío queda marcado como hecho en el panel; "n" lo marca como "no seguir".
 `python enviar.py --escritorio` (agregá `--auto` para que no pida confirmación). Usa la app que ya tenés abierta con sesión: abre cada chat con el mensaje puesto y aprieta Enter.
 Necesita `python -m pip install pyautogui pygetwindow` (ya incluido en `instalar.bat`). Mientras corre, no uses la PC (el Enter va a la ventana que esté al frente; si WhatsApp no queda al frente, frena solo).
 Limitación: no puede saber si el número existe en WhatsApp. Con el modo Chrome sí.
+
+## Contestador automático (responder.py)
+Contesta los chats cuyo último mensaje es del cliente (incluye los que dejaste leídos sin responder). Escribe en una ventana propia de WhatsApp Web (no usa tu mouse ni tu teclado), con ritmo humano: "lee" unos segundos (+10 s de más), tipea letra por letra y recién ahí envía.
+- `python responder.py --prueba`: muestra qué contestaría, sin abrir WhatsApp ni enviar nada. Probalo primero.
+- `python responder.py`: contesta hasta que no queden pendientes y termina. `--seguir`: queda andando.
+- `VENTANA=minimizada|oculta|visible` en `.env` (la primera vez usá `visible` para escanear el QR).
+- Frenarlo: Ctrl+C, archivo `STOP`, o por Telegram: "pausar respuestas" (y "reanudar respuestas").
+- Reglas: si piden cotizar pide "peso del producto en kg, cantidad y precio FOB" (+ "de Alibaba"/"de 1688" si mandaron link); para catálogo manda teimportamosarg.com/catalogo; nunca da precios. Pagos, reclamos, audios/fotos sin texto, "¿sos un bot?" y dudas los deja sin contestar para que los veas vos (siguen en "Responder ya").
+- Tope: 25 respuestas por hora. Cada decisión queda en `/lector/enviar/log`.
+- No corras `enviar.py` y `responder.py` a la vez (comparten la misma sesión de WhatsApp Web).
