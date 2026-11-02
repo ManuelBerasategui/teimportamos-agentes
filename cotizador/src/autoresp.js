@@ -50,8 +50,12 @@ export async function pendientesResponder(env, { limite = 10, T = null } = {}) {
   const cotizaciones = T ? await cotizacionesListas(env, T) : [];
   const ahora = Date.now();
   const filas = (await env.DB.prepare(`SELECT conv, nombre, ult_cliente_ts, ult_texto FROM w_conv WHERE grupo=0 AND archivado=0 AND ult_yo=0 AND COALESCE(prov,0)=0 AND ult_cliente_ts>=? AND ult_cliente_ts<=? AND ${SIN_VAPES} ORDER BY ult_cliente_ts ASC LIMIT 300`).bind(ahora - 48 * 3600e3, ahora - 45e3).all()).results || [];
-  const vistos = {};
-  for (const r of (await env.DB.prepare("SELECT k, v FROM kv WHERE k LIKE 'resp_auto:%'").all()).results || []) vistos[r.k.slice(10)] = +r.v;
+  // Solo se consultan las marcas de los chats de esta lista (antes un LIKE recorría toda la tabla kv en cada vuelta)
+  const vistos = {}, convs = filas.map((f) => String(f.conv));
+  for (let i = 0; i < convs.length; i += 90) {
+    const lote = convs.slice(i, i + 90);
+    for (const r of (await env.DB.prepare(`SELECT k, v FROM kv WHERE k IN (${lote.map(() => "?").join(",")})`).bind(...lote.map((c) => "resp_auto:" + c)).all()).results || []) vistos[r.k.slice(10)] = +r.v;
+  }
   const lista = filas.filter((f) => /^\d{8,15}$/.test(String(f.conv)) && !(vistos[f.conv] >= f.ult_cliente_ts)).slice(0, Math.min(limite, topeHora - hechos))
     .map((f) => ({ conv: f.conv, nombre: f.nombre, ult_cliente_ts: f.ult_cliente_ts, ultimo: String(f.ult_texto || "").slice(0, 200) }));
   return { pausado: false, lista, cotizaciones: cotizaciones.slice(0, Math.max(0, topeHora - hechos)) };
@@ -96,7 +100,7 @@ export async function redactar(env, iaJSON, conv, { prueba = false } = {}) {
   const esMedia = (m) => /^(image|video|audio|ptt|document|sticker)$/i.test(m.tipo || "") || /^\((image|video|audio|document|sticker|archivo|foto)\)/i.test(String(m.texto || "").trim());
   if (sinContestar.some(esMedia)) return fin({ accion: "humano", motivo: "mandó fotos o archivos", resumen: "mandó fotos: ver si está en Alibaba/1688 o va informe ($5.000)" }, c.nombre);
   // La cotización automática no pudo leer el link de Alibaba: se le piden los datos al cliente (una sola vez)
-  const fallos = ((await env.DB.prepare("SELECT k, v FROM kv WHERE k LIKE ? AND v LIKE 'no-se-pudo:%'").bind("cotauto:" + conv + ":%").all()).results || [])
+  const fallos = ((await env.DB.prepare("SELECT k, v FROM kv WHERE k >= ? AND k < ? AND v LIKE 'no-se-pudo:%'").bind("cotauto:" + conv + ":", "cotauto:" + conv + ";").all()).results || [])
     .filter((r) => +r.v.split(":")[1] > (c.ult_yo_ts || 0));
   for (const f of fallos) {
     if (await kvGet(env, "cotpedido:" + f.k)) continue;

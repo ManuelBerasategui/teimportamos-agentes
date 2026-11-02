@@ -103,7 +103,7 @@ export async function cotizarAuto(env, h, { limite = 2 } = {}) {
       const ultCot = (await env.DB.prepare("SELECT MAX(ts) t FROM w_hito WHERE conv=? AND tipo='cotizacion'").bind(c.conv).first().catch(() => null))?.t || 0;
       const prev = await env.DB.prepare("SELECT texto, ts FROM w_msg WHERE conv=? AND yo=0 AND ts>=? AND ts>? AND ts<=? AND (texto LIKE '%alibaba.com%') ORDER BY ts DESC LIMIT 1").bind(c.conv, hasta, ultCot, c.yo_ts).first();
       const lp = prev ? limpiar(prev.texto) : [];
-      const yaCot = ((await env.DB.prepare("SELECT k FROM kv WHERE k LIKE ?").bind("cotauto:" + c.conv + ":%").all()).results || []).map((r) => r.k).join(" ");
+      const yaCot = ((await env.DB.prepare("SELECT k FROM kv WHERE k >= ? AND k < ?").bind("cotauto:" + c.conv + ":", "cotauto:" + c.conv + ";").all()).results || []).map((r) => r.k).join(" ");
       if (lp.length && !lp.some((l) => yaCot.includes(l))) { links = lp; texto = prev.texto + "\n" + texto; }
     }
     if (!links.length) continue;
