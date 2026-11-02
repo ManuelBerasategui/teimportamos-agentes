@@ -116,7 +116,9 @@ export async function cotizarAuto(env, h, { limite = 2 } = {}) {
     const items = r.items.filter((i) => /alibaba\.com/i.test(i.link || "") && i.cantidad > 0 && i.precio > 0);
     const sinCant = r.items.some((i) => /alibaba\.com/i.test(i.link || "") && !i.cantidad);
     const marca = (v) => env.DB.prepare("INSERT INTO kv (k,v,exp) VALUES (?,?,NULL) ON CONFLICT(k) DO UPDATE SET v=excluded.v").bind(clave, v).run();
-    if (!items.length) { if (!sinCant) await marca("no-se-pudo"); continue; }   // sin cantidad: espera; página ilegible: queda para cotizar a mano
+    // Sin cantidad: espera. Página ilegible (Alibaba bloqueó o no trae precio): queda marcado y el contestador le pide
+    // al cliente peso en kg y precio FOB (se borra la marca del contestador para que vuelva a mirar este chat).
+    if (!items.length) { if (!sinCant) { await marca("no-se-pudo:" + Date.now()); await env.DB.prepare("DELETE FROM kv WHERE k=?").bind("resp_auto:" + c.conv).run(); } continue; }
     const ult = await env.DB.prepare("SELECT MAX(num) n FROM cotiz_manual").first();
     const id = Math.random().toString(36).slice(2, 10), num = (ult?.n || 0) + 1;
     const cliente = c.nombre || "+" + c.conv;

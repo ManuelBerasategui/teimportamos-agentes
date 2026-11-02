@@ -43,4 +43,14 @@ h.iaJSON = async (e, p) => p.includes("Termo_9") ? { items: [{ link: "https://ww
 r = await C.cotizarAuto(env, h);
 assert.ok(r.some((x) => x.conv === "549346")); console.log("✓ link primero, cantidad después (respondiendo al bot): se cotiza solo");
 r = await C.cotizarAuto(env, h); assert.ok(!r.some((x) => x.conv === "549346")); console.log("✓ y no lo vuelve a cotizar");
+// Alibaba no deja leer la página: queda marcado para que el contestador le pida peso y FOB
+db.prepare("INSERT INTO w_conv VALUES ('549347','Bloq',0,0,?,0)").run(now - 60000);
+msg("549347", "cuanto me sale traer 200 de esto https://www.alibaba.com/product-detail/Bloqueado_5.html", 2);
+db.prepare("INSERT INTO kv (k,v,exp) VALUES ('resp_auto:549347','1',NULL)").run();
+h.iaJSON = async (e, p) => p.includes("Bloqueado") ? { items: [{ link: "https://www.alibaba.com/product-detail/Bloqueado_5.html", nombre: "X", cantidad: 200 }] } : { pesos: [] };
+const leerAntes = h.leerPagina; h.leerPagina = async () => null;
+await C.cotizarAuto(env, h); h.leerPagina = leerAntes;
+const marca = db.prepare("SELECT v FROM kv WHERE k LIKE 'cotauto:549347:%'").get();
+assert.ok(marca && marca.v.startsWith("no-se-pudo:")); assert.equal(db.prepare("SELECT COUNT(*) n FROM kv WHERE k='resp_auto:549347'").get().n, 0);
+console.log("✓ página que no se puede leer: queda marcada y el contestador vuelve a mirar el chat");
 console.log("TODO OK");
