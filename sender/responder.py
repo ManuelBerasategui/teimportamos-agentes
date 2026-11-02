@@ -166,7 +166,10 @@ def main():
                         if pg.locator(CAJA).first.inner_text().strip(): print("  No se envió (la caja sigue con texto). Frenando por seguridad."); return
                     except Exception as e:
                         debug_pantalla(pg, f"chat {it['conv']}: {e}")
-                        print(f"  Falló este chat ({str(e).splitlines()[0]}). Lo salto; queda en 'Responder ya'."); continue
+                        print(f"  Falló este chat ({str(e).splitlines()[0]}). Lo salto; queda en 'Responder ya' y se reintenta más tarde.")
+                        try: api("/enviar/reintentar", {"conv": it["conv"]})
+                        except Exception: pass
+                        continue
                     api("/enviar/respondido", {"conv": it["conv"]}); enviados += 1; print("  Enviado ✅")
                     if not dormir(random.randint(PAUSA_MIN, PAUSA_MAX)): break
         except KeyboardInterrupt:

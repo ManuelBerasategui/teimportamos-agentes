@@ -245,6 +245,8 @@ if (rl.lista[1]) { await rq("/enviar/no", "POST", { conv: rl.lista[1].conv }); c
     chk("cotizacion-html: devuelve la página para armar el PDF", rh.status === 200 && (await rh.text()).includes("Auriculares"));
     await hh("/enviar/cotizacion-enviada", { id: "cotreal" });
     chk("cotizacion-enviada: no se vuelve a ofrecer", !(await (await hh("/enviar/responder?limite=20")).json()).cotizaciones.length);
+    await hh("/enviar/redactar", { conv: tel(2) }); await hh("/enviar/reintentar", { conv: tel(2) });
+    chk("reintentar: un chat cuyo envío falló vuelve a la lista", db.prepare("SELECT 1 FROM kv WHERE k=?").get("resp_auto:" + tel(2)) === undefined);
     chk("el precio del informe ($5.000) está permitido y otros no", (await import(dir + "/autoresp.js")).revisarMensaje("El informe cuesta $5.000, te sirve?") === "" && (await import(dir + "/autoresp.js")).revisarMensaje("te sale $6.000") === "tiene un precio");
   }
   const lg = await (await rq("/enviar/log")).json();
