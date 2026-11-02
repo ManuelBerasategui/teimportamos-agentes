@@ -33,7 +33,7 @@ Contesta los chats cuyo último mensaje es del cliente (incluye los que dejaste 
 - `python responder.py`: contesta hasta que no queden pendientes y termina. `--seguir`: queda andando.
 - `VENTANA=minimizada|oculta|visible` en `.env` (la primera vez usá `visible` para escanear el QR).
 - Frenarlo: Ctrl+C, archivo `STOP`, o por Telegram: "pausar respuestas" (y "reanudar respuestas").
-- Reglas: si piden cotizar pide "peso del producto en kg, cantidad y precio FOB" (+ "de Alibaba"/"de 1688" si mandaron link); para catálogo manda teimportamosarg.com/catalogo; nunca da precios. Pagos, reclamos, audios/fotos sin texto, "¿sos un bot?" y dudas los deja sin contestar para que los veas vos (siguen en "Responder ya").
+- Reglas: si nombran un producto sin link ni precio, les ofrece la búsqueda de proveedores (informe) y pregunta cantidad y calidad; si ya tienen producto y precio de proveedor, pide "peso del producto en kg, cantidad y precio FOB" (+ "de Alibaba"/"de 1688" si mandaron link); para catálogo manda teimportamosarg.com/catalogo; nunca da precios. Pagos, reclamos, audios/fotos sin texto, "¿sos un bot?" y dudas los deja sin contestar para que los veas vos (siguen en "Responder ya").
 - Tope: 25 respuestas por hora. Cada decisión queda en `/lector/enviar/log`.
 - No corras `enviar.py` y `responder.py` a la vez (comparten la misma sesión de WhatsApp Web).
 - Los chats que deja para vos se anotan en `para_vos.txt` (fecha | nombre | número | qué hacer, en 3-5 palabras) y aparecen en el panel, en "Para hacer hoy" → pestaña **Para vos**, con botón para abrir WhatsApp. Salen de la lista cuando contestás vos.
