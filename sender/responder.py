@@ -135,8 +135,10 @@ def main_escritorio(seguir):
                         except Exception as e: print(f"  No pude guardar la cotización N° {c['num']} ({str(e).splitlines()[0]}).")
             if not lista:
                 if not seguir: print("No quedan chats para contestar."); break
+                print(f"{datetime.now():%H:%M} · no hay chats esperando respuesta. Vuelvo a mirar en 2 minutos (dejalo abierto).")
                 if not dormir(120): break
                 continue
+            print(f"{datetime.now():%H:%M} · {len(lista)} chat(s) para revisar.")
             for it in lista:
                 if parar(): break
                 d = api("/enviar/redactar", {"conv": it["conv"]})
