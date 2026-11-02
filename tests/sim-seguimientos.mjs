@@ -208,7 +208,7 @@ if (rl.lista[1]) { await rq("/enviar/no", "POST", { conv: rl.lista[1].conv }); c
   let r1 = await (await rqi("/enviar/redactar", { conv: tel(1) })).json();
   chk("redactar: pide peso, cantidad y FOB de Alibaba", r1.accion === "responder" && /peso del producto en kg, cantidad y precio FOB de Alibaba/.test(r1.mensaje));
   chk("redactar: el prompt lleva tu estilo y la charla", prompt.includes("Te paso la info en un rato") && prompt.includes("CLIENTE: me pasas el precio"));
-  chk("redactar: la regla de 1688 y del catálogo están en el prompt", prompt.includes("precio FOB de 1688") && prompt.includes("teimportamosarg.com/catalogo") && prompt.includes("búsqueda de proveedores") && prompt.includes("NO le pidas peso ni FOB"));
+  chk("redactar: la regla de 1688 y del catálogo están en el prompt", prompt.includes("precio FOB de 1688") && prompt.includes("teimportamosarg.com/catalogo") && prompt.includes("búsqueda de proveedores") && prompt.includes("NO le pidas peso ni FOB") && prompt.includes("qué producto vio") && prompt.includes("dropshipping"));
   chk("después de decidir no vuelve a aparecer", !(await (await rq("/enviar/responder?limite=20")).json()).lista.some((x) => x.conv === tel(1)));
   resp = { accion: "responder", mensaje: "Te sale USD 450 el total", motivo: "x" };
   let r2 = await (await rqi("/enviar/redactar", { conv: tel(2) })).json();
