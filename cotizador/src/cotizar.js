@@ -94,8 +94,18 @@ export async function cotizarAuto(env, h, { limite = 2 } = {}) {
   for (const c of convs) {
     if (hechos.length >= limite) break;
     const ms = (await env.DB.prepare("SELECT texto, ts FROM w_msg WHERE conv=? AND yo=0 AND ts>=? AND ts>? ORDER BY ts").bind(c.conv, hasta, c.yo_ts).all()).results || [];
-    const texto = ms.map((m) => m.texto).join("\n");
-    const links = [...new Set((texto.match(RE_ALIBABA) || []).map((l) => l.replace(/[),.;]+$/, "").split("?")[0]))];
+    let texto = ms.map((m) => m.texto).join("\n");
+    const limpiar = (t) => [...new Set((t.match(RE_ALIBABA) || []).map((l) => l.replace(/[),.;]+$/, "").split("?")[0]))];
+    let links = limpiar(texto);
+    // El cliente contesta solo la cantidad (le preguntamos "¿cuántas unidades?"): se toma el link que mandó antes,
+    // siempre que ese link todavía no se haya cotizado (ni por el sistema ni a mano por el dueño).
+    if (!links.length && /\d/.test(texto)) {
+      const ultCot = (await env.DB.prepare("SELECT MAX(ts) t FROM w_hito WHERE conv=? AND tipo='cotizacion'").bind(c.conv).first().catch(() => null))?.t || 0;
+      const prev = await env.DB.prepare("SELECT texto, ts FROM w_msg WHERE conv=? AND yo=0 AND ts>=? AND ts>? AND ts<=? AND (texto LIKE '%alibaba.com%') ORDER BY ts DESC LIMIT 1").bind(c.conv, hasta, ultCot, c.yo_ts).first();
+      const lp = prev ? limpiar(prev.texto) : [];
+      const yaCot = ((await env.DB.prepare("SELECT k FROM kv WHERE k LIKE ?").bind("cotauto:" + c.conv + ":%").all()).results || []).map((r) => r.k).join(" ");
+      if (lp.length && !lp.some((l) => yaCot.includes(l))) { links = lp; texto = prev.texto + "\n" + texto; }
+    }
     if (!links.length) continue;
     const clave = "cotauto:" + c.conv + ":" + links.sort().join("|").slice(0, 300);
     const ya = await env.DB.prepare("SELECT v FROM kv WHERE k=?").bind(clave).first();

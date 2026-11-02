@@ -35,4 +35,12 @@ msg("549345", "mirá este otro https://www.alibaba.com/product-detail/NFC_Google
 let aviso = 0; h.iaJSON = async () => { aviso++; return { items: [{ link: "https://www.alibaba.com/product-detail/CajasViejas_1.html", nombre: "Cajas", cantidad: 5 }] }; };
 r = await C.cotizarAuto(env, h);
 assert.equal(db.prepare("SELECT COUNT(*) n FROM tareas WHERE tel='549345'").get().n, 0); assert.equal(aviso, 0); console.log("✓ no recotiza lo que ya contestaste ni inventa cantidad: espera a que diga cuántos");
+// Flujo nuevo: manda el link, el bot le pregunta cuántas unidades, contesta "50" → se cotiza el link de antes
+db.prepare("INSERT INTO w_conv VALUES ('549346','Nico',0,0,?,?)").run(now - 60000, now - 20 * 60000);
+msg("549346", "hola me cotizas esto? https://www.alibaba.com/product-detail/Termo_9.html", 30);
+msg("549346", "50 unidades", 1);
+h.iaJSON = async (e, p) => p.includes("Termo_9") ? { items: [{ link: "https://www.alibaba.com/product-detail/Termo_9.html", nombre: "Termo", cantidad: 50 }] } : { pesos: [0.5] };
+r = await C.cotizarAuto(env, h);
+assert.ok(r.some((x) => x.conv === "549346")); console.log("✓ link primero, cantidad después (respondiendo al bot): se cotiza solo");
+r = await C.cotizarAuto(env, h); assert.ok(!r.some((x) => x.conv === "549346")); console.log("✓ y no lo vuelve a cotizar");
 console.log("TODO OK");
