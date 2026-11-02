@@ -3573,7 +3573,7 @@ export default {
     // Lector 805: el puente de WhatsApp (solo lectura) postea acá
     { const a = rutaApp(url); if (a) return a; }   // app web (manifest e íconos, públicos)
     if (url.pathname.startsWith("/tg/") && req.method === "POST") return rutaTelegram(env, req, url, ctx, iaJSON);   // asistente de tareas por Telegram
-    if (url.pathname.startsWith("/lector/")) return rutaLector(env, req, url, ctx, iaJSON);
+    if (url.pathname.startsWith("/lector/")) return rutaLector(env, req, url, ctx, iaJSON, { T });
     if (url.pathname.startsWith("/informes/")) return rutaInformes(env, url);
     if (url.pathname.startsWith("/img/")) return rutaImagen(env, url);   // foto de referencia para la búsqueda por imagen en 1688   // cola de informes para la tarea programada de Claude
     if (url.pathname.startsWith("/videos/")) return rutaVideosEditor(env, req, url, iaJSON, BASE_URL);   // editor de videos (GitHub Actions)

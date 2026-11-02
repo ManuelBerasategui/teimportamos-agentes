@@ -227,6 +227,26 @@ if (rl.lista[1]) { await rq("/enviar/no", "POST", { conv: rl.lista[1].conv }); c
   chk("derivados: queda anotado con resumen corto", dv.lista.some((x) => x.conv === tel(2) && /comprobante/.test(x.resumen)));
   db.prepare("UPDATE w_conv SET ult_yo=1 WHERE conv=?").run(tel(2));
   chk("derivados: sale cuando contestás vos", !(await (await rq("/enviar/derivados")).json()).lista.some((x) => x.conv === tel(2)));
+  // Cotizaciones que se arman solas (Alibaba + cantidad): se mandan si el peso es real; si es estimado quedan para vos
+  {
+    const T = { fleteKg: 18, handling: 30, honorarios: 80, factor: 1.3, aereoHasta: 100, aereoDesde: 20, barcoFijo: 900, aereoFijo: 300 };
+    db.prepare("CREATE TABLE IF NOT EXISTS cotiz_manual (id TEXT PRIMARY KEY, ts INTEGER, num INTEGER, quien TEXT, cliente TEXT, datos TEXT)").run();
+    const hh = async (path, body) => L.rutaLector(env, new Request("https://x/lector" + path, { method: body ? "POST" : "GET", headers: { Authorization: "Bearer tok" }, body: body ? JSON.stringify(body) : undefined }), new URL("https://x/lector" + path), {}, null, { T });
+    const mk = (cid, conv, num, est) => {
+      db.prepare("INSERT INTO cotiz_manual (id,ts,num,quien,cliente,datos) VALUES (?,?,?,?,?,?)").run(cid, ahoraR, num, "auto", "X", JSON.stringify({ items: [{ nombre: "Auriculares", cantidad: 50, precio: 8, peso: 0.2 }], desglose: true, notas: est ? "Peso estimado: el valor final puede variar" : "", auto: true, conv }));
+      db.prepare("INSERT INTO tareas (id,ts,tipo,tel,nombre,titulo,datos,ref,estado) VALUES (?,?,?,?,?,?,?,?,'abierta')").run("ca" + cid, ahoraR - 1000, "cotizacion_auto", conv, "X", "Cotización lista", JSON.stringify({ cotiz: cid, num }), "cotauto:" + cid);
+    };
+    cv(tel(5), { nombre: "Cot Real", ult: ahoraR - 400e3, cli: ahoraR - 400e3, texto: "x" }); mk("cotreal", tel(5), 7, false);
+    cv(tel(6), { nombre: "Cot Estimada", ult: ahoraR - 400e3, cli: ahoraR - 400e3, texto: "x" }); mk("cotest", tel(6), 8, true);
+    const lr = await (await hh("/enviar/responder?limite=20")).json();
+    chk("cotizaciones: la de peso real sale para enviar con su total", lr.cotizaciones.length === 1 && lr.cotizaciones[0].id === "cotreal" && lr.cotizaciones[0].total > 0);
+    chk("cotizaciones: la de peso estimado queda para vos", !lr.cotizaciones.some((x) => x.id === "cotest") && (await (await hh("/enviar/derivados")).json()).lista.some((x) => x.conv === tel(6) && /peso estimado/.test(x.resumen)));
+    const rh = await hh("/enviar/cotizacion-html", { id: "cotreal" });
+    chk("cotizacion-html: devuelve la página para armar el PDF", rh.status === 200 && (await rh.text()).includes("Auriculares"));
+    await hh("/enviar/cotizacion-enviada", { id: "cotreal" });
+    chk("cotizacion-enviada: no se vuelve a ofrecer", !(await (await hh("/enviar/responder?limite=20")).json()).cotizaciones.length);
+    chk("el precio del informe ($5.000) está permitido y otros no", (await import(dir + "/autoresp.js")).revisarMensaje("El informe cuesta $5.000, te sirve?") === "" && (await import(dir + "/autoresp.js")).revisarMensaje("te sale $6.000") === "tiene un precio");
+  }
   const lg = await (await rq("/enviar/log")).json();
   chk("log guarda las decisiones", lg.log.length >= 2 && lg.log.some((x) => x.accion === "humano"));
 }

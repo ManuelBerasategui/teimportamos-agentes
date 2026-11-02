@@ -87,7 +87,7 @@ function autorizado(env, req) {
   return !!env.LECTOR_TOKEN && t === env.LECTOR_TOKEN;
 }
 
-export async function rutaLector(env, req, url, ctx, iaJSON = null) {
+export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
   // Dos formas de autenticarse: header "Bearer LECTOR_TOKEN" (puente propio) o la clave en la
   // dirección /lector/<LECTOR_TOKEN>/... (puente hospedado por OpenBSP, que manda su propio token)
   let p = url.pathname.replace(/^\/lector/, "");
@@ -118,7 +118,7 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null) {
     if (!lote.history && n.clienteNuevo) ctx?.waitUntil(alertasRapidas(env).catch(() => {}));
     return Response.json({ ok: true, guardados: n.mensajes });
   }
-  if (p.startsWith("/enviar/") && p !== "/enviar/lista" && p !== "/enviar/hecho" && p !== "/enviar/no") { const r = await rutaAutoresp(env, req, p, url, iaJSON); if (r) return r; }
+  if (p.startsWith("/enviar/") && p !== "/enviar/lista" && p !== "/enviar/hecho" && p !== "/enviar/no") { const r = await rutaAutoresp(env, req, p, url, iaJSON, h); if (r) return r; }
   // Programita de la PC (carpeta sender/): pide la lista de seguimientos y marca cada uno. Acá NO se envía nada.
   if (p === "/enviar/lista") {
     const lim = Math.min(Math.max(+url.searchParams.get("limite") || 20, 1), 100);
