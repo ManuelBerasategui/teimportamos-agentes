@@ -222,6 +222,7 @@ if (rl.lista[1]) { await rq("/enviar/no", "POST", { conv: rl.lista[1].conv }); c
   // Derivados ("Para vos") y promesas de derivar
   chk("revisarMensaje: no promete que alguien lo va a escribir", (await import(dir + "/autoresp.js")).revisarMensaje("Te paso con alguien del equipo") === "promete derivar");
   resp = { accion: "humano", mensaje: "", motivo: "pagó", resumen: "mandó comprobante, confirmar pago" };
+  db.prepare("DELETE FROM kv WHERE k=?").run("resp_auto:" + tel(2));   // el cliente escribió de nuevo
   await rqi("/enviar/redactar", { conv: tel(2) });
   const dv = await (await rq("/enviar/derivados")).json();
   chk("derivados: queda anotado con resumen corto", dv.lista.some((x) => x.conv === tel(2) && /comprobante/.test(x.resumen)));
@@ -261,6 +262,8 @@ if (rl.lista[1]) { await rq("/enviar/no", "POST", { conv: rl.lista[1].conv }); c
     chk("link ilegible: le pide peso en kg y precio FOB (sin IA)", rb.accion === "responder" && /peso/.test(rb.mensaje) && /FOB/.test(rb.mensaje) && usoIA === 0);
     const rb2 = await (await red(tel(8))).json();
     chk("y no se lo vuelve a pedir", rb2.accion !== "responder" || !/FOB que figura/.test(rb2.mensaje));
+    const otraPC = await (await red(tel(8))).json();
+    chk("dos PCs: si una ya decidió ese chat, la otra no lo contesta", otraPC.accion === "nada" && /otra PC/.test(otraPC.motivo));
     chk("el bot no ofrece el informe (lo decide el dueño) ni da precios", (await import(dir + "/autoresp.js")).revisarMensaje("El informe cuesta $5.000, te sirve?").startsWith("ofrece el informe") && (await import(dir + "/autoresp.js")).revisarMensaje("te sale $6.000") === "tiene un precio" && (await import(dir + "/autoresp.js")).revisarMensaje("Tenés el link de Alibaba o 1688? Si no, mandame fotos de referencia") === "");
   }
   const lg = await (await rq("/enviar/log")).json();

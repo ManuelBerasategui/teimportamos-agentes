@@ -1,6 +1,7 @@
 """Contesta los mensajes de WhatsApp que esperan respuesta, escribiendo como una persona (WhatsApp Web, ventana propia).
 Uso:  python responder.py --prueba   -> solo muestra qué contestaría a cada chat, NO abre WhatsApp ni envía nada
       python responder.py            -> contesta hasta que no queden pendientes y termina
+      python responder.py --escritorio --seguir -> usa el WhatsApp que ya tenés abierto (app o tu Chrome), sin QR
       python responder.py --seguir   -> queda andando y revisa cada 2 minutos hasta que lo cortes
 Para frenarlo: Ctrl+C, un archivo llamado STOP en esta carpeta, o escribirle al bot de Telegram "pausar respuestas"."""
 import random, re, sys, time, urllib.parse
@@ -95,6 +96,70 @@ def mandar_pdf(pg, ruta, texto):
     time.sleep(5)
     if pg.locator(ENVIAR).count(): raise RuntimeError("el PDF no se envió")
 
+def guardar_cotizacion(p, c):
+    """Modo revisión: deja el PDF en la carpeta cotizaciones y lo anota en para_vos.txt."""
+    ruta = hacer_pdf(p, c); (AQUI / "cotizaciones").mkdir(exist_ok=True)
+    nombre_pdf = re.sub(r"[^\w.-]+", "_", f"Cotizacion_{c['num']}_{c['nombre']}") + ".pdf"
+    ruta.replace(AQUI / "cotizaciones" / nombre_pdf)
+    with open(AQUI / "para_vos.txt", "a", encoding="utf-8") as f: f.write(f"{datetime.now():%d/%m %H:%M} | {c['nombre']} | +{c['conv']} | cotización N° {c['num']} (USD {c['total']}) lista para revisar y mandar: cotizaciones\\{nombre_pdf}\n")
+    api("/enviar/cotizacion-guardada", {"id": c["id"]}); print(f"  Cotización N° {c['num']} guardada para revisar: cotizaciones\\{nombre_pdf}")
+
+ESCRITORIO = os.environ.get("ESCRITORIO", "app")   # app = WhatsApp de escritorio | chrome = tu WhatsApp Web ya abierto en Chrome
+
+def main_escritorio(seguir):
+    """Usa el WhatsApp que ya tenés abierto con sesión (app de escritorio o WhatsApp Web en tu Chrome): abre el chat con el
+    mensaje ya escrito, espera el tiempo que tardaría una persona y aprieta Enter. Mientras corre, no uses el teclado ni el mouse."""
+    import webbrowser, pyautogui, pygetwindow as gw
+    def al_frente():
+        w = gw.getActiveWindow()
+        return w is not None and "whatsapp" in (w.title or "").lower()
+    def traer():
+        for w in gw.getAllWindows():
+            if "whatsapp" in (w.title or "").lower() and w.title.strip():
+                try: w.activate()
+                except Exception: pass
+                time.sleep(1); return al_frente()
+        return False
+    enviados = 0
+    print(f"Modo escritorio ({'app de WhatsApp' if ESCRITORIO == 'app' else 'WhatsApp Web en tu Chrome'}). No toques el teclado ni el mouse mientras escribe. Para cortar: Ctrl+C, archivo STOP o 'pausar respuestas' en Telegram.")
+    try:
+        while not parar():
+            if not (H_DESDE <= datetime.now().hour < H_HASTA): print("Fuera de horario, termino."); break
+            pend = hay_pendientes()
+            if pend is None: break
+            lista, cots = pend
+            if cots:
+                with sync_playwright() as p:
+                    for c in cots:
+                        try: guardar_cotizacion(p, c)
+                        except Exception as e: print(f"  No pude guardar la cotización N° {c['num']} ({str(e).splitlines()[0]}).")
+            if not lista:
+                if not seguir: print("No quedan chats para contestar."); break
+                if not dormir(120): break
+                continue
+            for it in lista:
+                if parar(): break
+                d = api("/enviar/redactar", {"conv": it["conv"]})
+                print(f"\n{it['nombre']} ({it['conv']}): {it['ultimo']}\n  → {d['accion']}: {d.get('mensaje') or d.get('motivo', '')}")
+                if d["accion"] == "humano": anotar_para_vos(it, d)
+                if d["accion"] != "responder": continue
+                texto = urllib.parse.quote(d["mensaje"])
+                if ESCRITORIO == "chrome": webbrowser.open(f"https://web.whatsapp.com/send?phone={it['conv']}&text={texto}")
+                else: os.startfile(f"whatsapp://send?phone={it['conv']}&text={texto}")
+                espera = random.uniform(6, 14) + len(it["ultimo"]) * 0.05 + EXTRA_SEG + len(d["mensaje"]) * random.uniform(0.12, 0.2)
+                print(f"  esperando {espera:.0f}s (lo que tardaría en leer y escribir)...")
+                if not dormir(espera): break
+                if not al_frente() and not traer():
+                    print("  WhatsApp no quedó al frente: no aprieto Enter (podría ir a otra ventana). Se reintenta después.")
+                    api("/enviar/reintentar", {"conv": it["conv"]}); continue
+                pyautogui.press("enter"); time.sleep(2)
+                if ESCRITORIO == "chrome": time.sleep(2); pyautogui.hotkey("ctrl", "w")   # cierra la pestaña que abrió
+                api("/enviar/respondido", {"conv": it["conv"]}); enviados += 1; print("  Enter apretado ✅ (revisá de vez en cuando que salgan bien)")
+                if not dormir(random.randint(PAUSA_MIN, PAUSA_MAX)): break
+    except KeyboardInterrupt:
+        print("\nCortado.")
+    print(f"\nListo. Contestados: {enviados}")
+
 def main():
     prueba, seguir = "--prueba" in sys.argv, "--seguir" in sys.argv
     if not prueba and not (H_DESDE <= datetime.now().hour < H_HASTA):
@@ -108,6 +173,7 @@ def main():
             d = api("/enviar/redactar", {"conv": it["conv"], "prueba": True})
             print(f"\n- {it['nombre']} ({it['conv']}) dijo: {it['ultimo']}\n  → {d['accion'].upper()}: {d.get('mensaje') or d.get('motivo', '')}" + (f"\n  PARA VOS: {d.get('resumen') or d.get('motivo', '')}" if d['accion'] == 'humano' else ""))
         return
+    if "--escritorio" in sys.argv: return main_escritorio(seguir)
     args = {"minimizada": ["--start-minimized"], "oculta": ["--window-position=-32000,-32000"]}.get(VENTANA, [])
     with sync_playwright() as p:
         ctx = p.chromium.launch_persistent_context(str(AQUI / "perfil"), headless=False, viewport={"width": 1200, "height": 800}, args=args)

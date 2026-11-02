@@ -84,6 +84,7 @@ export async function redactar(env, iaJSON, conv, { prueba = false } = {}) {
   };
   if (!c) return { accion: "nada", motivo: "chat no encontrado" };
   if (c.ult_yo) return fin({ accion: "nada", motivo: "ya contestaste vos" }, c.nombre);
+  if (!prueba && +((await kvGet(env, "resp_auto:" + conv)) || 0) >= (c.ult_cliente_ts || 0)) return { accion: "nada", motivo: "ya lo atendió la otra PC" };   // dos PCs a la vez: no contestar dos veces
   const msgs = ((await env.DB.prepare("SELECT yo, tipo, texto, ts FROM w_msg WHERE conv=? ORDER BY ts DESC LIMIT 14").bind(conv).all()).results || []).reverse();
   const ultimo = [...msgs].reverse().find((m) => !m.yo);
   if (!ultimo) return fin({ accion: "nada", motivo: "sin mensaje del cliente" }, c.nombre);
