@@ -66,7 +66,15 @@ export async function prepararLector(env) {
     env.DB.prepare("CREATE TABLE IF NOT EXISTS ag_obj (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, metrica TEXT, periodo TEXT, meta INTEGER, activo INTEGER DEFAULT 1)"),
   ]);
   await env.DB.prepare("ALTER TABLE w_hito ADD COLUMN oculto INTEGER DEFAULT 0").run().catch(() => {});
+  // Índice parcial solo de chats privados (sin grupos ni historial): las métricas leían toda la tabla w_msg y descartaban casi todo
+  await env.DB.prepare("CREATE INDEX IF NOT EXISTS w_msg_priv ON w_msg(ts) WHERE grupo=0 AND hist=0").run().catch(() => {});
   tablasLector = true;
+}
+
+// Corre la consulta usando el índice w_msg_priv; si el índice todavía no existe, corre la consulta normal (misma respuesta, más lenta)
+async function leerPrivados(env, sql, ...args) {
+  try { return await env.DB.prepare(sql.replace("FROM w_msg WHERE", "FROM w_msg INDEXED BY w_msg_priv WHERE")).bind(...args).all(); }
+  catch { return await env.DB.prepare(sql).bind(...args).all(); }
 }
 
 const kvGet = async (env, k) => (await env.DB.prepare("SELECT v FROM kv WHERE k=?").bind(k).first())?.v ?? null;
@@ -227,7 +235,7 @@ export async function metricas(env, desde, hasta = Date.now()) {
   ]);
   // Tiempo de respuesta: solo con los mensajes de las últimas 24 h del período (acotado)
   const desdeResp = Math.max(desde, hasta - 86400e3);
-  const filas = (await env.DB.prepare("SELECT conv, yo, ts FROM w_msg WHERE ts>=? AND ts<? AND grupo=0 AND hist=0 ORDER BY conv, ts LIMIT 4000").bind(desdeResp, hasta).all()).results || [];
+  const filas = (await leerPrivados(env, "SELECT conv, yo, ts FROM w_msg WHERE ts>=? AND ts<? AND grupo=0 AND hist=0 ORDER BY conv, ts LIMIT 4000", desdeResp, hasta)).results || [];
   const esperas = []; let conv = null, esperando = null;
   for (const f of filas) {
     if (f.conv !== conv) { conv = f.conv; esperando = null; }
@@ -1223,7 +1231,7 @@ const nombreDisp = (autor) => { const d = (String(autor || "").match(/:(\d+)/) |
 export async function metricasEquipo(env, desde) {
   const k = "equipo_cache:" + desde, c = JSON.parse((await kvGet(env, k)) || "null");
   if (c && Date.now() - c.ts < 10 * 60e3) return c.d;
-  const ms = (await env.DB.prepare("SELECT conv, yo, autor, texto, ts FROM w_msg WHERE ts>=? AND grupo=0 AND hist=0 ORDER BY conv, ts LIMIT 40000").bind(desde).all()).results || [];
+  const ms = (await leerPrivados(env, "SELECT conv, yo, autor, texto, ts FROM w_msg WHERE ts>=? AND grupo=0 AND hist=0 ORDER BY conv, ts LIMIT 40000", desde)).results || [];
   const hitos = (await env.DB.prepare("SELECT conv, tipo, ts FROM w_hito WHERE ts>=? AND tipo IN ('cotizacion','venta') AND COALESCE(oculto,0)=0").bind(desde).all()).results || [];
   const P = {}, get = (n) => P[n] || (P[n] = { nombre: n, mensajes: 0, chats: new Set(), esperas: [], cot: 0, ven: 0, ts: [], det: {}, dias: {} });
   const porConv = {};
