@@ -66,19 +66,33 @@ def hacer_pdf(p, it):
     pg2.pdf(path=str(ruta), format="A4", print_background=True); b.close()
     return ruta
 
+ENVIAR = '[data-icon*="send"], [aria-label="Enviar"], button[aria-label="Enviar"]'
+
+def debug_pantalla(pg, motivo):
+    """Deja en debug_whatsapp.txt y debug.png cómo está la pantalla, para poder ajustar los botones si WhatsApp cambia."""
+    try:
+        iconos = pg.evaluate("() => [...new Set([...document.querySelectorAll('[data-icon]')].map(e => e.dataset.icon))]")
+        labels = pg.evaluate("() => [...new Set([...document.querySelectorAll('[aria-label]')].map(e => e.getAttribute('aria-label')))].slice(0, 80)")
+        (AQUI / "debug_whatsapp.txt").write_text(f"{motivo}\n\nICONOS: {iconos}\n\nETIQUETAS: {labels}\n", encoding="utf-8")
+        pg.screenshot(path=str(AQUI / "debug.png"))
+    except Exception: pass
+
 def mandar_pdf(pg, ruta, texto):
-    """Adjunta el PDF como documento, le pone el texto y lo envía. Lanza excepción si algo no aparece."""
-    pg.locator('[data-icon="plus"], [data-icon="attach-menu-plus"], [aria-label="Adjuntar"]').first.click(timeout=15000)
-    with pg.expect_file_chooser(timeout=15000) as fc:
-        pg.get_by_text(re.compile("Documento", re.I)).first.click()
-    fc.value.set_files(str(ruta))
-    pg.wait_for_selector('[data-icon="send"]', timeout=30000)
+    """Adjunta el PDF como documento, le pone el texto y lo envía. Si algo falla deja todo lo que pudo hecho (en borrador) y avisa."""
+    pg.locator('[data-icon*="plus"], [data-icon="attach-menu-plus"], [aria-label="Adjuntar"]').first.click(timeout=15000)
+    try:
+        with pg.expect_file_chooser(timeout=8000) as fc:
+            pg.get_by_text(re.compile("Documento", re.I)).first.click()
+        fc.value.set_files(str(ruta))
+    except Exception:
+        pg.set_input_files('input[type="file"]:not([accept*="image"])', str(ruta))
+    pg.wait_for_selector(ENVIAR, timeout=30000)
     cap = pg.locator('div[contenteditable="true"]').last
     if not escribir(pg, cap, texto): raise RuntimeError("cortado")
     time.sleep(random.uniform(1.0, 2.5))
-    pg.locator('[data-icon="send"]').last.click()
+    pg.locator(ENVIAR).last.click()
     time.sleep(5)
-    if pg.locator('[data-icon="send"]').count(): raise RuntimeError("el PDF no se envió")
+    if pg.locator(ENVIAR).count(): raise RuntimeError("el PDF no se envió")
 
 def main():
     prueba, seguir = "--prueba" in sys.argv, "--seguir" in sys.argv
@@ -118,9 +132,13 @@ def main():
                         if not dormir(random.uniform(8, 16) + EXTRA_SEG): break
                         mandar_pdf(pg, ruta, variar({"nombre": c["nombre"], "borrador": random.choice(CAPS)}))
                     except Exception as e:
-                        print(f"  No pude mandar la cotización ({e}). La dejo para vos."); fallidas.add(c["id"])
-                        pg.keyboard.press("Escape"); pg.keyboard.press("Escape")
-                        with open(AQUI / "para_vos.txt", "a", encoding="utf-8") as f: f.write(f"{datetime.now():%d/%m %H:%M} | {c['nombre']} | +{c['conv']} | cotización N° {c['num']} lista: mandala vos (PDF en la carpeta sender)\n")
+                        debug_pantalla(pg, f"cotización N° {c['num']}: {e}")
+                        print(f"  No pude terminar de mandar la cotización ({str(e).splitlines()[0]}).")
+                        print(f"  Dejé el chat de {c['nombre']} como quedó (con el PDF en borrador si llegó a adjuntarse). Enviala vos si está lista.")
+                        fallidas.add(c["id"])
+                        with open(AQUI / "para_vos.txt", "a", encoding="utf-8") as f: f.write(f"{datetime.now():%d/%m %H:%M} | {c['nombre']} | +{c['conv']} | cotización N° {c['num']}: mandala vos (PDF Cotizacion_{c['num']}.pdf en la carpeta sender)\n")
+                        input("  Cuando la hayas enviado (o si no querés), apretá Enter para seguir: ")
+                        api("/enviar/cotizacion-enviada", {"id": c["id"]})
                         continue
                     api("/enviar/cotizacion-enviada", {"id": c["id"]}); enviados += 1; print("  Cotización enviada ✅")
                     if not dormir(random.randint(PAUSA_MIN, PAUSA_MAX)): break
