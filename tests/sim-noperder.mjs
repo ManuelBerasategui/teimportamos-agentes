@@ -59,4 +59,10 @@ chk("los que escribieron en las últimas 3 h van antes que los viejos", l9.index
 chk("informa cuántos quedan", (await A.pendientesResponder(env, { limite: 1 })).quedan >= 3);
 // 10) Cierres sin IA, y "sí" solo no cuenta como cierre (puede ser respuesta a una pregunta nuestra)
 for (const [t, e] of [["Dale no hay problema", true], ["Muchas gracias!!", true], ["👍", true], ["si", false], ["Dale, cuánto sale?", false], ["Empiezo de a poco", false], ["hola buenisiimo gracias", false]]) chk(`cierre "${t}" → ${e}`, A.esCierre(t) === e);
+// 11) Contestado por el agente: sale de "Responder ya" y se cierra su pendiente del panel en el momento
+chat("5491100000009", "cuanto sale el envio?", 20 * 60e3);
+db.prepare("INSERT INTO tareas (id,ts,tipo,tel,nombre,titulo,estado,ref) VALUES ('t9',?,'cotizacion','5491100000009','x','x','abierta','w805:5491100000009')").run(ahora - 60e3);
+await R("/enviar/respondido", { conv: "5491100000009" });
+chk("respondido: se cierra el pendiente del panel", db.prepare("SELECT estado FROM tareas WHERE id='t9'").get().estado === "resuelta");
+chk("respondido: sale de Responder ya", db.prepare("SELECT visto_ts FROM w_conv WHERE conv='5491100000009'").get().visto_ts > 0);
 console.log(`\nsim-noperder: ${ok} ok, ${mal} fallas`); process.exit(mal ? 1 : 0);

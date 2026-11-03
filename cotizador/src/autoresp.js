@@ -110,6 +110,13 @@ export function esCierre(t) {
 const VOSEO = Object.fromEntries(["avísame","pásame","mándame","decíme","contáme","fijáte","escribíme","mostráme","confirmáme","dejáme","llamáme","pasáme","mandáme","avisáme","contame","mirá"].filter((w) => w !== "contame" && w !== "mirá").map((w) => [w, w.normalize("NFD").replace(/[\u0300-\u036f]/g, "")]));
 const VOSEO_RE = new RegExp(`(?<![\\p{L}])(${Object.keys(VOSEO).join("|")})(?![\\p{L}])`, "giu");
 
+// Ya se le contestó (el agente o vos): sale de "Responder ya" y se cierran sus pendientes del 805 en el momento,
+// sin esperar a que el lector registre el mensaje (misma regla que usa el lector cuando contestás vos)
+const marcarContestado = (env, conv) => [
+  env.DB.prepare("UPDATE w_conv SET visto_ts=? WHERE conv=?").bind(Date.now(), conv),
+  env.DB.prepare("UPDATE tareas SET estado='resuelta' WHERE ref=? AND estado='abierta' AND ts<?").bind("w805:" + conv, Date.now()),
+];
+
 // Reserva el chat para esta PC. Solo una gana (la reserva se toma si no existe o si ya venció). forzar = renovar la propia.
 async function reservar(env, conv, ms, forzar = false) {
   const ahora = Date.now(), k = "resp_toma:" + conv;
@@ -213,12 +220,12 @@ export async function rutaAutoresp(env, req, p, url, iaJSON, h = {}) {
   if (p === "/enviar/redactar" && req.method === "POST") return json({ ok: true, ...(await (async () => { const b = await body(); return redactar(env, iaJSON, String(b.conv || ""), { prueba: !!b.prueba }); })()) });
   if (p === "/enviar/respondido" && req.method === "POST") {   // el mensaje salió: recién ahí el chat queda como atendido
     const conv = String((await body()).conv || "");
-    if (conv) await env.DB.batch([env.DB.prepare("INSERT INTO kv (k,v,exp) VALUES (?,?,NULL) ON CONFLICT(k) DO UPDATE SET v=excluded.v, exp=NULL").bind("resp_auto:" + conv, String(Date.now())), env.DB.prepare("DELETE FROM kv WHERE k=?").bind("resp_toma:" + conv)]);
+    if (conv) await env.DB.batch([env.DB.prepare("INSERT INTO kv (k,v,exp) VALUES (?,?,NULL) ON CONFLICT(k) DO UPDATE SET v=excluded.v, exp=NULL").bind("resp_auto:" + conv, String(Date.now())), env.DB.prepare("DELETE FROM kv WHERE k=?").bind("resp_toma:" + conv), ...marcarContestado(env, conv)]);
     const k = "resp_hora:" + hora(); await kvPut(env, k, (+((await kvGet(env, k)) || 0)) + 1); return json({ ok: true });
   }
   if (p === "/enviar/atendido" && req.method === "POST") {   // la PC vio en WhatsApp que lo último ya es nuestro (el lector no lo había registrado): no se contesta
     const conv = String((await body()).conv || "");
-    if (conv) await env.DB.batch([env.DB.prepare("INSERT INTO kv (k,v,exp) VALUES (?,?,NULL) ON CONFLICT(k) DO UPDATE SET v=excluded.v, exp=NULL").bind("resp_auto:" + conv, String(Date.now())), env.DB.prepare("DELETE FROM kv WHERE k=?").bind("resp_toma:" + conv), env.DB.prepare("UPDATE w_conv SET visto_ts=? WHERE conv=?").bind(Date.now(), conv)]);
+    if (conv) await env.DB.batch([env.DB.prepare("INSERT INTO kv (k,v,exp) VALUES (?,?,NULL) ON CONFLICT(k) DO UPDATE SET v=excluded.v, exp=NULL").bind("resp_auto:" + conv, String(Date.now())), env.DB.prepare("DELETE FROM kv WHERE k=?").bind("resp_toma:" + conv), ...marcarContestado(env, conv)]);
     return json({ ok: true });
   }
   if (p === "/enviar/cotizacion-html" && req.method === "POST") return paginaCotizacion(env, String((await body()).id || ""), h.T);
