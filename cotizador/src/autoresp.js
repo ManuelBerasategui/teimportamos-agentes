@@ -55,14 +55,16 @@ async function repararMarcas(env) {
   await kvPut(env, "resp_reparado_v1", Date.now());
 }
 
-export async function pendientesResponder(env, { limite = 10, T = null, desde = 0, dias = 2 } = {}) {
+export async function pendientesResponder(env, { limite = 10, T = null, desde = 0, dias = 14 } = {}) {
   await repararMarcas(env).catch(() => {});   // desde: ignora chats cuyo último mensaje del cliente es anterior (ms)
   if ((await kvGet(env, "resp_pausa")) === "1") return { pausado: true, lista: [] };
-  const topeHora = +env.RESP_TOPE_HORA || 25, hechos = +((await kvGet(env, "resp_hora:" + hora())) || 0);
+  const topeHora = +env.RESP_TOPE_HORA || 40, hechos = +((await kvGet(env, "resp_hora:" + hora())) || 0);
   if (hechos >= topeHora) return { pausado: false, tope: true, lista: [], cotizaciones: [] };
   const cotizaciones = T ? await cotizacionesListas(env, T) : [];
   const ahora = Date.now();
-  const filas = (await env.DB.prepare(`SELECT conv, nombre, ult_cliente_ts, ult_texto FROM w_conv WHERE grupo=0 AND archivado=0 AND ult_yo=0 AND COALESCE(prov,0)=0 AND ult_cliente_ts>=? AND ult_cliente_ts<=? AND ${SIN_VAPES} ORDER BY ult_cliente_ts ASC LIMIT 300`).bind(Math.max(ahora - Math.min(Math.max(+dias || 2, 1), 14) * 86400e3, desde || 0), ahora - 45e3).all()).results || [];
+  // Mismo universo que "Responder ya" del panel (respeta lo que marcaste como listo). Orden: primero los que escribieron
+  // en las últimas 3 horas (no hacer esperar a los nuevos), después los mejor puntuados, y entre iguales el más viejo primero
+  const filas = (await env.DB.prepare(`SELECT conv, nombre, ult_cliente_ts, ult_texto FROM w_conv WHERE grupo=0 AND archivado=0 AND ult_yo=0 AND COALESCE(prov,0)=0 AND ult_cliente_ts>=? AND ult_cliente_ts<=? AND ult_cliente_ts>COALESCE(visto_ts,0) AND ${SIN_VAPES} AND lower(COALESCE(producto,'')) NOT LIKE '%pod%' ORDER BY (ult_cliente_ts >= ${Date.now() - 3 * 3600e3}) DESC, COALESCE(puntaje,5) DESC, ult_cliente_ts ASC LIMIT 300`).bind(Math.max(ahora - Math.min(Math.max(+dias || 14, 1), 14) * 86400e3, desde || 0), ahora - 45e3).all()).results || [];
   // Solo se consultan las marcas de los chats de esta lista (antes un LIKE recorría toda la tabla kv en cada vuelta)
   // resp_auto = ya decidido/enviado; resp_toma = otra PC lo está atendiendo ahora (vence a los 10 min si se cortó)
   const vistos = {}, tomados = {}, convs = filas.map((f) => String(f.conv));
@@ -75,7 +77,8 @@ export async function pendientesResponder(env, { limite = 10, T = null, desde = 
   }
   const lista = filas.filter((f) => /^\d{8,15}$/.test(String(f.conv)) && !(vistos[f.conv] >= f.ult_cliente_ts) && !tomados[f.conv]).slice(0, Math.min(limite, topeHora - hechos))
     .map((f) => ({ conv: f.conv, nombre: f.nombre, ult_cliente_ts: f.ult_cliente_ts, ultimo: String(f.ult_texto || "").slice(0, 200) }));
-  return { pausado: false, lista, cotizaciones: cotizaciones.slice(0, Math.max(0, topeHora - hechos)) };
+  const quedan = filas.filter((f) => /^\d{8,15}$/.test(String(f.conv)) && !(vistos[f.conv] >= f.ult_cliente_ts)).length;   // incluye los reservados por otra PC
+  return { pausado: false, lista, quedan, cotizaciones: cotizaciones.slice(0, Math.max(0, topeHora - hechos)) };
 }
 
 const URL_OK = /^https?:\/\/(www\.)?teimportamosarg\.com/i;
@@ -191,7 +194,7 @@ export async function derivados(env) {
 export async function rutaAutoresp(env, req, p, url, iaJSON, h = {}) {
   const json = (x, s = 200) => Response.json(x, { status: s });
   const body = async () => req.json().catch(() => ({}));
-  if (p === "/enviar/responder") return json({ ok: true, ...(await pendientesResponder(env, { limite: Math.min(Math.max(+url.searchParams.get("limite") || 10, 1), 50), T: h.T, desde: +url.searchParams.get("desde") || 0, dias: +url.searchParams.get("dias") || 2 })) });
+  if (p === "/enviar/responder") return json({ ok: true, ...(await pendientesResponder(env, { limite: Math.min(Math.max(+url.searchParams.get("limite") || 10, 1), 50), T: h.T, desde: +url.searchParams.get("desde") || 0, dias: +url.searchParams.get("dias") || 14 })) });
   if (p === "/enviar/redactar" && req.method === "POST") return json({ ok: true, ...(await (async () => { const b = await body(); return redactar(env, iaJSON, String(b.conv || ""), { prueba: !!b.prueba }); })()) });
   if (p === "/enviar/respondido" && req.method === "POST") {   // el mensaje salió: recién ahí el chat queda como atendido
     const conv = String((await body()).conv || "");

@@ -56,7 +56,7 @@ def variar(s):
         t = t[:-1]
     if (not t.endswith("?") or random.random() < 0.3) and not t.endswith(("avisame.", "atento.", "leo.", "🙂")):
         t += random.choice(CIERRES)
-    return t.strip()
+    return t.replace("¿", "").replace("¡", "").strip()   # una persona no escribe el signo de apertura en WhatsApp
 
 def parar():
     return (AQUI / "STOP").exists()

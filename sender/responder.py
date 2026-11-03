@@ -10,11 +10,11 @@ import json, urllib.request
 from enviar import api, parar, AQUI, H_DESDE, H_HASTA, URL, TOKEN, variar, os
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 
-EXTRA_SEG = int(os.environ.get("RESP_EXTRA_SEG", "10"))          # segundos de más "leyendo" antes de escribir
-PAUSA_MIN = int(os.environ.get("RESP_PAUSA_MIN_SEG", "25"))      # pausa entre un chat y el siguiente
-PAUSA_MAX = int(os.environ.get("RESP_PAUSA_MAX_SEG", "70"))
+EXTRA_SEG = int(os.environ.get("RESP_EXTRA_SEG", "2"))          # segundos de más "leyendo" antes de escribir
+PAUSA_MIN = int(os.environ.get("RESP_PAUSA_MIN_SEG", "8"))      # pausa entre un chat y el siguiente
+PAUSA_MAX = int(os.environ.get("RESP_PAUSA_MAX_SEG", "20"))
 COTIZ_MODO = os.environ.get("COTIZ_MODO", "revisar")             # revisar (guarda el PDF para que lo mandes vos) | enviar (lo manda solo)
-DIAS = int(os.environ.get("RESP_DIAS", "3"))                     # cuántos días para atrás mira chats sin responder (máx. 14)
+DIAS = int(os.environ.get("RESP_DIAS", "14"))                     # cuántos días para atrás mira chats sin responder (máx. 14)
 SEGUIMIENTOS = os.environ.get("RESP_SEGUIMIENTOS", "1") == "1"   # sin chats para contestar, manda los seguimientos del panel
 SEG_MAX = int(os.environ.get("RESP_SEG_MAX", "30"))              # tope de seguimientos por corrida
 TECLEO = float(os.environ.get("RESP_TECLEO", "1"))                # velocidad de tipeo: 1 = normal, 0.6 = más rápido, 1.5 = más lento
@@ -37,9 +37,9 @@ def escribir(pg, caja, texto):
             pg.keyboard.press("Shift+Enter")
         else:
             pg.keyboard.type(ch)
-        d = random.uniform(0.09, 0.22) * TECLEO
-        if ch in ".,?¿!": d += random.uniform(0.15, 0.5)
-        if random.random() < 0.04: d += random.uniform(0.6, 1.8)
+        d = random.uniform(0.05, 0.14) * TECLEO
+        if ch in ".,?!": d += random.uniform(0.1, 0.3) * TECLEO
+        if random.random() < 0.02: d += random.uniform(0.3, 0.9) * TECLEO
         time.sleep(d)
     return True
 
@@ -60,8 +60,12 @@ def hay_pendientes():
     """Devuelve (chats a contestar, cotizaciones para mandar) o None si está pausado."""
     r = api(f"/enviar/responder?limite=10&desde={desde_ms()}&dias={DIAS}")
     if r.get("pausado"): print("⏸  Pausado desde el bot de Telegram. Escribí 'reanudar respuestas' para seguir."); return None
-    if r.get("tope"): print("Llegué al tope de respuestas por hora. Espero."); return [], []
+    global QUEDAN
+    if r.get("tope"): print("Llegué al tope de respuestas por hora. Espero."); QUEDAN = 1; return [], []
+    QUEDAN = r.get("quedan", len(r["lista"]))
     return r["lista"], r.get("cotizaciones", [])
+
+QUEDAN = 0   # chats sin contestar que quedan en total (si hay, no se hacen seguimientos)
 
 def api_texto(path, body):
     req = urllib.request.Request(f"{URL}/lector{path}", data=json.dumps(body).encode(), method="POST", headers={"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json", "User-Agent": "Mozilla/5.0 TeImportamos-Sender/1.0"})
@@ -135,28 +139,30 @@ def guardar_cotizacion(p, c):
     api("/enviar/cotizacion-guardada", {"id": c["id"]}); print(f"  Cotización N° {c['num']} guardada para revisar: cotizaciones\\{nombre_pdf}")
 
 def mandar_seguimiento(pg, saltados):
-    """Manda UN seguimiento del panel (si hay). Devuelve True si mandó. Los chats nuevos siempre tienen prioridad:
-    después de cada seguimiento se vuelve a mirar si alguien escribió."""
+    """Manda UN seguimiento del panel (si hay). Devuelve True si mandó. Si uno no corresponde pasa al siguiente.
+    Los chats nuevos siempre tienen prioridad: después de cada seguimiento se vuelve a mirar si alguien escribió."""
     try: lista = [x for x in api("/enviar/lista?limite=20")["lista"] if x["conv"] not in saltados]
     except Exception as e: print(f"  No pude traer los seguimientos ({e})."); return False
-    if not lista: return False
-    s = lista[0]; texto = variar(s)
-    print(f"\nSeguimiento · {s['nombre']} ({s['conv']}): {texto}")
-    try:
-        pg.goto(f"https://web.whatsapp.com/send?phone={s['conv']}")
-        try: pg.wait_for_selector(CAJA, timeout=45000)
-        except PWTimeout: print("  No abrió el chat (¿número sin WhatsApp?). Lo salteo."); saltados.add(s["conv"]); return False
-        if not dormir(random.uniform(4, 9)): return False
-        if ultimo_del_cliente(pg) is True:   # el cliente escribió: eso se contesta como chat, no con un seguimiento
-            print("  El cliente escribió último: no mando seguimiento (lo toma el contestador)."); saltados.add(s["conv"]); return False
-        caja = pg.locator(CAJA).first
-        if caja.inner_text().strip(): print("  La caja ya tenía texto. Lo salteo."); saltados.add(s["conv"]); return False
-        if not escribir(pg, caja, texto): return False
-        time.sleep(random.uniform(1.0, 3.0)); caja.press("Enter"); time.sleep(3)
-        if pg.locator(CAJA).first.inner_text().strip(): print("  No se envió (la caja sigue con texto)."); saltados.add(s["conv"]); return False
-    except Exception as e:
-        debug_pantalla(pg, f"seguimiento {s['conv']}: {e}"); print(f"  Falló ({str(e).splitlines()[0]})."); saltados.add(s["conv"]); return False
-    api("/enviar/hecho", {"conv": s["conv"]}); print("  Seguimiento enviado ✅"); return True
+    for s in lista:
+        if parar(): return False
+        texto = variar(s)
+        print(f"\nSeguimiento · {s['nombre']} ({s['conv']}): {texto}")
+        try:
+            pg.goto(f"https://web.whatsapp.com/send?phone={s['conv']}")
+            try: pg.wait_for_selector(CAJA, timeout=45000)
+            except PWTimeout: print("  No abrió el chat (¿número sin WhatsApp?). Lo salteo."); saltados.add(s["conv"]); continue
+            if not dormir(random.uniform(2, 4)): return False
+            if ultimo_del_cliente(pg) is True:   # el cliente escribió: eso se contesta como chat, no con un seguimiento
+                print("  El cliente escribió último: no mando seguimiento (lo toma el contestador)."); saltados.add(s["conv"]); continue
+            caja = pg.locator(CAJA).first
+            if caja.inner_text().strip(): print("  La caja ya tenía texto. Lo salteo."); saltados.add(s["conv"]); continue
+            if not escribir(pg, caja, texto): return False
+            time.sleep(random.uniform(0.8, 2.0)); caja.press("Enter"); time.sleep(3)
+            if pg.locator(CAJA).first.inner_text().strip(): print("  No se envió (la caja sigue con texto)."); saltados.add(s["conv"]); continue
+        except Exception as e:
+            debug_pantalla(pg, f"seguimiento {s['conv']}: {e}"); print(f"  Falló ({str(e).splitlines()[0]})."); saltados.add(s["conv"]); continue
+        api("/enviar/hecho", {"conv": s["conv"]}); print("  Seguimiento enviado ✅"); return True
+    return False
 
 ESCRITORIO = os.environ.get("ESCRITORIO", "app")   # app = WhatsApp de escritorio | chrome = tu WhatsApp Web ya abierto en Chrome
 
@@ -217,6 +223,7 @@ def main_escritorio(seguir):
     print(f"\nListo. Contestados: {enviados}")
 
 def main():
+    global QUEDAN
     prueba, seguir = "--prueba" in sys.argv, "--seguir" in sys.argv
     if not prueba and not (H_DESDE <= datetime.now().hour < H_HASTA):
         sys.exit(f"Fuera de horario ({H_DESDE}:00 a {H_HASTA}:00). Cambialo en .env si querés.")
@@ -237,7 +244,7 @@ def main():
         pg.goto("https://web.whatsapp.com")
         print("Si pide QR, escanealo con el celular (solo la primera vez). Esperando WhatsApp Web...")
         pg.wait_for_selector('#pane-side', timeout=180000)
-        enviados = 0; fallidas = set(); seg_enviados = 0; seg_saltados = set()
+        enviados = 0; fallidas = set(); seg_enviados = 0; seg_saltados = set(); chats_saltados = set()   # los que fallaron se reintentan en la próxima corrida
         try:
             while not parar():
                 if not (H_DESDE <= datetime.now().hour < H_HASTA): print("Fuera de horario, termino."); break
@@ -274,8 +281,11 @@ def main():
                         continue
                     api("/enviar/cotizacion-enviada", {"id": c["id"]}); enviados += 1; print("  Cotización enviada ✅")
                     if not dormir(random.randint(PAUSA_MIN, PAUSA_MAX)): break
+                lista = [x for x in lista if x["conv"] not in chats_saltados]
+                if not lista and QUEDAN <= len(chats_saltados): QUEDAN = 0   # solo quedan los que fallaron en esta corrida
                 if not lista:
-                    if SEGUIMIENTOS and seg_enviados < SEG_MAX and mandar_seguimiento(pg, seg_saltados):
+                    if QUEDAN: print(f"{datetime.now():%H:%M} · quedan {QUEDAN} chat(s) sin contestar (los está atendiendo otra PC o es el tope por hora). Espero antes de los seguimientos.")
+                    if SEGUIMIENTOS and not QUEDAN and seg_enviados < SEG_MAX and mandar_seguimiento(pg, seg_saltados):
                         seg_enviados += 1
                         if not dormir(random.randint(PAUSA_MIN, PAUSA_MAX)): break
                         continue
@@ -283,6 +293,7 @@ def main():
                     print(f"{datetime.now():%H:%M} · nada para contestar" + (" ni seguimientos" if SEGUIMIENTOS else "") + ". Vuelvo a mirar en 2 minutos.")
                     if not dormir(120): break
                     continue
+                print(f"\n{datetime.now():%H:%M} · quedan {QUEDAN} chat(s) sin contestar.")
                 for it in lista:
                     if parar(): break
                     d = api("/enviar/redactar", {"conv": it["conv"]})
@@ -292,8 +303,8 @@ def main():
                     try:
                         pg.goto(f"https://web.whatsapp.com/send?phone={it['conv']}")
                         try: pg.wait_for_selector(CAJA, timeout=45000)
-                        except PWTimeout: print("  No abrió el chat (¿número sin WhatsApp?). Salto."); continue
-                        lee = random.uniform(6, 14) + len(it["ultimo"]) * 0.05 + EXTRA_SEG
+                        except PWTimeout: print("  No abrió el chat (¿número sin WhatsApp?). Salto."); chats_saltados.add(it["conv"]); api("/enviar/reintentar", {"conv": it["conv"]}); continue
+                        lee = random.uniform(2, 5) + len(it["ultimo"]) * 0.02 + EXTRA_SEG
                         print(f"  leyendo {lee:.0f}s...")
                         if not dormir(lee): break
                         cli = ultimo_del_cliente(pg)
@@ -303,15 +314,16 @@ def main():
                         if cli is None:
                             debug_pantalla(pg, f"no pude leer el último mensaje de {it['conv']}")
                             print("  No pude ver de quién es el último mensaje. Por seguridad no contesto; se reintenta más tarde.")
-                            api("/enviar/reintentar", {"conv": it["conv"]}); continue
+                            api("/enviar/reintentar", {"conv": it["conv"]}); chats_saltados.add(it["conv"]); continue
                         caja = pg.locator(CAJA).first   # se vuelve a buscar: WhatsApp redibuja la caja mientras "lee"
-                        if caja.inner_text().strip(): print("  La caja ya tenía texto (¿lo estás escribiendo vos?). Salto."); continue
+                        if caja.inner_text().strip(): print("  La caja ya tenía texto (¿lo estás escribiendo vos?). Salto."); api("/enviar/reintentar", {"conv": it["conv"]}); chats_saltados.add(it["conv"]); continue
                         if not escribir(pg, caja, d["mensaje"]): break
                         time.sleep(random.uniform(1.0, 3.0)); caja.press("Enter"); time.sleep(3)
                         if pg.locator(CAJA).first.inner_text().strip(): print("  No se envió (la caja sigue con texto). Frenando por seguridad."); return
                     except Exception as e:
                         debug_pantalla(pg, f"chat {it['conv']}: {e}")
                         print(f"  Falló este chat ({str(e).splitlines()[0]}). Lo salto; queda en 'Responder ya' y se reintenta más tarde.")
+                        chats_saltados.add(it["conv"])
                         try: api("/enviar/reintentar", {"conv": it["conv"]})
                         except Exception: pass
                         continue

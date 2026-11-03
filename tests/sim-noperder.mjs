@@ -48,4 +48,13 @@ db.prepare("INSERT INTO kv (k,v,exp) VALUES ('resp_auto:5491100000005',?,NULL)")
 db.prepare("INSERT OR REPLACE INTO kv (k,v,exp) VALUES ('resp_log',?,NULL)").run(JSON.stringify([{ ts: ahora, conv: "5491100000005", accion: "responder", mensaje: "x" }]));
 db.prepare("DELETE FROM kv WHERE k='resp_reparado_v1'").run();
 chk("marca vieja sin envío: el chat vuelve", (await lista()).includes("5491100000005"));
+// 8) Lo marcaste como listo en el panel: el agente no lo toca
+chat("5491100000006", "una consulta", 30 * 60e3); db.prepare("UPDATE w_conv SET visto_ts=? WHERE conv='5491100000006'").run(ahora);
+chk("marcado como listo en el panel: no se contesta", !(await lista()).includes("5491100000006"));
+// 9) Mismo universo que el panel: 14 días por defecto; los que escribieron recién van primero
+chat("5491100000007", "hola", 10 * 86400e3); chat("5491100000008", "recién", 2 * 60e3);
+const l9 = await lista();
+chk("14 días por defecto (como el panel)", l9.includes("5491100000007"));
+chk("los que escribieron en las últimas 3 h van antes que los viejos", l9.indexOf("5491100000008") < l9.indexOf("5491100000007") && l9.indexOf("5491100000008") < l9.indexOf("5491100000003"));
+chk("informa cuántos quedan", (await A.pendientesResponder(env, { limite: 1 })).quedan >= 3);
 console.log(`\nsim-noperder: ${ok} ok, ${mal} fallas`); process.exit(mal ? 1 : 0);
