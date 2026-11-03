@@ -27,6 +27,13 @@ Cada envío queda marcado como hecho en el panel; "n" lo marca como "no seguir".
 Necesita `python -m pip install pyautogui pygetwindow` (ya incluido en `instalar.bat`). Mientras corre, no uses la PC (el Enter va a la ventana que esté al frente; si WhatsApp no queda al frente, frena solo).
 Limitación: no puede saber si el número existe en WhatsApp. Con el modo Chrome sí.
 
+## Abrir, activar y pausar (sin cerrar la ventana)
+- `abrir.bat`: abre el WhatsApp del agente (visible) **en pausa**: conectado, pero no contesta nada.
+- `activar.bat`: empieza a contestar (y después a hacer seguimientos). Reacciona en segundos.
+- `pausar.bat`: termina el mensaje que estaba escribiendo y no contesta más. La ventana sigue abierta.
+- Se puede activar y pausar todas las veces que quieras. Para cerrarlo del todo: Ctrl+C en la ventana negra o archivo `STOP`.
+- Mientras está en pausa podés usar esa ventana de WhatsApp vos. Antes de activarlo, dejala en cualquier chat sin escribir nada: si la usás mientras está activo, el agente detecta que tocaste la caja, borra lo suyo y no manda.
+
 ## Contestador automático (responder.py)
 Contesta los chats cuyo último mensaje es del cliente (incluye los que dejaste leídos sin responder). Escribe en una ventana propia de WhatsApp Web (no usa tu mouse ni tu teclado), con ritmo humano: "lee" unos segundos (+10 s de más), tipea letra por letra y recién ahí envía.
 - `python responder.py --prueba`: muestra qué contestaría, sin abrir WhatsApp ni enviar nada. Probalo primero.

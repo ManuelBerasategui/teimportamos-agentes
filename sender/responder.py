@@ -21,11 +21,25 @@ TECLEO = float(os.environ.get("RESP_TECLEO", "1"))                # velocidad de
 VENTANA = os.environ.get("VENTANA", "oculta")                # minimizada | oculta | visible
 CAJA = 'footer div[contenteditable="true"]'
 
+def pausado():
+    """Archivo PAUSA en esta carpeta = la ventana sigue abierta y conectada, pero no contesta ni manda nada."""
+    return (AQUI / "PAUSA").exists()
+
 def dormir(seg, motivo=""):
-    fin = time.time() + seg
+    fin, antes = time.time() + seg, pausado()
     while time.time() < fin:
         if parar(): return False
+        if pausado() != antes: return True   # lo activaste o pausaste: reacciona enseguida, sin esperar
         time.sleep(min(1, max(0, fin - time.time())))
+    return True
+
+def esperar_si_pausado():
+    """Si está en pausa, espera (con la ventana abierta) hasta que lo actives. Devuelve False si lo cortaste."""
+    if not pausado(): return True
+    print(f"\n{datetime.now():%H:%M} · ⏸  EN PAUSA: WhatsApp abierto, no contesto nada. Para activarlo: doble clic en activar.bat")
+    while pausado():
+        if not dormir(3600): return False
+    print(f"{datetime.now():%H:%M} · ▶  ACTIVADO: vuelvo a contestar.")
     return True
 
 def escribir(pg, caja, texto):
@@ -160,7 +174,7 @@ def mandar_seguimiento(pg, saltados):
     try: lista = [x for x in api("/enviar/lista?limite=20")["lista"] if x["conv"] not in saltados]
     except Exception as e: print(f"  No pude traer los seguimientos ({e})."); return False
     for s in lista:
-        if parar(): return False
+        if parar() or pausado(): return False
         texto = variar(s)
         print(f"\nSeguimiento · {s['nombre']} ({s['conv']}): {texto}")
         try:
@@ -202,6 +216,7 @@ def main_escritorio(seguir):
     print(f"Modo escritorio ({'app de WhatsApp' if ESCRITORIO == 'app' else 'WhatsApp Web en tu Chrome'}). No toques el teclado ni el mouse mientras escribe. Para cortar: Ctrl+C, archivo STOP o 'pausar respuestas' en Telegram.")
     try:
         while not parar():
+            if not esperar_si_pausado(): break
             if not (H_DESDE <= datetime.now().hour < H_HASTA): print("Fuera de horario, termino."); break
             pend = hay_pendientes()
             if pend is None: break
@@ -243,6 +258,7 @@ def main_escritorio(seguir):
 def main():
     global QUEDAN
     prueba, seguir = "--prueba" in sys.argv, "--seguir" in sys.argv
+    if "--pausado" in sys.argv: (AQUI / "PAUSA").touch()   # abrir.bat: abre WhatsApp sin contestar
     if not prueba and not (H_DESDE <= datetime.now().hour < H_HASTA):
         if not seguir: sys.exit(f"Fuera de horario ({H_DESDE}:00 a {H_HASTA}:00). Cambialo en .env si querés.")
         print(f"Fuera de horario: arranco solo a las {H_DESDE}:00 (dejalo abierto).")
@@ -269,6 +285,7 @@ def main():
         enviados = 0; fallidas = set(); seg_enviados = 0; seg_saltados = set(); chats_saltados = set()   # los que fallaron se reintentan en la próxima corrida
         try:
             while not parar():
+                if not esperar_si_pausado(): break
                 if not (H_DESDE <= datetime.now().hour < H_HASTA):
                     if not seguir: print("Fuera de horario, termino."); break
                     print(f"{datetime.now():%H:%M} · fuera de horario: sigo a las {H_DESDE}:00.")
@@ -328,7 +345,7 @@ def main():
                     continue
                 print(f"\n{datetime.now():%H:%M} · quedan {QUEDAN} chat(s) sin contestar.")
                 for it in lista:
-                    if parar(): break
+                    if parar() or pausado(): break   # pausa: termina el mensaje que estaba escribiendo y frena antes del próximo
                     try: d = api("/enviar/redactar", {"conv": it["conv"]})
                     except Exception as e: print(f"  No pude pedir la respuesta de {it['conv']} ({str(e).splitlines()[0][:80]}). Sigo con otro."); chats_saltados.add(it["conv"]); continue
                     print(f"\n{it['nombre']} ({it['conv']}): {it['ultimo']}\n  → {d['accion']}: {d.get('mensaje') or d.get('motivo', '')}")
