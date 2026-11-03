@@ -43,13 +43,13 @@ async function cotizacionesListas(env, T) {
 
 export async function pausaAutoresp(env, pausa) { await kvPut(env, "resp_pausa", pausa ? "1" : "0"); }
 
-export async function pendientesResponder(env, { limite = 10, T = null } = {}) {
+export async function pendientesResponder(env, { limite = 10, T = null, desde = 0 } = {}) {   // desde: ignora chats cuyo último mensaje del cliente es anterior (ms)
   if ((await kvGet(env, "resp_pausa")) === "1") return { pausado: true, lista: [] };
   const topeHora = +env.RESP_TOPE_HORA || 25, hechos = +((await kvGet(env, "resp_hora:" + hora())) || 0);
   if (hechos >= topeHora) return { pausado: false, tope: true, lista: [], cotizaciones: [] };
   const cotizaciones = T ? await cotizacionesListas(env, T) : [];
   const ahora = Date.now();
-  const filas = (await env.DB.prepare(`SELECT conv, nombre, ult_cliente_ts, ult_texto FROM w_conv WHERE grupo=0 AND archivado=0 AND ult_yo=0 AND COALESCE(prov,0)=0 AND ult_cliente_ts>=? AND ult_cliente_ts<=? AND ${SIN_VAPES} ORDER BY ult_cliente_ts ASC LIMIT 300`).bind(ahora - 48 * 3600e3, ahora - 45e3).all()).results || [];
+  const filas = (await env.DB.prepare(`SELECT conv, nombre, ult_cliente_ts, ult_texto FROM w_conv WHERE grupo=0 AND archivado=0 AND ult_yo=0 AND COALESCE(prov,0)=0 AND ult_cliente_ts>=? AND ult_cliente_ts<=? AND ${SIN_VAPES} ORDER BY ult_cliente_ts ASC LIMIT 300`).bind(Math.max(ahora - 48 * 3600e3, desde || 0), ahora - 45e3).all()).results || [];
   // Solo se consultan las marcas de los chats de esta lista (antes un LIKE recorría toda la tabla kv en cada vuelta)
   const vistos = {}, convs = filas.map((f) => String(f.conv));
   for (let i = 0; i < convs.length; i += 90) {
@@ -157,7 +157,7 @@ export async function derivados(env) {
 export async function rutaAutoresp(env, req, p, url, iaJSON, h = {}) {
   const json = (x, s = 200) => Response.json(x, { status: s });
   const body = async () => req.json().catch(() => ({}));
-  if (p === "/enviar/responder") return json({ ok: true, ...(await pendientesResponder(env, { limite: Math.min(Math.max(+url.searchParams.get("limite") || 10, 1), 50), T: h.T })) });
+  if (p === "/enviar/responder") return json({ ok: true, ...(await pendientesResponder(env, { limite: Math.min(Math.max(+url.searchParams.get("limite") || 10, 1), 50), T: h.T, desde: +url.searchParams.get("desde") || 0 })) });
   if (p === "/enviar/redactar" && req.method === "POST") return json({ ok: true, ...(await (async () => { const b = await body(); return redactar(env, iaJSON, String(b.conv || ""), { prueba: !!b.prueba }); })()) });
   if (p === "/enviar/respondido" && req.method === "POST") { const k = "resp_hora:" + hora(); await kvPut(env, k, (+((await kvGet(env, k)) || 0)) + 1); return json({ ok: true }); }
   if (p === "/enviar/cotizacion-html" && req.method === "POST") return paginaCotizacion(env, String((await body()).id || ""), h.T);

@@ -44,9 +44,17 @@ def anotar_para_vos(it, d):
     with open(AQUI / "para_vos.txt", "a", encoding="utf-8") as f:
         f.write(f"{datetime.now():%d/%m %H:%M} | {it['nombre'] or '?'} | +{it['conv']} | {d.get('resumen') or d.get('motivo', '')}\n")
 
+def desde_ms():
+    """RESP_DESDE (en .env, ej. 2026-11-02 21:05): ignora los chats cuyo último mensaje del cliente es anterior a esa hora
+    (sirve cuando el panel estuvo caído y no registró lo que pasó en ese rato)."""
+    v = os.environ.get("RESP_DESDE", "").strip()
+    if not v: return 0
+    try: return int(datetime.fromisoformat(v).timestamp() * 1000)
+    except ValueError: sys.exit("RESP_DESDE tiene que ser fecha y hora así: 2026-11-02 21:05")
+
 def hay_pendientes():
     """Devuelve (chats a contestar, cotizaciones para mandar) o None si está pausado."""
-    r = api("/enviar/responder?limite=10")
+    r = api(f"/enviar/responder?limite=10&desde={desde_ms()}")
     if r.get("pausado"): print("⏸  Pausado desde el bot de Telegram. Escribí 'reanudar respuestas' para seguir."); return None
     if r.get("tope"): print("Llegué al tope de respuestas por hora. Espero."); return [], []
     return r["lista"], r.get("cotizaciones", [])
