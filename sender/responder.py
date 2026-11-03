@@ -262,7 +262,8 @@ def main():
         except KeyboardInterrupt:
             print("\nCortado.")
         print(f"\nListo. Contestados: {enviados}")
-        ctx.close()
+        try: ctx.close()
+        except Exception: pass   # al cortar con Ctrl+C Windows ya cerró Chrome: no es un error
 
 if __name__ == "__main__":
     main()
