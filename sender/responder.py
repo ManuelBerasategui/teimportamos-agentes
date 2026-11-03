@@ -89,9 +89,14 @@ ENVIAR = '[data-icon*="send"], [aria-label="Enviar"], button[aria-label="Enviar"
 # Mira en WhatsApp Web (no en el panel) de quién es el último mensaje del chat abierto: True = del cliente,
 # False = nuestro, None = no se pudo saber. El lector a veces no registra mensajes (por ejemplo si D1 estuvo caído).
 JS_ULTIMO = """() => {
-  const ids = [...document.querySelectorAll('#main [data-id]')].map(e => e.getAttribute('data-id')).filter(i => /^(true|false)_/.test(i));
+  const main = document.querySelector('#main'); if (!main) return null;
+  // 1) La "colita" de la burbuja: cada tanda de mensajes de un mismo lado empieza con tail-in (cliente) o tail-out (nuestra)
+  const t = [...main.querySelectorAll('[data-icon="tail-in"], [data-icon="tail-out"]')];
+  if (t.length) return t[t.length - 1].getAttribute('data-icon') === 'tail-in';
+  // 2) Versiones viejas: data-id true_/false_ o clases message-in / message-out
+  const ids = [...main.querySelectorAll('[data-id]')].map(e => e.getAttribute('data-id')).filter(i => /^(true|false)_/.test(i));
   if (ids.length) return ids[ids.length - 1].startsWith('false_');
-  const m = [...document.querySelectorAll('#main .message-in, #main .message-out')];
+  const m = [...main.querySelectorAll('.message-in, .message-out')];
   return m.length ? m[m.length - 1].classList.contains('message-in') : null;
 }"""
 

@@ -58,7 +58,11 @@ chk("14 días por defecto (como el panel)", l9.includes("5491100000007"));
 chk("los que escribieron en las últimas 3 h van antes que los viejos", l9.indexOf("5491100000008") < l9.indexOf("5491100000007") && l9.indexOf("5491100000008") < l9.indexOf("5491100000003"));
 chk("informa cuántos quedan", (await A.pendientesResponder(env, { limite: 1 })).quedan >= 3);
 // 10) Cierres sin IA, y "sí" solo no cuenta como cierre (puede ser respuesta a una pregunta nuestra)
-for (const [t, e] of [["Dale no hay problema", true], ["Muchas gracias!!", true], ["👍", true], ["si", false], ["Dale, cuánto sale?", false], ["Empiezo de a poco", false], ["hola buenisiimo gracias", false]]) chk(`cierre "${t}" → ${e}`, A.esCierre(t) === e);
+for (const [t, e] of [["Dale no hay problema", true], ["Muchas gracias!!", true], ["👍", true], ["si", false], ["Dale, cuánto sale?", false], ["Empiezo de a poco", false],
+  ["Tranqui hno gracias", true], ["Perfecto. Comprendo, muchas gracias", true], ["Ya te aviso debo consultarlo con la patrona", true],
+  ["Claro, pero se me va mucho del presupuesto, déjame q lo analice y cualquier cosa me vuelvo a comunicar. Muchas gracias", true],
+  ["buenas por ahora no! Muchas gracias", true], ["estamos en contacto gracias!", true], ["Este precio sería al dolar Blue?", false],
+  ["Malla", false], ["Quería hacer una consulta ustedes hacen envíos a otro país o solo Argentina", false], ["necesito 50 unidades gracias", false]]) chk(`cierre "${t}" → ${e}`, A.esCierre(t) === e);
 // 11) Contestado por el agente: sale de "Responder ya" y se cierra su pendiente del panel en el momento
 chat("5491100000009", "cuanto sale el envio?", 20 * 60e3);
 db.prepare("INSERT INTO tareas (id,ts,tipo,tel,nombre,titulo,estado,ref) VALUES ('t9',?,'cotizacion','5491100000009','x','x','abierta','w805:5491100000009')").run(ahora - 60e3);

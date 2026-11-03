@@ -98,9 +98,12 @@ export function revisarMensaje(m) {
 
 // "gracias", "dale joya", "ok perfecto", "no hay problema", "👍"…: solo palabras de cierre, sin pregunta. Se contestan con nada.
 const CIERRE = new Set("gracias graciass mil muchas muchisimas muchísimas ok okey oka okk dale joya joyita listo lista perfecto perfecta genial buenisimo buenísimo barbaro bárbaro excelente igualmente de nada no hay problema problemas tranqui tranca esta bien está bien bien vale hno hermano amigo amiga bro crack capo maestro genio jefe che bueno buenas noches saludos abrazo besos un abrazo".split(" "));
+const CIERRE_FRASE = /(ya te aviso|te aviso|les aviso|te vuelvo a escribir|me vuelvo a comunicar|te escribo (despu[eé]s|m[aá]s tarde|ma[ñn]ana)|despu[eé]s te (aviso|escribo|hablo)|lo (veo|analizo|pienso|consulto|charlo|hablo)|voy a ver|tengo que (verlo|pensarlo|consultarlo|hablarlo)|debo consultarlo|estamos en contacto|por ahora no|ahora no|volver[eé]|vuelvo cuando|cualquier cosa (te|les) (aviso|escribo|hablo)|quedo atento|quedo al pendiente|estoy al pendiente)/;
 export function esCierre(t) {
   const x = String(t || "").toLowerCase().trim();
-  if (!x || x.length > 45 || /[?¿]|\d|https?:/.test(x)) return false;
+  if (!x || /[?¿]|\d|https?:/.test(x)) return false;
+  if (x.length <= 160 && (CIERRE_FRASE.test(x) || /gra+cias+[\s!.🙏😊🫂❤️👍🫶🏼]*$/u.test(x))) return true;   // "…, déjame q lo analice. Muchas gracias"
+  if (x.length > 45) return false;
   const palabras = x.normalize("NFC").replace(/[^\p{L}\s]/gu, " ").split(/\s+/).filter(Boolean);
   if (!palabras.length) return /^[\p{Extended_Pictographic}\s!.]+$/u.test(x);   // solo emojis (👍🙏)
   return palabras.every((w) => CIERRE.has(w) || /^(gra+cias+|o+k+|da+le+|jo+ya+)$/.test(w));
@@ -170,7 +173,9 @@ export async function redactar(env, iaJSON, conv, { prueba = false } = {}) {
       "Se me complica abrir ese link. ¿Me decís el precio FOB que te figura en Alibaba para esa cantidad y el peso del producto en kg?"][Math.floor(Math.random() * 2)];
     return fin({ accion: "responder", mensaje: pide, motivo: "no se pudo leer el link para cotizar" }, c.nombre);
   }
-  if (esCierre(ultimo.texto) && sinContestar.every((m) => esCierre(m.texto))) return fin({ accion: "nada", motivo: "agradece o confirma, no pide respuesta" }, c.nombre);
+  // Si lo ÚLTIMO que dijo es un cierre ("gracias", "ya te aviso", "lo analizo"), no se contesta aunque más arriba haya
+  // quedado una pregunta: casi siempre ya se la respondieron por otro lado (audio, llamada, el celular)
+  if (esCierre(ultimo.texto)) return fin({ accion: "nada", motivo: "agradece, se despide o va a avisar: no pide respuesta" }, c.nombre);
   const ejemplos = ((await env.DB.prepare("SELECT texto FROM w_msg WHERE yo=1 AND grupo=0 AND tipo='text' AND length(texto) BETWEEN 12 AND 220 ORDER BY ts DESC LIMIT 40").all()).results || []).map((x) => "- " + String(x.texto).replace(/\s+/g, " ")).slice(0, 25);
   const charla = msgs.map((m) => `${m.yo ? "YO" : "CLIENTE"}: ${String(m.texto || `[${m.tipo}]`).replace(/\s+/g, " ").slice(0, 300)}`).join("\n");
   const ia = await iaJSON(env, `Sos el dueño de "Te Importamos" (importación por encargo desde China y catálogo con stock, Rosario, Argentina) contestando por WhatsApp. Escribí SOLO el próximo mensaje tuyo al cliente.
@@ -196,6 +201,8 @@ PROHIBIDO: prometer que le vas a pasar o mandar algo ("te paso la dirección", "
 Devolvé JSON: {"accion":"responder"|"humano"|"nada","mensaje":"texto a enviar (vacío si no es responder)","motivo":"una frase corta","resumen":"3 a 5 palabras: de qué trata el chat y qué debo hacer yo (ej: \"quiere vender sin stock, explicarle dropshipping\")"}`, { prioridad: true });
   if (!ia || !["responder", "humano", "nada"].includes(ia.accion)) return fin({ accion: "humano", motivo: "la IA no pudo decidir" }, c.nombre);
   if (ia.accion !== "responder") return fin({ accion: ia.accion, motivo: String(ia.motivo || "").slice(0, 120), resumen: ia.resumen }, c.nombre);
+  if (!/[?¿]/.test(ultimo.texto || "") && /(avisame si|av[ií]same cualquier|si te qued[oó]|qued[oó] alguna duda|pudiste ver|si pod[eé]s acordate|te sirvi[oó] la cotizaci[oó]n|lo pudiste)/i.test(ia.mensaje || ""))
+    return fin({ accion: "nada", motivo: "no preguntó nada; un recordatorio va como seguimiento" }, c.nombre);
   const mal = revisarMensaje(ia.mensaje);
   if (mal) return fin({ accion: "humano", motivo: `no mandé lo redactado (${mal})`, resumen: ia.resumen }, c.nombre);
   return fin({ accion: "responder", mensaje: String(ia.mensaje).trim(), motivo: String(ia.motivo || "").slice(0, 120) }, c.nombre);
