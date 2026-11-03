@@ -79,6 +79,7 @@ export function revisarMensaje(m) {
 export async function redactar(env, iaJSON, conv, { prueba = false } = {}) {
   const c = await env.DB.prepare("SELECT * FROM w_conv WHERE conv=?").bind(conv).first();
   const fin = async (r, nombre) => {
+    if (r.mensaje) r.mensaje = String(r.mensaje).replace(/[¿¡]/g, "");   // una persona no escribe el signo de apertura en WhatsApp
     if (prueba) return r;   // vista previa: no cuenta ni queda en el log
     await kvPut(env, "resp_auto:" + conv, Date.now());
     const log = JSON.parse((await kvGet(env, "resp_log")) || "[]");
