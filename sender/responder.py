@@ -18,7 +18,7 @@ DIAS = int(os.environ.get("RESP_DIAS", "14"))                     # cuántos dí
 SEGUIMIENTOS = os.environ.get("RESP_SEGUIMIENTOS", "1") == "1"   # sin chats para contestar, manda los seguimientos del panel
 SEG_MAX = int(os.environ.get("RESP_SEG_MAX", "30"))              # tope de seguimientos por corrida
 TECLEO = float(os.environ.get("RESP_TECLEO", "1"))                # velocidad de tipeo: 1 = normal, 0.6 = más rápido, 1.5 = más lento
-VENTANA = os.environ.get("VENTANA", "minimizada")                # minimizada | oculta | visible
+VENTANA = os.environ.get("VENTANA", "oculta")                # minimizada | oculta | visible
 CAJA = 'footer div[contenteditable="true"]'
 
 def dormir(seg, motivo=""):
@@ -109,6 +109,17 @@ def ultimo_del_cliente(pg):
         time.sleep(1)
     return None
 
+def _norm(t): return re.sub(r"\s+", " ", str(t or "")).strip()
+
+def igual_a_lo_escrito(pg, texto):
+    """La caja del chat abierto tiene exactamente lo que el agente escribió (si no, alguien tocó la ventana)."""
+    try: return _norm(pg.locator(CAJA).first.inner_text()) == _norm(texto)
+    except Exception: return False
+
+def borrar_caja(pg):
+    try: c = pg.locator(CAJA).first; c.click(); pg.keyboard.press("Control+A"); pg.keyboard.press("Delete")
+    except Exception: pass
+
 def debug_pantalla(pg, motivo):
     """Deja en debug_whatsapp.txt y debug.png cómo está la pantalla, para poder ajustar los botones si WhatsApp cambia."""
     try:
@@ -162,7 +173,9 @@ def mandar_seguimiento(pg, saltados):
             caja = pg.locator(CAJA).first
             if caja.inner_text().strip(): print("  La caja ya tenía texto. Lo salteo."); saltados.add(s["conv"]); continue
             if not escribir(pg, caja, texto): return False
-            time.sleep(random.uniform(0.8, 2.0)); caja.press("Enter"); time.sleep(3)
+            time.sleep(random.uniform(0.8, 2.0))
+            if not igual_a_lo_escrito(pg, texto): borrar_caja(pg); print("  Alguien usó esta ventana mientras escribía: no lo mando."); saltados.add(s["conv"]); continue
+            caja.press("Enter"); time.sleep(3)
             if pg.locator(CAJA).first.inner_text().strip(): print("  No se envió (la caja sigue con texto)."); saltados.add(s["conv"]); continue
         except Exception as e:
             debug_pantalla(pg, f"seguimiento {s['conv']}: {e}"); print(f"  Falló ({str(e).splitlines()[0]})."); saltados.add(s["conv"]); continue
@@ -251,6 +264,7 @@ def main():
         pg = ctx.pages[0] if ctx.pages else ctx.new_page()
         pg.goto("https://web.whatsapp.com")
         print("Si pide QR, escanealo con el celular (solo la primera vez). Esperando WhatsApp Web...")
+        if VENTANA != "visible": print("La ventana del agente queda fuera de la pantalla: para usar WhatsApp vos, usá la app de escritorio o el celular.")
         pg.wait_for_selector('#pane-side', timeout=180000)
         enviados = 0; fallidas = set(); seg_enviados = 0; seg_saltados = set(); chats_saltados = set()   # los que fallaron se reintentan en la próxima corrida
         try:
@@ -339,6 +353,9 @@ def main():
                         if caja.inner_text().strip(): print("  La caja ya tenía texto (¿lo estás escribiendo vos?). Salto."); api("/enviar/reintentar", {"conv": it["conv"]}); chats_saltados.add(it["conv"]); continue
                         if not escribir(pg, caja, d["mensaje"]): break
                         time.sleep(random.uniform(1.0, 3.0))
+                        if not igual_a_lo_escrito(pg, d["mensaje"]):   # alguien tocó esta ventana mientras tipeaba (cambió de chat o escribió)
+                            borrar_caja(pg); print("  Alguien usó esta ventana mientras escribía: borro lo mío, no lo mando y lo reintento después.")
+                            api("/enviar/reintentar", {"conv": it["conv"]}); chats_saltados.add(it["conv"]); continue
                         if ultimo_del_cliente(pg) is False:   # mientras tipeaba le escribiste vos (por ejemplo le mandaste un PDF)
                             caja.click(); pg.keyboard.press("Control+A"); pg.keyboard.press("Delete")
                             print("  Mientras escribía le contestaste vos: borro lo mío y no lo mando."); api("/enviar/atendido", {"conv": it["conv"]}); continue
