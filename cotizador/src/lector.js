@@ -1268,4 +1268,5 @@ export async function metricasEquipo(env, desde) {
 const NO_CLIENTES = new Set([
   "5491152577925",   // Pedro Aguirre, forwarder de China
   "5493413084113",   // Manuel personal
+  "5493413011600",   // Buko (socio)
 ]);

@@ -43,20 +43,37 @@ async function cotizacionesListas(env, T) {
 
 export async function pausaAutoresp(env, pausa) { await kvPut(env, "resp_pausa", pausa ? "1" : "0"); }
 
-export async function pendientesResponder(env, { limite = 10, T = null, desde = 0 } = {}) {   // desde: ignora chats cuyo último mensaje del cliente es anterior (ms)
+// Marcas que quedaron mal: el contestador redactaba, marcaba el chat como atendido y si el mensaje no llegaba a salir
+// (Ctrl+C, borrador borrado a mano, error) el chat desaparecía de la lista. Se reparan una sola vez.
+async function repararMarcas(env) {
+  if (await kvGet(env, "resp_reparado_v1")) return;
+  const log = JSON.parse((await kvGet(env, "resp_log")) || "[]").filter((x) => x.accion === "responder");
+  for (const x of log) {
+    const c = await env.DB.prepare("SELECT ult_yo FROM w_conv WHERE conv=?").bind(String(x.conv)).first();
+    if (c && !c.ult_yo) await env.DB.prepare("DELETE FROM kv WHERE k=?").bind("resp_auto:" + x.conv).run();
+  }
+  await kvPut(env, "resp_reparado_v1", Date.now());
+}
+
+export async function pendientesResponder(env, { limite = 10, T = null, desde = 0, dias = 2 } = {}) {
+  await repararMarcas(env).catch(() => {});   // desde: ignora chats cuyo último mensaje del cliente es anterior (ms)
   if ((await kvGet(env, "resp_pausa")) === "1") return { pausado: true, lista: [] };
   const topeHora = +env.RESP_TOPE_HORA || 25, hechos = +((await kvGet(env, "resp_hora:" + hora())) || 0);
   if (hechos >= topeHora) return { pausado: false, tope: true, lista: [], cotizaciones: [] };
   const cotizaciones = T ? await cotizacionesListas(env, T) : [];
   const ahora = Date.now();
-  const filas = (await env.DB.prepare(`SELECT conv, nombre, ult_cliente_ts, ult_texto FROM w_conv WHERE grupo=0 AND archivado=0 AND ult_yo=0 AND COALESCE(prov,0)=0 AND ult_cliente_ts>=? AND ult_cliente_ts<=? AND ${SIN_VAPES} ORDER BY ult_cliente_ts ASC LIMIT 300`).bind(Math.max(ahora - 48 * 3600e3, desde || 0), ahora - 45e3).all()).results || [];
+  const filas = (await env.DB.prepare(`SELECT conv, nombre, ult_cliente_ts, ult_texto FROM w_conv WHERE grupo=0 AND archivado=0 AND ult_yo=0 AND COALESCE(prov,0)=0 AND ult_cliente_ts>=? AND ult_cliente_ts<=? AND ${SIN_VAPES} ORDER BY ult_cliente_ts ASC LIMIT 300`).bind(Math.max(ahora - Math.min(Math.max(+dias || 2, 1), 14) * 86400e3, desde || 0), ahora - 45e3).all()).results || [];
   // Solo se consultan las marcas de los chats de esta lista (antes un LIKE recorría toda la tabla kv en cada vuelta)
-  const vistos = {}, convs = filas.map((f) => String(f.conv));
-  for (let i = 0; i < convs.length; i += 90) {
-    const lote = convs.slice(i, i + 90);
-    for (const r of (await env.DB.prepare(`SELECT k, v FROM kv WHERE k IN (${lote.map(() => "?").join(",")})`).bind(...lote.map((c) => "resp_auto:" + c)).all()).results || []) vistos[r.k.slice(10)] = +r.v;
+  // resp_auto = ya decidido/enviado; resp_toma = otra PC lo está atendiendo ahora (vence a los 10 min si se cortó)
+  const vistos = {}, tomados = {}, convs = filas.map((f) => String(f.conv));
+  for (let i = 0; i < convs.length; i += 45) {
+    const lote = convs.slice(i, i + 45), claves = [...lote.map((c) => "resp_auto:" + c), ...lote.map((c) => "resp_toma:" + c)];
+    for (const r of (await env.DB.prepare(`SELECT k, v, exp FROM kv WHERE k IN (${claves.map(() => "?").join(",")})`).bind(...claves).all()).results || []) {
+      if (r.k.startsWith("resp_auto:")) vistos[r.k.slice(10)] = +r.v;
+      else if ((r.exp || 0) > ahora) tomados[r.k.slice(10)] = 1;
+    }
   }
-  const lista = filas.filter((f) => /^\d{8,15}$/.test(String(f.conv)) && !(vistos[f.conv] >= f.ult_cliente_ts)).slice(0, Math.min(limite, topeHora - hechos))
+  const lista = filas.filter((f) => /^\d{8,15}$/.test(String(f.conv)) && !(vistos[f.conv] >= f.ult_cliente_ts) && !tomados[f.conv]).slice(0, Math.min(limite, topeHora - hechos))
     .map((f) => ({ conv: f.conv, nombre: f.nombre, ult_cliente_ts: f.ult_cliente_ts, ultimo: String(f.ult_texto || "").slice(0, 200) }));
   return { pausado: false, lista, cotizaciones: cotizaciones.slice(0, Math.max(0, topeHora - hechos)) };
 }
@@ -76,12 +93,27 @@ export function revisarMensaje(m) {
   return "";
 }
 
+// Reserva el chat para esta PC. Solo una gana (la reserva se toma si no existe o si ya venció). forzar = renovar la propia.
+async function reservar(env, conv, ms, forzar = false) {
+  const ahora = Date.now(), k = "resp_toma:" + conv;
+  const r = await env.DB.prepare(`INSERT INTO kv (k,v,exp) VALUES (?,?,?) ON CONFLICT(k) DO UPDATE SET v=excluded.v, exp=excluded.exp WHERE ${forzar ? "1" : "COALESCE(kv.exp,0) < ?"}`)
+    .bind(...(forzar ? [k, String(ahora), ahora + ms] : [k, String(ahora), ahora + ms, ahora])).run();
+  return (r.meta?.changes ?? 1) > 0;
+}
+
 export async function redactar(env, iaJSON, conv, { prueba = false } = {}) {
   const c = await env.DB.prepare("SELECT * FROM w_conv WHERE conv=?").bind(conv).first();
   const fin = async (r, nombre) => {
     if (r.mensaje) r.mensaje = String(r.mensaje).replace(/[¿¡]/g, "");   // una persona no escribe el signo de apertura en WhatsApp
     if (prueba) return r;   // vista previa: no cuenta ni queda en el log
-    await kvPut(env, "resp_auto:" + conv, Date.now());
+    if (r.accion === "responder") await reservar(env, conv, 10 * 60e3, true);   // queda reservado hasta que la PC confirme que salió (/enviar/respondido)
+    else {
+      await kvPut(env, "resp_auto:" + conv, Date.now());
+      if (r.accion === "nada") await env.DB.batch([   // "gracias", "ok", ya contestaste vos…: sale también de "Responder ya" del panel
+        env.DB.prepare("UPDATE w_conv SET visto_ts=? WHERE conv=?").bind(Date.now(), conv),
+        env.DB.prepare("UPDATE tareas SET estado='resuelta' WHERE ref=? AND estado='abierta' AND tipo NOT IN ('comprobante')").bind("w805:" + conv),
+      ]).catch(() => {});
+    }
     const log = JSON.parse((await kvGet(env, "resp_log")) || "[]");
     log.push({ ts: Date.now(), conv, nombre, accion: r.accion, mensaje: r.mensaje || "", motivo: r.motivo || "" });
     await kvPut(env, "resp_log", JSON.stringify(log.slice(-60)));
@@ -91,6 +123,7 @@ export async function redactar(env, iaJSON, conv, { prueba = false } = {}) {
   if (!c) return { accion: "nada", motivo: "chat no encontrado" };
   if (c.ult_yo) return fin({ accion: "nada", motivo: "ya contestaste vos" }, c.nombre);
   if (!prueba && +((await kvGet(env, "resp_auto:" + conv)) || 0) >= (c.ult_cliente_ts || 0)) return { accion: "nada", motivo: "ya lo atendió la otra PC" };   // dos PCs a la vez: no contestar dos veces
+  if (!prueba && !(await reservar(env, conv, 5 * 60e3))) return { accion: "nada", motivo: "lo está atendiendo otra PC" };   // reserva atómica: si dos PCs piden el mismo chat, gana una sola
   const msgs = ((await env.DB.prepare("SELECT yo, tipo, texto, ts FROM w_msg WHERE conv=? ORDER BY ts DESC LIMIT 14").bind(conv).all()).results || []).reverse();
   const ultimo = [...msgs].reverse().find((m) => !m.yo);
   if (!ultimo) return fin({ accion: "nada", motivo: "sin mensaje del cliente" }, c.nombre);
@@ -158,9 +191,18 @@ export async function derivados(env) {
 export async function rutaAutoresp(env, req, p, url, iaJSON, h = {}) {
   const json = (x, s = 200) => Response.json(x, { status: s });
   const body = async () => req.json().catch(() => ({}));
-  if (p === "/enviar/responder") return json({ ok: true, ...(await pendientesResponder(env, { limite: Math.min(Math.max(+url.searchParams.get("limite") || 10, 1), 50), T: h.T, desde: +url.searchParams.get("desde") || 0 })) });
+  if (p === "/enviar/responder") return json({ ok: true, ...(await pendientesResponder(env, { limite: Math.min(Math.max(+url.searchParams.get("limite") || 10, 1), 50), T: h.T, desde: +url.searchParams.get("desde") || 0, dias: +url.searchParams.get("dias") || 2 })) });
   if (p === "/enviar/redactar" && req.method === "POST") return json({ ok: true, ...(await (async () => { const b = await body(); return redactar(env, iaJSON, String(b.conv || ""), { prueba: !!b.prueba }); })()) });
-  if (p === "/enviar/respondido" && req.method === "POST") { const k = "resp_hora:" + hora(); await kvPut(env, k, (+((await kvGet(env, k)) || 0)) + 1); return json({ ok: true }); }
+  if (p === "/enviar/respondido" && req.method === "POST") {   // el mensaje salió: recién ahí el chat queda como atendido
+    const conv = String((await body()).conv || "");
+    if (conv) await env.DB.batch([env.DB.prepare("INSERT INTO kv (k,v,exp) VALUES (?,?,NULL) ON CONFLICT(k) DO UPDATE SET v=excluded.v, exp=NULL").bind("resp_auto:" + conv, String(Date.now())), env.DB.prepare("DELETE FROM kv WHERE k=?").bind("resp_toma:" + conv)]);
+    const k = "resp_hora:" + hora(); await kvPut(env, k, (+((await kvGet(env, k)) || 0)) + 1); return json({ ok: true });
+  }
+  if (p === "/enviar/atendido" && req.method === "POST") {   // la PC vio en WhatsApp que lo último ya es nuestro (el lector no lo había registrado): no se contesta
+    const conv = String((await body()).conv || "");
+    if (conv) await env.DB.batch([env.DB.prepare("INSERT INTO kv (k,v,exp) VALUES (?,?,NULL) ON CONFLICT(k) DO UPDATE SET v=excluded.v, exp=NULL").bind("resp_auto:" + conv, String(Date.now())), env.DB.prepare("DELETE FROM kv WHERE k=?").bind("resp_toma:" + conv), env.DB.prepare("UPDATE w_conv SET visto_ts=? WHERE conv=?").bind(Date.now(), conv)]);
+    return json({ ok: true });
+  }
   if (p === "/enviar/cotizacion-html" && req.method === "POST") return paginaCotizacion(env, String((await body()).id || ""), h.T);
   if (p === "/enviar/cotizacion-enviada" && req.method === "POST") {
     const id = String((await body()).id || "");
@@ -169,7 +211,7 @@ export async function rutaAutoresp(env, req, p, url, iaJSON, h = {}) {
     const k = "resp_hora:" + hora(); await kvPut(env, k, (+((await kvGet(env, k)) || 0)) + 1);
     return json({ ok: true });
   }
-  if (p === "/enviar/reintentar" && req.method === "POST") { await env.DB.prepare("DELETE FROM kv WHERE k=?").bind("resp_auto:" + String((await body()).conv || "")).run(); return json({ ok: true }); }   // falló el envío: que se vuelva a intentar
+  if (p === "/enviar/reintentar" && req.method === "POST") { const conv = String((await body()).conv || ""); await env.DB.batch([env.DB.prepare("DELETE FROM kv WHERE k=?").bind("resp_auto:" + conv), env.DB.prepare("DELETE FROM kv WHERE k=?").bind("resp_toma:" + conv)]); return json({ ok: true }); }   // falló el envío: que se vuelva a intentar
   if (p === "/enviar/cotizacion-guardada" && req.method === "POST") { await kvPut(env, "cotsent:" + String((await body()).id || ""), "guardada"); return json({ ok: true }); }   // PDF guardado en la PC para revisar: no se vuelve a ofrecer, pero sigue en Pendientes del panel
   if (p === "/enviar/pausa" && req.method === "POST") { await pausaAutoresp(env, !!(await body()).pausa); return json({ ok: true }); }
   if (p === "/enviar/derivados") return json({ ok: true, lista: await derivados(env) });
