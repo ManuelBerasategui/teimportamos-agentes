@@ -14,6 +14,7 @@ EXTRA_SEG = int(os.environ.get("RESP_EXTRA_SEG", "10"))          # segundos de m
 PAUSA_MIN = int(os.environ.get("RESP_PAUSA_MIN_SEG", "25"))      # pausa entre un chat y el siguiente
 PAUSA_MAX = int(os.environ.get("RESP_PAUSA_MAX_SEG", "70"))
 COTIZ_MODO = os.environ.get("COTIZ_MODO", "revisar")             # revisar (guarda el PDF para que lo mandes vos) | enviar (lo manda solo)
+TECLEO = float(os.environ.get("RESP_TECLEO", "1"))                # velocidad de tipeo: 1 = normal, 0.6 = más rápido, 1.5 = más lento
 VENTANA = os.environ.get("VENTANA", "minimizada")                # minimizada | oculta | visible
 CAJA = 'footer div[contenteditable="true"]'
 
@@ -33,7 +34,7 @@ def escribir(pg, caja, texto):
             pg.keyboard.press("Shift+Enter")
         else:
             pg.keyboard.type(ch)
-        d = random.uniform(0.09, 0.22)
+        d = random.uniform(0.09, 0.22) * TECLEO
         if ch in ".,?¿!": d += random.uniform(0.15, 0.5)
         if random.random() < 0.04: d += random.uniform(0.6, 1.8)
         time.sleep(d)
