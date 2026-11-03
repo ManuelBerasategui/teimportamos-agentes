@@ -103,9 +103,12 @@ export async function redactar(env, iaJSON, conv, { prueba = false } = {}) {
   // La cotización automática no pudo leer el link de Alibaba: se le piden los datos al cliente (una sola vez)
   const fallos = ((await env.DB.prepare("SELECT k, v FROM kv WHERE k >= ? AND k < ? AND v LIKE 'no-se-pudo:%'").bind("cotauto:" + conv + ":", "cotauto:" + conv + ";").all()).results || [])
     .filter((r) => +r.v.split(":")[1] > (c.ult_yo_ts || 0));
+  const dijoCantidad = /\d/.test(sinContestar.map((m) => String(m.texto || "")).join(" ").replace(/https?:\/\/\S+/gi, ""));   // ¿dio algún número aparte del link?
   for (const f of fallos) {
     if (await kvGet(env, "cotpedido:" + f.k)) continue;
     if (!prueba) await kvPut(env, "cotpedido:" + f.k, Date.now());
+    if (!dijoCantidad) return fin({ accion: "responder", mensaje: ["No me abre bien la página de ese producto desde acá. ¿Me pasás el peso del producto en kg, el precio FOB que figura en Alibaba y cuántas unidades querés traer?",
+      "Se me complica abrir ese link. ¿Me decís cuántas unidades querés traer, el precio FOB que te figura en Alibaba y el peso del producto en kg?"][Math.floor(Math.random() * 2)], motivo: "no se pudo leer el link y no dijo cantidad" }, c.nombre);
     const pide = ["No me abre bien la página de ese producto desde acá. ¿Me pasás el peso del producto en kg y el precio FOB que figura en Alibaba para esa cantidad?",
       "Se me complica abrir ese link. ¿Me decís el precio FOB que te figura en Alibaba para esa cantidad y el peso del producto en kg?"][Math.floor(Math.random() * 2)];
     return fin({ accion: "responder", mensaje: pide, motivo: "no se pudo leer el link para cotizar" }, c.nombre);
@@ -124,7 +127,7 @@ REGLAS (seguí este orden; la primera que aplica manda):
 2. PARA EL DUEÑO → accion "humano" (no contestes): pagos, transferencias, comprobantes, señas; reclamos o enojo; pide una llamada; negocia o compara precios; preguntas sobre una cotización que YA le pasamos; condiciones del servicio (garantías, envíos a terceros, venta sin stock, dropshipping, formas de pago, plazos, mínimos, aduana); pide recomendaciones u opciones; pregunta si sos un bot o una persona; pide datos nuestros (dirección del depósito, CBU, alias, datos para el envío, ubicación); ya dio peso + cantidad + precio FOB (hay que cotizarle);  proveedores que nos ofrecen algo; algo que no entendés o cualquier duda.
 3a. LINK DE ALIBABA SIN CANTIDAD: preguntale solo cuántas unidades quiere (el precio y el peso los sacamos nosotros del link; la cotización se arma sola cuando diga la cantidad). Si ya se lo preguntaste y no contestó, recordáselo corto.
 3b. LINK DE 1688 (o de otro proveedor) sin datos: pedile "${FRASE_COTIZAR} de 1688" (o "del proveedor"). Si ya se lo pediste y no contestó, recordáselo corto.
-4. NOMBRA UN PRODUCTO SIN LINK NI FOTOS (ej: "Xiaomi note 15", "necesito traer 45 pestillos electrónicos", "quiero importar parlantes"): preguntale si tiene el link de Alibaba o 1688, o de algún proveedor; y si no lo tiene, que te mande fotos de referencia del producto. NO ofrezcas el informe de búsqueda, NO pidas peso ni FOB todavía.
+4. NOMBRA UN PRODUCTO SIN LINK NI FOTOS (ej: "Xiaomi note 15", "necesito traer 45 pestillos electrónicos", "quiero importar parlantes"): preguntale si tiene el link de Alibaba o 1688, o de algún proveedor; y si no lo tiene, que te mande fotos de referencia del producto. NO ofrezcas el informe de búsqueda, NO pidas peso ni FOB todavía. EXCEPCIÓN: si nombra un producto de marca definida que ya vendemos desde Paraguay en la tienda (parlantes JBL: Charge, Go, Flip, Clip, Boombox, etc.), NO le pidas link ni fotos: preguntale solo qué cantidad quiere de cada modelo.
 5. PRECIO DE ALGO QUE VIO (ropa, zapatillas, "¿ese precio es por unidad?", "¿cuánto sale por 12?") sin decir cuál: no confirmes ni expliques precios; preguntale qué producto vio (prenda, modelo, zapatilla) y si lo vio en un mensaje de los grupos o en la página, y que te pase la captura o el link.
 6. CATÁLOGO / STOCK ("qué tienen", "lista de precios", "tienen X en stock"): mandale el link https://www.teimportamosarg.com/catalogo y que ahí están los productos y precios.
 7. SALUDO O "QUIERO INFO" sin decir qué: saludalo y preguntale qué producto quiere traer y si tiene link de Alibaba/1688 o fotos de referencia.
