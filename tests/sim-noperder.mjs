@@ -57,4 +57,6 @@ const l9 = await lista();
 chk("14 días por defecto (como el panel)", l9.includes("5491100000007"));
 chk("los que escribieron en las últimas 3 h van antes que los viejos", l9.indexOf("5491100000008") < l9.indexOf("5491100000007") && l9.indexOf("5491100000008") < l9.indexOf("5491100000003"));
 chk("informa cuántos quedan", (await A.pendientesResponder(env, { limite: 1 })).quedan >= 3);
+// 10) Cierres sin IA, y "sí" solo no cuenta como cierre (puede ser respuesta a una pregunta nuestra)
+for (const [t, e] of [["Dale no hay problema", true], ["Muchas gracias!!", true], ["👍", true], ["si", false], ["Dale, cuánto sale?", false], ["Empiezo de a poco", false], ["hola buenisiimo gracias", false]]) chk(`cierre "${t}" → ${e}`, A.esCierre(t) === e);
 console.log(`\nsim-noperder: ${ok} ok, ${mal} fallas`); process.exit(mal ? 1 : 0);

@@ -96,6 +96,20 @@ export function revisarMensaje(m) {
   return "";
 }
 
+// "gracias", "dale joya", "ok perfecto", "no hay problema", "👍"…: solo palabras de cierre, sin pregunta. Se contestan con nada.
+const CIERRE = new Set("gracias graciass mil muchas muchisimas muchísimas ok okey oka okk dale joya joyita listo lista perfecto perfecta genial buenisimo buenísimo barbaro bárbaro excelente igualmente de nada no hay problema problemas tranqui tranca esta bien está bien bien vale hno hermano amigo amiga bro crack capo maestro genio jefe che bueno buenas noches saludos abrazo besos un abrazo".split(" "));
+export function esCierre(t) {
+  const x = String(t || "").toLowerCase().trim();
+  if (!x || x.length > 45 || /[?¿]|\d|https?:/.test(x)) return false;
+  const palabras = x.normalize("NFC").replace(/[^\p{L}\s]/gu, " ").split(/\s+/).filter(Boolean);
+  if (!palabras.length) return /^[\p{Extended_Pictographic}\s!.]+$/u.test(x);   // solo emojis (👍🙏)
+  return palabras.every((w) => CIERRE.has(w) || /^(gra+cias+|o+k+|da+le+|jo+ya+)$/.test(w));
+}
+
+// Voseo como se escribe en WhatsApp: "avisame", "pasame", "decime" (sin tilde)
+const VOSEO = Object.fromEntries(["avísame","pásame","mándame","decíme","contáme","fijáte","escribíme","mostráme","confirmáme","dejáme","llamáme","pasáme","mandáme","avisáme","contame","mirá"].filter((w) => w !== "contame" && w !== "mirá").map((w) => [w, w.normalize("NFD").replace(/[\u0300-\u036f]/g, "")]));
+const VOSEO_RE = new RegExp(`(?<![\\p{L}])(${Object.keys(VOSEO).join("|")})(?![\\p{L}])`, "giu");
+
 // Reserva el chat para esta PC. Solo una gana (la reserva se toma si no existe o si ya venció). forzar = renovar la propia.
 async function reservar(env, conv, ms, forzar = false) {
   const ahora = Date.now(), k = "resp_toma:" + conv;
@@ -107,7 +121,7 @@ async function reservar(env, conv, ms, forzar = false) {
 export async function redactar(env, iaJSON, conv, { prueba = false } = {}) {
   const c = await env.DB.prepare("SELECT * FROM w_conv WHERE conv=?").bind(conv).first();
   const fin = async (r, nombre) => {
-    if (r.mensaje) r.mensaje = String(r.mensaje).replace(/[¿¡]/g, "");   // una persona no escribe el signo de apertura en WhatsApp
+    if (r.mensaje) r.mensaje = String(r.mensaje).replace(/[¿¡]/g, "").replace(VOSEO_RE, (w) => { const sin = VOSEO[w.toLowerCase()]; return w[0] === w[0].toUpperCase() ? sin[0].toUpperCase() + sin.slice(1) : sin; });   // una persona no escribe ¿ ¡ ni "avísame"
     if (prueba) return r;   // vista previa: no cuenta ni queda en el log
     if (r.accion === "responder") await reservar(env, conv, 10 * 60e3, true);   // queda reservado hasta que la PC confirme que salió (/enviar/respondido)
     else {
@@ -149,6 +163,7 @@ export async function redactar(env, iaJSON, conv, { prueba = false } = {}) {
       "Se me complica abrir ese link. ¿Me decís el precio FOB que te figura en Alibaba para esa cantidad y el peso del producto en kg?"][Math.floor(Math.random() * 2)];
     return fin({ accion: "responder", mensaje: pide, motivo: "no se pudo leer el link para cotizar" }, c.nombre);
   }
+  if (esCierre(ultimo.texto) && sinContestar.every((m) => esCierre(m.texto))) return fin({ accion: "nada", motivo: "agradece o confirma, no pide respuesta" }, c.nombre);
   const ejemplos = ((await env.DB.prepare("SELECT texto FROM w_msg WHERE yo=1 AND grupo=0 AND tipo='text' AND length(texto) BETWEEN 12 AND 220 ORDER BY ts DESC LIMIT 40").all()).results || []).map((x) => "- " + String(x.texto).replace(/\s+/g, " ")).slice(0, 25);
   const charla = msgs.map((m) => `${m.yo ? "YO" : "CLIENTE"}: ${String(m.texto || `[${m.tipo}]`).replace(/\s+/g, " ").slice(0, 300)}`).join("\n");
   const ia = await iaJSON(env, `Sos el dueño de "Te Importamos" (importación por encargo desde China y catálogo con stock, Rosario, Argentina) contestando por WhatsApp. Escribí SOLO el próximo mensaje tuyo al cliente.
@@ -160,11 +175,11 @@ ${charla}
 
 REGLAS (seguí este orden; la primera que aplica manda):
 1. CIERRES Y COTIZACIÓN EN CAMINO: si el cliente mandó link de Alibaba Y cantidad, o contestó la cantidad de un link de Alibaba que mandó antes (la cotización se arma sola y se la mandamos) → accion "nada". También "nada" si lo último del cliente no pide respuesta ("gracias", "ok", "dale", "👍", "listo", "ya te paso", "después te mando", "lo veo y te aviso") → accion "nada".
-1b. LA IA DE WHATSAPP YA ESTÁ ATENDIENDO: si el último mensaje de YO es el menú automático de bienvenida ("Bienvenido!! Gracias por escribir… Mandame el número…") y el cliente solo contestó con un número o una opción, ese chat lo maneja la IA de WhatsApp Business → accion "nada". Si el último de YO es "Te voy a derivar con alguien del equipo…" y el cliente siguió escribiendo → accion "humano" (lo ve el dueño).
+1b. LA IA DE WHATSAPP YA ESTÁ ATENDIENDO: si el último mensaje de YO es el menú automático de bienvenida ("Bienvenido!! Gracias por escribir… Mandame el número…") y el cliente solo contestó con un número o una opción, ese chat lo maneja la IA de WhatsApp Business → accion "nada". Si el último de YO es "Te voy a derivar con alguien del equipo…" y el cliente siguió escribiendo, NO lo dejes para el dueño solo por eso: vos sos quien atiende, seguí con las reglas de abajo.
 2. PARA EL DUEÑO → accion "humano" (no contestes): pagos, transferencias, comprobantes, señas; reclamos o enojo; pide una llamada; negocia o compara precios; preguntas sobre una cotización que YA le pasamos; condiciones del servicio (garantías, envíos a terceros, venta sin stock, dropshipping, formas de pago, plazos, mínimos, aduana); pide recomendaciones u opciones; pregunta si sos un bot o una persona; pide datos nuestros (dirección del depósito, CBU, alias, datos para el envío, ubicación); ya dio peso + cantidad + precio FOB (hay que cotizarle);  proveedores que nos ofrecen algo; algo que no entendés o cualquier duda.
 3a. LINK DE ALIBABA SIN CANTIDAD: preguntale solo cuántas unidades quiere (el precio y el peso los sacamos nosotros del link; la cotización se arma sola cuando diga la cantidad). Si ya se lo preguntaste y no contestó, recordáselo corto.
 3b. LINK DE 1688 (o de otro proveedor) sin datos: pedile "${FRASE_COTIZAR} de 1688" (o "del proveedor"). Si ya se lo pediste y no contestó, recordáselo corto.
-4. NOMBRA UN PRODUCTO SIN LINK NI FOTOS (ej: "Xiaomi note 15", "necesito traer 45 pestillos electrónicos", "quiero importar parlantes"): preguntale si tiene el link de Alibaba o 1688, o de algún proveedor; y si no lo tiene, que te mande fotos de referencia del producto. NO ofrezcas el informe de búsqueda, NO pidas peso ni FOB todavía. EXCEPCIÓN: si nombra un producto de marca definida que ya vendemos desde Paraguay en la tienda (parlantes JBL: Charge, Go, Flip, Clip, Boombox, etc.), NO le pidas link ni fotos: preguntale solo qué cantidad quiere de cada modelo.
+4. NOMBRA UN PRODUCTO SIN LINK NI FOTOS (ej: "Xiaomi note 15", "necesito traer 45 pestillos electrónicos", "quiero importar parlantes"): preguntale si tiene el link de Alibaba o 1688, o de algún proveedor; y si no lo tiene, que te mande fotos de referencia del producto. NO ofrezcas el informe de búsqueda, NO pidas peso ni FOB todavía. EXCEPCIÓN: si nombra un producto de marca definida que ya vendemos desde Paraguay en la tienda (parlantes JBL: Charge, Go, Flip, Clip, Boombox, etc.), o el mensaje viene del botón de la tienda web ("quiero consultar precio y disponibilidad por el producto …"), NO le pidas link ni fotos ni lo dejes para el dueño: preguntale solo qué cantidad quiere de cada producto.
 5. PRECIO DE ALGO QUE VIO (ropa, zapatillas, "¿ese precio es por unidad?", "¿cuánto sale por 12?") sin decir cuál: no confirmes ni expliques precios; preguntale qué producto vio (prenda, modelo, zapatilla) y si lo vio en un mensaje de los grupos o en la página, y que te pase la captura o el link.
 6. CATÁLOGO / STOCK ("qué tienen", "lista de precios", "tienen X en stock"): mandale el link https://www.teimportamosarg.com/catalogo y que ahí están los productos y precios.
 7. SALUDO O "QUIERO INFO" sin decir qué: saludalo y preguntale qué producto quiere traer y si tiene link de Alibaba/1688 o fotos de referencia.

@@ -226,12 +226,15 @@ def main():
     global QUEDAN
     prueba, seguir = "--prueba" in sys.argv, "--seguir" in sys.argv
     if not prueba and not (H_DESDE <= datetime.now().hour < H_HASTA):
-        sys.exit(f"Fuera de horario ({H_DESDE}:00 a {H_HASTA}:00). Cambialo en .env si querés.")
+        if not seguir: sys.exit(f"Fuera de horario ({H_DESDE}:00 a {H_HASTA}:00). Cambialo en .env si querés.")
+        print(f"Fuera de horario: arranco solo a las {H_DESDE}:00 (dejalo abierto).")
+        while not (H_DESDE <= datetime.now().hour < H_HASTA):
+            if not dormir(300): return
     if prueba:
         pend = hay_pendientes() or ([], [])
         lista, cots = pend
         for c in cots: print(f"\n- COTIZACIÓN N° {c['num']} lista para {c['nombre']} ({c['conv']}): total USD {c['total']} → se enviaría el PDF con un texto corto.")
-        print(f"\n{len(lista)} chats esperando respuesta (vista previa, no se envía nada).")
+        print(f"\n{QUEDAN} chats sin contestar en total; acá van los primeros {len(lista)} (vista previa, no se envía nada).")
         for it in lista:
             d = api("/enviar/redactar", {"conv": it["conv"], "prueba": True})
             print(f"\n- {it['nombre']} ({it['conv']}) dijo: {it['ultimo']}\n  → {d['accion'].upper()}: {d.get('mensaje') or d.get('motivo', '')}" + (f"\n  PARA VOS: {d.get('resumen') or d.get('motivo', '')}" if d['accion'] == 'humano' else ""))
@@ -247,9 +250,20 @@ def main():
         enviados = 0; fallidas = set(); seg_enviados = 0; seg_saltados = set(); chats_saltados = set()   # los que fallaron se reintentan en la próxima corrida
         try:
             while not parar():
-                if not (H_DESDE <= datetime.now().hour < H_HASTA): print("Fuera de horario, termino."); break
-                pend = hay_pendientes()
-                if pend is None: break
+                if not (H_DESDE <= datetime.now().hour < H_HASTA):
+                    if not seguir: print("Fuera de horario, termino."); break
+                    print(f"{datetime.now():%H:%M} · fuera de horario: sigo a las {H_DESDE}:00.")
+                    if not dormir(300): break
+                    continue
+                try: pend = hay_pendientes()
+                except Exception as e:
+                    print(f"{datetime.now():%H:%M} · no pude hablar con el panel ({str(e).splitlines()[0][:80]}). Reintento en 1 minuto.")
+                    if not dormir(60): break
+                    continue
+                if pend is None:   # pausado desde Telegram: espera en vez de cerrarse
+                    if not seguir: break
+                    if not dormir(120): break
+                    continue
                 lista, cots = pend
                 for c in cots:
                     if parar(): break
@@ -296,7 +310,8 @@ def main():
                 print(f"\n{datetime.now():%H:%M} · quedan {QUEDAN} chat(s) sin contestar.")
                 for it in lista:
                     if parar(): break
-                    d = api("/enviar/redactar", {"conv": it["conv"]})
+                    try: d = api("/enviar/redactar", {"conv": it["conv"]})
+                    except Exception as e: print(f"  No pude pedir la respuesta de {it['conv']} ({str(e).splitlines()[0][:80]}). Sigo con otro."); chats_saltados.add(it["conv"]); continue
                     print(f"\n{it['nombre']} ({it['conv']}): {it['ultimo']}\n  → {d['accion']}: {d.get('mensaje') or d.get('motivo', '')}")
                     if d["accion"] == "humano": anotar_para_vos(it, d)
                     if d["accion"] != "responder": continue
@@ -318,8 +333,14 @@ def main():
                         caja = pg.locator(CAJA).first   # se vuelve a buscar: WhatsApp redibuja la caja mientras "lee"
                         if caja.inner_text().strip(): print("  La caja ya tenía texto (¿lo estás escribiendo vos?). Salto."); api("/enviar/reintentar", {"conv": it["conv"]}); chats_saltados.add(it["conv"]); continue
                         if not escribir(pg, caja, d["mensaje"]): break
-                        time.sleep(random.uniform(1.0, 3.0)); caja.press("Enter"); time.sleep(3)
-                        if pg.locator(CAJA).first.inner_text().strip(): print("  No se envió (la caja sigue con texto). Frenando por seguridad."); return
+                        time.sleep(random.uniform(1.0, 3.0))
+                        if ultimo_del_cliente(pg) is False:   # mientras tipeaba le escribiste vos (por ejemplo le mandaste un PDF)
+                            caja.click(); pg.keyboard.press("Control+A"); pg.keyboard.press("Delete")
+                            print("  Mientras escribía le contestaste vos: borro lo mío y no lo mando."); api("/enviar/atendido", {"conv": it["conv"]}); continue
+                        caja.press("Enter"); time.sleep(3)
+                        if pg.locator(CAJA).first.inner_text().strip():
+                            print("  No se envió (la caja sigue con texto). Lo salteo y sigo con el resto.")
+                            debug_pantalla(pg, f"no se envió {it['conv']}"); api("/enviar/reintentar", {"conv": it["conv"]}); chats_saltados.add(it["conv"]); continue
                     except Exception as e:
                         debug_pantalla(pg, f"chat {it['conv']}: {e}")
                         print(f"  Falló este chat ({str(e).splitlines()[0]}). Lo salto; queda en 'Responder ya' y se reintenta más tarde.")
@@ -327,7 +348,10 @@ def main():
                         try: api("/enviar/reintentar", {"conv": it["conv"]})
                         except Exception: pass
                         continue
-                    api("/enviar/respondido", {"conv": it["conv"]}); enviados += 1; print("  Enviado ✅")
+                    for _ in range(3):   # que quede marcado aunque el panel tarde (si no, la próxima vez igual ve que lo último es nuestro)
+                        try: api("/enviar/respondido", {"conv": it["conv"]}); break
+                        except Exception: time.sleep(5)
+                    enviados += 1; print("  Enviado ✅")
                     if not dormir(random.randint(PAUSA_MIN, PAUSA_MAX)): break
         except KeyboardInterrupt:
             print("\nCortado.")
@@ -336,4 +360,13 @@ def main():
         except Exception: pass   # al cortar con Ctrl+C Windows ya cerró Chrome: no es un error
 
 if __name__ == "__main__":
-    main()
+    while True:
+        try:
+            main(); break
+        except KeyboardInterrupt:
+            print("\nCortado."); break
+        except Exception as e:
+            if "--seguir" not in sys.argv or parar(): raise
+            print(f"\n{datetime.now():%H:%M} · se cortó por un error ({str(e).splitlines()[0][:100]}). Reinicio solo en 30 s (Ctrl+C para salir)...")
+            try: time.sleep(30)
+            except KeyboardInterrupt: break
