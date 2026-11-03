@@ -106,7 +106,7 @@ def main():
         return
     if "--escritorio" in sys.argv: return main_escritorio(lista, auto)
     with sync_playwright() as p:
-        ctx = p.chromium.launch_persistent_context(str(AQUI / "perfil"), headless=False, viewport={"width": 1200, "height": 800})
+        ctx = p.chromium.launch_persistent_context(str(AQUI / "perfil"), headless=False, no_viewport=True, args=["--start-maximized"])
         pg = ctx.pages[0] if ctx.pages else ctx.new_page()
         pg.goto("https://web.whatsapp.com")
         print("Si pide QR, escanealo con el celular (solo la primera vez). Esperando WhatsApp Web...")

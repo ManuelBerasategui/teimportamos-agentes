@@ -274,9 +274,10 @@ def main():
             print(f"\n- {it['nombre']} ({it['conv']}) dijo: {it['ultimo']}\n  → {d['accion'].upper()}: {d.get('mensaje') or d.get('motivo', '')}" + (f"\n  PARA VOS: {d.get('resumen') or d.get('motivo', '')}" if d['accion'] == 'humano' else ""))
         return
     if "--escritorio" in sys.argv: return main_escritorio(seguir)
-    args = {"minimizada": ["--start-minimized"], "oculta": ["--window-position=-32000,-32000"]}.get(VENTANA, [])
+    # La página ocupa la ventana real (antes era un tamaño fijo de 1200x800 y en pantallas chicas quedaba cortada la barra de escribir)
+    args = {"minimizada": ["--start-minimized", "--window-size=1280,800"], "oculta": ["--window-position=-32000,-32000", "--window-size=1280,800"]}.get(VENTANA, ["--start-maximized"])
     with sync_playwright() as p:
-        ctx = p.chromium.launch_persistent_context(str(AQUI / "perfil"), headless=False, viewport={"width": 1200, "height": 800}, args=args)
+        ctx = p.chromium.launch_persistent_context(str(AQUI / "perfil"), headless=False, no_viewport=True, args=args)
         pg = ctx.pages[0] if ctx.pages else ctx.new_page()
         pg.goto("https://web.whatsapp.com")
         print("Si pide QR, escanealo con el celular (solo la primera vez). Esperando WhatsApp Web...")
