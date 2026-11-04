@@ -42,6 +42,9 @@ Limitación: no puede saber si el número existe en WhatsApp. Con el modo Chrome
 - **Estilo**: cada noche se recalcula cómo escribís (largo, saludos, frases) y se guardan tus charlas como ejemplos: el agente ve las más parecidas a lo que escribió el cliente.
 - **Entrenamiento nocturno (4 AM)**: toma charlas reales, el agente contesta sin ver tu respuesta, se compara con la tuya y de los errores salen reglas. Una regla nueva solo se adopta si mejora el puntaje probada con los mismos casos y no empeora nada.
 - **Aprende de producción**: revisa qué pasó después de cada respuesta (cliente confundido, vos tuviste que intervenir, algo que dejó para vos y era simple).
+- **Cotizaciones: de revisar a mandar directo**: al principio el agente guarda cada PDF en `cotizaciones\` para que lo revises. Con `entrenar.bat --bien N` confirmás que la cotización N° N estaba bien; con 7 seguidas empieza a mandarlas directo. `entrenar.bat --mal N "motivo"` vuelve la racha a 0, vuelve al modo revisión y el error alimenta el entrenamiento. (`COTIZ_MODO=revisar_siempre` en `.env` lo deja en revisión para siempre.)
+- **Plazos**: contesta solo con los plazos que definiste (catálogo Paraguay ~15 días, ropa inmediata, mates y zapatillas ~10 días, China por avión 10 a 15 días y por barco 40 a 60 días desde el despacho). Mínimos y comisiones siguen siendo tuyos.
+- **Fotos sin link**: si el cliente manda solo fotos del producto, le pide precio FOB, peso por unidad y cantidad. Si la charla es de pagos o comprobantes, lo deja para vos.
 - `entrenar.bat`: muestra lo que aprendió. `entrenar.bat --ya 3`: pide 3 rondas ahora (una por minuto). `entrenar.bat --regla "texto"`: le enseña una regla tuya (fija, no se borra sola). `entrenar.bat --borrar N`.
 
 ## Contestador automático (responder.py)

@@ -13,6 +13,7 @@ from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 EXTRA_SEG = int(os.environ.get("RESP_EXTRA_SEG", "2"))          # segundos de más "leyendo" antes de escribir
 PAUSA_MIN = int(os.environ.get("RESP_PAUSA_MIN_SEG", "8"))      # pausa entre un chat y el siguiente
 PAUSA_MAX = int(os.environ.get("RESP_PAUSA_MAX_SEG", "20"))
+COT_DIRECTO = False
 COTIZ_MODO = os.environ.get("COTIZ_MODO", "revisar")             # revisar (guarda el PDF para que lo mandes vos) | enviar (lo manda solo)
 DIAS = int(os.environ.get("RESP_DIAS", "14"))                     # cuántos días para atrás mira chats sin responder (máx. 14)
 SEGUIMIENTOS = os.environ.get("RESP_SEGUIMIENTOS", "1") == "1"   # sin chats para contestar, manda los seguimientos del panel
@@ -77,6 +78,7 @@ def hay_pendientes():
     global QUEDAN
     if r.get("tope"): print("Llegué al tope de respuestas por hora. Espero."); QUEDAN = 1; return [], []
     QUEDAN = r.get("quedan", len(r["lista"]))
+    global COT_DIRECTO; COT_DIRECTO = bool(r.get("cot_directo"))   # el servidor lo activa cuando confirmaste 7 cotizaciones bien seguidas
     return r["lista"], r.get("cotizaciones", [])
 
 QUEDAN = 0   # chats sin contestar que quedan en total (si hay, no se hacen seguimientos)
@@ -346,7 +348,7 @@ def main():
                     if parar(): break
                     if c["id"] in fallidas: continue
                     print(f"\nCotización N° {c['num']} para {c['nombre']} ({c['conv']}) · total USD {c['total']}")
-                    if COTIZ_MODO != "enviar":   # modo revisión: deja el PDF en la carpeta "cotizaciones" y no manda nada
+                    if COTIZ_MODO == "revisar_siempre" or not (COTIZ_MODO == "enviar" or COT_DIRECTO):   # modo revisión: deja el PDF en la carpeta "cotizaciones" y no manda nada
                         try:
                             ruta = hacer_pdf(p, c); (AQUI / "cotizaciones").mkdir(exist_ok=True)
                             nombre_pdf = re.sub(r"[^\w.-]+", "_", f"Cotizacion_{c['num']}_{c['nombre']}") + ".pdf"

@@ -194,4 +194,48 @@ chk("cada decisión real se registra con su contexto y la nota del juez", reg.le
 await A.redactar(env, iaTodo, "5491166", { T, prueba: true });
 chk("la vista previa (--prueba) no registra nada", JSON.parse(db.prepare("SELECT v FROM kv WHERE k='ent:casos'").get().v).length === 1);
 
+// 8) Reglas del dueño: plazos, fotos y cotizaciones que pasan de revisar a mandar directo
+let promptVisto = "";
+const iaVe = async (e, p) => { if (p.includes("revisor de calidad")) return { ok: true, puntaje: 9 }; promptVisto = p; return { accion: "responder", mensaje: "una vez despachado llega en 10 a 15 dias por avion", motivo: "plazo" }; };
+db.prepare("DELETE FROM kv WHERE k LIKE 'resp_%'").run();
+conv("5491177", "Pau", "cuanto tarda en llegar?", 2 * 60e3); msg("5491177", 0, "cuanto tarda en llegar?", 2 * 60e3);
+r = await A.redactar(env, iaVe, "5491177", { T, prueba: true });
+chk("plazos: el prompt trae los plazos del dueño (Paraguay, ropa, mates, zapatillas, China)", /15 días/.test(promptVisto) && /Ropa/.test(promptVisto) && /Mates/.test(promptVisto) && /40 a 60 días/.test(promptVisto));
+chk("plazos: contesta con el plazo (ya no lo deriva siempre)", r.accion === "responder" && /10 a 15/.test(r.mensaje) && !/ plazos, /.test(promptVisto.split("PARA EL DUEÑO")[1]?.split("2b.")[0] || ""));
+conv("5491188", "Foto", "(image)", 2 * 60e3); msg("5491188", 0, "", 2 * 60e3, "image");
+r = await A.redactar(env, iaVe, "5491188", { T, prueba: true });
+chk("foto sin link: pide precio fob, peso por unidad y cantidad (frase del dueño)", r.accion === "responder" && /precio fob del producto, peso en kg por unidad, y cuantas unidades buscas/i.test(r.mensaje.normalize("NFD").replace(/[\u0300-\u036f]/g, "")) && !/[¿¡]/.test(r.mensaje));
+r = await A.redactar(env, iaVe, "5491188", { T, prueba: true });
+conv("5491199", "Pago", "(image)", 2 * 60e3); msg("5491199", 0, "te hice la transferencia, te paso el comprobante", 5 * 60e3); msg("5491199", 0, "", 2 * 60e3, "image");
+r = await A.redactar(env, iaVe, "5491199", { T, prueba: true });
+chk("foto de un comprobante de pago: NO se la trata como producto, queda para el dueño", r.accion === "humano");
+conv("5491200", "Re", "(image)", 2 * 60e3); msg("5491200", 0, "mandame foto", 90 * 60e3); msg("5491200", 1, A.FRASE_FOTO, 60 * 60e3); msg("5491200", 0, "", 2 * 60e3, "image");
+r = await A.redactar(env, iaVe, "5491200", { T, prueba: true });
+chk("si ya se los pidió, no lo repite: queda para el dueño", r.accion === "humano");
+conv("5491201", "Au", "(audio)", 2 * 60e3); msg("5491201", 0, "", 2 * 60e3, "ptt");
+r = await A.redactar(env, iaVe, "5491201", { T, prueba: true });
+chk("un audio sigue siendo para el dueño", r.accion === "humano");
+// racha de cotizaciones
+let est7 = await E.estadoCotizaciones(env);
+chk("al principio las cotizaciones se guardan para revisar", est7.directo === false && est7.racha === 0);
+let rp = await A.pendientesResponder(env, { limite: 5, T });
+chk("el servidor avisa a la PC que todavía debe revisar", rp.cot_directo === false);
+for (let i = 1; i <= 6; i++) await E.revisarCotizacion(env, 100 + i, true);
+est7 = await E.estadoCotizaciones(env);
+chk("6 bien seguidas: todavía revisa", est7.racha === 6 && est7.directo === false && est7.faltan === 1);
+await E.revisarCotizacion(env, 101, true);
+chk("marcar dos veces la misma no suma", (await E.estadoCotizaciones(env)).racha === 6);
+await E.revisarCotizacion(env, 107, true);
+est7 = await E.estadoCotizaciones(env);
+chk("a la 7ª bien seguida pasa a mandar directo", est7.directo === true && est7.racha === 7);
+rp = await A.pendientesResponder(env, { limite: 5, T });
+chk("el servidor le avisa a la PC que mande directo", rp.cot_directo === true);
+db.prepare("INSERT INTO cotiz_manual (id, ts, num, quien, cliente, datos) VALUES ('zz', ?, 200, 'auto', 'X', ?)").run(ahora, JSON.stringify({ items: [{ nombre: "Cerradura", cantidad: 45, peso: 2.5, precio: 2.34 }] }));
+const mal2 = await rr("/enviar/cotizacion-revisada", { num: 200, bien: false, motivo: "el peso estaba mal" });
+est7 = await E.estadoCotizaciones(env);
+chk("una cotización marcada mal: racha a 0 y vuelve a revisar", mal2.ok && est7.racha === 0 && est7.directo === false);
+const fl = JSON.parse(db.prepare("SELECT v FROM kv WHERE k='ent:fallas'").get().v);
+chk("el error de la cotización alimenta el entrenamiento", fl.some((f) => /peso estaba mal/.test(f.motivo) && /2.5 kg por unidad/.test(f.agente)));
+chk("la ruta de aprendizaje muestra la racha", (await rr("/enviar/aprendizaje", {}, "GET")).cotizaciones.meta === 7);
+
 console.log(`\nsim-entrenador: ${ok} ok, ${mal} fallas`); process.exit(mal ? 1 : 0);

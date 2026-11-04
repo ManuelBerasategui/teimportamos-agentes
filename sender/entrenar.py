@@ -3,6 +3,8 @@ Uso:  python entrenar.py                 -> muestra lo que aprendió (reglas, pu
       python entrenar.py --ya [N]        -> pide N rondas de entrenamiento ahora (una por minuto; 3 si no ponés N)
       python entrenar.py --regla "texto" -> le enseña una regla tuya (queda fija: el entrenamiento nunca la borra)
       python entrenar.py --borrar N      -> saca la regla número N
+      python entrenar.py --bien N        -> confirmás que la cotización N° N que armó el agente estaba bien (7 seguidas y las manda directo)
+      python entrenar.py --mal N "motivo"-> estaba mal: la racha vuelve a 0, vuelve a guardarlas para revisar y aprende del error
 Por la noche (4 AM) entrena solo con tus charlas reales: contesta sin ver tu respuesta, se compara y de los errores salen reglas
 nuevas; una regla solo se queda si mejora el puntaje."""
 import sys
@@ -40,6 +42,9 @@ def mostrar(d):
             print(f"  + regla nueva: {r}")
         for r in u.get("descartadas") or []:
             print(f"  - descartada (no mejoraba): {r}")
+    cq = d.get("cotizaciones")
+    if cq:
+        print(f"\nCotizaciones: {cq.get('racha')} de {cq.get('meta')} bien seguidas. " + ("MANDA DIRECTO." if cq.get("directo") else "Todavía las guarda para revisar."))
     print(f"\nErrores de producción esperando revisión: {d.get('erroresPendientes', 0)}. Rondas pedidas pendientes: {d.get('pedido', 0)}")
     cs = d.get("ultimosCasos") or []
     if cs:
@@ -58,6 +63,18 @@ def main():
         mostrar(api("/enviar/aprendizaje", {"agregar": txt}))
     elif "--borrar" in a:
         mostrar(api("/enviar/aprendizaje", {"borrar": int(a[a.index("--borrar") + 1]) - 1}))
+    elif "--bien" in a or "--mal" in a:
+        bien = "--bien" in a
+        i = a.index("--bien" if bien else "--mal")
+        if len(a) <= i + 1 or not a[i + 1].isdigit():
+            sys.exit("Falta el número de cotización. Ej: entrenar.bat --bien 12")
+        d = api("/enviar/cotizacion-revisada", {"num": int(a[i + 1]), "bien": bien, "motivo": " ".join(a[i + 2:])})
+        if d.get("ya"):
+            print("Esa cotización ya la habías marcado.")
+        if d.get("directo"):
+            print(f"Racha: {d['racha']} seguidas bien. El agente YA manda las cotizaciones directo. Si alguna sale mal: entrenar.bat --mal N \"motivo\" y vuelve a guardarlas para revisar.")
+        else:
+            print(f"Racha: {d['racha']} de {d['meta']} cotizaciones seguidas bien. " + (f"Faltan {d['faltan']} para que las mande directo." if bien else "Vuelve el modo revisión; el error quedó anotado para que aprenda."))
     elif "--ya" in a:
         i = a.index("--ya")
         n = int(a[i + 1]) if len(a) > i + 1 and a[i + 1].isdigit() else 3

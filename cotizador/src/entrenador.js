@@ -99,6 +99,11 @@ export function chequeoDuro(mensaje, est, msgs = []) {
 }
 
 const charlaTexto = (msgs) => msgs.map((m) => `${m.yo ? "YO" : "CLIENTE"}: ${String(m.texto || `[${m.tipo || "archivo"}]`).replace(/\s+/g, " ").slice(0, 300)}`).join("\n");
+export const PLAZOS = `PLAZOS DE ENTREGA (son los únicos que se pueden decir; mínimos y comisiones los contesta el dueño):
+- Productos del catálogo de tecnología y bazar (vienen de Paraguay): aproximadamente 15 días.
+- Ropa (viene de Argentina): entrega inmediata. Mates: aproximadamente 10 días. Zapatillas: aproximadamente 10 días.
+- Productos que se importan desde China: "una vez despachado, 10 a 15 días por avión; 40 a 60 días una vez despachado por barco".
+- Si no está claro de dónde viene el producto, preguntale qué producto es antes de dar un plazo.`;
 export const OBJETIVO = `Cotizamos solos cuando el cliente manda link de Alibaba + cantidad, o cuando nos pasa peso del producto en gramos, cantidad de unidades y precio FOB unitario. Si falta algo, hay que conseguir esos 3 datos en la menor cantidad de mensajes: pedir TODO lo que falte junto en un solo mensaje y nunca pedir lo que ya dio.`;
 
 export async function juzgar(env, iaJSON, { msgs, mensaje, est, reglas = [] }) {
@@ -108,13 +113,14 @@ export async function juzgar(env, iaJSON, { msgs, mensaje, est, reglas = [] }) {
     r = await iaJSON(env, `Sos el revisor de calidad del contestador de "Te Importamos" (importación por encargo desde China, Rosario). Evaluá el BORRADOR que mandaría el agente como si fueras el dueño y lo leyera su cliente.
 Cómo escribo yo: ${perfilTexto(est) || "tono cercano, voseo, directo, mensajes cortos"}
 ${reglas.length ? "Reglas que aprendí:\n" + reglasTexto(reglas) + "\n" : ""}OBJETIVO DEL NEGOCIO: ${OBJETIVO}
+${PLAZOS}
 
 CONVERSACIÓN:
 ${charlaTexto(msgs)}
 
 BORRADOR: "${mensaje}"
 
-Puntaje de 1 a 10 (7 o más = se puede enviar). Criterios: (1) contesta lo que el cliente realmente escribió o preguntó; (2) avanza hacia el objetivo del negocio sin pedir lo que ya dio; (3) no inventa datos, precios, plazos ni promete cosas; (4) suena a mí: tono, largo y vocabulario, sin ¿ ni ¡ ni frases de call center; (5) no repite lo que ya dije.
+Puntaje de 1 a 10 (7 o más = se puede enviar). Criterios: (1) contesta lo que el cliente realmente escribió o preguntó; (2) avanza hacia el objetivo del negocio sin pedir lo que ya dio; (3) no inventa datos, precios ni promete cosas (los plazos de entrega son válidos solo si coinciden con los DATOS DE PLAZOS); (4) suena a mí: tono, largo y vocabulario, sin ¿ ni ¡ ni frases de call center; (5) no repite lo que ya dije.
 Devolvé JSON: {"ok":true|false,"puntaje":1-10,"fallas":["falla corta"],"mensaje_mejorado":"versión corregida (solo si puntaje<7; si no, vacío)"}`, { prioridad: true }).catch(() => null);
   }
   const puntaje = Number.isFinite(+r?.puntaje) && r?.puntaje !== null ? +r.puntaje : null;   // sin juez (IA caída): valen solo los chequeos duros
@@ -167,6 +173,7 @@ Puntuá al agente de 1 a 10: ¿habría sido una respuesta igual de buena que la 
 - Si el agente lo dejó para mí ("humano") y mi respuesta real trató de pagos, reclamos, precios, negociación, condiciones o algo que él no puede resolver, es CORRECTO (8 o más).
 - Si el agente no contestó ("nada") pero yo contesté algo que había que contestar, o si contestó algo que yo no habría dicho, es un error.
 OBJETIVO DEL NEGOCIO: ${OBJETIVO}
+${PLAZOS}
 
 CONVERSACIÓN:
 ${charlaTexto(ctx.map((m) => ({ yo: m.yo, texto: m.t })))}
@@ -252,7 +259,7 @@ export async function cronEntrenador(env, iaJSON, decidir, tiempo = Date.now()) 
 
 export async function informe(env) {
   const [reglas, hist, ultimo, fallas, casos, est] = await Promise.all([cargarReglas(env), leer(env, K.hist, []), leer(env, K.ultimo, null), leer(env, K.fallas, []), leer(env, K.casos, []), cargarEstilo(env)]);
-  return { reglas, hist: hist.slice(-12), ultimo, erroresPendientes: fallas.length, pedido: +((await kvGet(env, K.pedido)) || 0), estilo: est ? { ts: est.ts, ...est.stats, pares: est.pares.length } : null,
+  return { reglas, hist: hist.slice(-12), ultimo, erroresPendientes: fallas.length, pedido: +((await kvGet(env, K.pedido)) || 0), cotizaciones: await estadoCotizaciones(env), estilo: est ? { ts: est.ts, ...est.stats, pares: est.pares.length } : null,
     ultimosCasos: casos.slice(-12).map((c) => ({ ts: c.ts, accion: c.accion, mensaje: c.mensaje, juez: c.juez })) };
 }
 export async function editarReglas(env, { agregar, borrar }) {
@@ -260,4 +267,26 @@ export async function editarReglas(env, { agregar, borrar }) {
   if (Number.isInteger(borrar) && rs[borrar]) rs.splice(borrar, 1);
   if (agregar && String(agregar).trim().length > 8) rs.push({ r: String(agregar).trim().slice(0, 220), ts: Date.now(), fuente: "manual" });
   await guardar(env, K.reglas, rs.slice(-MAX_REGLAS)); return rs;
+}
+
+// ------------------------------------------------------------------ cotizaciones: de "revisar" a "mandar directo"
+// Las cotizaciones que arma el agente quedan guardadas para que las revises. Cada una que confirmás bien suma a la racha; con 7 seguidas
+// el agente pasa a mandarlas directo. Si marcás una mal, la racha vuelve a 0, vuelve el modo revisión y el error alimenta el entrenamiento.
+export const RACHA_META = 7;
+export async function estadoCotizaciones(env) { const racha = +((await kvGet(env, "cot:racha")) || 0); return { racha, meta: RACHA_META, directo: (await kvGet(env, "cot:directo")) === "1", faltan: Math.max(0, RACHA_META - racha) }; }
+export async function revisarCotizacion(env, num, bien, motivo = "") {
+  const k = "cot:rev:" + num;
+  if (await kvGet(env, k)) return { ...(await estadoCotizaciones(env)), ya: true };
+  await kvPut(env, k, bien ? "bien" : "mal");
+  let racha = +((await kvGet(env, "cot:racha")) || 0);
+  if (bien) { racha++; if (racha >= RACHA_META) await kvPut(env, "cot:directo", "1"); }
+  else {
+    racha = 0; await kvPut(env, "cot:directo", "0");
+    let det = `cotización N° ${num}`;
+    try { const f = await env.DB.prepare("SELECT datos FROM cotiz_manual WHERE num=?").bind(num).first(); const d = JSON.parse(f?.datos || "{}"); det += ": " + (d.items || []).map((i) => `${i.nombre} x${i.cantidad}, ${i.peso} kg por unidad, FOB USD ${i.precio}`).join("; "); } catch {}
+    const fallas = await leer(env, K.fallas, []); fallas.push({ ts: Date.now(), ctx: [{ yo: 0, t: "el cliente pasó los datos para cotizar" }], agente: det, motivo: `el dueño marcó mal la cotización: ${motivo || "sin detalle"}`, real: "" });
+    await guardar(env, K.fallas, fallas.slice(-40));
+  }
+  await kvPut(env, "cot:racha", racha);
+  return { ...(await estadoCotizaciones(env)), ya: false };
 }
