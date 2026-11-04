@@ -14,8 +14,9 @@ AQUI = Path(__file__).parent
 
 def cargar_env():
     p = AQUI / ".env"
+    if not p.exists(): p = AQUI / "config.txt"   # también vale config.txt (más fácil de crear y editar en Windows)
     if not p.exists():
-        sys.exit("Falta el archivo .env (copiá .env.example como .env y completalo).")
+        sys.exit("Falta la configuración: copiá .env.example como .env (o como config.txt) y completalo.")
     for l in p.read_text(encoding="utf-8").splitlines():
         if "=" in l and not l.strip().startswith("#"):
             k, v = l.split("=", 1); os.environ.setdefault(k.strip(), v.strip())
