@@ -246,7 +246,7 @@ ${malos.slice(0, 6).map((r, i) => `${i + 1}. Cliente: ${r.p.c}\n   Yo contesté:
 ERRORES DE PRODUCCIÓN:
 ${prod.slice(-5).map((f, i) => `${i + 1}. ${f.motivo}\n   Charla: ${f.ctx.map((m) => (m.yo ? "YO: " : "CLIENTE: ") + m.t).join(" | ").slice(0, 500)}\n   Agente: ${f.agente}${f.real ? "\n   Dueño: " + f.real : ""}`).join("\n") || "(ninguno)"}
 Devolvé JSON: {"reglas":["regla"],"quitar":[número de regla existente]}`);
-    const nuevas = (Array.isArray(refl?.reglas) ? refl.reglas : []).map((x) => String(x).trim().slice(0, 220)).filter((x) => x.length > 12 && !/\$\s*\d|precio fijo|prometé|prometer/i.test(x) && !reglas.some((y) => parecido(y.r, x) > 0.6)).slice(0, 3);
+    const nuevas = (Array.isArray(refl?.reglas) ? refl.reglas : []).map((x) => String(x).trim().slice(0, 220)).filter((x) => x.length > 12 && !/\$\s*\d|precio fijo|prometé|prometer|\bsiempre\b|\bnunca\b|en todos los casos|sin excepci[oó]n/i.test(x) && !reglas.some((y) => parecido(y.r, x) > 0.6)).slice(0, 3);
     const quitar = new Set((Array.isArray(refl?.quitar) ? refl.quitar : []).map((x) => +x - 1).filter((i) => reglas[i] && reglas[i].fuente !== "manual").slice(0, 2));
     if (nuevas.length || quitar.size) {
       const candidatas = [...reglas.filter((_, i) => !quitar.has(i)), ...nuevas.map((r) => ({ r, ts: ahora, fuente: "auto" }))].slice(-MAX_REGLAS);

@@ -142,7 +142,7 @@ chk("el historial guarda el puntaje de cada ronda", (await E.informe(env)).hist.
 // regla que NO mejora: se descarta y no se vuelve a proponer
 const iaMala = async (e, p) => {
   if (p.includes("Abajo está una charla real")) return { puntaje: 5, fallas: ["x"], regla: "Contestá más largo" };
-  if (p.includes("Sos el entrenador del contestador")) return { reglas: ["Escribí siempre tres líneas largas con detalle"], quitar: [] };
+  if (p.includes("Sos el entrenador del contestador")) return { reglas: ["Escribí tres líneas largas con mucho detalle en cada respuesta"], quitar: [] };
   return { accion: "responder", mensaje: "tenes link de alibaba o 1688?", motivo: "x" };
 };
 res = await E.rondaEntrenamiento(env, iaMala, decidir, { n: 4, ahora });
