@@ -94,6 +94,24 @@ ${String(indicaciones || "").slice(0, 3000)}`;
 // Fotos, nombres sueltos y links de 1688 NO se cotizan solos (siguen como "esperan cotización").
 // ---------------------------------------------------------------------------
 const RE_ALIBABA = /https?:\/\/(?:[a-z0-9-]+\.)*alibaba\.com\/[^\s<>"']+/gi;
+
+// Guarda una cotización armada sola (cotiz_manual + tarea "Cotización lista" en Pendientes). La usan la lectura del link
+// de Alibaba y el contestador cuando el cliente pasa peso, cantidad y FOB.
+export async function guardarCotizAuto(env, T, { conv, nombre, items, extra = "", notas = "" }) {
+  await tabla(env);
+  const ult = await env.DB.prepare("SELECT MAX(num) n FROM cotiz_manual").first();
+  const id = Math.random().toString(36).slice(2, 10), num = (ult?.n || 0) + 1;
+  const cliente = nombre || "+" + conv;
+  const est = items.some((i) => i.peso_estimado);
+  const datos = { items: items.map((i) => ({ nombre: i.nombre, variante: i.variante || "", link: i.link || "", cantidad: i.cantidad, precio: i.precio, peso: i.peso })), desglose: true,
+    notas: notas || (est ? "Peso estimado: el valor final puede variar un poco cuando el proveedor confirme el peso." : ""), auto: true, conv };
+  await env.DB.prepare("INSERT INTO cotiz_manual (id, ts, num, quien, cliente, datos) VALUES (?,?,?,?,?,?)").bind(id, Date.now(), num, "auto", cliente.slice(0, 80), JSON.stringify(datos)).run();
+  const total = calcular(datos.items, datos, T).total;
+  const det = items.map((i) => `• ${i.nombre} x${i.cantidad}: USD ${i.precio}/u FOB${i.peso_estimado ? " (peso estimado)" : ""}`).join("\n") + extra;
+  await env.DB.prepare("INSERT INTO tareas (id, ts, tipo, tel, nombre, titulo, detalle, datos, ref, estado) VALUES (?,?,?,?,?,?,?,?,?,'abierta')")
+    .bind("ca" + id, Date.now(), "cotizacion_auto", conv, cliente, `Cotización lista: ${items.length} producto${items.length > 1 ? "s" : ""} · total USD ${total.toFixed(2)} puesto`, det, JSON.stringify({ cotiz: id, num }), "cotauto:" + id).run();
+  return { id, num, total, cliente };
+}
 export async function cotizarAuto(env, h, { limite = 2 } = {}) {
   await tabla(env);
   const hasta = Date.now() - 3 * 86400e3;
@@ -127,17 +145,8 @@ export async function cotizarAuto(env, h, { limite = 2 } = {}) {
     // Sin cantidad: espera. Página ilegible (Alibaba bloqueó o no trae precio): queda marcado y el contestador le pide
     // al cliente peso en kg y precio FOB (se borra la marca del contestador para que vuelva a mirar este chat).
     if (!items.length) { if (!sinCant) { await marca("no-se-pudo:" + Date.now()); await env.DB.prepare("DELETE FROM kv WHERE k=?").bind("resp_auto:" + c.conv).run(); } continue; }
-    const ult = await env.DB.prepare("SELECT MAX(num) n FROM cotiz_manual").first();
-    const id = Math.random().toString(36).slice(2, 10), num = (ult?.n || 0) + 1;
-    const cliente = c.nombre || "+" + c.conv;
-    const est = items.some((i) => i.peso_estimado);
-    const datos = { items: items.map((i) => ({ nombre: i.nombre, variante: i.variante || "", link: i.link, cantidad: i.cantidad, precio: i.precio, peso: i.peso })), desglose: true,
-      notas: est ? "Peso estimado: el valor final puede variar un poco cuando el proveedor confirme el peso." : "", auto: true, conv: c.conv };
-    await env.DB.prepare("INSERT INTO cotiz_manual (id, ts, num, quien, cliente, datos) VALUES (?,?,?,?,?,?)").bind(id, Date.now(), num, "auto", cliente.slice(0, 80), JSON.stringify(datos)).run();
-    const tot = calcular(datos.items, datos, h.T).total;
-    const det = items.map((i) => `• ${i.nombre} x${i.cantidad}: USD ${i.precio}/u FOB${i.peso_estimado ? " (peso estimado)" : ""}`).join("\n") + (r.items.length > items.length ? "\n(Hay productos que no se pudieron leer: cotizalos a mano.)" : "");
-    await env.DB.prepare("INSERT INTO tareas (id, ts, tipo, tel, nombre, titulo, detalle, datos, ref, estado) VALUES (?,?,?,?,?,?,?,?,?,'abierta')")
-      .bind("ca" + id, Date.now(), "cotizacion_auto", c.conv, cliente, `Cotización lista: ${items.length} producto${items.length > 1 ? "s" : ""} · total USD ${tot.toFixed(2)} puesto`, det, JSON.stringify({ cotiz: id, num }), "cotauto:" + id).run();
+    const g = await guardarCotizAuto(env, h.T, { conv: c.conv, nombre: c.nombre, items, extra: r.items.length > items.length ? "\n(Hay productos que no se pudieron leer: cotizalos a mano.)" : "" });
+    const id = g.id, tot = g.total;
     await marca(id);
     hechos.push({ conv: c.conv, id, total: tot });
   }

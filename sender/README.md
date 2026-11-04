@@ -35,13 +35,22 @@ Limitación: no puede saber si el número existe en WhatsApp. Con el modo Chrome
 - **Con la app de WhatsApp de escritorio** (sin QR, usa tu sesión): `abrir_app.bat` en vez de `abrir.bat`. Mismo `activar.bat` / `pausar.bat`. Mientras está activo no uses el teclado ni el mouse (aprieta Enter en la app); para usar la PC, `pausar.bat`. En este modo no puede leer el chat antes de escribir: si le contestaste vos desde otro lado y el panel no lo registró, podría repetir.
 - Mientras está en pausa podés usar esa ventana de WhatsApp vos. Antes de activarlo, dejala en cualquier chat sin escribir nada: si la usás mientras está activo, el agente detecta que tocaste la caja, borra lo suyo y no manda.
 
+## Cotizar, juez y entrenamiento (el agente aprende solo)
+- **Cotiza solo** cuando el cliente manda link de Alibaba + cantidad, o cuando pasa **peso en gramos, cantidad y FOB unitario** en el chat. Antes de armarla, la IA solo extrae lo que escribió el cliente y marca si los números no tienen sentido para el producto (ej. una cerradura de 2,5 kg): en ese caso NO cotiza y queda en "Para vos". La cotización queda en Pendientes con su PDF y la PC la guarda o la manda según `COTIZ_MODO`.
+- **Si faltan datos**: pide todo lo que falte en un solo mensaje, sin repetir lo que ya dio.
+- **Juez**: cada borrador se evalúa antes de enviarlo (largo, tono, repetición, que conteste lo que preguntó, que no invente). Si no pasa, sale la versión corregida o queda en "Para vos". `JUEZ=0` en las variables del worker lo apaga.
+- **Estilo**: cada noche se recalcula cómo escribís (largo, saludos, frases) y se guardan tus charlas como ejemplos: el agente ve las más parecidas a lo que escribió el cliente.
+- **Entrenamiento nocturno (4 AM)**: toma charlas reales, el agente contesta sin ver tu respuesta, se compara con la tuya y de los errores salen reglas. Una regla nueva solo se adopta si mejora el puntaje probada con los mismos casos y no empeora nada.
+- **Aprende de producción**: revisa qué pasó después de cada respuesta (cliente confundido, vos tuviste que intervenir, algo que dejó para vos y era simple).
+- `entrenar.bat`: muestra lo que aprendió. `entrenar.bat --ya 3`: pide 3 rondas ahora (una por minuto). `entrenar.bat --regla "texto"`: le enseña una regla tuya (fija, no se borra sola). `entrenar.bat --borrar N`.
+
 ## Contestador automático (responder.py)
 Contesta los chats cuyo último mensaje es del cliente (incluye los que dejaste leídos sin responder). Escribe en una ventana propia de WhatsApp Web (no usa tu mouse ni tu teclado), con ritmo humano: "lee" unos segundos (+10 s de más), tipea letra por letra y recién ahí envía.
 - `python responder.py --prueba`: muestra qué contestaría, sin abrir WhatsApp ni enviar nada. Probalo primero.
 - `python responder.py`: contesta hasta que no queden pendientes y termina. `--seguir`: queda andando.
 - `VENTANA=minimizada|oculta|visible` en `.env` (la primera vez usá `visible` para escanear el QR).
 - Frenarlo: Ctrl+C, archivo `STOP`, o por Telegram: "pausar respuestas" (y "reanudar respuestas").
-- Reglas: si nombran un producto sin link ni precio, les ofrece la búsqueda de proveedores (informe) y pregunta cantidad y calidad; si ya tienen producto y precio de proveedor, pide "peso del producto en kg, cantidad y precio FOB" (+ "de Alibaba"/"de 1688" si mandaron link); para catálogo manda teimportamosarg.com/catalogo; nunca da precios. Pagos, reclamos, audios/fotos sin texto, "¿sos un bot?" y dudas los deja sin contestar para que los veas vos (siguen en "Responder ya").
+- Reglas: si nombran un producto sin link ni precio, les ofrece la búsqueda de proveedores (informe) y pregunta cantidad y calidad; si ya tienen producto y precio de proveedor, pide "peso del producto en gramos, cantidad de unidades y precio FOB unitario" (todo junto, en un solo mensaje) (+ "de Alibaba"/"de 1688" si mandaron link); para catálogo manda teimportamosarg.com/catalogo; nunca da precios. Pagos, reclamos, audios/fotos sin texto, "¿sos un bot?" y dudas los deja sin contestar para que los veas vos (siguen en "Responder ya").
 - Tope: 25 respuestas por hora. Cada decisión queda en `/lector/enviar/log`.
 - No corras `enviar.py` y `responder.py` a la vez (comparten la misma sesión de WhatsApp Web).
 - Los chats que deja para vos se anotan en `para_vos.txt` (fecha | nombre | número | qué hacer, en 3-5 palabras) y aparecen en el panel, en "Para hacer hoy" → pestaña **Para vos**, con botón para abrir WhatsApp. Salen de la lista cuando contestás vos.

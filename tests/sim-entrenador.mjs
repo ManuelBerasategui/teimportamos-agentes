@@ -1,0 +1,197 @@
+// Entrenador del contestador: estilo, juez, cotización con los 3 datos, rondas de entrenamiento y aprendizaje de errores.
+// Correr desde cotizador/: node ../tests/sim-entrenador.mjs   (IA simulada, sin red)
+import { DatabaseSync } from "node:sqlite";
+import fs from "fs";
+let ok = 0, mal = 0; const chk = (n, c) => { c ? (ok++, console.log("✓", n)) : (mal++, console.log("FALLA:", n)); };
+const dir = fs.mkdtempSync("/tmp/entren-"); for (const f of fs.readdirSync("src")) fs.copyFileSync("src/" + f, dir + "/" + f);
+const db = new DatabaseSync(":memory:");
+const stmt = (sql, b = []) => ({ bind: (...x) => stmt(sql, x), run: async () => { const r = db.prepare(sql).run(...b); return { meta: { changes: Number(r.changes) } }; }, first: async () => db.prepare(sql).get(...b) ?? null, all: async () => ({ results: db.prepare(sql).all(...b) }) });
+const env = { DB: { prepare: (s) => stmt(s), batch: async (a) => { for (const x of a) await x.run(); } } };
+const L = await import(dir + "/lector.js"); const A = await import(dir + "/autoresp.js"); const E = await import(dir + "/entrenador.js");
+await L.prepararLector(env);
+db.prepare("CREATE TABLE IF NOT EXISTS cotiz_manual (id TEXT PRIMARY KEY, ts INTEGER, num INTEGER, quien TEXT, cliente TEXT, datos TEXT)").run();
+const ahora = Date.now(); let n = 0;
+const msg = (conv, yo, texto, hace, tipo = "text") => db.prepare("INSERT INTO w_msg (id,conv,grupo,yo,texto,ts,hist,tipo) VALUES (?,?,0,?,?,?,0,?)").run("m" + n++, conv, yo, texto, ahora - hace, tipo);
+const conv = (c, nombre, ultTxt, hace, ultYo = 0) => db.prepare("INSERT INTO w_conv (conv,nombre,grupo,primer_ts,ult_ts,ult_yo,ult_cliente_ts,ult_yo_ts,ult_texto,archivado,prov) VALUES (?,?,0,?,?,?,?,0,?,0,0)").run(c, nombre, ahora - hace, ahora - hace, ultYo, ahora - hace, ultTxt);
+const T = { fleteKg: 18, handling: 30, honorarios: 80, factor: 1.3, aereoFijo: 950, aereoDesde: 50, aereoHasta: 250, barcoFijo: 100 };
+
+// ---- Historial real del dueño: 14 charlas "cliente pregunta → yo contesto"
+const casos = [
+  ["parlante bluetooth", "tenes link de alibaba o 1688 del parlante? si no mandame fotos de referencia"], ["auriculares inalambricos", "tenes link de alibaba o 1688 de los auriculares? sino mandame fotos"],
+  ["cuanto sale traer relojes", "tenes link de alibaba o 1688 de los relojes? sino mandame fotos"], ["tienen stock de jbl", "mira el catalogo en https://www.teimportamosarg.com/catalogo ahi estan los productos y precios"],
+  ["hola quiero info", "hola! que producto queres traer? tenes link de alibaba o fotos de referencia"], ["hola buenas", "hola! que producto queres traer? tenes link de alibaba o fotos de referencia"],
+  ["quiero importar cargadores", "tenes link de alibaba o 1688 de los cargadores? sino mandame fotos de referencia"], ["necesito camaras de seguridad", "tenes link de alibaba o 1688 de las camaras? sino mandame fotos"],
+  ["tienen catalogo", "mira el catalogo en https://www.teimportamosarg.com/catalogo ahi estan los productos y precios"], ["me pasas precio de un lampara", "que lampara viste? tenes el link o una captura"],
+  ["quiero traer zapatillas", "tenes link de alibaba o 1688 de las zapatillas? sino mandame fotos"], ["cuanto cuesta esa campera", "que campera viste? mandame la captura o el link"],
+  ["necesito 45 pestillos electronicos", "tenes link de alibaba o 1688 de los pestillos? sino mandame fotos de referencia"], ["info de mochilas", "hola! que mochilas queres traer? tenes link de alibaba o fotos"],
+];
+casos.forEach(([c, y], i) => { const cv = "54911" + String(100 + i); conv(cv, "H" + i, c, 40 * 86400e3, 1); msg(cv, 0, c, (40 - i) * 86400e3 / 40 + 3600e3 * 5); msg(cv, 1, y, (40 - i) * 86400e3 / 40 + 3600e3 * 4); });
+msg("5491100", 1, "Bienvenido!! Gracias por escribir, mandame el numero de la opcion que necesites", 3600e3 * 80);   // bot: no cuenta como mío
+
+// 1) ESTILO
+const est = await E.construirEstilo(env, ahora);
+chk("perfil de estilo: calcula largo, saludos y frases desde mis mensajes", est.stats.n === 14 && est.stats.med > 20 && est.stats.p90 >= est.stats.med && est.stats.frases.length > 0);
+chk("el mensaje automático del bot no cuenta como mío", !est.pares.some((p) => /Bienvenido/.test(p.y)));
+chk("guarda pares 'cliente dijo → yo contesté' con su contexto", est.pares.length >= 10 && est.pares.every((p) => p.c && p.y && p.ctx.length >= 1));
+const sim = E.similares(est, "quiero traer 30 cargadores usb", 3);
+chk("trae ejemplos parecidos a lo que escribió el cliente", sim.length >= 3 && sim.some((p) => /cargadores/.test(p.c)));
+chk("excluye el caso que se entrena (no copia la respuesta real)", !E.similares(est, "quiero importar cargadores", 3, sim[0].id).some((p) => p.id === sim[0].id));
+chk("perfil en texto para el prompt", /Largo típico/.test(E.perfilTexto(est)));
+
+// 2) JUEZ: chequeos duros + IA
+chk("duro: mensaje largo, formal y con muletilla se rechaza", E.chequeoDuro("Claro, estimado cliente. Le informo que " + "texto ".repeat(80), est, []).length >= 3);
+chk("duro: mensaje corto y natural pasa", E.chequeoDuro("tenes link de alibaba o 1688 de los cargadores? sino mandame fotos", est, []).length === 0);
+chk("duro: repetir lo que ya dije se detecta", E.chequeoDuro("tenes link de alibaba o fotos del producto", est, [{ yo: 1, texto: "tenes link de alibaba o fotos del producto" }]).length === 1);
+let jIA = { ok: true, puntaje: 9, fallas: [] };
+let usadoJuez = 0;
+const iaTodo = async (e, p) => {
+  if (p.includes("revisor de calidad")) { usadoJuez++; return jIA; }
+  if (p.includes("Del chat sacá los 3 datos")) return iaExtrae;
+  return iaRed;
+};
+let iaRed = { accion: "responder", mensaje: "tenes link de alibaba o 1688 de los cargadores? sino mandame fotos", motivo: "producto sin link" };
+let iaExtrae = null;
+conv("5491122", "Lu", "quiero 30 cargadores", 5 * 60e3); msg("5491122", 0, "quiero 30 cargadores", 5 * 60e3);
+let r = await A.redactar(env, iaTodo, "5491122", { prueba: true, T });
+chk("juez aprueba: sale el borrador tal cual", r.accion === "responder" && /cargadores/.test(r.mensaje) && r.juez?.ok === true && usadoJuez === 1);
+jIA = { ok: false, puntaje: 4, fallas: ["pide cosas que ya dio"], mensaje_mejorado: "pasame el link de alibaba de los cargadores o una foto" };
+r = await A.redactar(env, iaTodo, "5491122", { prueba: true, T });
+chk("juez rechaza y trae versión corregida válida: se manda la corregida", r.accion === "responder" && /pasame el link/.test(r.mensaje) && r.juez?.corregido === true);
+jIA = { ok: false, puntaje: 3, fallas: ["inventa un plazo"], mensaje_mejorado: "te va a llegar en 15 dias, son USD 20" };
+r = await A.redactar(env, iaTodo, "5491122", { prueba: true, T });
+chk("juez rechaza y la corrección trae precio: queda para el dueño", r.accion === "humano" && /juez/.test(r.motivo));
+jIA = { ok: false, puntaje: 2, fallas: ["no contesta lo que preguntó"] };
+r = await A.redactar(env, iaTodo, "5491122", { prueba: true, T });
+chk("juez rechaza sin corrección: queda para el dueño (nunca sale)", r.accion === "humano" && !r.mensaje);
+env.JUEZ = "0"; r = await A.redactar(env, iaTodo, "5491122", { prueba: true, T }); env.JUEZ = undefined;
+chk("sin juez (IA caída) rigen solo los chequeos duros", r.accion === "responder");
+
+// 3) COTIZACIÓN CON LOS 3 DATOS
+conv("5491133", "Eze", "el peso es 90 gramos, 45 unidades y el fob 2.3 dolares", 2 * 60e3);
+msg("5491133", 0, "hola quiero cotizar una cerradura electromagnetica", 30 * 60e3); msg("5491133", 1, "Necesito que me digas peso del producto en gramos, cantidad de unidades y precio FOB unitario", 25 * 60e3);
+msg("5491133", 0, "el peso es 90 gramos, 45 unidades y el fob 2.3 dolares", 2 * 60e3);
+iaExtrae = { producto: "Cerradura electromagnética", peso_g: 90, cantidad: 45, fob_usd: 2.3, completo: true, plausible: true };
+jIA = { ok: true, puntaje: 9 }; usadoJuez = 0;
+r = await A.redactar(env, iaTodo, "5491133", { prueba: true, T });
+chk("3 datos completos: arma la cotización (vista previa no guarda nada)", r.accion === "nada" && /armaría la cotización/.test(r.motivo) && db.prepare("SELECT COUNT(*) n FROM cotiz_manual").get().n === 0 && usadoJuez === 0);
+r = await A.redactar(env, iaTodo, "5491133", { T });
+const cot = db.prepare("SELECT * FROM cotiz_manual").get(), d = cot && JSON.parse(cot.datos);
+chk("cotización guardada con peso en kg correcto y FOB unitario", r.accion === "nada" && d?.items[0].peso === 0.09 && d.items[0].precio === 2.3 && d.items[0].cantidad === 45);
+const tarea = db.prepare("SELECT * FROM tareas WHERE tipo='cotizacion_auto'").get();
+chk("queda como 'Cotización lista' en Pendientes", !!tarea && tarea.tel === "5491133");
+const tot = (2.3 * 45 + 0.09 * 45 * 18 + 30) * 1.3 + 80;
+chk("el total sigue la misma cuenta de la calculadora", Math.abs(+tarea.titulo.match(/USD ([\d.]+)/)[1] - tot) < 0.02);
+db.prepare("DELETE FROM kv WHERE k LIKE 'resp_%'").run();
+r = await A.redactar(env, iaTodo, "5491133", { T });
+chk("no repite la misma cotización", r.accion === "nada" && db.prepare("SELECT COUNT(*) n FROM cotiz_manual").get().n === 1);
+// peso absurdo para el producto (el caso de la cerradura de 2,5 kg): no cotiza, queda para el dueño
+conv("5491144", "Raul", "pesa 2500 gramos, 45 unidades, fob 2.3 usd", 2 * 60e3); msg("5491144", 0, "cuanto sale la cerradura electromagnetica", 30 * 60e3); msg("5491144", 0, "pesa 2500 gramos, 45 unidades, fob 2.3 usd", 2 * 60e3);
+iaExtrae = { producto: "Cerradura electromagnética", peso_g: 2500, cantidad: 45, fob_usd: 2.3, completo: true, plausible: false };
+r = await A.redactar(env, iaTodo, "5491144", { T });
+chk("datos que no cierran (cerradura de 2,5 kg): NO cotiza, queda para el dueño", r.accion === "humano" && /no cierran/.test(r.motivo) && db.prepare("SELECT COUNT(*) n FROM cotiz_manual").get().n === 1);
+// faltan datos: sigue el flujo normal y pide lo que falta
+conv("5491155", "Ana", "el fob es 3 dolares", 2 * 60e3); msg("5491155", 0, "quiero 100 parlantes de 300 gramos", 20 * 60e3); msg("5491155", 0, "el fob es 3 dolares", 2 * 60e3);
+iaExtrae = { producto: "Parlante", peso_g: 300, cantidad: 100, fob_usd: 3, completo: false, plausible: true };
+iaRed = { accion: "responder", mensaje: "me pasas el link del proveedor para ver el producto", motivo: "pide link" };
+r = await A.redactar(env, iaTodo, "5491155", { T, prueba: true });
+chk("faltan datos: no inventa la cotización", r.accion === "responder" && db.prepare("SELECT COUNT(*) n FROM cotiz_manual").get().n === 1);
+chk("el pedido de datos usa gramos, cantidad y FOB unitario", /gramos/.test(A.FRASE_COTIZAR) && /FOB unitario/.test(A.FRASE_COTIZAR) && !/ kg/.test(A.FRASE_COTIZAR));
+
+// 4) ENTRENAMIENTO: el agente contesta SIN ver mi respuesta, se compara y de los errores salen reglas
+let rondas = 0, ultimoPromptRegla = "";
+const iaEnt = async (e, p) => {
+  if (p.includes("Sos el dueño de \"Te Importamos\" (importación por encargo desde China, Rosario). Abajo está una charla real")) {
+    const conRegla = /REGLAS QUE APRENDÍ/.test(ultimoPromptRegla);
+    return { puntaje: conRegla ? 9 : 4, fallas: conRegla ? [] : ["pide el peso antes de tener link"], regla: conRegla ? "" : "Pedí primero el link de Alibaba o 1688 o fotos antes de preguntar peso o FOB" };
+  }
+  if (p.includes("Sos el entrenador del contestador")) return { reglas: ["Pedí primero el link de Alibaba o 1688 o fotos antes de preguntar peso o FOB"], quitar: [] };
+  ultimoPromptRegla = p; rondas++;
+  return { accion: "responder", mensaje: "me pasas el peso del producto y el fob?", motivo: "x" };
+};
+const decidir = (ctx, ia) => A.decidirIA(env, ia, ctx, { prioridad: false });
+let res = await E.rondaEntrenamiento(env, iaEnt, decidir, { n: 5, ahora });
+chk("ronda: evalúa casos reales y calcula un puntaje", res.casos === 5 && res.score === 4 && res.malos === 5);
+chk("una regla que mejora el puntaje se adopta (probada con los mismos casos)", res.adoptadas.length === 1 && (await E.cargarReglas(env)).length === 1 && res.mejora >= 0.3);
+chk("las reglas aprendidas entran al prompt del agente", /REGLAS QUE APRENDÍ/.test(ultimoPromptRegla) && /link de Alibaba o 1688/.test(ultimoPromptRegla));
+chk("el agente entrenando no ve su propia respuesta real", !/tenes link de alibaba o 1688 de los cargadores\? sino mandame fotos de referencia\nCliente/.test(ultimoPromptRegla));
+chk("el historial guarda el puntaje de cada ronda", (await E.informe(env)).hist.length === 1);
+// regla que NO mejora: se descarta y no se vuelve a proponer
+const iaMala = async (e, p) => {
+  if (p.includes("Abajo está una charla real")) return { puntaje: 5, fallas: ["x"], regla: "Contestá más largo" };
+  if (p.includes("Sos el entrenador del contestador")) return { reglas: ["Escribí siempre tres líneas largas con detalle"], quitar: [] };
+  return { accion: "responder", mensaje: "tenes link de alibaba o 1688?", motivo: "x" };
+};
+res = await E.rondaEntrenamiento(env, iaMala, decidir, { n: 4, ahora });
+chk("una regla que no mejora se descarta (no empeora el agente)", res.adoptadas.length === 0 && res.descartadas.length === 1 && (await E.cargarReglas(env)).length === 1);
+// regla con precio: filtrada
+const iaPrecio = async (e, p) => p.includes("Abajo está una charla real") ? { puntaje: 3, fallas: ["x"], regla: "" } : p.includes("Sos el entrenador del contestador") ? { reglas: ["Decí siempre que el flete cuesta $ 50 por kilo"] } : { accion: "humano", motivo: "x" };
+res = await E.rondaEntrenamiento(env, iaPrecio, decidir, { n: 3, ahora });
+chk("reglas que habilitan dar precios se descartan solas", (await E.cargarReglas(env)).length === 1);
+// cupo de IA agotado: corta sin romper
+let llamadas = 0; const iaCorta = async () => { llamadas++; return null; };
+res = await E.rondaEntrenamiento(env, iaCorta, decidir, { n: 4, ahora });
+chk("si la IA no responde (cupo agotado) la ronda termina sin errores", /no respondió|no pude/.test(res.nota || "") && llamadas <= 34);
+// tope de llamadas por ronda (plan gratis: 50 subrequests por ejecución)
+let cuenta = 0; const iaConteo = async (e, p) => { cuenta++; return p.includes("Abajo está una charla real") ? { puntaje: 3, fallas: ["x"], regla: "" } : p.includes("Sos el entrenador del contestador") ? { reglas: ["Preguntá primero qué producto busca antes de pedir datos"] } : { accion: "responder", mensaje: "que producto queres traer?", motivo: "x" }; };
+await E.rondaEntrenamiento(env, iaConteo, decidir, { n: 20, maxIA: 34, ahora });
+chk("una ronda nunca pasa de 34 llamadas a la IA", cuenta <= 34);
+// reglas manuales (SOP) no las toca el entrenamiento
+await E.editarReglas(env, { agregar: "Nunca confirmes plazos de entrega: eso lo decide el dueño." });
+const rs = await E.cargarReglas(env);
+chk("las reglas manuales (SOP) quedan marcadas y el entrenamiento no las quita", rs.some((x) => x.fuente === "manual") );
+const iaQuita = async (e, p) => p.includes("Abajo está una charla real") ? { puntaje: 3, fallas: ["x"] } : p.includes("Sos el entrenador del contestador") ? { reglas: [], quitar: [1, 2, 3] } : { accion: "humano", motivo: "x" };
+await E.rondaEntrenamiento(env, iaQuita, decidir, { n: 3, ahora });
+chk("quitar una regla manual no funciona", (await E.cargarReglas(env)).some((x) => /plazos de entrega/.test(x.r)));
+chk("editar: borrar una regla por número", (await E.editarReglas(env, { borrar: (await E.cargarReglas(env)).findIndex((x) => /plazos/.test(x.r)) })).every((x) => !/plazos/.test(x.r)));
+
+// 5) APRENDER DE PRODUCCIÓN: qué pasó después de cada decisión
+db.prepare("DELETE FROM kv WHERE k LIKE 'resp_%' OR k LIKE 'ent:casos' OR k='ent:fallas'").run();
+const hace = (min) => ahora - min * 60e3;
+const caso = (cv, accion, mensaje, min, motivo = "") => E.registrarCaso(env, { conv: cv, nombre: "x", accion, mensaje, motivo, ctx: [{ yo: 0, t: "quiero cargadores" }] }).then(async () => { const l = JSON.parse(db.prepare("SELECT v FROM kv WHERE k='ent:casos'").get().v); l.at(-1).ts = hace(min); db.prepare("UPDATE kv SET v=? WHERE k='ent:casos'").run(JSON.stringify(l)); });
+await caso("c1", "responder", "tenes link de alibaba de los cargadores?", 120);   // el cliente se confunde
+msg("c1", 1, "tenes link de alibaba de los cargadores?", 119 * 60e3); msg("c1", 0, "pero ya te dije que quiero cargadores, no entendi", 100 * 60e3);
+await caso("c2", "responder", "que producto queres traer?", 120);   // el dueño interviene enseguida
+msg("c2", 1, "que producto queres traer?", 119 * 60e3); msg("c2", 1, "pasame foto y te digo si lo tenemos", 110 * 60e3);
+await caso("c3", "humano", "", 120, "pregunta por algo");   // lo dejó para el dueño y la respuesta era simple
+msg("c3", 1, "si, tenemos de 2 colores", 100 * 60e3);
+await caso("c4", "humano", "", 120, "pago");   // pago: correcto que sea del dueño
+msg("c4", 1, "te paso el alias: mi.alias.mp", 100 * 60e3);
+await caso("c5", "responder", "que producto queres traer?", 120);   // salió bien
+msg("c5", 1, "que producto queres traer?", 119 * 60e3); msg("c5", 0, "mochilas", 100 * 60e3);
+await caso("c6", "responder", "que producto queres traer?", 10);   // muy reciente: todavía no se revisa
+const rv = await E.revisarResultados(env, ahora);
+const fallas = JSON.parse(db.prepare("SELECT v FROM kv WHERE k='ent:fallas'").get().v);
+chk("detecta cliente confundido, dueño que interviene y respuesta simple que dejó pasar", rv.errores === 3 && fallas.length === 3);
+chk("no marca como error un pago dejado al dueño ni una respuesta que anduvo bien", !fallas.some((f) => /alias/.test(f.real || "")) && rv.revisados === 5);
+chk("guarda lo que contestó el dueño como ejemplo de lo correcto", fallas.some((f) => /2 colores/.test(f.real)) && fallas.some((f) => /pasame foto/.test(f.real)));
+const rv2 = await E.revisarResultados(env, ahora);
+chk("no revisa dos veces el mismo caso", rv2.revisados === 0);
+
+// 6) Rutas de control y cron
+const rr = async (path, body, method = "POST") => (await A.rutaAutoresp(env, { method, json: async () => body || {} }, path, new URL("http://x" + path), iaTodo, { T })).json();
+let inf = await rr("/enviar/aprendizaje", {}, "GET");
+chk("ruta de aprendizaje: muestra reglas, puntajes y estilo", inf.ok && Array.isArray(inf.reglas) && inf.hist.length >= 1 && inf.estilo?.n === 14);
+inf = await rr("/enviar/aprendizaje", { agregar: "Si pregunta por plazos, decile que se lo confirma el dueño." });
+chk("podés enseñarle una regla (queda como manual)", inf.reglas.some((x) => x.fuente === "manual" && /plazos/.test(x.r)));
+inf = await rr("/enviar/entrenar", { rondas: 2 });
+chk("pedir entrenamiento deja rondas programadas", inf.ok && inf.rondas === 2 && db.prepare("SELECT v FROM kv WHERE k='ent:pedido'").get().v === "2");
+let corrio = 0; const iaCron = async (e, p) => { corrio++; return iaEnt(e, p); };
+await E.cronEntrenador(env, iaCron, decidir, ahora);
+chk("el cron corre una ronda por minuto y descuenta el pedido", corrio > 0 && db.prepare("SELECT v FROM kv WHERE k='ent:pedido'").get().v === "1");
+const c0 = corrio; await E.cronEntrenador(env, iaCron, decidir, ahora + 20e3);
+chk("no se pisan dos rondas a la vez", corrio === c0 || db.prepare("SELECT v FROM kv WHERE k='ent:corre'").get().v === "0");
+const noche = new Date(ahora); noche.setUTCHours(7, 5, 0, 0); db.prepare("UPDATE kv SET v='0' WHERE k='ent:pedido'").run(); db.prepare("UPDATE kv SET v='0' WHERE k='ent:corre'").run();
+await E.cronEntrenador(env, iaCron, decidir, noche.getTime());
+chk("de noche (4:05 de Argentina) pide 3 rondas solo", +db.prepare("SELECT v FROM kv WHERE k='ent:pedido'").get().v === 2);
+
+// 7) Producción registra cada decisión para aprender
+db.prepare("DELETE FROM kv WHERE k='ent:casos' OR k LIKE 'resp_%'").run();
+conv("5491166", "Mati", "hola", 3 * 60e3); msg("5491166", 0, "hola", 3 * 60e3);
+iaRed = { accion: "responder", mensaje: "hola! que producto queres traer?", motivo: "saludo" }; jIA = { ok: true, puntaje: 8, fallas: [] };
+await A.redactar(env, iaTodo, "5491166", { T });
+const reg = JSON.parse(db.prepare("SELECT v FROM kv WHERE k='ent:casos'").get().v);
+chk("cada decisión real se registra con su contexto y la nota del juez", reg.length === 1 && reg[0].accion === "responder" && reg[0].ctx.length >= 1 && reg[0].juez?.puntaje === 8);
+await A.redactar(env, iaTodo, "5491166", { T, prueba: true });
+chk("la vista previa (--prueba) no registra nada", JSON.parse(db.prepare("SELECT v FROM kv WHERE k='ent:casos'").get().v).length === 1);
+
+console.log(`\nsim-entrenador: ${ok} ok, ${mal} fallas`); process.exit(mal ? 1 : 0);

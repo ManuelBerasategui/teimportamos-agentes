@@ -1,0 +1,71 @@
+"""Entrenamiento del contestador: ver qué aprendió, pedir rondas de práctica y enseñarle reglas (SOP).
+Uso:  python entrenar.py                 -> muestra lo que aprendió (reglas, puntajes, estilo)
+      python entrenar.py --ya [N]        -> pide N rondas de entrenamiento ahora (una por minuto; 3 si no ponés N)
+      python entrenar.py --regla "texto" -> le enseña una regla tuya (queda fija: el entrenamiento nunca la borra)
+      python entrenar.py --borrar N      -> saca la regla número N
+Por la noche (4 AM) entrena solo con tus charlas reales: contesta sin ver tu respuesta, se compara y de los errores salen reglas
+nuevas; una regla solo se queda si mejora el puntaje."""
+import sys
+from datetime import datetime
+from enviar import api
+
+
+def fecha(ms):
+    return datetime.fromtimestamp(ms / 1000).strftime("%d/%m %H:%M") if ms else "-"
+
+
+def mostrar(d):
+    print("\n=== LO QUE APRENDIÓ EL CONTESTADOR ===")
+    e = d.get("estilo")
+    if e:
+        print(f"\nTu estilo (de {e.get('n', 0)} mensajes tuyos, {e.get('pares', 0)} charlas guardadas como ejemplo): "
+              f"largo típico {e.get('med')} caracteres, {e.get('saludo')}% saludan, {e.get('emoji')}% con emoji. Calculado {fecha(e.get('ts'))}")
+    else:
+        print("\nTodavía no calculó tu estilo (lo hace de noche o con --ya).")
+    rs = d.get("reglas") or []
+    print(f"\nReglas ({len(rs)}):")
+    for i, r in enumerate(rs, 1):
+        print(f"  {i}. [{'tuya' if r.get('fuente') == 'manual' else 'aprendida'}] {r.get('r')}")
+    if not rs:
+        print("  (ninguna todavía)")
+    h = d.get("hist") or []
+    if h:
+        print("\nPuntaje de cada ronda de entrenamiento (de 10):")
+        for x in h:
+            print(f"  {fecha(x.get('ts'))}: {x.get('score')} con {x.get('n')} casos, reglas adoptadas {x.get('adoptadas')}, descartadas {x.get('descartadas')}")
+    u = d.get("ultimo")
+    if u:
+        print(f"\nÚltima ronda: puntaje {u.get('score')}, {u.get('casos')} casos, {u.get('malos')} con errores.")
+        for r in u.get("adoptadas") or []:
+            print(f"  + regla nueva: {r}")
+        for r in u.get("descartadas") or []:
+            print(f"  - descartada (no mejoraba): {r}")
+    print(f"\nErrores de producción esperando revisión: {d.get('erroresPendientes', 0)}. Rondas pedidas pendientes: {d.get('pedido', 0)}")
+    cs = d.get("ultimosCasos") or []
+    if cs:
+        print("\nÚltimas decisiones:")
+        for c in cs[-8:]:
+            j = c.get("juez") or {}
+            print(f"  {fecha(c.get('ts'))} {c.get('accion')}" + (f" (juez {j.get('puntaje')})" if j.get("puntaje") is not None else "") + (f": {c.get('mensaje')}" if c.get("mensaje") else ""))
+
+
+def main():
+    a = sys.argv[1:]
+    if "--regla" in a:
+        txt = " ".join(a[a.index("--regla") + 1:]).strip()
+        if len(txt) < 9:
+            sys.exit("Escribí la regla completa entre comillas.")
+        mostrar(api("/enviar/aprendizaje", {"agregar": txt}))
+    elif "--borrar" in a:
+        mostrar(api("/enviar/aprendizaje", {"borrar": int(a[a.index("--borrar") + 1]) - 1}))
+    elif "--ya" in a:
+        i = a.index("--ya")
+        n = int(a[i + 1]) if len(a) > i + 1 and a[i + 1].isdigit() else 3
+        d = api("/enviar/entrenar", {"rondas": n})
+        print(f"Listo: pedí {d.get('rondas')} ronda(s). Corren solas, una por minuto. Mirá el resultado con:  python entrenar.py")
+    else:
+        mostrar(api("/enviar/aprendizaje"))
+
+
+if __name__ == "__main__":
+    main()

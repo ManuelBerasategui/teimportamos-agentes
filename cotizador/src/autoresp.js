@@ -8,10 +8,11 @@
 const kvGet = async (env, k) => (await env.DB.prepare("SELECT v FROM kv WHERE k=?").bind(k).first())?.v ?? null;
 const kvPut = (env, k, v) => env.DB.prepare("INSERT INTO kv (k,v,exp) VALUES (?,?,NULL) ON CONFLICT(k) DO UPDATE SET v=excluded.v, exp=NULL").bind(k, String(v)).run();
 const hora = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 13);
-import { calcular, paginaCotizacion } from "./cotizar.js";
+import { calcular, paginaCotizacion, guardarCotizAuto } from "./cotizar.js";
+import { cargarEstilo, cargarReglas, reglasTexto, perfilTexto, similares, ejemplosTexto, juzgar, chequeoDuro, registrarCaso, informe, editarReglas, K as KENT, OBJETIVO } from "./entrenador.js";
 const SIN_VAPES = "lower(COALESCE(producto,'')) NOT LIKE '%vap%' AND lower(COALESCE(producto,'')) NOT LIKE '%elf%bar%'";
 export const PRECIO_INFORME = "$5.000";
-export const FRASE_COTIZAR = "Necesito que me digas peso del producto en kg, cantidad y precio FOB";
+export const FRASE_COTIZAR = "Necesito que me digas peso del producto en gramos, cantidad de unidades y precio FOB unitario";
 
 async function anotarDerivado(env, conv, nombre, resumen) {
   const der = JSON.parse((await kvGet(env, "resp_derivados")) || "{}");
@@ -128,8 +129,9 @@ async function reservar(env, conv, ms, forzar = false) {
   return (r.meta?.changes ?? 1) > 0;
 }
 
-export async function redactar(env, iaJSON, conv, { prueba = false } = {}) {
+export async function redactar(env, iaJSON, conv, { prueba = false, T = null } = {}) {
   const c = await env.DB.prepare("SELECT * FROM w_conv WHERE conv=?").bind(conv).first();
+  let ctxCaso = [];   // últimos mensajes de la charla, para que el entrenador pueda repetir el caso
   const fin = async (r, nombre) => {
     if (r.mensaje) r.mensaje = String(r.mensaje).replace(/[¿¡]/g, "").replace(VOSEO_RE, (w) => { const sin = VOSEO[w.toLowerCase()]; return w[0] === w[0].toUpperCase() ? sin[0].toUpperCase() + sin.slice(1) : sin; });   // una persona no escribe ¿ ¡ ni "avísame"
     if (prueba) return r;   // vista previa: no cuenta ni queda en el log
@@ -144,6 +146,7 @@ export async function redactar(env, iaJSON, conv, { prueba = false } = {}) {
     const log = JSON.parse((await kvGet(env, "resp_log")) || "[]");
     log.push({ ts: Date.now(), conv, nombre, accion: r.accion, mensaje: r.mensaje || "", motivo: r.motivo || "" });
     await kvPut(env, "resp_log", JSON.stringify(log.slice(-60)));
+    await registrarCaso(env, { conv, nombre, accion: r.accion, mensaje: r.accion === "responder" ? r.mensaje || "" : "", motivo: r.motivo || "", ctx: ctxCaso, juez: r.juez }).catch(() => {});   // para aprender de lo que pasa después
     if (r.accion === "humano") await anotarDerivado(env, conv, nombre, r.resumen || r.motivo);   // lista "Para vos"
     return r;
   };
@@ -152,6 +155,7 @@ export async function redactar(env, iaJSON, conv, { prueba = false } = {}) {
   if (!prueba && +((await kvGet(env, "resp_auto:" + conv)) || 0) >= (c.ult_cliente_ts || 0)) return { accion: "nada", motivo: "ya lo atendió la otra PC" };   // dos PCs a la vez: no contestar dos veces
   if (!prueba && !(await reservar(env, conv, 5 * 60e3))) return { accion: "nada", motivo: "lo está atendiendo otra PC" };   // reserva atómica: si dos PCs piden el mismo chat, gana una sola
   const msgs = ((await env.DB.prepare("SELECT yo, tipo, texto, ts FROM w_msg WHERE conv=? ORDER BY ts DESC LIMIT 14").bind(conv).all()).results || []).reverse();
+  ctxCaso = msgs.slice(-6).map((m) => ({ yo: m.yo ? 1 : 0, t: String(m.texto || `[${m.tipo || "archivo"}]`).replace(/\s+/g, " ").slice(0, 160) }));
   const ultimo = [...msgs].reverse().find((m) => !m.yo);
   if (!ultimo) return fin({ accion: "nada", motivo: "sin mensaje del cliente" }, c.nombre);
   if (!String(ultimo.texto || "").trim() && ultimo.tipo !== "text") return fin({ accion: "humano", motivo: `mandó ${ultimo.tipo || "un archivo"} sin texto` }, c.nombre);
@@ -167,20 +171,79 @@ export async function redactar(env, iaJSON, conv, { prueba = false } = {}) {
   for (const f of fallos) {
     if (await kvGet(env, "cotpedido:" + f.k)) continue;
     if (!prueba) await kvPut(env, "cotpedido:" + f.k, Date.now());
-    if (!dijoCantidad) return fin({ accion: "responder", mensaje: ["No me abre bien la página de ese producto desde acá. ¿Me pasás el peso del producto en kg, el precio FOB que figura en Alibaba y cuántas unidades querés traer?",
-      "Se me complica abrir ese link. ¿Me decís cuántas unidades querés traer, el precio FOB que te figura en Alibaba y el peso del producto en kg?"][Math.floor(Math.random() * 2)], motivo: "no se pudo leer el link y no dijo cantidad" }, c.nombre);
-    const pide = ["No me abre bien la página de ese producto desde acá. ¿Me pasás el peso del producto en kg y el precio FOB que figura en Alibaba para esa cantidad?",
-      "Se me complica abrir ese link. ¿Me decís el precio FOB que te figura en Alibaba para esa cantidad y el peso del producto en kg?"][Math.floor(Math.random() * 2)];
+    if (!dijoCantidad) return fin({ accion: "responder", mensaje: ["No me abre bien la página de ese producto desde acá. ¿Me pasás el peso del producto en gramos, el precio FOB unitario que figura en Alibaba y cuántas unidades querés traer?",
+      "Se me complica abrir ese link. ¿Me decís cuántas unidades querés traer, el precio FOB unitario que te figura en Alibaba y el peso del producto en gramos?"][Math.floor(Math.random() * 2)], motivo: "no se pudo leer el link y no dijo cantidad" }, c.nombre);
+    const pide = ["No me abre bien la página de ese producto desde acá. ¿Me pasás el peso del producto en gramos y el precio FOB unitario que figura en Alibaba para esa cantidad?",
+      "Se me complica abrir ese link. ¿Me decís el precio FOB unitario que te figura en Alibaba para esa cantidad y el peso del producto en gramos?"][Math.floor(Math.random() * 2)];
     return fin({ accion: "responder", mensaje: pide, motivo: "no se pudo leer el link para cotizar" }, c.nombre);
   }
   // Si lo ÚLTIMO que dijo es un cierre ("gracias", "ya te aviso", "lo analizo"), no se contesta aunque más arriba haya
   // quedado una pregunta: casi siempre ya se la respondieron por otro lado (audio, llamada, el celular)
   if (esCierre(ultimo.texto)) return fin({ accion: "nada", motivo: "agradece, se despide o va a avisar: no pide respuesta" }, c.nombre);
-  const ejemplos = ((await env.DB.prepare("SELECT texto FROM w_msg WHERE yo=1 AND grupo=0 AND tipo='text' AND length(texto) BETWEEN 12 AND 220 ORDER BY ts DESC LIMIT 40").all()).results || []).map((x) => "- " + String(x.texto).replace(/\s+/g, " ")).slice(0, 25);
+  // Si el cliente pasó peso, cantidad y FOB: la cotización se arma sola (con controles de que los números tengan sentido)
+  const q3 = await cotizarConTresDatos(env, iaJSON, { conv, c, msgs, sinContestar, T, prueba });
+  if (q3) return fin(q3, c.nombre);
+  const est = await cargarEstilo(env), reglas = await cargarReglas(env);
+  let d = await decidirIA(env, iaJSON, { c, msgs, ultimo, est, reglas });
+  // Juez: ningún borrador sale sin aprobar. Si no pasa se manda la versión corregida (si cumple todo) o queda para vos.
+  if (d.accion === "responder") {
+    const j = await juzgar(env, iaJSON, { msgs, mensaje: d.mensaje, est, reglas }).catch(() => null);
+    if (j) {
+      d.juez = { puntaje: j.puntaje, fallas: j.fallas.slice(0, 3), ok: j.ok };
+      if (!j.ok) {
+        const arreglado = j.mejorado ? j.mejorado.replace(/[¿¡]/g, "") : "";
+        if (arreglado && !chequeoDuro(arreglado, est, msgs).length && !revisarMensaje(arreglado)) { d = { ...d, mensaje: arreglado, motivo: (d.motivo || "") + " (corregido por el juez)", juez: { ...d.juez, corregido: true } }; }
+        else d = { accion: "humano", motivo: `el juez no aprobó el borrador (${j.fallas.slice(0, 2).join("; ") || "puntaje bajo"})`, resumen: d.resumen || "revisar: el borrador no pasó el control", juez: d.juez, borrador: d.mensaje };
+      }
+    }
+  }
+  return fin(d, c.nombre);
+}
+
+
+// ---------------------------------------------------------------------------------------------------------------
+// COTIZAR CON LOS 3 DATOS: si el cliente pasó peso del producto, cantidad y precio FOB unitario, el sistema arma la cotización
+// (misma cuenta que la calculadora). Antes de armarla, la IA solo EXTRAE lo que el cliente escribió y dice si los números tienen
+// sentido para ese producto (una cerradura chica no pesa 2,5 kg); si algo no cierra queda para vos en vez de cotizar mal.
+// La cotización queda en Pendientes con su PDF; el programita de la PC la guarda para revisar o la manda según COTIZ_MODO.
+const RE_PESO = /\d[\d.,]*\s*(g|gr|grs|gramos?|kg|kgs|kilos?)\b/i, RE_FOB = /(fob|u\$s|usd|d[oó]lar|\$\s*\d|\d\s*\$)/i, RE_CANT = /(\d+\s*(u|un|unid|unidades|pcs|piezas|pzs)\b|cantidad|\bx\s?\d+|quiero \d+|\d+ unidades)/i;
+export async function cotizarConTresDatos(env, iaJSON, { conv, c, msgs, sinContestar, T, prueba = false }) {
+  if (!T) return null;
+  const nuevo = sinContestar.map((m) => String(m.texto || "")).join("\n");
+  const antes = msgs.slice(-8).map((m) => String(m.texto || "")).join("\n");
+  if (!(RE_PESO.test(nuevo) || RE_FOB.test(nuevo))) return null;   // lo último del cliente tiene que traer algún dato
+  if (!(RE_PESO.test(antes) && RE_FOB.test(antes) && RE_CANT.test(antes))) return null;   // y entre todo lo dicho, los tres
+  const e = await iaJSON(env, `Del chat sacá los 3 datos para cotizar una importación. Devolvé SOLO lo que el cliente escribió de forma explícita; no estimes ni completes nada.
+Devolvé JSON {"producto":"nombre corto del producto","peso_g":número,"cantidad":número,"fob_usd":número,"completo":true|false,"plausible":true|false,"dudas":"qué falta o no cierra"}
+- peso_g: peso de UNA unidad en gramos (convertí kg a gramos). Si dio el peso total del pedido y no queda claro el de una unidad, completo=false.
+- cantidad: unidades que quiere traer.
+- fob_usd: precio FOB de UNA unidad en dólares. Si dio un total y queda claro cuántas unidades, dividilo; si no queda claro, completo=false.
+- plausible=false si el peso o el precio no tienen sentido para ese producto (ej. una cerradura chica de 2500 g, un celular a 5 dólares, un parlante de 10 g).
+CHAT:
+${msgs.slice(-8).map((m) => `${m.yo ? "YO" : "CLIENTE"}: ${String(m.texto || "").replace(/\s+/g, " ").slice(0, 300)}`).join("\n")}`, { prioridad: true }).catch(() => null);
+  const peso_g = +e?.peso_g, cant = Math.round(+e?.cantidad), fob = +e?.fob_usd, prod = String(e?.producto || "").replace(/\s+/g, " ").trim().slice(0, 80);
+  if (!e || e.completo !== true || !prod || !(peso_g >= 1 && peso_g <= 50000) || !(cant >= 1 && cant <= 100000) || !(fob >= 0.01 && fob <= 5000)) return null;   // faltan datos: sigue el flujo normal (pedir lo que falta)
+  if (e.plausible === false) return { accion: "humano", motivo: "datos para cotizar que no cierran (peso o FOB raros)", resumen: `datos dudosos: ${prod} ${peso_g} g, USD ${fob}` };
+  const clave = `cotauto3:${conv}:${peso_g}|${cant}|${fob}`;
+  if (await kvGet(env, clave)) return { accion: "nada", motivo: "esa cotización ya se armó" };
+  if (prueba) return { accion: "nada", motivo: `armaría la cotización: ${prod} x${cant}, ${peso_g} g, FOB USD ${fob}` };
+  const g = await guardarCotizAuto(env, T, { conv, nombre: c.nombre, items: [{ nombre: prod, variante: "", link: "", cantidad: cant, precio: fob, peso: peso_g / 1000 }], notas: "Cotización con los datos que pasó el cliente (peso, cantidad y precio FOB).", extra: "\n(Datos pasados por el cliente en el chat.)" });
+  await kvPut(env, clave, g.id);
+  return { accion: "nada", motivo: `cotización N° ${g.num} armada con los 3 datos del cliente (USD ${g.total.toFixed(2)})` };
+}
+
+const sinContestarTexto = (msgs) => { const o = []; for (const m of [...msgs].reverse()) { if (m.yo) break; o.unshift(String(m.texto || "")); } return o.join(" ") || String([...msgs].reverse().find((m) => !m.yo)?.texto || ""); };
+
+// Decide qué contestar (la parte "pensar" del contestador). Se usa en producción y en el entrenamiento: ahí recibe
+// reglas de prueba y el id del caso para que los ejemplos parecidos no incluyan la respuesta real.
+export async function decidirIA(env, iaJSON, { c, msgs, ultimo, est = null, reglas = [], excluir = "" }, opts = { prioridad: true }) {
+  const sinPares = !est?.pares?.length;
+  const ejemplos = sinPares ? ((await env.DB.prepare("SELECT texto FROM w_msg WHERE yo=1 AND grupo=0 AND tipo='text' AND length(texto) BETWEEN 12 AND 220 ORDER BY ts DESC LIMIT 40").all()).results || []).map((x) => "- " + String(x.texto).replace(/\s+/g, " ")).slice(0, 25) : [];
+  const parecidos = sinPares ? "" : ejemplosTexto(similares(est, sinContestarTexto(msgs), 6, excluir));
   const charla = msgs.map((m) => `${m.yo ? "YO" : "CLIENTE"}: ${String(m.texto || `[${m.tipo}]`).replace(/\s+/g, " ").slice(0, 300)}`).join("\n");
   const ia = await iaJSON(env, `Sos el dueño de "Te Importamos" (importación por encargo desde China y catálogo con stock, Rosario, Argentina) contestando por WhatsApp. Escribí SOLO el próximo mensaje tuyo al cliente.
-Cómo escribo yo (ejemplos reales míos, copiá el tono, no las frases):
-${ejemplos.join("\n") || "- (sin ejemplos todavía: tono cercano, voseo, directo)"}
+Cómo escribo yo (copiá el tono y el largo, no las frases):
+${sinPares ? ejemplos.join("\n") || "- (sin ejemplos todavía: tono cercano, voseo, directo)" : perfilTexto(est) + "\nAsí contesté yo en casos parecidos:\n" + parecidos}
 
 Conversación (los últimos mensajes; el último es del cliente, escrito hace ${Math.max(0, Math.round((Date.now() - (ultimo.ts || Date.now())) / 3600e3))} horas):
 ${charla}
@@ -191,22 +254,25 @@ REGLAS (seguí este orden; la primera que aplica manda):
 2. PARA EL DUEÑO → accion "humano" (no contestes): pagos, transferencias, comprobantes, señas; reclamos o enojo; pide una llamada; negocia o compara precios; preguntas sobre una cotización que YA le pasamos; condiciones del servicio (garantías, envíos a terceros, venta sin stock, dropshipping, formas de pago, plazos, mínimos, aduana); pide recomendaciones u opciones; pregunta si sos un bot o una persona; pide datos nuestros (dirección del depósito, CBU, alias, datos para el envío, ubicación); ya dio peso + cantidad + precio FOB (hay que cotizarle);  proveedores que nos ofrecen algo; algo que no entendés o cualquier duda.
 3a. LINK DE ALIBABA SIN CANTIDAD: preguntale solo cuántas unidades quiere (el precio y el peso los sacamos nosotros del link; la cotización se arma sola cuando diga la cantidad). Si ya se lo preguntaste y no contestó, recordáselo corto.
 3b. LINK DE 1688 (o de otro proveedor) sin datos: pedile "${FRASE_COTIZAR} de 1688" (o "del proveedor"). Si ya se lo pediste y no contestó, recordáselo corto.
+3c. JUNTAR LOS 3 DATOS EN POCOS MENSAJES: cuando ya tiene proveedor o link y falta información para cotizar, pedí TODO lo que falte en UN solo mensaje (peso del producto en gramos, cantidad de unidades, precio FOB unitario). Si ya dio alguno, pedí solo los que faltan y nombrá lo que ya dijo para que vea que lo leíste; nunca repitas una pregunta que ya hiciste. Si no sabe dónde encontrarlos en Alibaba: el precio sale de la tabla por cantidad de la página y el peso de "Empaque y entrega" (peso bruto). Cuando los tres datos quedan completos, la cotización se arma sola (accion "nada").
 4. NOMBRA UN PRODUCTO SIN LINK NI FOTOS (ej: "Xiaomi note 15", "necesito traer 45 pestillos electrónicos", "quiero importar parlantes"): preguntale si tiene el link de Alibaba o 1688, o de algún proveedor; y si no lo tiene, que te mande fotos de referencia del producto. NO ofrezcas el informe de búsqueda, NO pidas peso ni FOB todavía. EXCEPCIÓN: si nombra un producto de marca definida que ya vendemos desde Paraguay en la tienda (parlantes JBL: Charge, Go, Flip, Clip, Boombox, etc.), o el mensaje viene del botón de la tienda web ("quiero consultar precio y disponibilidad por el producto …"), NO le pidas link ni fotos ni lo dejes para el dueño: preguntale solo qué cantidad quiere de cada producto.
 5. PRECIO DE ALGO QUE VIO (ropa, zapatillas, "¿ese precio es por unidad?", "¿cuánto sale por 12?") sin decir cuál: no confirmes ni expliques precios; preguntale qué producto vio (prenda, modelo, zapatilla) y si lo vio en un mensaje de los grupos o en la página, y que te pase la captura o el link.
 6. CATÁLOGO / STOCK ("qué tienen", "lista de precios", "tienen X en stock"): mandale el link https://www.teimportamosarg.com/catalogo y que ahí están los productos y precios.
 7. SALUDO O "QUIERO INFO" sin decir qué: saludalo y preguntale qué producto quiere traer y si tiene link de Alibaba/1688 o fotos de referencia.
 8. Cualquier otra cosa → accion "humano".
-ESTILO: 1 a 3 líneas, voseo argentino, como escribo yo (ver ejemplos), sin listas ni títulos, sin muletillas al arrancar ("claro", "dale", "buenísimo", "genial"). Si ya hubo charla hoy, no saludes de nuevo. Si el último mensaje del cliente es de hace más de 12 horas, arrancá con un "Perdón la demora!" corto. Usá el nombre del producto que dijo el cliente.
+${reglas?.length ? "REGLAS QUE APRENDÍ (valen como las de arriba; si chocan con REGLAS o PROHIBIDO, mandan estas últimas):\n" + reglasTexto(reglas) + "\n" : ""}ESTILO: 1 a 3 líneas, voseo argentino, como escribo yo (ver ejemplos), sin listas ni títulos, sin muletillas al arrancar ("claro", "dale", "buenísimo", "genial"). Si ya hubo charla hoy, no saludes de nuevo. Si el último mensaje del cliente es de hace más de 12 horas, arrancá con un "Perdón la demora!" corto. Usá el nombre del producto que dijo el cliente.
 PROHIBIDO: prometer que le vas a pasar o mandar algo ("te paso la dirección", "ahí te mando") salvo el link del catálogo en ese mismo mensaje; dar precios, comisiones, plazos o cualquier número de plata; ofrecer el informe de búsqueda (eso lo hace el dueño cuando ve las fotos); decir "te paso con alguien", "te derivo", "el equipo", "te llamamos" o prometer que alguien le va a escribir; nombrar vapers, pods o tabaco.
-Devolvé JSON: {"accion":"responder"|"humano"|"nada","mensaje":"texto a enviar (vacío si no es responder)","motivo":"una frase corta","resumen":"3 a 5 palabras: de qué trata el chat y qué debo hacer yo (ej: \"quiere vender sin stock, explicarle dropshipping\")"}`, { prioridad: true });
-  if (!ia || !["responder", "humano", "nada"].includes(ia.accion)) return fin({ accion: "humano", motivo: "la IA no pudo decidir" }, c.nombre);
-  if (ia.accion !== "responder") return fin({ accion: ia.accion, motivo: String(ia.motivo || "").slice(0, 120), resumen: ia.resumen }, c.nombre);
+Devolvé JSON: {"accion":"responder"|"humano"|"nada","mensaje":"texto a enviar (vacío si no es responder)","motivo":"una frase corta","resumen":"3 a 5 palabras: de qué trata el chat y qué debo hacer yo (ej: \"quiere vender sin stock, explicarle dropshipping\")"}`, opts);
+  if (!ia || !["responder", "humano", "nada"].includes(ia.accion)) return ({ accion: "humano", motivo: "la IA no pudo decidir" });
+  if (ia.accion !== "responder") return ({ accion: ia.accion, motivo: String(ia.motivo || "").slice(0, 120), resumen: ia.resumen });
   if (!/[?¿]/.test(ultimo.texto || "") && /(avisame si|av[ií]same cualquier|si te qued[oó]|qued[oó] alguna duda|pudiste ver|si pod[eé]s acordate|te sirvi[oó] la cotizaci[oó]n|lo pudiste)/i.test(ia.mensaje || ""))
-    return fin({ accion: "nada", motivo: "no preguntó nada; un recordatorio va como seguimiento" }, c.nombre);
+    return ({ accion: "nada", motivo: "no preguntó nada; un recordatorio va como seguimiento" });
   const mal = revisarMensaje(ia.mensaje);
-  if (mal) return fin({ accion: "humano", motivo: `no mandé lo redactado (${mal})`, resumen: ia.resumen }, c.nombre);
-  return fin({ accion: "responder", mensaje: String(ia.mensaje).trim(), motivo: String(ia.motivo || "").slice(0, 120) }, c.nombre);
+  if (mal) return ({ accion: "humano", motivo: `no mandé lo redactado (${mal})`, resumen: ia.resumen });
+  return ({ accion: "responder", mensaje: String(ia.mensaje).trim(), motivo: String(ia.motivo || "").slice(0, 120) });
 }
+
+
 
 // Chats que el contestador dejó para vos y todavía no contestaste
 export async function derivados(env) {
@@ -224,7 +290,7 @@ export async function rutaAutoresp(env, req, p, url, iaJSON, h = {}) {
   const json = (x, s = 200) => Response.json(x, { status: s });
   const body = async () => req.json().catch(() => ({}));
   if (p === "/enviar/responder") return json({ ok: true, ...(await pendientesResponder(env, { limite: Math.min(Math.max(+url.searchParams.get("limite") || 10, 1), 50), T: h.T, desde: +url.searchParams.get("desde") || 0, dias: +url.searchParams.get("dias") || 14 })) });
-  if (p === "/enviar/redactar" && req.method === "POST") return json({ ok: true, ...(await (async () => { const b = await body(); return redactar(env, iaJSON, String(b.conv || ""), { prueba: !!b.prueba }); })()) });
+  if (p === "/enviar/redactar" && req.method === "POST") return json({ ok: true, ...(await (async () => { const b = await body(); return redactar(env, iaJSON, String(b.conv || ""), { prueba: !!b.prueba, T: h.T }); })()) });
   if (p === "/enviar/respondido" && req.method === "POST") {   // el mensaje salió: recién ahí el chat queda como atendido
     const conv = String((await body()).conv || "");
     if (conv) await env.DB.batch([env.DB.prepare("INSERT INTO kv (k,v,exp) VALUES (?,?,NULL) ON CONFLICT(k) DO UPDATE SET v=excluded.v, exp=NULL").bind("resp_auto:" + conv, String(Date.now())), env.DB.prepare("DELETE FROM kv WHERE k=?").bind("resp_toma:" + conv), ...marcarContestado(env, conv)]);
@@ -246,6 +312,11 @@ export async function rutaAutoresp(env, req, p, url, iaJSON, h = {}) {
   if (p === "/enviar/reintentar" && req.method === "POST") { const conv = String((await body()).conv || ""); await env.DB.batch([env.DB.prepare("DELETE FROM kv WHERE k=?").bind("resp_auto:" + conv), env.DB.prepare("DELETE FROM kv WHERE k=?").bind("resp_toma:" + conv)]); return json({ ok: true }); }   // falló el envío: que se vuelva a intentar
   if (p === "/enviar/cotizacion-guardada" && req.method === "POST") { await kvPut(env, "cotsent:" + String((await body()).id || ""), "guardada"); return json({ ok: true }); }   // PDF guardado en la PC para revisar: no se vuelve a ofrecer, pero sigue en Pendientes del panel
   if (p === "/enviar/pausa" && req.method === "POST") { await pausaAutoresp(env, !!(await body()).pausa); return json({ ok: true }); }
+  if (p === "/enviar/aprendizaje") {   // qué aprendió el agente; POST {agregar:"regla"} o {borrar:N} para enseñarle o sacarle una regla
+    if (req.method === "POST") { const b = await body(); await editarReglas(env, { agregar: b.agregar, borrar: Number.isInteger(b.borrar) ? b.borrar : undefined }); }
+    return json({ ok: true, ...(await informe(env)) });
+  }
+  if (p === "/enviar/entrenar" && req.method === "POST") { const n = Math.min(Math.max(+(await body()).rondas || 3, 1), 10); await kvPut(env, KENT.pedido, n); return json({ ok: true, rondas: n, nota: "corre sola, una ronda por minuto; mirá /enviar/aprendizaje" }); }
   if (p === "/enviar/derivados") return json({ ok: true, lista: await derivados(env) });
   if (p === "/enviar/log") return json({ ok: true, pausado: (await kvGet(env, "resp_pausa")) === "1", log: JSON.parse((await kvGet(env, "resp_log")) || "[]") });
   return null;
