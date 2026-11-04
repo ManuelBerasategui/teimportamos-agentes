@@ -18,7 +18,7 @@ const BOT = /^\s*(bienvenid[oa]|te voy a derivar|gracias por escribir)/i;   // m
 const STOP = new Set("de la el en y a que lo un una te me se con por para es no si los las del al mi tu su ya le les mas más muy como pero esto eso este esta".split(" "));
 const sinTilde = (t) => String(t || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 const palabras = (t) => sinTilde(t).replace(/https?:\/\/\S+/g, " ").split(/[^a-z0-9ñ]+/).filter(Boolean);
-const comp = (m) => ({ yo: m.yo ? 1 : 0, t: String(m.texto || `[${m.tipo || "archivo"}]`).replace(/\s+/g, " ").slice(0, 200) });
+const comp = (m) => ({ yo: m.yo ? 1 : 0, t: String(m.texto || "(archivo)").replace(/\s+/g, " ").slice(0, 200), ...(m.tipo && m.tipo !== "text" ? { k: m.tipo } : {}) });
 export const parecido = (a, b) => { const x = new Set(palabras(a)), y = new Set(palabras(b)); if (!x.size || !y.size) return 0; let i = 0; for (const w of x) if (y.has(w)) i++; return i / (x.size + y.size - i); };
 
 // ------------------------------------------------------------------ 1) ESTILO
@@ -42,20 +42,25 @@ export async function construirEstilo(env, ahora = Date.now()) {
   const filas = ((await env.DB.prepare("SELECT conv, yo, tipo, texto, ts FROM w_msg WHERE grupo=0 AND ts>=? ORDER BY ts DESC LIMIT 5000").bind(ahora - 60 * 86400e3).all()).results || []);
   const porConv = new Map();
   for (const m of filas) { if (!porConv.has(m.conv)) porConv.set(m.conv, []); porConv.get(m.conv).push(m); }
-  const propios = [], pares = [];
+  const propios = [], pares = [], sinResp = [];
   for (const [conv, ms] of porConv) {
     ms.sort((a, b) => a.ts - b.ts);
     let pend = [], ctx = [];
     for (const m of ms) {
       const t = String(m.texto || "").trim();
-      if (!m.yo) { if (m.tipo === "text" && t) pend.push(t); ctx.push(m); continue; }
+      if (!m.yo) { if (t || m.tipo !== "text") pend.push(t || "(archivo)"); ctx.push(m); continue; }
       const mio = m.tipo === "text" && t.length >= 8 && t.length <= 400 && !BOT.test(t) && !/^https?:\/\/\S+$/.test(t);
+      const adjunto = m.tipo !== "text" || /^\((archivo|audio|image|video|document)/i.test(t);
       if (mio) { propios.push(t); if (pend.length) pares.push({ id: `${conv}:${m.ts}`, ts: m.ts, c: pend.slice(-3).join(" / ").slice(0, 300), y: t, ctx: ctx.slice(-7).map(comp) }); }
+      else if (adjunto && pend.length) pares.push({ id: `${conv}:${m.ts}`, ts: m.ts, c: pend.slice(-3).join(" / ").slice(0, 300), y: "[respondí con un audio o un archivo]", ctx: ctx.slice(-7).map(comp), k: "adjunto" });
       pend = []; ctx.push(m);
     }
+    const ult = ms.at(-1);   // la charla terminó con el cliente y no le contesté en 24 h: sirve para aprender cuándo NO hay que contestar
+    if (pend.length && ult && !ult.yo && ahora - ult.ts > 24 * 3600e3) sinResp.push({ id: `${conv}:${ult.ts}:nr`, ts: ult.ts, c: pend.slice(-3).join(" / ").slice(0, 300), y: "(no le contesté nada)", ctx: ctx.slice(-7).map(comp), k: "sin_respuesta" });
   }
   const vistos = new Set(), unicos = [];
-  for (const p of pares.sort((a, b) => b.ts - a.ts)) { const k = sinTilde(p.y); if (vistos.has(k)) continue; vistos.add(k); unicos.push(unicos.length < 150 ? p : { id: p.id, ts: p.ts, c: p.c, y: p.y }); if (unicos.length >= 450) break; }
+  const todos = [...pares, ...sinResp.sort((a, b) => b.ts - a.ts).slice(0, 60)].sort((a, b) => b.ts - a.ts);
+  for (const p of todos) { const k = p.k ? p.id : sinTilde(p.y); if (vistos.has(k)) continue; vistos.add(k); unicos.push(unicos.length < 150 || p.k ? p : { id: p.id, ts: p.ts, c: p.c, y: p.y }); if (unicos.length >= 480) break; }
   const est = { ts: ahora, stats: estadisticas(propios.slice(0, 1500)), pares: unicos };
   await guardar(env, K.estilo, est);
   return est;
@@ -194,6 +199,10 @@ Puntuá al agente de 1 a 10: ¿habría sido una respuesta igual de buena que la 
 - Mismo objetivo que la mía, tono y largo parecidos a los míos, sin inventar datos, sin pedir lo que el cliente ya dio, sin repetir.
 - Derivarme el chat ("humano") SOLO es correcto si mi respuesta real necesitó algo que el agente no puede tener: pagos o comprobantes, estado de un pedido en marcha, negociación de precios, aduana, llamadas, un reclamo o un origen que no es China. Si yo lo resolví con una pregunta o un dato simple (cantidad, link, fotos, plazo, "dale cuando puedas me pasás"), derivar fue un error: puntaje 5 o menos.
 - Si el agente no contestó ("nada") pero yo contesté algo que había que contestar, o si contestó algo que yo no habría dicho, es un error.
+- ERROR GRAVE (puntaje 1 a 3): contestar algo que no tiene que ver con el ÚLTIMO mensaje del cliente; usar una frase armada que no corresponde (ej. pedir precio FOB a alguien que dijo "no me sirve, gracias"); pedirle datos a alguien que se está despidiendo; inventar datos.
+- Si mi respuesta es "(no le contesté nada)": a veces no contesto por olvido. Si lo último del cliente era un cierre o un rechazo, lo correcto era "nada"; si hacía una pregunta, contestarla bien también es correcto.
+- Si mi respuesta es "[respondí con un audio o un archivo]": no sabés qué dije; está bien si el agente lo derivó o contestó algo sensato al último mensaje.
+- "(archivo)" en la charla es un adjunto que puede ser foto, audio o documento.
 OBJETIVO DEL NEGOCIO: ${OBJETIVO}
 ${PLAZOS}
 
@@ -206,7 +215,14 @@ AGENTE: ${agente}
 Devolvé JSON: {"puntaje":1-10,"fallas":["falla corta"],"regla":"una regla corta en imperativo, general (no de este chat), que evitaría este error; vacío si el agente estuvo bien"}`);
 }
 
-export async function rondaEntrenamiento(env, iaBase, decidir, { n = 6, maxIA = 34, ahora = Date.now() } = {}) {
+export async function rondaEntrenamiento(env, iaBase, decidir, opts = {}) {
+  const ahora = opts.ahora || Date.now(), kDia = "ent:usos:" + new Date(ahora - 3 * 3600e3).toISOString().slice(0, 10);
+  const usadosDia = +((await kvGet(env, kDia)) || 0), topeDia = +(env.ENT_MAX_DIA || 800);
+  if (usadosDia >= topeDia) return { nota: `hoy ya usé ${usadosDia} llamadas a la IA para entrenar (tope ${topeDia}); sigo mañana para no dejar sin cupo al contestador` };
+  let usos = 0; const contar = async (e, p, o) => { usos++; return iaBase(e, p, o); };
+  try { return await rondaInterna(env, contar, decidir, { ...opts, ahora }); } finally { await kvPut(env, kDia, usadosDia + usos); }
+}
+async function rondaInterna(env, iaBase, decidir, { n = 5, maxIA = 38, ahora = Date.now() } = {}) {
   let usos = 0, agotada = false;
   const ia = async (e, prompt, o = {}) => { if (usos >= maxIA) { agotada = true; return null; } usos++; return iaBase(env, prompt, { ...o, sinRespaldo: true }); };   // el respaldo de Cloudflare AI queda para los clientes
   let est = await cargarEstilo(env);
@@ -219,7 +235,7 @@ export async function rondaEntrenamiento(env, iaBase, decidir, { n = 6, maxIA = 
   if (cand.length < n) { vistos = new Set(); cand = est.pares.filter((p) => p.ctx?.length && !p.ctx.at(-1)?.yo); }
   const lote = [...oro, ...mezclar(cand).slice(0, n)], res = [];
   const correr = async (p, reglasUsar) => {
-    const msgs = p.ctx.map((m) => ({ yo: m.yo, texto: m.t, tipo: "text" }));
+    const msgs = p.ctx.map((m) => ({ yo: m.yo, texto: m.t, tipo: m.k || "text" }));
     const ultimo = [...msgs].reverse().find((m) => !m.yo);
     const borr = await decidir({ c: { nombre: "" }, msgs, ultimo, est, reglas: reglasUsar, excluir: p.id, correcciones }, ia);
     if (!borr) return null;
@@ -278,12 +294,12 @@ export async function cronEntrenador(env, iaJSON, decidir, tiempo = Date.now()) 
   const corre = +((await kvGet(env, K.corre)) || 0);
   if (tiempo - corre < 3 * 60e3) return null;
   await kvPut(env, K.corre, tiempo); await kvPut(env, K.pedido, pedido - 1);
-  try { return await rondaEntrenamiento(env, iaJSON, decidir, { ahora: tiempo }); } finally { await kvPut(env, K.corre, 0); }
+  try { const r = await rondaEntrenamiento(env, iaJSON, decidir, { ahora: tiempo }); if (r?.nota) await guardar(env, "ent:nota", { ts: tiempo, nota: r.nota }); return r; } finally { await kvPut(env, K.corre, 0); }
 }
 
 export async function informe(env) {
   const [reglas, hist, ultimo, fallas, casos, est] = await Promise.all([cargarReglas(env), leer(env, K.hist, []), leer(env, K.ultimo, null), leer(env, K.fallas, []), leer(env, K.casos, []), cargarEstilo(env)]);
-  return { reglas, hist: hist.slice(-12), ultimo, erroresPendientes: fallas.length, pedido: +((await kvGet(env, K.pedido)) || 0), cotizaciones: await estadoCotizaciones(env), correcciones: (await cargarCorrecciones(env)).length, derivacion: (() => { const t = casos.filter((c) => c.accion !== "nada"); return { de: t.length, pct: t.length ? Math.round((100 * t.filter((c) => c.accion === "humano").length) / t.length) : 0 }; })(), estilo: est ? { ts: est.ts, ...est.stats, pares: est.pares.length } : null,
+  return { reglas, hist: hist.slice(-12), ultimo, nota: await leer(env, "ent:nota", null), erroresPendientes: fallas.length, pedido: +((await kvGet(env, K.pedido)) || 0), cotizaciones: await estadoCotizaciones(env), correcciones: (await cargarCorrecciones(env)).length, derivacion: (() => { const t = casos.filter((c) => c.accion !== "nada"); return { de: t.length, pct: t.length ? Math.round((100 * t.filter((c) => c.accion === "humano").length) / t.length) : 0 }; })(), estilo: est ? { ts: est.ts, ...est.stats, pares: est.pares.length } : null,
     ultimosCasos: casos.slice(-12).map((c) => ({ ts: c.ts, accion: c.accion, mensaje: c.mensaje, juez: c.juez })) };
 }
 export async function editarReglas(env, { agregar, borrar }) {

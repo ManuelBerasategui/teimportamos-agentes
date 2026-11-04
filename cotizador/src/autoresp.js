@@ -130,8 +130,9 @@ async function reservar(env, conv, ms, forzar = false) {
   return (r.meta?.changes ?? 1) > 0;
 }
 
-export async function redactar(env, iaJSON, conv, { prueba = false, T = null } = {}) {
-  const c = await env.DB.prepare("SELECT * FROM w_conv WHERE conv=?").bind(conv).first();
+export async function redactar(env, iaJSON, conv, { prueba = false, T = null, sim = null } = {}) {
+  if (sim) prueba = true;   // entrenamiento: misma lógica que en vivo, sin escribir nada
+  const c = sim ? { nombre: "", ult_yo: 0, ult_cliente_ts: 0, ...(sim.c || {}) } : await env.DB.prepare("SELECT * FROM w_conv WHERE conv=?").bind(conv).first();
   let ctxCaso = [];   // últimos mensajes de la charla, para que el entrenador pueda repetir el caso
   const fin = async (r, nombre) => {
     if (r.mensaje) r.mensaje = String(r.mensaje).replace(/[¿¡]/g, "").replace(VOSEO_RE, (w) => { const sin = VOSEO[w.toLowerCase()]; return w[0] === w[0].toUpperCase() ? sin[0].toUpperCase() + sin.slice(1) : sin; });   // una persona no escribe ¿ ¡ ni "avísame"
@@ -155,24 +156,24 @@ export async function redactar(env, iaJSON, conv, { prueba = false, T = null } =
   if (c.ult_yo) return fin({ accion: "nada", motivo: "ya contestaste vos" }, c.nombre);
   if (!prueba && +((await kvGet(env, "resp_auto:" + conv)) || 0) >= (c.ult_cliente_ts || 0)) return { accion: "nada", motivo: "ya lo atendió la otra PC" };   // dos PCs a la vez: no contestar dos veces
   if (!prueba && !(await reservar(env, conv, 5 * 60e3))) return { accion: "nada", motivo: "lo está atendiendo otra PC" };   // reserva atómica: si dos PCs piden el mismo chat, gana una sola
-  const msgs = ((await env.DB.prepare("SELECT yo, tipo, texto, ts FROM w_msg WHERE conv=? ORDER BY ts DESC LIMIT 14").bind(conv).all()).results || []).reverse();
+  const msgs = sim ? sim.msgs : ((await env.DB.prepare("SELECT yo, tipo, texto, ts FROM w_msg WHERE conv=? ORDER BY ts DESC LIMIT 14").bind(conv).all()).results || []).reverse();
   ctxCaso = msgs.slice(-6).map((m) => ({ yo: m.yo ? 1 : 0, t: String(m.texto || `[${m.tipo || "archivo"}]`).replace(/\s+/g, " ").slice(0, 160) }));
   const ultimo = [...msgs].reverse().find((m) => !m.yo);
   if (!ultimo) return fin({ accion: "nada", motivo: "sin mensaje del cliente" }, c.nombre);
   if (!String(ultimo.texto || "").trim() && ultimo.tipo !== "text" && !/^(image|file)$/i.test(ultimo.tipo || "") && !/^\((image|foto|archivo)\)/i.test(String(ultimo.texto || "").trim())) return fin({ accion: "humano", motivo: `mandó ${ultimo.tipo || "un archivo"} sin texto` }, c.nombre);
-  // Si el cliente mandó fotos, videos, audios o archivos desde tu último mensaje: lo ves vos (suelen ser el producto que busca).
-  // Excepción (pedido del dueño): si mandó SOLO fotos del producto, se le piden los 3 datos para cotizar. Nunca si la charla es de plata
-  // (un comprobante también es una foto) ni si ya se lo pedimos.
+  // ADJUNTOS. WhatsApp Web entrega fotos, audios y documentos igual: "(archivo)". No se puede saber cuál es, así que nunca se dispara una
+  // frase fija sin leer la charla (error real: audio + "no me sirve, muchas gracias" iba a recibir el pedido de precio FOB).
+  // - Lo último es un adjunto sin texto: si es una foto segura (tipo image), se le piden los datos; si puede ser un audio, lo ves vos.
+  // - Después del adjunto escribió algo: decide la IA leyendo todo (regla 4b).
   let sinContestar = [];
   for (const m of [...msgs].reverse()) { if (m.yo) break; sinContestar.push(m); }
-  const esMedia = (m) => /^(image|video|audio|ptt|document|sticker)$/i.test(m.tipo || "") || /^\((image|video|audio|document|sticker|archivo|foto)\)/i.test(String(m.texto || "").trim());
-  const esImagen = (m) => /^(image|file)$/i.test(m.tipo || "") && !/^\((audio|video|document|sticker|ptt|voice)/i.test(String(m.texto || "").trim()) || /^\((image|foto|archivo)\)/i.test(String(m.texto || "").trim());   // WhatsApp Web entrega las fotos como "(archivo)"
-  if (sinContestar.some(esMedia)) {
-    const soloFotos = sinContestar.filter(esMedia).every(esImagen);
+  const esMedia = (m) => /^(image|video|audio|ptt|document|sticker|file)$/i.test(m.tipo || "") || /^\((image|video|audio|document|sticker|archivo|foto)\)/i.test(String(m.texto || "").trim());
+  const fotoSegura = (m) => /^image$/i.test(m.tipo || "") || /^\((image|foto)\)/i.test(String(m.texto || "").trim());
+  if (esMedia(ultimo)) {
     const dinero = /pag[oa]|transfer|comprobante|se[ñn]a\b|alias|cbu|dep[oó]sito|factura|reclamo|retiro|devoluc|garant|lleg[oó]|envi[oó]|seguimiento|tracking/i.test(msgs.slice(-8).map((m) => String(m.texto || "")).join(" "));
     const miUltimo = [...msgs].reverse().find((m) => m.yo);
-    if (soloFotos && !dinero && !/precio fob/i.test(miUltimo?.texto || "")) return fin({ accion: "responder", mensaje: FRASE_FOTO, motivo: "mandó fotos del producto: se le piden los 3 datos" }, c.nombre);
-    return fin({ accion: "humano", motivo: "mandó fotos o archivos", resumen: "mandó fotos: ver si está en Alibaba/1688 o va informe ($5.000)" }, c.nombre);
+    if (sinContestar.filter(esMedia).every(fotoSegura) && !dinero && !/precio fob/i.test(miUltimo?.texto || "")) return fin({ accion: "responder", mensaje: FRASE_FOTO, motivo: "mandó fotos del producto: se le piden los 3 datos" }, c.nombre);
+    return fin({ accion: "humano", motivo: "mandó un adjunto sin texto (puede ser foto, audio o documento)", resumen: "mandó un adjunto: escucharlo o verlo" }, c.nombre);
   }
   // La cotización automática no pudo leer el link de Alibaba: se le piden los datos al cliente (una sola vez)
   const fallos = ((await env.DB.prepare("SELECT k, v FROM kv WHERE k >= ? AND k < ? AND v LIKE 'no-se-pudo:%'").bind("cotauto:" + conv + ":", "cotauto:" + conv + ";").all()).results || [])
@@ -193,8 +194,8 @@ export async function redactar(env, iaJSON, conv, { prueba = false, T = null } =
   // Si el cliente pasó peso, cantidad y FOB: la cotización se arma sola (con controles de que los números tengan sentido)
   const q3 = await cotizarConTresDatos(env, iaJSON, { conv, c, msgs, sinContestar, T, prueba });
   if (q3) return fin(q3, c.nombre);
-  const est = await cargarEstilo(env), reglas = await cargarReglas(env), correcciones = await cargarCorrecciones(env);
-  let d = await decidirIA(env, iaJSON, { c, msgs, ultimo, est, reglas, correcciones });
+  const est = sim?.est ?? await cargarEstilo(env), reglas = sim?.reglas ?? await cargarReglas(env), correcciones = sim?.correcciones ?? await cargarCorrecciones(env);
+  let d = await decidirIA(env, iaJSON, { c, msgs, ultimo, est, reglas, correcciones, excluir: sim?.excluir || "" });
   // Juez: ningún borrador sale sin aprobar. Si no pasa se manda la versión corregida (si cumple todo) o queda para vos.
   if (d.accion === "responder") {
     const j = await juzgar(env, iaJSON, { msgs, mensaje: d.mensaje, est, reglas }).catch(() => null);
@@ -287,6 +288,7 @@ ${PLAZOS}
 4. NOMBRA UN PRODUCTO SIN LINK NI FOTOS (ej: "Xiaomi note 15", "necesito traer 45 pestillos electrónicos", "quiero importar parlantes", "estoy buscando este desodorante al por mayor"): seguí el embudo del dueño (SOP) según lo que ya sabés, sin repetir lo que el cliente ya dijo:
 ${SOP_EMBUDO}
 NO ofrezcas el informe de búsqueda. EXCEPCIÓN: si nombra un producto de marca definida que ya vendemos desde Paraguay en la tienda (parlantes JBL: Charge, Go, Flip, Clip, Boombox, etc.), o el mensaje viene del botón de la tienda web ("quiero consultar precio y disponibilidad por el producto …"), NO le pidas link ni fotos ni lo dejes para el dueño: preguntale solo qué cantidad quiere de cada producto.
+4b. ADJUNTOS: "(archivo)" en la charla es un adjunto que puede ser foto, audio o documento (no se sabe cuál). Leé lo que escribió el cliente ALREDEDOR del adjunto: si se entiende que mandó fotos del producto que busca ("decime si sabés de algo así", "busco esto", "tenés de estos?"), pedile los datos con esta frase: "${FRASE_FOTO}". Si lo último que escribió es un cierre o un rechazo ("no me sirve, muchas gracias", "ok gracias", "no por ahora"), accion "nada". Si para contestar necesitás saber qué decía el adjunto (un audio), accion "humano".
 5. PRECIO DE ALGO QUE VIO (ropa, zapatillas, "¿ese precio es por unidad?", "¿cuánto sale por 12?") sin decir cuál: no confirmes ni expliques precios; preguntale qué producto vio (prenda, modelo, zapatilla) y si lo vio en un mensaje de los grupos o en la página, y que te pase la captura o el link.
 6. CATÁLOGO / STOCK ("qué tienen", "lista de precios", "tienen X en stock"): mandale el link https://www.teimportamosarg.com/catalogo y que ahí están los productos y precios.
 7. SALUDO O "QUIERO INFO" sin decir qué: saludalo y preguntale qué producto quiere traer y si tiene link de Alibaba/1688 o fotos de referencia.
@@ -347,7 +349,7 @@ export async function rutaAutoresp(env, req, p, url, iaJSON, h = {}) {
     if (req.method === "POST") { const b = await body(); await editarReglas(env, { agregar: b.agregar, borrar: Number.isInteger(b.borrar) ? b.borrar : undefined }); }
     return json({ ok: true, ...(await informe(env)) });
   }
-  if (p === "/enviar/entrenar" && req.method === "POST") { const n = Math.min(Math.max(+(await body()).rondas || 3, 1), 10); await kvPut(env, KENT.pedido, n); return json({ ok: true, rondas: n, nota: "corre sola, una ronda por minuto; mirá /enviar/aprendizaje" }); }
+  if (p === "/enviar/entrenar" && req.method === "POST") { const pedidas = (await body()).rondas; const n = Math.min(Math.max(pedidas === 0 ? 0 : +pedidas || 3, 0), 120); await kvPut(env, KENT.pedido, n); return json({ ok: true, rondas: n, nota: "corre sola, una ronda por minuto; mirá /enviar/aprendizaje" }); }
   if (p === "/enviar/cotizacion-revisada" && req.method === "POST") {   // el dueño confirma si una cotización armada por el agente estaba bien: 7 seguidas y pasa a mandar directo
     const b = await body(); const num = +b.num;
     if (!num) return json({ ok: false, error: "falta el número de cotización" }, 400);
@@ -367,3 +369,6 @@ export async function rutaAutoresp(env, req, p, url, iaJSON, h = {}) {
   if (p === "/enviar/log") return json({ ok: true, pausado: (await kvGet(env, "resp_pausa")) === "1", log: JSON.parse((await kvGet(env, "resp_log")) || "[]") });
   return null;
 }
+
+// Entrenamiento: corre una charla simulada por el MISMO circuito que producción (adjuntos, cierres, cotización con 3 datos, IA y juez), sin escribir nada.
+export function simularRedactar(env, iaJSON, ctx, T = null) { return redactar(env, iaJSON, "sim:" + String(ctx.excluir || "x").replace(/\D/g, "").slice(0, 15), { T, sim: ctx }); }

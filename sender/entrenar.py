@@ -1,5 +1,7 @@
 """Entrenamiento del contestador: ver qué aprendió, pedir rondas de práctica y enseñarle reglas (SOP).
 Uso:  python entrenar.py                 -> muestra lo que aprendió (reglas, puntajes, estilo)
+      python entrenar.py --intensivo [MIN] -> entrena sin parar MIN minutos (60 si no ponés nada) y muestra cómo va mejorando
+      python entrenar.py --parar          -> frena el entrenamiento pedido
       python entrenar.py --ya [N]        -> pide N rondas de entrenamiento ahora (una por minuto; 3 si no ponés N)
       python entrenar.py --regla "texto" -> le enseña una regla tuya (queda fija: el entrenamiento nunca la borra)
       python entrenar.py --borrar N      -> saca la regla número N
@@ -9,7 +11,7 @@ Uso:  python entrenar.py                 -> muestra lo que aprendió (reglas, pu
       python entrenar.py --mal N "motivo"-> estaba mal: la racha vuelve a 0, vuelve a guardarlas para revisar y aprende del error
 Por la noche (4 AM) entrena solo con tus charlas reales: contesta sin ver tu respuesta, se compara y de los errores salen reglas
 nuevas; una regla solo se queda si mejora el puntaje."""
-import sys
+import sys, time
 from datetime import datetime
 from enviar import api
 
@@ -97,6 +99,35 @@ def main():
             print(f"Racha: {d['racha']} seguidas bien. El agente YA manda las cotizaciones directo. Si alguna sale mal: entrenar.bat --mal N \"motivo\" y vuelve a guardarlas para revisar.")
         else:
             print(f"Racha: {d['racha']} de {d['meta']} cotizaciones seguidas bien. " + (f"Faltan {d['faltan']} para que las mande directo." if bien else "Vuelve el modo revisión; el error quedó anotado para que aprenda."))
+    elif "--parar" in a:
+        api("/enviar/entrenar", {"rondas": 0}); print("Listo: frené el entrenamiento.")
+    elif "--intensivo" in a:
+        i = a.index("--intensivo")
+        mins = int(a[i + 1]) if len(a) > i + 1 and a[i + 1].isdigit() else 60
+        d = api("/enviar/entrenar", {"rondas": mins})
+        print(f"Entrenamiento intensivo: {d.get('rondas')} rondas, una por minuto (no hace falta tener WhatsApp abierto).")
+        print("Cada ronda: toma charlas reales tuyas, el agente contesta SIN ver tu respuesta (con el mismo circuito que en vivo),")
+        print("un juez compara, y de los errores salen reglas que solo se quedan si mejoran el puntaje. Ctrl+C deja de mirar (sigue solo).\n")
+        visto, fin = None, time.time() + mins * 60 + 180
+        try:
+            while time.time() < fin:
+                time.sleep(60)
+                try:
+                    d = api("/enviar/aprendizaje")
+                except Exception as e:
+                    print(f"  (no pude consultar: {e})"); continue
+                u = d.get("ultimo") or {}
+                if u.get("ts") and u.get("ts") != visto:
+                    visto = u["ts"]
+                    extra = "".join(f"\n      + regla nueva: {r}" for r in u.get("adoptadas") or []) + "".join(f"\n      - descartada: {r}" for r in u.get("descartadas") or [])
+                    print(f"  {fecha(u['ts'])}  puntaje {u.get('score')}/10 en {u.get('casos')} casos, {u.get('malos')} con errores, derivó {u.get('derivados', '-')}{extra}")
+                elif (d.get("nota") or {}).get("ts") and d["nota"]["ts"] != visto:
+                    visto = d["nota"]["ts"]; print(f"  {fecha(visto)}  {d['nota']['nota']}")
+                if not d.get("pedido"):
+                    break
+        except KeyboardInterrupt:
+            print("\nDejé de mirar; el entrenamiento sigue en el servidor. Para frenarlo: python entrenar.py --parar")
+        mostrar(api("/enviar/aprendizaje"))
     elif "--ya" in a:
         i = a.index("--ya")
         n = int(a[i + 1]) if len(a) > i + 1 and a[i + 1].isdigit() else 3

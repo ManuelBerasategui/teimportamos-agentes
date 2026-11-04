@@ -272,13 +272,18 @@ chk("el prompt trae el embudo del dueño: cantidad y origen, luego link, luego F
 chk("el prompt manda a responder el ÚLTIMO mensaje y a derivar solo en casos cerrados", /LO PRIMERO: respondé al ÚLTIMO mensaje/.test(promptVisto) && !/algo que no entendés o cualquier duda/.test(promptVisto) && /NO son motivo para derivar/.test(promptVisto));
 chk("'ya te mando' se contesta corto (ya no es un cierre sin respuesta)", /PROMESA DE ENVÍO/.test(promptVisto) && !/"ya te paso", "después te mando"/.test(promptVisto));
 chk("el acuse corto 'dale, cuando puedas me pasas' no lo rechaza el chequeo de muletillas", E.chequeoDuro("dale, cuando puedas me pasas", est, []).length === 0 && E.chequeoDuro("dale, " + "mirá que ".repeat(8), est, []).some((x) => /muletilla/.test(x)));
-// fotos que WhatsApp Web entrega como "(archivo)"
+// adjuntos: WhatsApp Web entrega fotos y audios igual, "(archivo)". Nada de frases fijas sin leer la charla.
 conv("5491302", "Rod", "Decime si sabes de algo asi", 2 * 60e3); msg("5491302", 0, "(archivo)", 3 * 60e3, "file"); msg("5491302", 0, "Decime si sabes de algo asi", 2 * 60e3);
-r = await A.redactar(env, iaSop, "5491302", { T, prueba: true });
-chk("foto que llega como '(archivo)': pide FOB, peso y cantidad (frase del dueño)", r.accion === "responder" && /precio fob/i.test(r.mensaje));
+promptVisto = ""; r = await A.redactar(env, iaSop, "5491302", { T, prueba: true });
+chk("'(archivo)' + 'decime si sabés de algo así': lo decide la IA leyendo la charla, con la frase de fotos como guía", promptVisto.includes("4b. ADJUNTOS") && promptVisto.includes(A.FRASE_FOTO) && r.accion === "responder");
 conv("5491303", "Alx", "(archivo)", 2 * 60e3); msg("5491303", 0, "(archivo)", 2 * 60e3, "file");
 r = await A.redactar(env, iaSop, "5491303", { T, prueba: true });
-chk("'(archivo)' solo, sin charla de plata: también", r.accion === "responder" && /precio fob/i.test(r.mensaje));
+chk("'(archivo)' solo (puede ser un audio): no le manda la frase, queda para el dueño", r.accion === "humano" && !/fob/i.test(r.mensaje || ""));
+// el error real: audio + "no me sirve, muchas gracias"
+conv("5491306", "Aud", "no me sirve, muchas gracias", 2 * 60e3); msg("5491306", 1, "te consigo ese modelo, mandame foto", 60 * 60e3); msg("5491306", 0, "(archivo)", 5 * 60e3, "file"); msg("5491306", 0, "no me sirve, muchas gracias", 2 * 60e3);
+let llegoIA = false; const iaCierre = async (e, p) => { if (p.includes("revisor de calidad")) return { ok: true, puntaje: 9 }; llegoIA = true; promptVisto = p; return /no me sirve, muchas gracias/.test(p) && /accion "nada"/.test(p) ? { accion: "nada", motivo: "cierre" } : { accion: "responder", mensaje: A.FRASE_FOTO }; };
+r = await A.redactar(env, iaCierre, "5491306", { T, prueba: true });
+chk("audio + 'no me sirve, muchas gracias': no pide precio FOB (lee el último mensaje)", r.accion === "nada" && !/fob/i.test(r.mensaje || ""));
 // corregir
 const rc = await rr("/enviar/corregir", { conv: "5491301", correccion: "Tenía que preguntarle la cantidad y si lo quiere traer de China; si es de otro lado, derivarlo." });
 chk("corregir: guarda la charla, lo que hizo el agente y lo que había que hacer", rc.ok && JSON.parse(db.prepare("SELECT v FROM kv WHERE k='ent:correcciones'").get().v)[0].ctx.length >= 1);
@@ -303,5 +308,35 @@ chk("derivar algo que se resuelve con una pregunta simple cuenta como error", /d
 inf = await rr("/enviar/aprendizaje", {}, "GET");
 chk("el informe muestra la tasa de derivación y las correcciones", inf.derivacion && typeof inf.derivacion.pct === "number" && inf.correcciones >= 1);
 chk("el pedido de práctica queda programado al corregir", +db.prepare("SELECT v FROM kv WHERE k='ent:pedido'").get().v >= 0);
+
+// 10) Entrenamiento con el MISMO circuito que producción
+const simu = (ctx, ia) => A.simularRedactar(env, ia, ctx, T);
+db.prepare("DELETE FROM kv WHERE k='resp_log'").run();
+let usoIA = 0; const iaCuenta = async (e, p) => { usoIA++; return { accion: "responder", mensaje: A.FRASE_FOTO }; };
+r = await simu({ msgs: [{ yo: 1, texto: "mandame foto", tipo: "text" }, { yo: 0, texto: "(archivo)", tipo: "file" }], excluir: "x1" }, iaCuenta);
+chk("simulador: un '(archivo)' suelto pasa por la misma regla que en vivo (queda para el dueño, sin IA)", r.accion === "humano" && usoIA === 0);
+r = await simu({ msgs: [{ yo: 0, texto: "hola", tipo: "text" }], excluir: "x2" }, iaSop);
+chk("simulador: también pasa por el juez y no escribe nada en la base", r.accion === "responder" && !db.prepare("SELECT 1 FROM kv WHERE k='resp_log'").get() && !db.prepare("SELECT 1 FROM kv WHERE k LIKE 'resp_toma:sim%'").get());
+// casos nuevos en el historial: respuesta con audio y charla que terminó sin respuesta
+conv("5491400", "NR", "no me sirve gracias", 3 * 86400e3); msg("5491400", 0, "quiero mochilas", 3 * 86400e3 + 60e3); msg("5491400", 1, "mandame fotos de las mochilas", 3 * 86400e3 + 30e3); msg("5491400", 0, "(archivo)", 3 * 86400e3 + 20e3, "file"); msg("5491400", 0, "no me sirve gracias", 3 * 86400e3);
+conv("5491401", "AU", "cuanto tarda", 2 * 86400e3); msg("5491401", 0, "cuanto tarda", 2 * 86400e3 + 60e3); msg("5491401", 1, "(archivo)", 2 * 86400e3, "file");
+const est2 = await E.construirEstilo(env, ahora);
+chk("el entrenamiento incluye charlas que terminaron sin respuesta (para aprender cuándo NO contestar)", est2.pares.some((p) => p.k === "sin_respuesta" && /no me sirve/.test(p.c)));
+chk("incluye casos donde el dueño contestó con un audio", est2.pares.some((p) => p.k === "adjunto" && /cuanto tarda/.test(p.c)));
+chk("los adjuntos del cliente quedan con su tipo para repetirlos igual", est2.pares.some((p) => p.ctx?.some((m) => m.k === "file")));
+let cmpTxt = ""; const iaR = async (e, p) => { if (p.includes("Abajo está una charla real")) { cmpTxt = p; return { puntaje: 9 }; } if (p.includes("revisor de calidad")) return { ok: true, puntaje: 9 }; return { accion: "nada", motivo: "x" }; };
+await E.rondaEntrenamiento(env, iaR, simu, { n: 4, ahora });
+chk("el juez del entrenamiento castiga contestar algo que no tiene que ver con el último mensaje", /ERROR GRAVE/.test(cmpTxt) && /no me sirve, gracias/.test(cmpTxt));
+// tope diario y modo intensivo
+const kDia = "ent:usos:" + new Date(ahora - 3 * 3600e3).toISOString().slice(0, 10);
+chk("cuenta las llamadas a la IA usadas para entrenar en el día", +db.prepare("SELECT v FROM kv WHERE k=?").get(kDia).v > 0);
+db.prepare("UPDATE kv SET v='800' WHERE k=?").run(kDia);
+res = await E.rondaEntrenamiento(env, iaR, simu, { n: 4, ahora });
+chk("al llegar al tope diario deja de entrenar (el contestador en vivo tiene prioridad)", /tope/.test(res.nota || ""));
+db.prepare("UPDATE kv SET v='0' WHERE k=?").run(kDia);
+inf = await rr("/enviar/entrenar", { rondas: 60 });
+chk("modo intensivo: se pueden pedir 60 rondas (una hora)", inf.rondas === 60);
+inf = await rr("/enviar/entrenar", { rondas: 0 });
+chk("y frenarlo con 0", inf.rondas === 0 && db.prepare("SELECT v FROM kv WHERE k='ent:pedido'").get().v === "0");
 
 console.log(`\nsim-entrenador: ${ok} ok, ${mal} fallas`); process.exit(mal ? 1 : 0);

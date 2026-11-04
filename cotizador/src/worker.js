@@ -8,7 +8,7 @@ import { conApp, rutaApp } from "./app.js";
 import { rutaTelegram, apiAsistente, cronAsistente } from "./asistente.js";
 import { preguntarAgente, charlaAgente } from "./agente.js";
 import { apiGrupos, cronGrupos } from "./grupos.js";
-import { decidirIA } from "./autoresp.js";
+import { simularRedactar } from "./autoresp.js";
 import { cronEntrenador } from "./entrenador.js";
 /**
  * Agente de WhatsApp · Te Importamos (v15.0: + pestaña Búsquedas de proveedores)
@@ -3562,7 +3562,7 @@ export default {
       await procesarBuffers(env).catch((e) => console.log("Error red:", e?.stack || e));
       await cronLector(env, iaJSON, evento.scheduledTime || Date.now()).catch((e) => console.log("Error lector 805:", e?.stack || e));
       // Entrenamiento del contestador: de noche y cuando se pide (rondas chicas, una por minuto)
-      if (env.DB && env.LECTOR_TOKEN) await cronEntrenador(env, iaJSON, (ctx, ia) => decidirIA(env, ia, ctx, { prioridad: false }), evento.scheduledTime || Date.now()).catch((e) => console.log("Error entrenador:", e?.stack || e));
+      if (env.DB && env.LECTOR_TOKEN) await cronEntrenador(env, iaJSON, (ctx, ia) => simularRedactar(env, ia, ctx, T), evento.scheduledTime || Date.now()).catch((e) => console.log("Error entrenador:", e?.stack || e));
       if (m % 5 === 4 && env.LECTOR_TOKEN) await cotizarAuto(env, { T, leerPagina, iaJSON, iaConImagenes }).catch((e) => console.log("Error cotización automática:", e?.stack || e));
       if (env.DB) await cronVideos(env, evento.scheduledTime || Date.now()).catch((e) => console.log("Error videos:", e?.stack || e));
       if (env.DB) await cronAsistente(env, evento.scheduledTime || Date.now(), iaJSON).catch((e) => console.log("Error asistente:", e?.stack || e));
