@@ -70,7 +70,7 @@ chk("sin juez (IA caída) rigen solo los chequeos duros", r.accion === "responde
 conv("5491133", "Eze", "el peso es 90 gramos, 45 unidades y el fob 2.3 dolares", 2 * 60e3);
 msg("5491133", 0, "hola quiero cotizar una cerradura electromagnetica", 30 * 60e3); msg("5491133", 1, "Necesito que me digas peso del producto en gramos, cantidad de unidades y precio FOB unitario", 25 * 60e3);
 msg("5491133", 0, "el peso es 90 gramos, 45 unidades y el fob 2.3 dolares", 2 * 60e3);
-iaExtrae = { producto: "Cerradura electromagnética", peso_g: 90, cantidad: 45, fob_usd: 2.3, completo: true, plausible: true };
+iaExtrae = { producto: "Cerradura electromagnética", peso_dado_g: 90, tipo_peso: "por_unidad", cantidad: 45, fob_usd: 2.3, completo: true, plausible_por_unidad: true, plausible_total: false };
 jIA = { ok: true, puntaje: 9 }; usadoJuez = 0;
 r = await A.redactar(env, iaTodo, "5491133", { prueba: true, T });
 chk("3 datos completos: arma la cotización (vista previa no guarda nada)", r.accion === "nada" && /armaría la cotización/.test(r.motivo) && db.prepare("SELECT COUNT(*) n FROM cotiz_manual").get().n === 0 && usadoJuez === 0);
@@ -86,15 +86,39 @@ r = await A.redactar(env, iaTodo, "5491133", { T });
 chk("no repite la misma cotización", r.accion === "nada" && db.prepare("SELECT COUNT(*) n FROM cotiz_manual").get().n === 1);
 // peso absurdo para el producto (el caso de la cerradura de 2,5 kg): no cotiza, queda para el dueño
 conv("5491144", "Raul", "pesa 2500 gramos, 45 unidades, fob 2.3 usd", 2 * 60e3); msg("5491144", 0, "cuanto sale la cerradura electromagnetica", 30 * 60e3); msg("5491144", 0, "pesa 2500 gramos, 45 unidades, fob 2.3 usd", 2 * 60e3);
-iaExtrae = { producto: "Cerradura electromagnética", peso_g: 2500, cantidad: 45, fob_usd: 2.3, completo: true, plausible: false };
+iaExtrae = { producto: "Cerradura electromagnética", peso_dado_g: 2500, tipo_peso: "por_unidad", cantidad: 45, fob_usd: 2.3, completo: true, plausible_por_unidad: false, plausible_total: false };
 r = await A.redactar(env, iaTodo, "5491144", { T });
-chk("datos que no cierran (cerradura de 2,5 kg): NO cotiza, queda para el dueño", r.accion === "humano" && /no cierran/.test(r.motivo) && db.prepare("SELECT COUNT(*) n FROM cotiz_manual").get().n === 1);
+chk("datos que no cierran en ninguna lectura: NO cotiza, queda para el dueño", r.accion === "humano" && /no cierran/.test(r.motivo) && db.prepare("SELECT COUNT(*) n FROM cotiz_manual").get().n === 1);
+
+// 3b) PESO TOTAL vs POR UNIDAD (cotización 9: 2,5 kg era el total de 45 cerraduras y se tomó como por unidad → 112 kg)
+const cantCots = () => db.prepare("SELECT COUNT(*) n FROM cotiz_manual").get().n;
+const nuevoChat = (cv, nombre, ultimo, previo) => { conv(cv, nombre, ultimo, 2 * 60e3); msg(cv, 0, previo, 30 * 60e3); msg(cv, 0, ultimo, 2 * 60e3); };
+nuevoChat("5491211", "Tot", "las 45 pesan 2.5 kg en total, fob 2.3 dolares", "quiero 45 cerraduras electromagneticas");
+iaExtrae = { producto: "Cerradura electromagnética", peso_dado_g: 2500, tipo_peso: "total", cantidad: 45, fob_usd: 2.3, completo: true, plausible_por_unidad: false, plausible_total: true };
+const antes = cantCots(); r = await A.redactar(env, iaTodo, "5491211", { T });
+const dTot = JSON.parse(db.prepare("SELECT datos FROM cotiz_manual ORDER BY ts DESC, num DESC LIMIT 1").get().datos);
+chk("peso total: lo divide por la cantidad (2500 g / 45 = 55,6 g por unidad, no 2,5 kg)", r.accion === "nada" && cantCots() === antes + 1 && Math.abs(dTot.items[0].peso - 2.5 / 45) < 1e-6);
+chk("la cotización aclara que el peso era el total", /total del pedido/.test(dTot.notas));
+nuevoChat("5491212", "Amb", "pesan 2.5 kg, fob 2.3 usd", "necesito 45 cerraduras electromagneticas");
+iaExtrae = { producto: "Cerradura electromagnética", peso_dado_g: 2500, tipo_peso: "por_unidad", cantidad: 45, fob_usd: 2.3, completo: true, plausible_por_unidad: false, plausible_total: true };
+r = await A.redactar(env, iaTodo, "5491212", { T });
+const dAmb = JSON.parse(db.prepare("SELECT datos FROM cotiz_manual ORDER BY ts DESC, num DESC LIMIT 1").get().datos);
+chk("dice 'por unidad' pero solo tiene sentido como total: se da cuenta y lo divide", r.accion === "nada" && Math.abs(dAmb.items[0].peso - 2.5 / 45) < 1e-6);
+nuevoChat("5491213", "Duda", "pesa 2 kg, fob 3 usd", "quiero 10 zapatillas");
+iaExtrae = { producto: "Zapatillas", peso_dado_g: 2000, tipo_peso: "no_claro", cantidad: 10, fob_usd: 3, completo: true, plausible_por_unidad: true, plausible_total: true };
+const antes2 = cantCots(); r = await A.redactar(env, iaTodo, "5491213", { T });
+chk("no queda claro y las dos lecturas sirven: le pregunta al cliente en vez de adivinar", r.accion === "responder" && /por unidad o de las 10 unidades en total\?/.test(r.mensaje) && cantCots() === antes2 && !/[¿¡]/.test(r.mensaje));
+nuevoChat("5491214", "Uno", "pesa 90 g, fob 2 usd", "quiero 20 cerraduras");
+iaExtrae = { producto: "Cerradura", peso_dado_g: 90, tipo_peso: "no_claro", cantidad: 20, fob_usd: 2, completo: true, plausible_por_unidad: true, plausible_total: false };
+r = await A.redactar(env, iaTodo, "5491214", { T });
+const dUno = JSON.parse(db.prepare("SELECT datos FROM cotiz_manual ORDER BY ts DESC, num DESC LIMIT 1").get().datos);
+chk("no queda claro pero solo una lectura tiene sentido: usa esa", r.accion === "nada" && dUno.items[0].peso === 0.09);
 // faltan datos: sigue el flujo normal y pide lo que falta
 conv("5491155", "Ana", "el fob es 3 dolares", 2 * 60e3); msg("5491155", 0, "quiero 100 parlantes de 300 gramos", 20 * 60e3); msg("5491155", 0, "el fob es 3 dolares", 2 * 60e3);
-iaExtrae = { producto: "Parlante", peso_g: 300, cantidad: 100, fob_usd: 3, completo: false, plausible: true };
+iaExtrae = { producto: "Parlante", peso_dado_g: 300, tipo_peso: "por_unidad", cantidad: 100, fob_usd: 3, completo: false, plausible_por_unidad: true, plausible_total: true };
 iaRed = { accion: "responder", mensaje: "me pasas el link del proveedor para ver el producto", motivo: "pide link" };
-r = await A.redactar(env, iaTodo, "5491155", { T, prueba: true });
-chk("faltan datos: no inventa la cotización", r.accion === "responder" && db.prepare("SELECT COUNT(*) n FROM cotiz_manual").get().n === 1);
+const antes3 = cantCots(); r = await A.redactar(env, iaTodo, "5491155", { T, prueba: true });
+chk("faltan datos: no inventa la cotización", r.accion === "responder" && cantCots() === antes3);
 chk("el pedido de datos usa gramos, cantidad y FOB unitario", /gramos/.test(A.FRASE_COTIZAR) && /FOB unitario/.test(A.FRASE_COTIZAR) && !/ kg/.test(A.FRASE_COTIZAR));
 
 // 4) ENTRENAMIENTO: el agente contesta SIN ver mi respuesta, se compara y de los errores salen reglas

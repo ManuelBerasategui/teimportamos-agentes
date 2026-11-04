@@ -216,28 +216,40 @@ export async function redactar(env, iaJSON, conv, { prueba = false, T = null } =
 // (misma cuenta que la calculadora). Antes de armarla, la IA solo EXTRAE lo que el cliente escribió y dice si los números tienen
 // sentido para ese producto (una cerradura chica no pesa 2,5 kg); si algo no cierra queda para vos en vez de cotizar mal.
 // La cotización queda en Pendientes con su PDF; el programita de la PC la guarda para revisar o la manda según COTIZ_MODO.
-const RE_PESO = /\d[\d.,]*\s*(g|gr|grs|gramos?|kg|kgs|kilos?)\b/i, RE_FOB = /(fob|u\$s|usd|d[oó]lar|\$\s*\d|\d\s*\$)/i, RE_CANT = /(\d+\s*(u|un|unid|unidades|pcs|piezas|pzs)\b|cantidad|\bx\s?\d+|quiero \d+|\d+ unidades)/i;
+const RE_PESO = /\d[\d.,]*\s*(g|gr|grs|gramos?|kg|kgs|kilos?)\b/i, RE_FOB = /(fob|u\$s|usd|d[oó]lar|\$\s*\d|\d\s*\$)/i;
 export async function cotizarConTresDatos(env, iaJSON, { conv, c, msgs, sinContestar, T, prueba = false }) {
   if (!T) return null;
   const nuevo = sinContestar.map((m) => String(m.texto || "")).join("\n");
   const antes = msgs.slice(-8).map((m) => String(m.texto || "")).join("\n");
   if (!(RE_PESO.test(nuevo) || RE_FOB.test(nuevo))) return null;   // lo último del cliente tiene que traer algún dato
-  if (!(RE_PESO.test(antes) && RE_FOB.test(antes) && RE_CANT.test(antes))) return null;   // y entre todo lo dicho, los tres
+  if (!(RE_PESO.test(antes) && RE_FOB.test(antes) && /\d/.test(antes.replace(RE_PESO, " ").replace(/\d[\d.,]*\s*(usd|u\$s|d[oó]lares?)/gi, " ")))) return null;   // y entre todo lo dicho, peso, precio y algún otro número (la cantidad); la IA confirma que estén los tres
   const e = await iaJSON(env, `Del chat sacá los 3 datos para cotizar una importación. Devolvé SOLO lo que el cliente escribió de forma explícita; no estimes ni completes nada.
-Devolvé JSON {"producto":"nombre corto del producto","peso_g":número,"cantidad":número,"fob_usd":número,"completo":true|false,"plausible":true|false,"dudas":"qué falta o no cierra"}
-- peso_g: peso de UNA unidad en gramos (convertí kg a gramos). Si dio el peso total del pedido y no queda claro el de una unidad, completo=false.
-- cantidad: unidades que quiere traer.
-- fob_usd: precio FOB de UNA unidad en dólares. Si dio un total y queda claro cuántas unidades, dividilo; si no queda claro, completo=false.
-- plausible=false si el peso o el precio no tienen sentido para ese producto (ej. una cerradura chica de 2500 g, un celular a 5 dólares, un parlante de 10 g).
+Devolvé JSON {"producto":"nombre corto del producto","peso_dado_g":número,"tipo_peso":"por_unidad"|"total"|"no_claro","cantidad":número,"fob_usd":número,"completo":true|false,"plausible_por_unidad":true|false,"plausible_total":true|false,"dudas":"qué falta o no cierra"}
+- peso_dado_g: el peso TAL CUAL lo escribió el cliente, convertido a gramos (kg a gramos).
+- tipo_peso: "total" si el peso es de todo el pedido ("pesan 2.5 kg las 45", "en total", "todo junto"); "por_unidad" si es de una unidad ("cada uno pesa", "por unidad"); "no_claro" si no se sabe.
+- cantidad: unidades que quiere traer. fob_usd: precio FOB de UNA unidad en dólares (si dio un total y queda claro cuántas unidades, dividilo).
+- plausible_por_unidad: ¿tiene sentido que UNA unidad de ese producto pese peso_dado_g? (una cerradura chica de 2500 g NO; un parlante de 10 g NO). plausible_total: ¿tiene sentido que las unidades juntas pesen peso_dado_g?
 CHAT:
 ${msgs.slice(-8).map((m) => `${m.yo ? "YO" : "CLIENTE"}: ${String(m.texto || "").replace(/\s+/g, " ").slice(0, 300)}`).join("\n")}`, { prioridad: true }).catch(() => null);
-  const peso_g = +e?.peso_g, cant = Math.round(+e?.cantidad), fob = +e?.fob_usd, prod = String(e?.producto || "").replace(/\s+/g, " ").trim().slice(0, 80);
-  if (!e || e.completo !== true || !prod || !(peso_g >= 1 && peso_g <= 50000) || !(cant >= 1 && cant <= 100000) || !(fob >= 0.01 && fob <= 5000)) return null;   // faltan datos: sigue el flujo normal (pedir lo que falta)
-  if (e.plausible === false) return { accion: "humano", motivo: "datos para cotizar que no cierran (peso o FOB raros)", resumen: `datos dudosos: ${prod} ${peso_g} g, USD ${fob}` };
+  const dado = +e?.peso_dado_g, cant = Math.round(+e?.cantidad), fob = +e?.fob_usd, prod = String(e?.producto || "").replace(/\s+/g, " ").trim().slice(0, 80);
+  if (!e || e.completo !== true || !prod || !(dado >= 1) || !(cant >= 1 && cant <= 100000) || !(fob >= 0.01 && fob <= 5000)) return null;   // faltan datos: sigue el flujo normal (pedir lo que falta)
+  // ¿El peso que dio es de UNA unidad o de todo el pedido? (caso cerradura: 2,5 kg era el total de 45 y se tomó como por unidad)
+  const porU = e.plausible_por_unidad !== false, porT = e.plausible_total !== false;
+  let modo = e.tipo_peso === "total" ? "total" : e.tipo_peso === "por_unidad" ? "unidad" : "";
+  if (modo === "unidad" && !porU && porT) modo = "total";   // dijo "por unidad" pero eso no tiene sentido y como total sí: lo toma como total
+  if (modo === "total" && !porT && porU) modo = "unidad";
+  if (!modo) {   // no está claro: si solo una lectura tiene sentido se usa esa; si las dos sirven, se le pregunta; si ninguna, el dueño
+    if (porU && !porT) modo = "unidad"; else if (porT && !porU) modo = "total";
+    else if (porU && porT && cant > 1) return { accion: "responder", mensaje: `Ese peso de ${dado >= 1000 ? (dado / 1000).toString().replace(".", ",") + " kg" : dado + " g"} es por unidad o de las ${cant} unidades en total?`, motivo: "no queda claro si el peso es por unidad o total" };
+    else modo = "unidad";
+  }
+  if (!porU && !porT) return { accion: "humano", motivo: "datos para cotizar que no cierran (peso o FOB raros)", resumen: `datos dudosos: ${prod} ${dado} g, ${cant} u, USD ${fob}` };
+  const peso_g = modo === "total" ? dado / cant : dado;
+  if (!(peso_g >= 1 && peso_g <= 50000)) return { accion: "humano", motivo: "datos para cotizar que no cierran (peso o FOB raros)", resumen: `datos dudosos: ${prod} ${dado} g` };
   const clave = `cotauto3:${conv}:${peso_g}|${cant}|${fob}`;
   if (await kvGet(env, clave)) return { accion: "nada", motivo: "esa cotización ya se armó" };
-  if (prueba) return { accion: "nada", motivo: `armaría la cotización: ${prod} x${cant}, ${peso_g} g, FOB USD ${fob}` };
-  const g = await guardarCotizAuto(env, T, { conv, nombre: c.nombre, items: [{ nombre: prod, variante: "", link: "", cantidad: cant, precio: fob, peso: peso_g / 1000 }], notas: "Cotización con los datos que pasó el cliente (peso, cantidad y precio FOB).", extra: "\n(Datos pasados por el cliente en el chat.)" });
+  if (prueba) return { accion: "nada", motivo: `armaría la cotización: ${prod} x${cant}, ${Math.round(peso_g * 10) / 10} g por unidad${modo === "total" ? " (el peso era el total)" : ""}, FOB USD ${fob}` };
+  const g = await guardarCotizAuto(env, T, { conv, nombre: c.nombre, items: [{ nombre: prod, variante: "", link: "", cantidad: cant, precio: fob, peso: peso_g / 1000 }], notas: "Cotización con los datos que pasó el cliente (peso, cantidad y precio FOB)." + (modo === "total" ? ` El peso que dio (${dado} g) era el total del pedido: se dividió por ${cant} unidades.` : ""), extra: "\n(Datos pasados por el cliente en el chat." + (modo === "total" ? ` Peso total ${dado} g dividido por ${cant}.` : "") + ")" });
   await kvPut(env, clave, g.id);
   return { accion: "nada", motivo: `cotización N° ${g.num} armada con los 3 datos del cliente (USD ${g.total.toFixed(2)})` };
 }
@@ -266,7 +278,8 @@ REGLAS (seguí este orden; la primera que aplica manda):
 ${PLAZOS}
 3a. LINK DE ALIBABA SIN CANTIDAD: preguntale solo cuántas unidades quiere (el precio y el peso los sacamos nosotros del link; la cotización se arma sola cuando diga la cantidad). Si ya se lo preguntaste y no contestó, recordáselo corto.
 3b. LINK DE 1688 (o de otro proveedor) sin datos: pedile "${FRASE_COTIZAR} de 1688" (o "del proveedor"). Si ya se lo pediste y no contestó, recordáselo corto.
-3c. JUNTAR LOS 3 DATOS EN POCOS MENSAJES: cuando ya tiene proveedor o link y falta información para cotizar, pedí TODO lo que falte en UN solo mensaje (peso del producto en gramos, cantidad de unidades, precio FOB unitario). Si ya dio alguno, pedí solo los que faltan y nombrá lo que ya dijo para que vea que lo leíste; nunca repitas una pregunta que ya hiciste. Si no sabe dónde encontrarlos en Alibaba: el precio sale de la tabla por cantidad de la página y el peso de "Empaque y entrega" (peso bruto). Cuando los tres datos quedan completos, la cotización se arma sola (accion "nada").
+3c. PESO TOTAL O POR UNIDAD: si el peso que dio el cliente parece de todo el pedido y no de una unidad (ej. 2,5 kg para 45 cerraduras chicas), no lo des por unidad: preguntale "ese peso es por unidad o de las N unidades en total?".
+3d. JUNTAR LOS 3 DATOS EN POCOS MENSAJES: cuando ya tiene proveedor o link y falta información para cotizar, pedí TODO lo que falte en UN solo mensaje (peso del producto en gramos, cantidad de unidades, precio FOB unitario). Si ya dio alguno, pedí solo los que faltan y nombrá lo que ya dijo para que vea que lo leíste; nunca repitas una pregunta que ya hiciste. Si no sabe dónde encontrarlos en Alibaba: el precio sale de la tabla por cantidad de la página y el peso de "Empaque y entrega" (peso bruto). Cuando los tres datos quedan completos, la cotización se arma sola (accion "nada").
 4. NOMBRA UN PRODUCTO SIN LINK NI FOTOS (ej: "Xiaomi note 15", "necesito traer 45 pestillos electrónicos", "quiero importar parlantes"): preguntale si tiene el link de Alibaba o 1688, o de algún proveedor; y si no lo tiene, que te mande fotos de referencia del producto. NO ofrezcas el informe de búsqueda, NO pidas peso ni FOB todavía. EXCEPCIÓN: si nombra un producto de marca definida que ya vendemos desde Paraguay en la tienda (parlantes JBL: Charge, Go, Flip, Clip, Boombox, etc.), o el mensaje viene del botón de la tienda web ("quiero consultar precio y disponibilidad por el producto …"), NO le pidas link ni fotos ni lo dejes para el dueño: preguntale solo qué cantidad quiere de cada producto.
 5. PRECIO DE ALGO QUE VIO (ropa, zapatillas, "¿ese precio es por unidad?", "¿cuánto sale por 12?") sin decir cuál: no confirmes ni expliques precios; preguntale qué producto vio (prenda, modelo, zapatilla) y si lo vio en un mensaje de los grupos o en la página, y que te pase la captura o el link.
 6. CATÁLOGO / STOCK ("qué tienen", "lista de precios", "tienen X en stock"): mandale el link https://www.teimportamosarg.com/catalogo y que ahí están los productos y precios.

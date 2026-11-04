@@ -38,6 +38,7 @@ REGLAS DE DATOS (importante, no inventes nada):
 - nombre: copiá el título real del producto que se ve en la captura o en el link. Si no hay forma de saber qué producto es, dejá nombre "" (NUNCA pongas "Producto Alibaba" ni nombres genéricos).
 - tramos: solo precios que se vean escritos con su cantidad. Si solo hay un rango sin cantidades (ej. "US$ 1-3"), dejá tramos [] y NO elijas un valor intermedio.
 - peso_kg: solo si se ve el peso bruto por unidad (gross weight). Si no se ve, null.
+- Si el cliente escribió un peso del pedido completo (ej. "las 45 pesan 2.5 kg") y no el de una unidad, dividilo por la cantidad para obtener peso_kg por unidad. Si un peso no tiene sentido por unidad para ese producto pero sí como total, es el total.
 Del texto de indicaciones sacá: cliente (nombre o ""), honorarios (número si lo indica, o null), mostrar_desglose (true/false, true por defecto), notas_pdf (aclaraciones para poner en la cotización, o "").
 Respondé JSON: {"items":[{"link","nombre","variante","cantidad","nota","tramos","peso_kg"}],"cliente","honorarios","mostrar_desglose","notas_pdf"}
 
