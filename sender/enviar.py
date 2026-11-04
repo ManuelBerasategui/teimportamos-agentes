@@ -5,7 +5,7 @@ Uso:  python enviar.py            -> pide confirmación en cada mensaje (recomen
       python enviar.py --escritorio --prueba -> prueba con 4, sin pausas largas y sin marcar nada
       python enviar.py --seco     -> no envía nada, solo muestra qué haría
 Ctrl+C o crear un archivo llamado STOP en esta carpeta corta todo."""
-import json, os, random, re, sys, time, urllib.parse, urllib.request
+import json, os, random, re, sys, time, urllib.error, urllib.parse, urllib.request
 from datetime import datetime
 from pathlib import Path
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
@@ -33,8 +33,13 @@ H_HASTA = int(os.environ.get("HORA_HASTA", "20"))
 def api(path, body=None):
     req = urllib.request.Request(f"{URL}/lector{path}", headers={"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) TeImportamos-Sender/1.0"},
                                  data=json.dumps(body).encode() if body is not None else None, method="POST" if body is not None else "GET")
-    with urllib.request.urlopen(req, timeout=30) as r:
-        return json.load(r)
+    for intento in (1, 2, 3):   # el servidor a veces tarda (IA ocupada): se reintenta en vez de cortar todo
+        try:
+            with urllib.request.urlopen(req, timeout=60) as r:
+                return json.load(r)
+        except (TimeoutError, ConnectionError, urllib.error.URLError) as e:
+            if isinstance(e, urllib.error.HTTPError) or intento == 3: raise
+            time.sleep(3 * intento)
 
 SALUDOS = ["Hola!", "Hola,", "Buenas!", "Buenas,", "Buen día!", "Qué tal,", "Hola, ¿todo bien?", "Hola, ¿cómo andás?"]
 CIERRES = ["", "", "", " 🙂", " Cualquier cosa avisame.", " Quedo atento.", " Te leo."]

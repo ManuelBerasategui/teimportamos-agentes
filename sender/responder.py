@@ -309,7 +309,8 @@ def main():
         for c in cots: print(f"\n- COTIZACIÓN N° {c['num']} lista para {c['nombre']} ({c['conv']}): total USD {c['total']} → se enviaría el PDF con un texto corto.")
         print(f"\n{QUEDAN} chats sin contestar en total; acá van los primeros {len(lista)} (vista previa, no se envía nada).")
         for it in lista:
-            d = api("/enviar/redactar", {"conv": it["conv"], "prueba": True})
+            try: d = api("/enviar/redactar", {"conv": it["conv"], "prueba": True})
+            except Exception as e: print(f"\n- {it['nombre']} ({it['conv']}): el servidor no respondió a tiempo ({type(e).__name__}). Lo salto."); continue
             print(f"\n- {it['nombre']} ({it['conv']}) dijo: {it['ultimo']}\n  → {d['accion'].upper()}: {d.get('mensaje') or d.get('motivo', '')}" + (f"\n  PARA VOS: {d.get('resumen') or d.get('motivo', '')}" if d['accion'] == 'humano' else ""))
         return
     if "--escritorio" in sys.argv: return main_escritorio(seguir)

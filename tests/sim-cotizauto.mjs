@@ -53,4 +53,21 @@ await C.cotizarAuto(env, h); h.leerPagina = leerAntes;
 const marca = db.prepare("SELECT v FROM kv WHERE k LIKE 'cotauto:549347:%'").get();
 assert.ok(marca && marca.v.startsWith("no-se-pudo:")); assert.equal(db.prepare("SELECT COUNT(*) n FROM kv WHERE k='resp_auto:549347'").get().n, 0);
 console.log("✓ página que no se puede leer: queda marcada y el contestador vuelve a mirar el chat");
+// Caso cerradura (cotización 9): la IA no sabe qué producto es ("Producto Alibaba") → NO inventa peso ni cotiza sola
+db.prepare("INSERT INTO w_conv VALUES ('549348','Ezequias',0,0,?,0)").run(now - 60000);
+msg("549348", "45 unidades https://www.alibaba.com/product-detail/subject-1601360668710.html", 2);
+let pidioPeso = 0;
+h.iaJSON = async (e, p) => { if (p.includes("Estimá el peso")) { pidioPeso++; return { pesos: [2.5] }; } return { items: [{ link: "https://www.alibaba.com/product-detail/subject-1601360668710.html", nombre: "Producto Alibaba", cantidad: 45 }] }; };
+h.leerPagina = async () => ({ datos: { nombre: null, tramos: [{ desde: 2, precio: 2.34 }], peso_kg: null } });
+r = await C.cotizarAuto(env, h);
+assert.equal(db.prepare("SELECT COUNT(*) n FROM tareas WHERE tel='549348'").get().n, 0); assert.equal(pidioPeso, 0);
+assert.ok(db.prepare("SELECT v FROM kv WHERE k LIKE 'cotauto:549348:%'").get().v.startsWith("no-se-pudo:"));
+console.log("✓ producto sin identificar: no se estima peso (antes 2,5 kg/u) ni se cotiza solo; se le pide el dato al cliente");
+// Producto identificado sin peso en la página: estimación realista y acotada
+db.prepare("INSERT INTO w_conv VALUES ('549349','Maxi',0,0,?,0)").run(now - 60000);
+msg("549349", "20 unidades https://www.alibaba.com/product-detail/Mini-Cerradura-Electromagnetica_1601.html", 2);
+h.iaJSON = async (e, p) => p.includes("Estimá el peso") ? { pesos: [0.09] } : { items: [{ link: "https://www.alibaba.com/product-detail/Mini-Cerradura-Electromagnetica_1601.html", nombre: "Mini cerradura electromagnética", cantidad: 20 }] };
+r = await C.cotizarAuto(env, h); assert.equal(r.length, 1);
+const d = JSON.parse(db.prepare("SELECT datos FROM cotiz_manual ORDER BY ts DESC LIMIT 1").get().datos); assert.equal(d.items[0].peso, 0.09);
+console.log("✓ producto identificado: peso estimado realista (0,09 kg), marcado como estimado");
 console.log("TODO OK");

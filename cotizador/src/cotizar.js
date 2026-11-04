@@ -34,6 +34,10 @@ async function leerItems(env, h, texto, indicaciones, imagenes) {
 Armá la lista de productos a cotizar. Cada link es un producto distinto, salvo que el texto diga otra cosa. Si un producto no tiene link, igual incluilo.
 Para cada uno devolvé: link (exacto, o ""), nombre (corto y claro en español, 2-6 palabras), variante (color/talle/modelo si lo dice, o ""), cantidad (número; si no dice, 0), nota (lo que aclare el cliente, o "").
 Si hay capturas, leé de ahí precios por cantidad (tramos) y peso de cada producto y asignalos al producto que corresponda: tramos [{desde, precio_usd}], peso_kg por unidad.
+REGLAS DE DATOS (importante, no inventes nada):
+- nombre: copiá el título real del producto que se ve en la captura o en el link. Si no hay forma de saber qué producto es, dejá nombre "" (NUNCA pongas "Producto Alibaba" ni nombres genéricos).
+- tramos: solo precios que se vean escritos con su cantidad. Si solo hay un rango sin cantidades (ej. "US$ 1-3"), dejá tramos [] y NO elijas un valor intermedio.
+- peso_kg: solo si se ve el peso bruto por unidad (gross weight). Si no se ve, null.
 Del texto de indicaciones sacá: cliente (nombre o ""), honorarios (número si lo indica, o null), mostrar_desglose (true/false, true por defecto), notas_pdf (aclaraciones para poner en la cotización, o "").
 Respondé JSON: {"items":[{"link","nombre","variante","cantidad","nota","tramos","peso_kg"}],"cliente","honorarios","mostrar_desglose","notas_pdf"}
 
@@ -62,11 +66,15 @@ ${String(indicaciones || "").slice(0, 3000)}`;
     }
     it.bloqueado = !!p?.bloqueado || !p;
   }));
-  // Pesos que faltan: estimación de la IA (marcada como estimada)
-  const sinPeso = items.filter((i) => !i.peso);
+  // Nombre genérico = no sabemos qué producto es: no se estima peso ni se cotiza solo
+  const GENERICO = /^\s*(producto|producto alibaba|alibaba|item|articulo|artículo|sin nombre)?\s*$/i;
+  for (const it of items) { it.nombre = String(it.nombre || "").trim(); it.nombre_dudoso = GENERICO.test(it.nombre) || /^subject-\d+/i.test(it.nombre); if (it.nombre_dudoso) it.nombre = ""; }
+  // Pesos que faltan: estimación de la IA (marcada como estimada), solo si sabemos qué producto es.
+  // Si no se sabe, el peso queda vacío (en rojo en el panel) para cargarlo a mano: mejor vacío que inventado.
+  const sinPeso = items.filter((i) => !i.peso && !i.nombre_dudoso);
   if (sinPeso.length) {
-    const e = await h.iaJSON(env, `Estimá el peso bruto por unidad (con su caja) en kg de cada producto, como lo despacharía un proveedor chino. Respondé JSON {"pesos":[número por cada producto, en el mismo orden]}.\n${sinPeso.map((i, n) => `${n + 1}. ${i.nombre || i.link}${i.variante ? " (" + i.variante + ")" : ""}`).join("\n")}`).catch(() => null);
-    sinPeso.forEach((i, n) => { const v = +e?.pesos?.[n]; if (v > 0) { i.peso = Math.round(v * 1000) / 1000; i.peso_estimado = true; } });
+    const e = await h.iaJSON(env, `Estimá el peso bruto REAL por unidad (el producto con su empaque individual, como lo despacha un proveedor chino) en kg de cada producto. Sé realista: un componente electrónico chico o una cerradura pesa gramos (0.05-0.2 kg), un accesorio de celular 0.02-0.3 kg; no redondees hacia arriba. Si no podés identificar el producto, poné null en ese lugar. Respondé JSON {"pesos":[número en kg o null, uno por producto y en el mismo orden]}.\n${sinPeso.map((i, n) => `${n + 1}. ${i.nombre}${i.variante ? " (" + i.variante + ")" : ""}`).join("\n")}`).catch(() => null);
+    sinPeso.forEach((i, n) => { const v = +e?.pesos?.[n]; if (v > 0 && v <= 30) { i.peso = Math.round(v * 1000) / 1000; i.peso_estimado = true; } });
   }
   for (const it of items) {
     if (it.tramos.length) {
@@ -113,7 +121,7 @@ export async function cotizarAuto(env, h, { limite = 2 } = {}) {
     // Hace falta la cantidad: si todavía no la dijo, se espera (se vuelve a mirar en la próxima vuelta)
     if (!/\d/.test(texto.replace(RE_ALIBABA, ""))) continue;
     const r = await leerItems(env, h, texto.slice(-6000), "Cotizá solo los productos de los links de Alibaba que mandó el cliente, con la cantidad que pidió. Si no dijo cantidad para un producto, poné 0.", []);
-    const items = r.items.filter((i) => /alibaba\.com/i.test(i.link || "") && i.cantidad > 0 && i.precio > 0);
+    const items = r.items.filter((i) => /alibaba\.com/i.test(i.link || "") && i.cantidad > 0 && i.precio > 0 && i.peso > 0 && !i.nombre_dudoso);
     const sinCant = r.items.some((i) => /alibaba\.com/i.test(i.link || "") && !i.cantidad);
     const marca = (v) => env.DB.prepare("INSERT INTO kv (k,v,exp) VALUES (?,?,NULL) ON CONFLICT(k) DO UPDATE SET v=excluded.v").bind(clave, v).run();
     // Sin cantidad: espera. Página ilegible (Alibaba bloqueó o no trae precio): queda marcado y el contestador le pide
