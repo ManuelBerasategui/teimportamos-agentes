@@ -212,44 +212,83 @@ def main_escritorio(seguir):
                 except Exception: pass
                 time.sleep(1); return al_frente()
         return False
-    enviados = 0
-    print(f"Modo escritorio ({'app de WhatsApp' if ESCRITORIO == 'app' else 'WhatsApp Web en tu Chrome'}). No toques el teclado ni el mouse mientras escribe. Para cortar: Ctrl+C, archivo STOP o 'pausar respuestas' en Telegram.")
+    enviados, saltados, seg_saltados, seg_enviados = 0, set(), set(), 0
+    print(f"Modo escritorio ({'app de WhatsApp' if ESCRITORIO == 'app' else 'WhatsApp Web en tu Chrome'}). Mientras está ACTIVO no uses el teclado ni el mouse (aprieta Enter en WhatsApp). Para usar la PC: pausar.bat. Para cerrarlo: Ctrl+C.")
+
+    def abrir_y_enviar(conv, mensaje, espera):
+        """Abre el chat con el mensaje puesto, espera y aprieta Enter. True = salió, False = no se mandó (queda para después)."""
+        texto = urllib.parse.quote(mensaje)
+        if ESCRITORIO == "chrome": webbrowser.open(f"https://web.whatsapp.com/send?phone={conv}&text={texto}")
+        else: os.startfile(f"whatsapp://send?phone={conv}&text={texto}")
+        print(f"  esperando {espera:.0f}s (lo que tardaría en leer y escribir)...")
+        if not dormir(espera): return False
+        if pausado() or parar():   # lo pausaste justo: no se manda y se borra lo que quedó escrito
+            if al_frente(): pyautogui.hotkey("ctrl", "a"); pyautogui.press("delete")
+            print("  Pausado justo antes de mandar: no lo mandé (se reintenta al activar)."); return False
+        if not al_frente() and not traer():
+            print("  WhatsApp no quedó al frente: no aprieto Enter (podría ir a otra ventana). Se reintenta después."); return False
+        pyautogui.press("enter"); time.sleep(2)
+        if ESCRITORIO == "chrome": time.sleep(2); pyautogui.hotkey("ctrl", "w")   # cierra la pestaña que abrió
+        return True
+
     try:
         while not parar():
             if not esperar_si_pausado(): break
-            if not (H_DESDE <= datetime.now().hour < H_HASTA): print("Fuera de horario, termino."); break
-            pend = hay_pendientes()
-            if pend is None: break
+            if not (H_DESDE <= datetime.now().hour < H_HASTA):
+                if not seguir: print("Fuera de horario, termino."); break
+                print(f"{datetime.now():%H:%M} · fuera de horario: sigo a las {H_DESDE}:00.")
+                if not dormir(300): break
+                continue
+            try: pend = hay_pendientes()
+            except Exception as e:
+                print(f"{datetime.now():%H:%M} · no pude hablar con el panel ({str(e).splitlines()[0][:80]}). Reintento en 1 minuto.")
+                if not dormir(60): break
+                continue
+            if pend is None:   # pausado desde Telegram
+                if not seguir: break
+                if not dormir(120): break
+                continue
             lista, cots = pend
             if cots:
                 with sync_playwright() as p:
                     for c in cots:
                         try: guardar_cotizacion(p, c)
                         except Exception as e: print(f"  No pude guardar la cotización N° {c['num']} ({str(e).splitlines()[0]}).")
+            lista = [x for x in lista if x["conv"] not in saltados]
+            quedan = 0 if QUEDAN <= len(saltados) else QUEDAN
             if not lista:
+                # Todo contestado: un seguimiento por vez (si alguien escribe, se le contesta primero)
+                if SEGUIMIENTOS and not quedan and seg_enviados < SEG_MAX:
+                    try: segs = [x for x in api("/enviar/lista?limite=20")["lista"] if x["conv"] not in seg_saltados]
+                    except Exception: segs = []
+                    if segs:
+                        s0 = segs[0]; t = variar(s0); print(f"\nSeguimiento · {s0['nombre']} ({s0['conv']}): {t}")
+                        if abrir_y_enviar(s0["conv"], t, random.uniform(3, 6) + len(t) * 0.08):
+                            api("/enviar/hecho", {"conv": s0["conv"]}); seg_enviados += 1; print("  Enter apretado ✅")
+                        else: seg_saltados.add(s0["conv"])
+                        if not dormir(random.randint(PAUSA_MIN, PAUSA_MAX)): break
+                        continue
                 if not seguir: print("No quedan chats para contestar."); break
-                print(f"{datetime.now():%H:%M} · no hay chats esperando respuesta. Vuelvo a mirar en 2 minutos (dejalo abierto).")
+                print(f"{datetime.now():%H:%M} · " + (f"quedan {quedan} sin contestar (otra PC o tope por hora)." if quedan else "no hay chats esperando respuesta.") + " Vuelvo a mirar en 2 minutos.")
                 if not dormir(120): break
                 continue
-            print(f"{datetime.now():%H:%M} · {len(lista)} chat(s) para revisar.")
+            print(f"\n{datetime.now():%H:%M} · quedan {QUEDAN} chat(s) sin contestar.")
             for it in lista:
-                if parar(): break
-                d = api("/enviar/redactar", {"conv": it["conv"]})
+                if parar() or pausado(): break
+                try: d = api("/enviar/redactar", {"conv": it["conv"]})
+                except Exception as e: print(f"  No pude pedir la respuesta de {it['conv']} ({str(e).splitlines()[0][:80]})."); saltados.add(it["conv"]); continue
                 print(f"\n{it['nombre']} ({it['conv']}): {it['ultimo']}\n  → {d['accion']}: {d.get('mensaje') or d.get('motivo', '')}")
                 if d["accion"] == "humano": anotar_para_vos(it, d)
                 if d["accion"] != "responder": continue
-                texto = urllib.parse.quote(d["mensaje"])
-                if ESCRITORIO == "chrome": webbrowser.open(f"https://web.whatsapp.com/send?phone={it['conv']}&text={texto}")
-                else: os.startfile(f"whatsapp://send?phone={it['conv']}&text={texto}")
-                espera = random.uniform(6, 14) + len(it["ultimo"]) * 0.05 + EXTRA_SEG + len(d["mensaje"]) * random.uniform(0.12, 0.2)
-                print(f"  esperando {espera:.0f}s (lo que tardaría en leer y escribir)...")
-                if not dormir(espera): break
-                if not al_frente() and not traer():
-                    print("  WhatsApp no quedó al frente: no aprieto Enter (podría ir a otra ventana). Se reintenta después.")
-                    api("/enviar/reintentar", {"conv": it["conv"]}); continue
-                pyautogui.press("enter"); time.sleep(2)
-                if ESCRITORIO == "chrome": time.sleep(2); pyautogui.hotkey("ctrl", "w")   # cierra la pestaña que abrió
-                api("/enviar/respondido", {"conv": it["conv"]}); enviados += 1; print("  Enter apretado ✅ (revisá de vez en cuando que salgan bien)")
+                espera = random.uniform(2, 5) + len(it["ultimo"]) * 0.02 + EXTRA_SEG + len(d["mensaje"]) * random.uniform(0.07, 0.12)
+                if not abrir_y_enviar(it["conv"], d["mensaje"], espera):
+                    try: api("/enviar/reintentar", {"conv": it["conv"]})
+                    except Exception: pass
+                    saltados.add(it["conv"]); continue
+                for _ in range(3):
+                    try: api("/enviar/respondido", {"conv": it["conv"]}); break
+                    except Exception: time.sleep(5)
+                enviados += 1; print("  Enter apretado ✅ (revisá de vez en cuando que salgan bien)")
                 if not dormir(random.randint(PAUSA_MIN, PAUSA_MAX)): break
     except KeyboardInterrupt:
         print("\nCortado.")

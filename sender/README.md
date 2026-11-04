@@ -32,6 +32,7 @@ Limitación: no puede saber si el número existe en WhatsApp. Con el modo Chrome
 - `activar.bat`: empieza a contestar (y después a hacer seguimientos). Reacciona en segundos.
 - `pausar.bat`: termina el mensaje que estaba escribiendo y no contesta más. La ventana sigue abierta.
 - Se puede activar y pausar todas las veces que quieras. Para cerrarlo del todo: Ctrl+C en la ventana negra o archivo `STOP`.
+- **Con la app de WhatsApp de escritorio** (sin QR, usa tu sesión): `abrir_app.bat` en vez de `abrir.bat`. Mismo `activar.bat` / `pausar.bat`. Mientras está activo no uses el teclado ni el mouse (aprieta Enter en la app); para usar la PC, `pausar.bat`. En este modo no puede leer el chat antes de escribir: si le contestaste vos desde otro lado y el panel no lo registró, podría repetir.
 - Mientras está en pausa podés usar esa ventana de WhatsApp vos. Antes de activarlo, dejala en cualquier chat sin escribir nada: si la usás mientras está activo, el agente detecta que tocaste la caja, borra lo suyo y no manda.
 
 ## Contestador automático (responder.py)
