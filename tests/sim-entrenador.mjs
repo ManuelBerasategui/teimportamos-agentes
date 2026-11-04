@@ -54,9 +54,14 @@ let iaExtrae = null;
 conv("5491122", "Lu", "quiero 30 cargadores", 5 * 60e3); msg("5491122", 0, "quiero 30 cargadores", 5 * 60e3);
 let r = await A.redactar(env, iaTodo, "5491122", { prueba: true, T });
 chk("juez aprueba: sale el borrador tal cual", r.accion === "responder" && /cargadores/.test(r.mensaje) && r.juez?.ok === true && usadoJuez === 1);
-jIA = { ok: false, puntaje: 4, fallas: ["pide cosas que ya dio"], mensaje_mejorado: "pasame el link de alibaba de los cargadores o una foto" };
+let vueltasJ = 0; const jPrimero = { ok: false, puntaje: 4, fallas: ["pide cosas que ya dio"], mensaje_mejorado: "pasame el link de alibaba de los cargadores o una foto" };
+const iaTodoOrig = iaTodo;
+const iaJ2 = async (e, p) => p.includes("revisor de calidad") ? (++vueltasJ === 1 ? jPrimero : { ok: true, puntaje: 8 }) : iaTodoOrig(e, p);
+r = await A.redactar(env, iaJ2, "5491122", { prueba: true, T });
+chk("juez rechaza y la versión corregida APRUEBA una segunda revisión: se manda la corregida", r.accion === "responder" && /pasame el link/.test(r.mensaje) && r.juez?.corregido === true && vueltasJ === 2);
+jIA = { ok: false, puntaje: 5, fallas: ["no contesta"], mensaje_mejorado: "hola de que material son las remeras mixed emotions" };
 r = await A.redactar(env, iaTodo, "5491122", { prueba: true, T });
-chk("juez rechaza y trae versión corregida válida: se manda la corregida", r.accion === "responder" && /pasame el link/.test(r.mensaje) && r.juez?.corregido === true);
+chk("si la versión corregida tampoco aprueba (ej. escrita como si fuera el cliente), NO se manda: queda para el dueño", r.accion === "humano" && !r.mensaje);
 jIA = { ok: false, puntaje: 3, fallas: ["inventa un plazo"], mensaje_mejorado: "te va a llegar en 15 dias, son USD 20" };
 r = await A.redactar(env, iaTodo, "5491122", { prueba: true, T });
 chk("juez rechaza y la corrección trae precio: queda para el dueño", r.accion === "humano" && /juez/.test(r.motivo));
@@ -287,6 +292,8 @@ chk("audio + 'no me sirve, muchas gracias': no pide precio FOB (lee el último m
 // corregir
 const rc = await rr("/enviar/corregir", { conv: "5491301", correccion: "Tenía que preguntarle la cantidad y si lo quiere traer de China; si es de otro lado, derivarlo." });
 chk("corregir: guarda la charla, lo que hizo el agente y lo que había que hacer", rc.ok && JSON.parse(db.prepare("SELECT v FROM kv WHERE k='ent:correcciones'").get().v)[0].ctx.length >= 1);
+await rr("/enviar/corregir", { conv: "5491301", correccion: "Tenía que preguntarle la cantidad y si lo quiere traer de China; si es de otro lado, derivarlo." });
+chk("la misma corrección cargada dos veces no se duplica", (await E.cargarCorrecciones(env)).filter((x) => x.conv === "5491301").length === 1);
 chk("corregir un chat que no existe da error", (await rr("/enviar/corregir", { conv: "000", correccion: "texto largo de prueba" })).ok === false);
 promptVisto = ""; conv("5491304", "Otro", "busco desodorante mayorista", 2 * 60e3); msg("5491304", 0, "busco desodorante mayorista", 2 * 60e3);
 await A.redactar(env, iaSop, "5491304", { T, prueba: true });

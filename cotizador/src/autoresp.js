@@ -203,7 +203,9 @@ export async function redactar(env, iaJSON, conv, { prueba = false, T = null, si
       d.juez = { puntaje: j.puntaje, fallas: j.fallas.slice(0, 3), ok: j.ok };
       if (!j.ok) {
         const arreglado = j.mejorado ? j.mejorado.replace(/[¿¡]/g, "") : "";
-        if (arreglado && !chequeoDuro(arreglado, est, msgs).length && !revisarMensaje(arreglado)) { d = { ...d, mensaje: arreglado, motivo: (d.motivo || "") + " (corregido por el juez)", juez: { ...d.juez, corregido: true } }; }
+        // La versión corregida también se vuelve a evaluar: solo sale si el juez la aprueba (antes salía directo y una vez mandó un texto escrito como si fuera el cliente)
+        const j2 = arreglado && !chequeoDuro(arreglado, est, msgs).length && !revisarMensaje(arreglado) ? await juzgar(env, iaJSON, { msgs, mensaje: arreglado, est, reglas }).catch(() => null) : null;
+        if (j2?.ok && j2.puntaje !== null && j2.puntaje >= 7) { d = { ...d, mensaje: arreglado, motivo: (d.motivo || "") + " (corregido por el juez)", juez: { ...d.juez, corregido: true, puntaje2: j2.puntaje } }; }
         else d = { accion: "humano", motivo: `el juez no aprobó el borrador (${j.fallas.slice(0, 2).join("; ") || "puntaje bajo"})`, resumen: d.resumen || "revisar: el borrador no pasó el control", juez: d.juez, borrador: d.mensaje };
       }
     }

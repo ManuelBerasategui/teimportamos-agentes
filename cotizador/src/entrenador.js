@@ -130,7 +130,7 @@ ${charlaTexto(msgs)}
 BORRADOR: "${mensaje}"
 
 Puntaje de 1 a 10 (7 o más = se puede enviar). Criterios: (1) contesta lo que el cliente realmente escribió o preguntó; (2) avanza hacia el objetivo del negocio sin pedir lo que ya dio; (3) no inventa datos, precios ni promete cosas (los plazos de entrega son válidos solo si coinciden con los DATOS DE PLAZOS); (4) suena a mí: tono, largo y vocabulario, sin ¿ ni ¡ ni frases de call center; (5) no repite lo que ya dije.
-Devolvé JSON: {"ok":true|false,"puntaje":1-10,"fallas":["falla corta"],"mensaje_mejorado":"versión corregida (solo si puntaje<7; si no, vacío)"}`, { prioridad: true }).catch(() => null);
+Devolvé JSON: {"ok":true|false,"puntaje":1-10,"fallas":["falla corta"],"mensaje_mejorado":"solo si puntaje<7: el mensaje que YO (el dueño) le mandaría al cliente en lugar del borrador, contestando su último mensaje; nunca escrito como si fuera el cliente. Si no hace falta, vacío"}`, { prioridad: true }).catch(() => null);
   }
   const puntaje = Number.isFinite(+r?.puntaje) && r?.puntaje !== null ? +r.puntaje : null;   // sin juez (IA caída): valen solo los chequeos duros
   const fallas = [...duras, ...(Array.isArray(r?.fallas) ? r.fallas.map((x) => String(x).slice(0, 80)).slice(0, 4) : [])];
@@ -141,9 +141,10 @@ Devolvé JSON: {"ok":true|false,"puntaje":1-10,"fallas":["falla corta"],"mensaje
 // "Acá le tendría que haber pedido la cantidad…": cada corrección guarda la charla, lo que hizo el agente y lo que había que hacer.
 // Sirve de 3 maneras: (1) se le muestra al agente cuando aparece un caso parecido, (2) entra siempre en la práctica nocturna como caso de
 // oro (una regla nueva nunca puede romperlas), (3) de ellas salen las reglas generales. Así no hace falta parchear el código por cada error.
-export const cargarCorrecciones = (env) => leer(env, K.correcciones, []);
+export const cargarCorrecciones = async (env) => { const l = await leer(env, K.correcciones, []), out = []; for (const c of l.reverse()) if (!out.some((x) => x.conv === c.conv && parecido(x.y, c.y) > 0.8)) out.unshift(c); return out; };
 export async function agregarCorreccion(env, { conv, correccion, msgs, agente = "" }) {
   const l = await cargarCorrecciones(env), ctx = msgs.map(comp), ult = [...msgs].reverse().find((m) => !m.yo);
+  const prev = l.findIndex((x) => x.conv === conv && parecido(x.y, correccion) > 0.8); if (prev >= 0) l.splice(prev, 1);   // la misma corrección cargada dos veces no cuenta doble
   const c = { id: `corr:${conv}:${Date.now()}`, ts: Date.now(), conv, c: String(ult?.texto || ctx.at(-1)?.t || "").slice(0, 300), ctx, agente, y: String(correccion).slice(0, 700), oro: true };
   l.push(c); await guardar(env, K.correcciones, l.slice(-60));
   await kvPut(env, K.pedido, Math.max(+((await kvGet(env, K.pedido)) || 0), 1));   // el cron lo practica en el próximo minuto
