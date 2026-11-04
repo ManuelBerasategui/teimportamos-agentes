@@ -262,4 +262,46 @@ const fl = JSON.parse(db.prepare("SELECT v FROM kv WHERE k='ent:fallas'").get().
 chk("el error de la cotización alimenta el entrenamiento", fl.some((f) => /peso estaba mal/.test(f.motivo) && /2.5 kg por unidad/.test(f.agente)));
 chk("la ruta de aprendizaje muestra la racha", (await rr("/enviar/aprendizaje", {}, "GET")).cotizaciones.meta === 7);
 
+// 9) Correcciones del dueño: el agente aprende de ellas sin tocar código (SOP, "ya te mando", fotos como "(archivo)")
+promptVisto = "";
+conv("5491301", "Dav", "estoy buscando este desodorante al por mayor", 2 * 60e3); msg("5491301", 0, "Bola amigo estoy buscando este desodorante al por mayor", 2 * 60e3);
+iaRed = { accion: "responder", mensaje: "cuantas unidades buscas? y lo queres traer de china?", motivo: "embudo" };
+const iaSop = async (e, p) => { if (p.includes("revisor de calidad")) return { ok: true, puntaje: 9 }; promptVisto = p; return iaRed; };
+r = await A.redactar(env, iaSop, "5491301", { T, prueba: true });
+chk("el prompt trae el embudo del dueño: cantidad y origen, luego link, luego FOB y peso", /cuántas unidades busca/.test(promptVisto) && /NO es China|NO es China/.test(promptVisto) && /link de Alibaba/.test(promptVisto) && /FOB unitario/.test(promptVisto));
+chk("el prompt manda a responder el ÚLTIMO mensaje y a derivar solo en casos cerrados", /LO PRIMERO: respondé al ÚLTIMO mensaje/.test(promptVisto) && !/algo que no entendés o cualquier duda/.test(promptVisto) && /NO son motivo para derivar/.test(promptVisto));
+chk("'ya te mando' se contesta corto (ya no es un cierre sin respuesta)", /PROMESA DE ENVÍO/.test(promptVisto) && !/"ya te paso", "después te mando"/.test(promptVisto));
+chk("el acuse corto 'dale, cuando puedas me pasas' no lo rechaza el chequeo de muletillas", E.chequeoDuro("dale, cuando puedas me pasas", est, []).length === 0 && E.chequeoDuro("dale, " + "mirá que ".repeat(8), est, []).some((x) => /muletilla/.test(x)));
+// fotos que WhatsApp Web entrega como "(archivo)"
+conv("5491302", "Rod", "Decime si sabes de algo asi", 2 * 60e3); msg("5491302", 0, "(archivo)", 3 * 60e3, "file"); msg("5491302", 0, "Decime si sabes de algo asi", 2 * 60e3);
+r = await A.redactar(env, iaSop, "5491302", { T, prueba: true });
+chk("foto que llega como '(archivo)': pide FOB, peso y cantidad (frase del dueño)", r.accion === "responder" && /precio fob/i.test(r.mensaje));
+conv("5491303", "Alx", "(archivo)", 2 * 60e3); msg("5491303", 0, "(archivo)", 2 * 60e3, "file");
+r = await A.redactar(env, iaSop, "5491303", { T, prueba: true });
+chk("'(archivo)' solo, sin charla de plata: también", r.accion === "responder" && /precio fob/i.test(r.mensaje));
+// corregir
+const rc = await rr("/enviar/corregir", { conv: "5491301", correccion: "Tenía que preguntarle la cantidad y si lo quiere traer de China; si es de otro lado, derivarlo." });
+chk("corregir: guarda la charla, lo que hizo el agente y lo que había que hacer", rc.ok && JSON.parse(db.prepare("SELECT v FROM kv WHERE k='ent:correcciones'").get().v)[0].ctx.length >= 1);
+chk("corregir un chat que no existe da error", (await rr("/enviar/corregir", { conv: "000", correccion: "texto largo de prueba" })).ok === false);
+promptVisto = ""; conv("5491304", "Otro", "busco desodorante mayorista", 2 * 60e3); msg("5491304", 0, "busco desodorante mayorista", 2 * 60e3);
+await A.redactar(env, iaSop, "5491304", { T, prueba: true });
+chk("ante un caso parecido el agente ve la corrección del dueño en su prompt", /MIS CORRECCIONES A CASOS PARECIDOS/.test(promptVisto) && /preguntarle la cantidad y si lo quiere traer de China/.test(promptVisto));
+promptVisto = ""; conv("5491305", "Dis", "hola quiero mochilas", 2 * 60e3); msg("5491305", 0, "hola quiero mochilas", 2 * 60e3);
+await A.redactar(env, iaSop, "5491305", { T, prueba: true });
+chk("ante un caso distinto no se la muestra", !/MIS CORRECCIONES/.test(promptVisto));
+// práctica: la corrección entra siempre como caso de oro y no se ve a sí misma
+let veces = 0, promptsCorr = [];
+const iaOro = async (e, p) => { if (p.includes("Abajo está una charla real")) { if (/indicación mía/.test(p)) veces++; return { puntaje: 8, fallas: [], regla: "" }; } if (p.includes("Sos el entrenador")) return { reglas: [], quitar: [] }; promptsCorr.push(p); return { accion: "humano", motivo: "x" }; };
+res = await E.rondaEntrenamiento(env, iaOro, decidir, { n: 2, ahora });
+chk("la práctica incluye las correcciones del dueño como casos de oro", veces >= 1 && res.casos >= 3);
+chk("al practicar una corrección, el agente no ve esa misma corrección (no hace trampa)", !promptsCorr.slice(0, 1).some((p) => /MIS CORRECCIONES A CASOS PARECIDOS/.test(p) && /Tenía que preguntarle la cantidad y si lo quiere traer de China/.test(p)));
+chk("el puntaje de la ronda cuenta cuántas veces derivó", typeof res.derivados === "number");
+// derivar algo simple es error
+let promptComparar = ""; const iaCmp = async (e, p) => { if (p.includes("Abajo está una charla real")) { promptComparar = p; return { puntaje: 8 }; } return { accion: "humano", motivo: "x" }; };
+await E.rondaEntrenamiento(env, iaCmp, decidir, { n: 1, ahora });
+chk("derivar algo que se resuelve con una pregunta simple cuenta como error", /derivar fue un error/.test(promptComparar));
+inf = await rr("/enviar/aprendizaje", {}, "GET");
+chk("el informe muestra la tasa de derivación y las correcciones", inf.derivacion && typeof inf.derivacion.pct === "number" && inf.correcciones >= 1);
+chk("el pedido de práctica queda programado al corregir", +db.prepare("SELECT v FROM kv WHERE k='ent:pedido'").get().v >= 0);
+
 console.log(`\nsim-entrenador: ${ok} ok, ${mal} fallas`); process.exit(mal ? 1 : 0);

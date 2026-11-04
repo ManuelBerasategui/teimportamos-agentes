@@ -3,6 +3,8 @@ Uso:  python entrenar.py                 -> muestra lo que aprendió (reglas, pu
       python entrenar.py --ya [N]        -> pide N rondas de entrenamiento ahora (una por minuto; 3 si no ponés N)
       python entrenar.py --regla "texto" -> le enseña una regla tuya (queda fija: el entrenamiento nunca la borra)
       python entrenar.py --borrar N      -> saca la regla número N
+      python entrenar.py --corregir 549... "qué tenía que hacer"  -> le corregís un chat: queda como caso de oro y el agente aprende de él
+      python entrenar.py --corregir-desde correcciones.txt        -> carga varias (una por línea: numero | corrección)
       python entrenar.py --bien N        -> confirmás que la cotización N° N que armó el agente estaba bien (7 seguidas y las manda directo)
       python entrenar.py --mal N "motivo"-> estaba mal: la racha vuelve a 0, vuelve a guardarlas para revisar y aprende del error
 Por la noche (4 AM) entrena solo con tus charlas reales: contesta sin ver tu respuesta, se compara y de los errores salen reglas
@@ -42,6 +44,8 @@ def mostrar(d):
             print(f"  + regla nueva: {r}")
         for r in u.get("descartadas") or []:
             print(f"  - descartada (no mejoraba): {r}")
+    if d.get("derivacion"):
+        print(f"\nDerivados a vos: {d['derivacion']['pct']}% de las últimas {d['derivacion']['de']} decisiones (cuanto menos, mejor, siempre que no conteste mal). Correcciones tuyas guardadas: {d.get('correcciones', 0)}")
     cq = d.get("cotizaciones")
     if cq:
         print(f"\nCotizaciones: {cq.get('racha')} de {cq.get('meta')} bien seguidas. " + ("MANDA DIRECTO." if cq.get("directo") else "Todavía las guarda para revisar."))
@@ -63,6 +67,24 @@ def main():
         mostrar(api("/enviar/aprendizaje", {"agregar": txt}))
     elif "--borrar" in a:
         mostrar(api("/enviar/aprendizaje", {"borrar": int(a[a.index("--borrar") + 1]) - 1}))
+    elif "--corregir-desde" in a:
+        ruta = a[a.index("--corregir-desde") + 1]
+        n = 0
+        for linea in open(ruta, encoding="utf-8-sig"):
+            if "|" not in linea or linea.lstrip().startswith("#"):
+                continue
+            conv, txt = linea.split("|", 1)
+            try:
+                api("/enviar/corregir", {"conv": conv.strip(), "correccion": txt.strip()}); n += 1; print(f"  cargada: {conv.strip()}")
+            except Exception as e:
+                print(f"  NO se pudo cargar {conv.strip()}: {e}")
+        print(f"Listo: {n} corrección(es). El agente las practica en el próximo minuto; mirá el resultado con: python entrenar.py")
+    elif "--corregir" in a:
+        i = a.index("--corregir")
+        if len(a) < i + 3:
+            sys.exit('Falta algo. Ej: entrenar.bat --corregir 5493886823863 "tenía que preguntarle la cantidad"')
+        d = api("/enviar/corregir", {"conv": a[i + 1], "correccion": " ".join(a[i + 2:])})
+        print(f"Listo: corrección guardada ({d.get('total')} en total). El agente la practica {d.get('practica')}.")
     elif "--bien" in a or "--mal" in a:
         bien = "--bien" in a
         i = a.index("--bien" if bien else "--mal")

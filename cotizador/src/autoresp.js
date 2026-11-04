@@ -9,7 +9,7 @@ const kvGet = async (env, k) => (await env.DB.prepare("SELECT v FROM kv WHERE k=
 const kvPut = (env, k, v) => env.DB.prepare("INSERT INTO kv (k,v,exp) VALUES (?,?,NULL) ON CONFLICT(k) DO UPDATE SET v=excluded.v, exp=NULL").bind(k, String(v)).run();
 const hora = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 13);
 import { calcular, paginaCotizacion, guardarCotizAuto } from "./cotizar.js";
-import { cargarEstilo, cargarReglas, reglasTexto, perfilTexto, similares, ejemplosTexto, juzgar, chequeoDuro, registrarCaso, informe, editarReglas, K as KENT, OBJETIVO, PLAZOS, revisarCotizacion, estadoCotizaciones } from "./entrenador.js";
+import { cargarEstilo, cargarReglas, reglasTexto, perfilTexto, similares, ejemplosTexto, juzgar, chequeoDuro, registrarCaso, informe, editarReglas, K as KENT, OBJETIVO, PLAZOS, revisarCotizacion, estadoCotizaciones, cargarCorrecciones, corrSimilares, correccionesTexto, agregarCorreccion, SOP_EMBUDO } from "./entrenador.js";
 const SIN_VAPES = "lower(COALESCE(producto,'')) NOT LIKE '%vap%' AND lower(COALESCE(producto,'')) NOT LIKE '%elf%bar%'";
 export const PRECIO_INFORME = "$5.000";
 export const FRASE_FOTO = "Si no te jode, podrías pasarme precio fob del producto, peso en kg por unidad, y cuántas unidades buscás?";   // lo dictó el dueño: cuando mandan fotos sin link
@@ -159,14 +159,14 @@ export async function redactar(env, iaJSON, conv, { prueba = false, T = null } =
   ctxCaso = msgs.slice(-6).map((m) => ({ yo: m.yo ? 1 : 0, t: String(m.texto || `[${m.tipo || "archivo"}]`).replace(/\s+/g, " ").slice(0, 160) }));
   const ultimo = [...msgs].reverse().find((m) => !m.yo);
   if (!ultimo) return fin({ accion: "nada", motivo: "sin mensaje del cliente" }, c.nombre);
-  if (!String(ultimo.texto || "").trim() && ultimo.tipo !== "text" && !/^image$/i.test(ultimo.tipo || "")) return fin({ accion: "humano", motivo: `mandó ${ultimo.tipo || "un archivo"} sin texto` }, c.nombre);
+  if (!String(ultimo.texto || "").trim() && ultimo.tipo !== "text" && !/^(image|file)$/i.test(ultimo.tipo || "") && !/^\((image|foto|archivo)\)/i.test(String(ultimo.texto || "").trim())) return fin({ accion: "humano", motivo: `mandó ${ultimo.tipo || "un archivo"} sin texto` }, c.nombre);
   // Si el cliente mandó fotos, videos, audios o archivos desde tu último mensaje: lo ves vos (suelen ser el producto que busca).
   // Excepción (pedido del dueño): si mandó SOLO fotos del producto, se le piden los 3 datos para cotizar. Nunca si la charla es de plata
   // (un comprobante también es una foto) ni si ya se lo pedimos.
   let sinContestar = [];
   for (const m of [...msgs].reverse()) { if (m.yo) break; sinContestar.push(m); }
   const esMedia = (m) => /^(image|video|audio|ptt|document|sticker)$/i.test(m.tipo || "") || /^\((image|video|audio|document|sticker|archivo|foto)\)/i.test(String(m.texto || "").trim());
-  const esImagen = (m) => /^image$/i.test(m.tipo || "") || /^\((image|foto)\)/i.test(String(m.texto || "").trim());
+  const esImagen = (m) => /^(image|file)$/i.test(m.tipo || "") && !/^\((audio|video|document|sticker|ptt|voice)/i.test(String(m.texto || "").trim()) || /^\((image|foto|archivo)\)/i.test(String(m.texto || "").trim());   // WhatsApp Web entrega las fotos como "(archivo)"
   if (sinContestar.some(esMedia)) {
     const soloFotos = sinContestar.filter(esMedia).every(esImagen);
     const dinero = /pag[oa]|transfer|comprobante|se[ñn]a\b|alias|cbu|dep[oó]sito|factura|reclamo|retiro|devoluc|garant|lleg[oó]|envi[oó]|seguimiento|tracking/i.test(msgs.slice(-8).map((m) => String(m.texto || "")).join(" "));
@@ -193,8 +193,8 @@ export async function redactar(env, iaJSON, conv, { prueba = false, T = null } =
   // Si el cliente pasó peso, cantidad y FOB: la cotización se arma sola (con controles de que los números tengan sentido)
   const q3 = await cotizarConTresDatos(env, iaJSON, { conv, c, msgs, sinContestar, T, prueba });
   if (q3) return fin(q3, c.nombre);
-  const est = await cargarEstilo(env), reglas = await cargarReglas(env);
-  let d = await decidirIA(env, iaJSON, { c, msgs, ultimo, est, reglas });
+  const est = await cargarEstilo(env), reglas = await cargarReglas(env), correcciones = await cargarCorrecciones(env);
+  let d = await decidirIA(env, iaJSON, { c, msgs, ultimo, est, reglas, correcciones });
   // Juez: ningún borrador sale sin aprobar. Si no pasa se manda la versión corregida (si cumple todo) o queda para vos.
   if (d.accion === "responder") {
     const j = await juzgar(env, iaJSON, { msgs, mensaje: d.mensaje, est, reglas }).catch(() => null);
@@ -258,7 +258,8 @@ const sinContestarTexto = (msgs) => { const o = []; for (const m of [...msgs].re
 
 // Decide qué contestar (la parte "pensar" del contestador). Se usa en producción y en el entrenamiento: ahí recibe
 // reglas de prueba y el id del caso para que los ejemplos parecidos no incluyan la respuesta real.
-export async function decidirIA(env, iaJSON, { c, msgs, ultimo, est = null, reglas = [], excluir = "" }, opts = { prioridad: true }) {
+export async function decidirIA(env, iaJSON, { c, msgs, ultimo, est = null, reglas = [], excluir = "", correcciones = [] }, opts = { prioridad: true }) {
+  const corrTxt = correccionesTexto(corrSimilares(correcciones, sinContestarTexto(msgs), 3, excluir));
   const sinPares = !est?.pares?.length;
   const ejemplos = sinPares ? ((await env.DB.prepare("SELECT texto FROM w_msg WHERE yo=1 AND grupo=0 AND tipo='text' AND length(texto) BETWEEN 12 AND 220 ORDER BY ts DESC LIMIT 40").all()).results || []).map((x) => "- " + String(x.texto).replace(/\s+/g, " ")).slice(0, 25) : [];
   const parecidos = sinPares ? "" : ejemplosTexto(similares(est, sinContestarTexto(msgs), 6, excluir));
@@ -270,22 +271,27 @@ ${sinPares ? ejemplos.join("\n") || "- (sin ejemplos todavía: tono cercano, vos
 Conversación (los últimos mensajes; el último es del cliente, escrito hace ${Math.max(0, Math.round((Date.now() - (ultimo.ts || Date.now())) / 3600e3))} horas):
 ${charla}
 
+LO PRIMERO: respondé al ÚLTIMO mensaje del cliente. Lo anterior es solo contexto y no cambia a qué estás contestando (si lo último es "ya te mando", no contestes sobre un pago de antes). Derivar al dueño es lo último que hacés: solo en los casos de la regla 2; todo lo demás lo resolvés vos con las reglas de abajo, preguntando lo que falta.
+
 REGLAS (seguí este orden; la primera que aplica manda):
-1. CIERRES Y COTIZACIÓN EN CAMINO: si el cliente mandó link de Alibaba Y cantidad, o contestó la cantidad de un link de Alibaba que mandó antes (la cotización se arma sola y se la mandamos) → accion "nada". También "nada" si lo último del cliente no pide respuesta ("gracias", "ok", "dale", "👍", "listo", "ya te paso", "después te mando", "lo veo y te aviso") → accion "nada".
+1. CIERRES Y COTIZACIÓN EN CAMINO: si el cliente mandó link de Alibaba Y cantidad, o contestó la cantidad de un link de Alibaba que mandó antes (la cotización se arma sola y se la mandamos) → accion "nada". También "nada" si lo último del cliente no pide respuesta ("gracias", "ok", "dale", "👍", "listo", "lo veo y te aviso", "lo pienso") → accion "nada".
+1c. PROMESA DE ENVÍO: si lo último del cliente es que te va a mandar algo ("ya te mando", "ya te paso", "en un rato te paso la foto") contestá cortito y natural, sin preguntar nada nuevo, como lo haría el dueño: "dale, cuando puedas me pasás". No lo dejes en "nada" ni en "humano".
 1b. LA IA DE WHATSAPP YA ESTÁ ATENDIENDO: si el último mensaje de YO es el menú automático de bienvenida ("Bienvenido!! Gracias por escribir… Mandame el número…") y el cliente solo contestó con un número o una opción, ese chat lo maneja la IA de WhatsApp Business → accion "nada". Si el último de YO es "Te voy a derivar con alguien del equipo…" y el cliente siguió escribiendo, NO lo dejes para el dueño solo por eso: vos sos quien atiende, seguí con las reglas de abajo.
-2. PARA EL DUEÑO → accion "humano" (no contestes): pagos, transferencias, comprobantes, señas; reclamos o enojo; pide una llamada; negocia o compara precios; preguntas sobre una cotización que YA le pasamos; condiciones del servicio (garantías, envíos a terceros, venta sin stock, dropshipping, formas de pago, mínimos, comisiones, aduana); pide recomendaciones u opciones; pregunta si sos un bot o una persona; pide datos nuestros (dirección del depósito, CBU, alias, datos para el envío, ubicación); ya dio peso + cantidad + precio FOB (hay que cotizarle);  proveedores que nos ofrecen algo; algo que no entendés o cualquier duda.
+2. PARA EL DUEÑO → accion "humano" (no contestes): pagos, transferencias, comprobantes, señas; reclamos o enojo; pide una llamada; negocia o compara precios; preguntas sobre una cotización que YA le pasamos; condiciones del servicio (garantías, envíos a terceros, venta sin stock, dropshipping, formas de pago, mínimos, comisiones, aduana); pide recomendaciones u opciones; pregunta si sos un bot o una persona; pide datos nuestros (dirección del depósito, CBU, alias, datos para el envío, ubicación); ya dio peso + cantidad + precio FOB (hay que cotizarle);  proveedores que nos ofrecen algo; novedades o estado de un pedido que ya está en marcha ("¿les dijeron algo los chinos?", "¿cuándo llega lo mío?"); consultas de aduana, réplicas o canal. NO son motivo para derivar: que el producto tenga marca, que el pedido sea grande, o que el mensaje sea corto o vago: eso se resuelve preguntando (reglas 4 y 7).
 2b. PLAZOS DE ENTREGA ("cuánto tarda", "cuándo llega", "en cuánto tiempo"): contestá SOLO con estos datos, sin sumar otros números ni garantías:
 ${PLAZOS}
 3a. LINK DE ALIBABA SIN CANTIDAD: preguntale solo cuántas unidades quiere (el precio y el peso los sacamos nosotros del link; la cotización se arma sola cuando diga la cantidad). Si ya se lo preguntaste y no contestó, recordáselo corto.
 3b. LINK DE 1688 (o de otro proveedor) sin datos: pedile "${FRASE_COTIZAR} de 1688" (o "del proveedor"). Si ya se lo pediste y no contestó, recordáselo corto.
 3c. PESO TOTAL O POR UNIDAD: si el peso que dio el cliente parece de todo el pedido y no de una unidad (ej. 2,5 kg para 45 cerraduras chicas), no lo des por unidad: preguntale "ese peso es por unidad o de las N unidades en total?".
 3d. JUNTAR LOS 3 DATOS EN POCOS MENSAJES: cuando ya tiene proveedor o link y falta información para cotizar, pedí TODO lo que falte en UN solo mensaje (peso del producto en gramos, cantidad de unidades, precio FOB unitario). Si ya dio alguno, pedí solo los que faltan y nombrá lo que ya dijo para que vea que lo leíste; nunca repitas una pregunta que ya hiciste. Si no sabe dónde encontrarlos en Alibaba: el precio sale de la tabla por cantidad de la página y el peso de "Empaque y entrega" (peso bruto). Cuando los tres datos quedan completos, la cotización se arma sola (accion "nada").
-4. NOMBRA UN PRODUCTO SIN LINK NI FOTOS (ej: "Xiaomi note 15", "necesito traer 45 pestillos electrónicos", "quiero importar parlantes"): preguntale si tiene el link de Alibaba o 1688, o de algún proveedor; y si no lo tiene, que te mande fotos de referencia del producto. NO ofrezcas el informe de búsqueda, NO pidas peso ni FOB todavía. EXCEPCIÓN: si nombra un producto de marca definida que ya vendemos desde Paraguay en la tienda (parlantes JBL: Charge, Go, Flip, Clip, Boombox, etc.), o el mensaje viene del botón de la tienda web ("quiero consultar precio y disponibilidad por el producto …"), NO le pidas link ni fotos ni lo dejes para el dueño: preguntale solo qué cantidad quiere de cada producto.
+4. NOMBRA UN PRODUCTO SIN LINK NI FOTOS (ej: "Xiaomi note 15", "necesito traer 45 pestillos electrónicos", "quiero importar parlantes", "estoy buscando este desodorante al por mayor"): seguí el embudo del dueño (SOP) según lo que ya sabés, sin repetir lo que el cliente ya dijo:
+${SOP_EMBUDO}
+NO ofrezcas el informe de búsqueda. EXCEPCIÓN: si nombra un producto de marca definida que ya vendemos desde Paraguay en la tienda (parlantes JBL: Charge, Go, Flip, Clip, Boombox, etc.), o el mensaje viene del botón de la tienda web ("quiero consultar precio y disponibilidad por el producto …"), NO le pidas link ni fotos ni lo dejes para el dueño: preguntale solo qué cantidad quiere de cada producto.
 5. PRECIO DE ALGO QUE VIO (ropa, zapatillas, "¿ese precio es por unidad?", "¿cuánto sale por 12?") sin decir cuál: no confirmes ni expliques precios; preguntale qué producto vio (prenda, modelo, zapatilla) y si lo vio en un mensaje de los grupos o en la página, y que te pase la captura o el link.
 6. CATÁLOGO / STOCK ("qué tienen", "lista de precios", "tienen X en stock"): mandale el link https://www.teimportamosarg.com/catalogo y que ahí están los productos y precios.
 7. SALUDO O "QUIERO INFO" sin decir qué: saludalo y preguntale qué producto quiere traer y si tiene link de Alibaba/1688 o fotos de referencia.
-8. Cualquier otra cosa → accion "humano".
-${reglas?.length ? "REGLAS QUE APRENDÍ (valen como las de arriba; si chocan con REGLAS o PROHIBIDO, mandan estas últimas):\n" + reglasTexto(reglas) + "\n" : ""}ESTILO: 1 a 3 líneas, voseo argentino, como escribo yo (ver ejemplos), sin listas ni títulos, sin muletillas al arrancar ("claro", "dale", "buenísimo", "genial"). Si ya hubo charla hoy, no saludes de nuevo. Si el último mensaje del cliente es de hace más de 12 horas, arrancá con un "Perdón la demora!" corto. Usá el nombre del producto que dijo el cliente.
+8. Si no encaja en ninguna y no entendés qué pide: preguntale qué producto busca o qué necesita (regla 7). Solo si ni así se puede avanzar, accion "humano".
+${corrTxt ? "MIS CORRECCIONES A CASOS PARECIDOS (el dueño te corrigió así; hacé lo que dicen, vale más que cualquier otra regla salvo PROHIBIDO):\n" + corrTxt + "\n" : ""}${reglas?.length ? "REGLAS QUE APRENDÍ (valen como las de arriba; si chocan con REGLAS o PROHIBIDO, mandan estas últimas):\n" + reglasTexto(reglas) + "\n" : ""}ESTILO: 1 a 3 líneas, voseo argentino, como escribo yo (ver ejemplos), sin listas ni títulos, sin muletillas al arrancar ("claro", "dale", "buenísimo", "genial"). Si ya hubo charla hoy, no saludes de nuevo. Si el último mensaje del cliente es de hace más de 12 horas, arrancá con un "Perdón la demora!" corto. Usá el nombre del producto que dijo el cliente.
 PROHIBIDO: prometer que le vas a pasar o mandar algo ("te paso la dirección", "ahí te mando") salvo el link del catálogo en ese mismo mensaje; dar precios, comisiones o cualquier número de plata (los plazos solo con los datos de la regla 2b); ofrecer el informe de búsqueda (eso lo hace el dueño cuando ve las fotos); decir "te paso con alguien", "te derivo", "el equipo", "te llamamos" o prometer que alguien le va a escribir; nombrar vapers, pods o tabaco.
 Devolvé JSON: {"accion":"responder"|"humano"|"nada","mensaje":"texto a enviar (vacío si no es responder)","motivo":"una frase corta","resumen":"3 a 5 palabras: de qué trata el chat y qué debo hacer yo (ej: \"quiere vender sin stock, explicarle dropshipping\")"}`, opts);
   if (!ia || !["responder", "humano", "nada"].includes(ia.accion)) return ({ accion: "humano", motivo: "la IA no pudo decidir" });
@@ -346,6 +352,15 @@ export async function rutaAutoresp(env, req, p, url, iaJSON, h = {}) {
     const b = await body(); const num = +b.num;
     if (!num) return json({ ok: false, error: "falta el número de cotización" }, 400);
     return json({ ok: true, ...(await revisarCotizacion(env, num, b.bien !== false, String(b.motivo || "").slice(0, 200))) });
+  }
+  if (p === "/enviar/corregir" && req.method === "POST") {   // el dueño marca qué debía hacer el agente en un chat: queda como caso de entrenamiento
+    const b = await body(), cv = String(b.conv || "").replace(/\D/g, ""), txt = String(b.correccion || "").trim();
+    if (!cv || txt.length < 8) return json({ ok: false, error: "falta el número de chat o la corrección" }, 400);
+    const ms = ((await env.DB.prepare("SELECT yo, tipo, texto FROM w_msg WHERE conv=? ORDER BY ts DESC LIMIT 8").bind(cv).all()).results || []).reverse();
+    if (!ms.length) return json({ ok: false, error: "no encontré ese chat" }, 404);
+    const casos = JSON.parse((await kvGet(env, KENT.casos)) || "[]"), ult = [...casos].reverse().find((x) => x.conv === cv);
+    const r = await agregarCorreccion(env, { conv: cv, correccion: txt, msgs: ms, agente: ult ? `${ult.accion}${ult.mensaje ? ": " + ult.mensaje : ""}${ult.motivo ? " (" + ult.motivo + ")" : ""}` : "" });
+    return json({ ok: true, ...r });
   }
   if (p === "/enviar/cotizaciones-estado") return json({ ok: true, ...(await estadoCotizaciones(env)) });
   if (p === "/enviar/derivados") return json({ ok: true, lista: await derivados(env) });

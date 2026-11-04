@@ -11,7 +11,7 @@ const kvGet = async (env, k) => (await env.DB.prepare("SELECT v FROM kv WHERE k=
 const kvPut = (env, k, v) => env.DB.prepare("INSERT INTO kv (k,v,exp) VALUES (?,?,NULL) ON CONFLICT(k) DO UPDATE SET v=excluded.v, exp=NULL").bind(k, String(v)).run();
 const leer = async (env, k, def) => { try { const v = await kvGet(env, k); return v ? JSON.parse(v) : def; } catch { return def; } };
 const guardar = (env, k, v) => kvPut(env, k, JSON.stringify(v));
-export const K = { estilo: "ent:estilo", reglas: "ent:reglas", casos: "ent:casos", fallas: "ent:fallas", hist: "ent:hist", pedido: "ent:pedido", ultimo: "ent:ultimo", vistos: "ent:vistos", rechazadas: "ent:rechazadas", corre: "ent:corre" };
+export const K = { estilo: "ent:estilo", reglas: "ent:reglas", casos: "ent:casos", fallas: "ent:fallas", hist: "ent:hist", correcciones: "ent:correcciones", pedido: "ent:pedido", ultimo: "ent:ultimo", vistos: "ent:vistos", rechazadas: "ent:rechazadas", corre: "ent:corre" };
 export const MAX_REGLAS = 12;
 
 const BOT = /^\s*(bienvenid[oa]|te voy a derivar|gracias por escribir)/i;   // mensajes automáticos de WhatsApp Business: no son míos
@@ -55,7 +55,7 @@ export async function construirEstilo(env, ahora = Date.now()) {
     }
   }
   const vistos = new Set(), unicos = [];
-  for (const p of pares.sort((a, b) => b.ts - a.ts)) { const k = sinTilde(p.y); if (vistos.has(k)) continue; vistos.add(k); unicos.push(p); if (unicos.length >= 150) break; }
+  for (const p of pares.sort((a, b) => b.ts - a.ts)) { const k = sinTilde(p.y); if (vistos.has(k)) continue; vistos.add(k); unicos.push(unicos.length < 150 ? p : { id: p.id, ts: p.ts, c: p.c, y: p.y }); if (unicos.length >= 450) break; }
   const est = { ts: ahora, stats: estadisticas(propios.slice(0, 1500)), pares: unicos };
   await guardar(env, K.estilo, est);
   return est;
@@ -89,7 +89,7 @@ export function chequeoDuro(mensaje, est, msgs = []) {
   if (t.length > max) f.push(`muy largo (${t.length} caracteres; yo escribo hasta ~${p90})`);
   if (t.split(/\n/).filter(Boolean).length > 3) f.push("más de 3 líneas");
   if ((t.match(/\?/g) || []).length > 2) f.push("demasiadas preguntas juntas");
-  if (/^(claro|dale|buen[ií]simo|genial|perfecto|excelente|obvio|por supuesto)\b/i.test(t)) f.push("arranca con muletilla");
+  if (t.length > 45 && /^(claro|dale|buen[ií]simo|genial|perfecto|excelente|obvio|por supuesto)\b/i.test(t)) f.push("arranca con muletilla");
   if (/\b(estimad[oa]|le informo|cordial(es)?|a su disposici[oó]n|usted|su consulta)\b/i.test(t)) f.push("tono formal");
   if ((t.match(/\p{Extended_Pictographic}/gu) || []).length > 2) f.push("demasiados emojis");
   if (/\*\*|^#|^\s*[-•]\s/m.test(t)) f.push("usa formato o listas");
@@ -104,6 +104,10 @@ export const PLAZOS = `PLAZOS DE ENTREGA (son los únicos que se pueden decir; m
 - Ropa (viene de Argentina): entrega inmediata. Mates: aproximadamente 10 días. Zapatillas: aproximadamente 10 días.
 - Productos que se importan desde China: "una vez despachado, 10 a 15 días por avión; 40 a 60 días una vez despachado por barco".
 - Si no está claro de dónde viene el producto, preguntale qué producto es antes de dar un plazo.`;
+export const SOP_EMBUDO = `   a) Si el producto es vago (ej. "de silicona, varios colores y modelos", "algo así"): pedile fotos de referencia o, al menos, los nombres o modelos que busca.
+   b) Si no dijo cantidad: preguntale cuántas unidades busca y, en el mismo mensaje, si lo quiere traer de China o de otro lado.
+   c) Si lo quiere traer de un lugar que NO es China → accion "humano" (lo ve el dueño).
+   d) Si es de China: preguntale si tiene el link de Alibaba o algo del proveedor. Si NO lo tiene → accion "humano". Si lo tiene → pedile el precio FOB unitario y el peso del producto para cotizar directo.`;
 export const OBJETIVO = `Cotizamos solos cuando el cliente manda link de Alibaba + cantidad, o cuando nos pasa peso del producto en gramos, cantidad de unidades y precio FOB unitario. Si falta algo, hay que conseguir esos 3 datos en la menor cantidad de mensajes: pedir TODO lo que falte junto en un solo mensaje y nunca pedir lo que ya dio.`;
 
 export async function juzgar(env, iaJSON, { msgs, mensaje, est, reglas = [] }) {
@@ -127,6 +131,24 @@ Devolvé JSON: {"ok":true|false,"puntaje":1-10,"fallas":["falla corta"],"mensaje
   const fallas = [...duras, ...(Array.isArray(r?.fallas) ? r.fallas.map((x) => String(x).slice(0, 80)).slice(0, 4) : [])];
   return { ok: !duras.length && (puntaje === null || puntaje >= 7) && r?.ok !== false, puntaje, fallas, mejorado: String(r?.mensaje_mejorado || "").trim() };
 }
+
+// ------------------------------------------------------------------ correcciones del dueño
+// "Acá le tendría que haber pedido la cantidad…": cada corrección guarda la charla, lo que hizo el agente y lo que había que hacer.
+// Sirve de 3 maneras: (1) se le muestra al agente cuando aparece un caso parecido, (2) entra siempre en la práctica nocturna como caso de
+// oro (una regla nueva nunca puede romperlas), (3) de ellas salen las reglas generales. Así no hace falta parchear el código por cada error.
+export const cargarCorrecciones = (env) => leer(env, K.correcciones, []);
+export async function agregarCorreccion(env, { conv, correccion, msgs, agente = "" }) {
+  const l = await cargarCorrecciones(env), ctx = msgs.map(comp), ult = [...msgs].reverse().find((m) => !m.yo);
+  const c = { id: `corr:${conv}:${Date.now()}`, ts: Date.now(), conv, c: String(ult?.texto || ctx.at(-1)?.t || "").slice(0, 300), ctx, agente, y: String(correccion).slice(0, 700), oro: true };
+  l.push(c); await guardar(env, K.correcciones, l.slice(-60));
+  await kvPut(env, K.pedido, Math.max(+((await kvGet(env, K.pedido)) || 0), 1));   // el cron lo practica en el próximo minuto
+  return { total: Math.min(l.length, 60), practica: "en el próximo minuto" };
+}
+export function corrSimilares(corrs, texto, k = 3, excluir = "") {
+  const w = new Set(palabras(texto).filter((x) => x.length >= 4 && !STOP.has(x)));
+  return (corrs || []).filter((c) => c.id !== excluir).map((c) => ({ c, s: [...new Set(palabras(c.c + " " + (c.ctx || []).map((m) => m.t).join(" ")))].filter((x) => w.has(x)).reduce((t, x) => t + (x.length >= 7 ? 2 : 1), 0) })).filter((x) => x.s >= 2).sort((a, b) => b.s - a.s).slice(0, k).map((x) => x.c);
+}
+export const correccionesTexto = (cs) => cs.map((c) => `Situación: "${c.c}"${c.agente ? `\n  El agente hizo: ${c.agente.slice(0, 200)}` : ""}\n  Lo que había que hacer: ${c.y}`).join("\n");
 
 // ------------------------------------------------------------------ casos de producción
 export async function registrarCaso(env, caso) {
@@ -166,11 +188,11 @@ export async function revisarResultados(env, ahora = Date.now()) {
 const mezclar = (a) => { const b = [...a]; for (let i = b.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [b[i], b[j]] = [b[j], b[i]]; } return b; };
 const AGENTE = (r) => r ? `${String(r.accion).toUpperCase()}${r.mensaje ? ": " + r.mensaje : ""}${r.motivo ? "  (motivo: " + r.motivo + ")" : ""}` : "(sin respuesta)";
 
-async function comparar(ia, { ctx, real, agente }) {
+async function comparar(ia, { ctx, real, agente, oro = false }) {
   return ia(null, `Sos el dueño de "Te Importamos" (importación por encargo desde China, Rosario). Abajo está una charla real, cómo contesté YO de verdad y cómo contestó el AGENTE (decide "responder" con un mensaje, "humano" = me lo deja a mí, o "nada" = no contesta).
 Puntuá al agente de 1 a 10: ¿habría sido una respuesta igual de buena que la mía para el cliente?
 - Mismo objetivo que la mía, tono y largo parecidos a los míos, sin inventar datos, sin pedir lo que el cliente ya dio, sin repetir.
-- Si el agente lo dejó para mí ("humano") y mi respuesta real trató de pagos, reclamos, precios, negociación, condiciones o algo que él no puede resolver, es CORRECTO (8 o más).
+- Derivarme el chat ("humano") SOLO es correcto si mi respuesta real necesitó algo que el agente no puede tener: pagos o comprobantes, estado de un pedido en marcha, negociación de precios, aduana, llamadas, un reclamo o un origen que no es China. Si yo lo resolví con una pregunta o un dato simple (cantidad, link, fotos, plazo, "dale cuando puedas me pasás"), derivar fue un error: puntaje 5 o menos.
 - Si el agente no contestó ("nada") pero yo contesté algo que había que contestar, o si contestó algo que yo no habría dicho, es un error.
 OBJETIVO DEL NEGOCIO: ${OBJETIVO}
 ${PLAZOS}
@@ -178,7 +200,7 @@ ${PLAZOS}
 CONVERSACIÓN:
 ${charlaTexto(ctx.map((m) => ({ yo: m.yo, texto: m.t })))}
 
-MI RESPUESTA REAL: ${real}
+${oro ? "LO QUE ERA CORRECTO HACER (indicación mía)" : "MI RESPUESTA REAL"}: ${real}
 AGENTE: ${agente}
 
 Devolvé JSON: {"puntaje":1-10,"fallas":["falla corta"],"regla":"una regla corta en imperativo, general (no de este chat), que evitaría este error; vacío si el agente estuvo bien"}`);
@@ -191,20 +213,21 @@ export async function rondaEntrenamiento(env, iaBase, decidir, { n = 6, maxIA = 
   if (!est || ahora - est.ts > 20 * 3600e3) est = await construirEstilo(env, ahora);
   if (!est.pares.length) return { nota: "todavía no hay conversaciones tuyas para entrenar" };
   const reglas = await cargarReglas(env), rechazadas = await leer(env, K.rechazadas, []);
+  const correcciones = await cargarCorrecciones(env), oro = mezclar(correcciones).slice(0, 3);
   let vistos = new Set(await leer(env, K.vistos, []));
   let cand = est.pares.filter((p) => p.ctx?.length && !p.ctx.at(-1)?.yo && !vistos.has(p.id));
   if (cand.length < n) { vistos = new Set(); cand = est.pares.filter((p) => p.ctx?.length && !p.ctx.at(-1)?.yo); }
-  const lote = mezclar(cand).slice(0, n), res = [];
+  const lote = [...oro, ...mezclar(cand).slice(0, n)], res = [];
   const correr = async (p, reglasUsar) => {
     const msgs = p.ctx.map((m) => ({ yo: m.yo, texto: m.t, tipo: "text" }));
     const ultimo = [...msgs].reverse().find((m) => !m.yo);
-    const borr = await decidir({ c: { nombre: "" }, msgs, ultimo, est, reglas: reglasUsar, excluir: p.id }, ia);
+    const borr = await decidir({ c: { nombre: "" }, msgs, ultimo, est, reglas: reglasUsar, excluir: p.id, correcciones }, ia);
     if (!borr) return null;
-    const v = await comparar(ia, { ctx: p.ctx, real: p.y, agente: AGENTE(borr) });
+    const v = await comparar(ia, { ctx: p.ctx, real: p.y, agente: AGENTE(borr), oro: !!p.oro });
     if (!Number.isFinite(+v?.puntaje)) return null;
     return { p, borr, puntaje: +v.puntaje, fallas: v?.fallas || [], regla: String(v?.regla || "").trim() };
   };
-  for (const p of lote) { const r = await correr(p, reglas); if (!r) { if (agotada) break; continue; } res.push(r); vistos.add(p.id); }
+  for (const p of lote) { const r = await correr(p, reglas); if (!r) { if (agotada) break; continue; } res.push(r); if (!p.oro) vistos.add(p.id); }
   if (!res.length) return { nota: agotada ? "la IA no respondió (cupo agotado), sigo mañana" : "no pude evaluar casos" };
   const prom = (a) => a.reduce((s, x) => s + x.puntaje, 0) / (a.length || 1);
   const score = Math.round(prom(res) * 10) / 10, malos = res.filter((r) => r.puntaje < 7);
@@ -238,9 +261,10 @@ Devolvé JSON: {"reglas":["regla"],"quitar":[número de regla existente]}`);
     await guardar(env, K.fallas, []);   // los errores de producción ya se usaron
   }
   const hist = await leer(env, K.hist, []);
-  hist.push({ ts: ahora, score, n: res.length, adoptadas: adoptadas.length, descartadas: descartadas.length, ia: usos });
+  const derivados = res.filter((r) => r.borr.accion === "humano").length;
+  hist.push({ ts: ahora, score, n: res.length, derivados, adoptadas: adoptadas.length, descartadas: descartadas.length, ia: usos });
   await guardar(env, K.hist, hist.slice(-40)); await guardar(env, K.vistos, [...vistos].slice(-300));
-  const resumen = { score, casos: res.length, malos: malos.length, adoptadas, quitadas, descartadas, mejora: detalleMejora ?? null, ia: usos, ts: ahora };
+  const resumen = { score, derivados, casos: res.length, malos: malos.length, adoptadas, quitadas, descartadas, mejora: detalleMejora ?? null, ia: usos, ts: ahora };
   await guardar(env, K.ultimo, resumen);
   return resumen;
 }
@@ -259,7 +283,7 @@ export async function cronEntrenador(env, iaJSON, decidir, tiempo = Date.now()) 
 
 export async function informe(env) {
   const [reglas, hist, ultimo, fallas, casos, est] = await Promise.all([cargarReglas(env), leer(env, K.hist, []), leer(env, K.ultimo, null), leer(env, K.fallas, []), leer(env, K.casos, []), cargarEstilo(env)]);
-  return { reglas, hist: hist.slice(-12), ultimo, erroresPendientes: fallas.length, pedido: +((await kvGet(env, K.pedido)) || 0), cotizaciones: await estadoCotizaciones(env), estilo: est ? { ts: est.ts, ...est.stats, pares: est.pares.length } : null,
+  return { reglas, hist: hist.slice(-12), ultimo, erroresPendientes: fallas.length, pedido: +((await kvGet(env, K.pedido)) || 0), cotizaciones: await estadoCotizaciones(env), correcciones: (await cargarCorrecciones(env)).length, derivacion: (() => { const t = casos.filter((c) => c.accion !== "nada"); return { de: t.length, pct: t.length ? Math.round((100 * t.filter((c) => c.accion === "humano").length) / t.length) : 0 }; })(), estilo: est ? { ts: est.ts, ...est.stats, pares: est.pares.length } : null,
     ultimosCasos: casos.slice(-12).map((c) => ({ ts: c.ts, accion: c.accion, mensaje: c.mensaje, juez: c.juez })) };
 }
 export async function editarReglas(env, { agregar, borrar }) {
