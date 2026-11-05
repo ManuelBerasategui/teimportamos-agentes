@@ -863,7 +863,19 @@ async function cerebro(env, e, texto, imagen, pagina, extra = {}) {
 //  y propone reglas nuevas. Ustedes las aprueban con un botón (o #autoaprender si).
 // =====================================================================
 const APRENDIZAJE = { horaUTC: 12, minuto: 30, maxChats: 40, maxReglas: 60 };   // 12:30 UTC = 9:30 Rosario
+// Si se cambia la clave de Gemini, los avisos de "modelo agotado" de la clave vieja ya no valen: se borran solos (no se guarda la clave, solo una huella)
+let fpClaveVista = "";
+async function claveNueva(env) {
+  if (!env.GEMINI_KEY) return;
+  const h = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(env.GEMINI_KEY)))).slice(0, 6).map((b) => b.toString(16).padStart(2, "0")).join("");
+  if (h === fpClaveVista) return;
+  fpClaveVista = h;
+  if ((await env.ESTADO.get("gemini_key_fp")) === h) return;
+  for (const k of (await env.ESTADO.list({ prefix: "agotado:" })).keys) await env.ESTADO.delete(k.name);
+  await env.ESTADO.put("gemini_key_fp", h);
+}
 async function iaJSON(env, prompt, opts = {}) {
+  await claveNueva(env).catch(() => {});
   const parsear = (t) => { const m = (t || "").match(/\{[\s\S]*\}/); try { return m ? JSON.parse(m[0]) : null; } catch { return null; } };
   let intentos = 0;
   for (const m of (await modelosDisponibles(env)).slice(0, 8)) {
