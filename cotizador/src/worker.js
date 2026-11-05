@@ -873,6 +873,7 @@ async function claveNueva(env) {
   if ((await env.ESTADO.get("gemini_key_fp")) === h) return;
   for (const k of (await env.ESTADO.list({ prefix: "agotado:" })).keys) await env.ESTADO.delete(k.name);
   await env.ESTADO.put("gemini_key_fp", h);
+  await env.DB.prepare("DELETE FROM kv WHERE k='ent:enfria'").run().catch(() => {});   // el descanso del entrenamiento era por la clave vieja
 }
 async function iaJSON(env, prompt, opts = {}) {
   await claveNueva(env).catch(() => {});
@@ -3574,6 +3575,7 @@ export default {
       await procesarBuffers(env).catch((e) => console.log("Error red:", e?.stack || e));
       await cronLector(env, iaJSON, evento.scheduledTime || Date.now()).catch((e) => console.log("Error lector 805:", e?.stack || e));
       // Entrenamiento del contestador: de noche y cuando se pide (rondas chicas, una por minuto)
+      await claveNueva(env).catch(() => {});   // clave de Gemini cambiada: limpia los avisos viejos sin esperar a que alguien use la IA
       if (env.DB && env.LECTOR_TOKEN) await cronEntrenador(env, iaJSON, (ctx, ia) => simularRedactar(env, ia, ctx, T), evento.scheduledTime || Date.now()).catch((e) => console.log("Error entrenador:", e?.stack || e));
       if (m % 5 === 4 && env.LECTOR_TOKEN) await cotizarAuto(env, { T, leerPagina, iaJSON, iaConImagenes }).catch((e) => console.log("Error cotización automática:", e?.stack || e));
       if (env.DB) await cronVideos(env, evento.scheduledTime || Date.now()).catch((e) => console.log("Error videos:", e?.stack || e));
