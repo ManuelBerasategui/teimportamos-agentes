@@ -1,4 +1,5 @@
 import { rutaAutoresp } from "./autoresp.js";
+import { esCierre } from "./cierre.js";
 // ============================================================================
 // LECTOR 805 — análisis de solo lectura del WhatsApp Business +54 9 341 805-1515
 // ----------------------------------------------------------------------------
@@ -59,7 +60,12 @@ export async function prepararLector(env) {
     env.DB.prepare("CREATE TABLE IF NOT EXISTS reportes (id TEXT PRIMARY KEY, tipo TEXT, desde INTEGER, hasta INTEGER, creado INTEGER, datos TEXT)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT, exp INTEGER)"),
   ]);
-    for (const col of ["resp INTEGER", "visto_ts INTEGER DEFAULT 0", "prov INTEGER DEFAULT 0", "visto_esc INTEGER DEFAULT 0", "visto_cot INTEGER DEFAULT 0", "nuevo_ok INTEGER", "perfil TEXT", "presup_usd INTEGER", "origen TEXT", "motivo TEXT", "seg_visto INTEGER DEFAULT 0", "seg_no INTEGER DEFAULT 0"]) await env.DB.prepare(`ALTER TABLE w_conv ADD COLUMN ${col}`).run().catch(() => {});
+    for (const col of ["resp INTEGER", "visto_ts INTEGER DEFAULT 0", "prov INTEGER DEFAULT 0", "visto_esc INTEGER DEFAULT 0", "visto_cot INTEGER DEFAULT 0", "nuevo_ok INTEGER", "perfil TEXT", "presup_usd INTEGER", "origen TEXT", "motivo TEXT", "seg_visto INTEGER DEFAULT 0", "seg_no INTEGER DEFAULT 0", "bot_ts INTEGER DEFAULT 0"]) await env.DB.prepare(`ALTER TABLE w_conv ADD COLUMN ${col}`).run().catch(() => {});
+  // Una sola vez: marca los chats recientes donde el último aviso fue el del bot de Meta (bot_ts), para que se atiendan primero
+  if (!(await env.DB.prepare("SELECT 1 FROM kv WHERE k='bot_ts_listo'").first().catch(() => null))) {
+    await env.DB.prepare("UPDATE w_conv SET bot_ts = COALESCE((SELECT MAX(m.ts) FROM w_msg m WHERE m.conv=w_conv.conv AND m.yo=1 AND (m.texto LIKE 'Te voy a derivar con alguien del equipo%' OR m.texto LIKE '%Bienvenid%derivar con alguien%')),0) WHERE ult_cliente_ts>=?").bind(Date.now() - 14 * 86400e3).run().catch(() => {});
+    await env.DB.prepare("INSERT OR REPLACE INTO kv (k,v,exp) VALUES ('bot_ts_listo','1',NULL)").run().catch(() => {});
+  }
   await env.DB.batch([
     env.DB.prepare("CREATE TABLE IF NOT EXISTS ag_chat (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, rol TEXT, texto TEXT)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS ag_mem (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, tipo TEXT, texto TEXT)"),
@@ -180,13 +186,13 @@ async function guardarLote(env, lote) {
     ops.push(env.DB.prepare("INSERT OR IGNORE INTO w_msg (id,conv,grupo,yo,autor,autor_nombre,tipo,texto,ts,hist) VALUES (?,?,?,?,?,?,?,?,?,?)")
       .bind(m.external_id, conv, grupo, yo, m.sender_address || null, m.sender_name || null, tipo, String(texto).slice(0, 4000), ts, hist));
     mensajes++;
-    const c = convs.get(conv) || { conv, grupo, nombre: null, primer: ts, ult: 0, ultYo: 0, ultCli: 0, ultYoTs: 0, texto: "", n: 0 };
+    const c = convs.get(conv) || { conv, grupo, nombre: null, primer: ts, ult: 0, ultYo: 0, ultCli: 0, ultYoTs: 0, botTs: 0, texto: "", n: 0 };
     if (!grupo && !yo && m.sender_name && !/^te importamos/i.test(m.sender_name)) c.nombre = m.sender_name;
     if (m.conversation_name && (grupo || !/^te importamos/i.test(m.conversation_name))) c.nombre = m.conversation_name;
     c.primer = Math.min(c.primer, ts); c.n++;
     const esAuto = yo && esBot(texto);   // bot de Meta: no cuenta como respuesta nuestra
     if (!esAuto && ts >= c.ult) { c.ult = ts; c.ultYo = yo; c.texto = String(texto).slice(0, 200); }
-    if (esAuto) { /* no cuenta */ } else if (yo) c.ultYoTs = Math.max(c.ultYoTs, ts); else c.ultCli = Math.max(c.ultCli, ts);
+    if (esAuto) { c.botTs = Math.max(c.botTs, ts); /* el aviso del bot no cuenta como respuesta nuestra, pero se anota: el cliente sigue esperando a una persona */ } else if (yo) c.ultYoTs = Math.max(c.ultYoTs, ts); else c.ultCli = Math.max(c.ultCli, ts);
     convs.set(conv, c);
     // Hitos exactos (solo chats individuales)
     if (!grupo) {
@@ -201,7 +207,7 @@ async function guardarLote(env, lote) {
     }
   }
   for (const c of convs.values()) {
-    ops.push(env.DB.prepare(`INSERT INTO w_conv (conv,nombre,grupo,primer_ts,ult_ts,ult_yo,ult_cliente_ts,ult_yo_ts,ult_texto,n) VALUES (?,?,?,?,?,?,?,?,?,?)
+    ops.push(env.DB.prepare(`INSERT INTO w_conv (conv,nombre,grupo,primer_ts,ult_ts,ult_yo,ult_cliente_ts,ult_yo_ts,ult_texto,n,bot_ts) VALUES (?,?,?,?,?,?,?,?,?,?,?)
       ON CONFLICT(conv) DO UPDATE SET
         nombre = COALESCE(excluded.nombre, w_conv.nombre),
         primer_ts = MIN(w_conv.primer_ts, excluded.primer_ts),
@@ -210,8 +216,9 @@ async function guardarLote(env, lote) {
         ult_ts = MAX(w_conv.ult_ts, excluded.ult_ts),
         ult_cliente_ts = MAX(w_conv.ult_cliente_ts, excluded.ult_cliente_ts),
         ult_yo_ts = MAX(w_conv.ult_yo_ts, excluded.ult_yo_ts),
+        bot_ts = MAX(COALESCE(w_conv.bot_ts,0), excluded.bot_ts),
         n = w_conv.n + excluded.n`)
-      .bind(c.conv, c.nombre, c.grupo, c.primer, c.ult, c.ultYo, c.ultCli, c.ultYoTs, c.texto, c.n));
+      .bind(c.conv, c.nombre, c.grupo, c.primer, c.ult, c.ultYo, c.ultCli, c.ultYoTs, c.texto, c.n, c.botTs));
   }
   // D1 acepta lotes grandes, pero se parte por las dudas (historial inicial)
   for (let i = 0; i < ops.length; i += 80) await env.DB.batch(ops.slice(i, i + 80));
@@ -435,12 +442,13 @@ export async function listas(env) {
   const q = async (sql, ...b) => (await env.DB.prepare(sql).bind(...b).all()).results || [];
   const hace72 = Date.now() - 72 * 3600e3;
   const [sinResponder, escribiles, cotPend, ventasRec] = await Promise.all([
-    q("SELECT * FROM w_conv WHERE ult_cliente_ts>=? AND grupo=0 AND archivado=0 AND ult_yo=0 AND COALESCE(prov,0)=0 AND lower(COALESCE(producto,'')) NOT LIKE '%vap%' AND lower(COALESCE(producto,'')) NOT LIKE '%elf%bar%' AND lower(COALESCE(producto,'')) NOT LIKE '%pod%' AND ult_cliente_ts>COALESCE(visto_ts,0) ORDER BY COALESCE(resp,1) DESC, COALESCE(puntaje,5) DESC, ult_cliente_ts ASC LIMIT 120", Date.now() - 14 * 86400e3),
+    q("SELECT * FROM w_conv WHERE ult_cliente_ts>=? AND grupo=0 AND archivado=0 AND ult_yo=0 AND COALESCE(ult_yo_ts,0)<=ult_cliente_ts AND COALESCE(prov,0)=0 AND lower(COALESCE(producto,'')) NOT LIKE '%vap%' AND lower(COALESCE(producto,'')) NOT LIKE '%elf%bar%' AND lower(COALESCE(producto,'')) NOT LIKE '%pod%' AND ult_cliente_ts>COALESCE(visto_ts,0) ORDER BY COALESCE(resp,1) DESC, COALESCE(puntaje,5) DESC, ult_cliente_ts ASC LIMIT 120", Date.now() - 14 * 86400e3),
     q("SELECT * FROM w_conv WHERE grupo=0 AND archivado=0 AND COALESCE(prov,0)=0 AND COALESCE(visto_esc,0)<ult_ts AND puntaje>=6 AND accion<>'' AND etapa NOT IN ('vendido','perdido','no_cliente') AND ult_ts>=? ORDER BY puntaje DESC, ult_ts DESC LIMIT 40", Date.now() - 10 * 86400e3),
     q("SELECT * FROM w_conv WHERE ult_ts>=? AND grupo=0 AND archivado=0 AND cot_pend=1 AND COALESCE(prov,0)=0 AND COALESCE(visto_cot,0)<ult_ts ORDER BY ult_cliente_ts ASC LIMIT 40", Date.now() - 14 * 86400e3),
     q("SELECT h.id, h.ts, h.dato, c.conv, c.nombre, c.producto FROM w_hito h LEFT JOIN w_conv c ON c.conv=h.conv WHERE h.tipo='venta' AND COALESCE(h.oculto,0)=0 AND COALESCE(c.prov,0)=0 ORDER BY h.ts DESC LIMIT 20"),
   ]);
-  return { sinResponder, escribiles, cotPend, ventasRec };
+  // Lo último del cliente es un cierre ("gracias", "dale", "un abrazo"): no hay nada que contestar, sale solo de la lista
+  return { sinResponder: sinResponder.filter((c) => !esCierre(c.ult_texto)), escribiles, cotPend, ventasRec };
 }
 
 // ---------------------------------------------------------------------------

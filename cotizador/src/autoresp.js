@@ -70,7 +70,7 @@ export async function pendientesResponder(env, { limite = 10, T = null, desde = 
   const ahora = Date.now();
   // Mismo universo que "Responder ya" del panel (respeta lo que marcaste como listo). Orden: primero los que escribieron
   // en las últimas 3 horas (no hacer esperar a los nuevos), después los mejor puntuados, y entre iguales el más viejo primero
-  const filas = (await env.DB.prepare(`SELECT conv, nombre, ult_cliente_ts, ult_texto, ult_yo FROM w_conv WHERE grupo=0 AND archivado=0 AND (ult_yo=0 OR ult_texto LIKE '%derivar con alguien del equipo%' OR ult_texto LIKE '%le avis_ a%equipo%') AND COALESCE(prov,0)=0 AND ult_cliente_ts>=? AND ult_cliente_ts<=? AND ult_cliente_ts>COALESCE(visto_ts,0) AND ${SIN_VAPES} AND lower(COALESCE(producto,'')) NOT LIKE '%pod%' ORDER BY ult_yo DESC, (ult_cliente_ts >= ${Date.now() - 3 * 3600e3}) DESC, COALESCE(puntaje,5) DESC, ult_cliente_ts ASC LIMIT 300`).bind(Math.max(ahora - Math.min(Math.max(+dias || 14, 1), 14) * 86400e3, desde || 0), ahora - 45e3).all()).results || [];
+  const filas = (await env.DB.prepare(`SELECT conv, nombre, ult_cliente_ts, ult_texto, bot_ts FROM w_conv WHERE grupo=0 AND archivado=0 AND ult_yo=0 AND COALESCE(prov,0)=0 AND ult_cliente_ts>=? AND ult_cliente_ts<=? AND ult_cliente_ts>COALESCE(visto_ts,0) AND ${SIN_VAPES} AND lower(COALESCE(producto,'')) NOT LIKE '%pod%' ORDER BY (COALESCE(bot_ts,0) >= ult_cliente_ts AND COALESCE(bot_ts,0) > 0) DESC, (ult_cliente_ts >= ${Date.now() - 3 * 3600e3}) DESC, COALESCE(puntaje,5) DESC, ult_cliente_ts ASC LIMIT 300`).bind(Math.max(ahora - Math.min(Math.max(+dias || 14, 1), 14) * 86400e3, desde || 0), ahora - 45e3).all()).results || [];
   // Solo se consultan las marcas de los chats de esta lista (antes un LIKE recorría toda la tabla kv en cada vuelta)
   // resp_auto = ya decidido/enviado; resp_toma = otra PC lo está atendiendo ahora (vence a los 10 min si se cortó)
   const vistos = {}, tomados = {}, convs = filas.map((f) => String(f.conv));
@@ -82,7 +82,12 @@ export async function pendientesResponder(env, { limite = 10, T = null, desde = 
     }
   }
   const lista = filas.filter((f) => /^\d{8,15}$/.test(String(f.conv)) && !(vistos[f.conv] >= f.ult_cliente_ts) && !tomados[f.conv]).slice(0, Math.min(limite, topeHora - hechos))
-    .map((f) => ({ conv: f.conv, nombre: f.nombre, ult_cliente_ts: f.ult_cliente_ts, ultimo: String(f.ult_texto || "").slice(0, 200), bot: f.ult_yo ? 1 : 0 }));
+    .map((f) => ({ conv: f.conv, nombre: f.nombre, ult_cliente_ts: f.ult_cliente_ts, ultimo: String(f.ult_texto || "").slice(0, 200), bot: 0, _bot: (f.bot_ts || 0) >= f.ult_cliente_ts && f.bot_ts > 0 }));
+  // bot = 1 si lo último que se ve en WhatsApp es el aviso automático de la IA de Meta ("Te voy a derivar con alguien del equipo"): la PC lo deja contestar
+  for (const it of lista) {
+    const u = await env.DB.prepare("SELECT yo, texto FROM w_msg WHERE conv=? ORDER BY ts DESC LIMIT 1").bind(it.conv).first().catch(() => null);
+    it.bot = it._bot || (u?.yo && RE_DERIVA_BOT.test(String(u.texto || ""))) ? 1 : 0; delete it._bot;
+  }
   const quedan = filas.filter((f) => /^\d{8,15}$/.test(String(f.conv)) && !(vistos[f.conv] >= f.ult_cliente_ts)).length;   // incluye los reservados por otra PC
   return { pausado: false, lista, quedan, cotizaciones: cotizaciones.slice(0, Math.max(0, topeHora - hechos)), cot_directo: (await kvGet(env, "cot:directo")) === "1" };
 }
@@ -102,18 +107,8 @@ export function revisarMensaje(m) {
   return "";
 }
 
-// "gracias", "dale joya", "ok perfecto", "no hay problema", "👍"…: solo palabras de cierre, sin pregunta. Se contestan con nada.
-const CIERRE = new Set("gracias graciass mil muchas muchisimas muchísimas ok okey oka okk dale joya joyita listo lista perfecto perfecta genial buenisimo buenísimo barbaro bárbaro excelente igualmente de nada no hay problema problemas tranqui tranca esta bien está bien bien vale hno hermano amigo amiga bro crack capo maestro genio jefe che bueno her herma mi buenas noches saludos abrazo besos un abrazo".split(" "));
-const CIERRE_FRASE = /(ya te aviso|te aviso|les aviso|te vuelvo a escribir|me vuelvo a comunicar|te escribo (despu[eé]s|m[aá]s tarde|ma[ñn]ana)|despu[eé]s te (aviso|escribo|hablo)|lo (veo|analizo|pienso|consulto|charlo|hablo)|voy a ver|tengo que (verlo|pensarlo|consultarlo|hablarlo)|debo consultarlo|estamos en contacto|por ahora no|ahora no|volver[eé]|vuelvo cuando|cualquier cosa (te|les) (aviso|escribo|hablo)|quedo atento|quedo al pendiente|estoy al pendiente)/;
-export function esCierre(t) {
-  const x = String(t || "").toLowerCase().trim();
-  if (!x || /[?¿]|\d|https?:/.test(x)) return false;
-  if (x.length <= 160 && (CIERRE_FRASE.test(x) || /gra+cias+[\s!.🙏😊🫂❤️👍🫶🏼]*$/u.test(x))) return true;   // "…, déjame q lo analice. Muchas gracias"
-  if (x.length > 45) return false;
-  const palabras = x.normalize("NFC").replace(/[^\p{L}\s]/gu, " ").split(/\s+/).filter(Boolean);
-  if (!palabras.length) return /^[\p{Extended_Pictographic}\s!.]+$/u.test(x);   // solo emojis (👍🙏)
-  return palabras.every((w) => CIERRE.has(w) || /^(gra+cias+|o+k+|da+le+|jo+ya+)$/.test(w));
-}
+import { esCierre } from "./cierre.js";
+export { esCierre };
 
 // Voseo como se escribe en WhatsApp: "avisame", "pasame", "decime" (sin tilde)
 const VOSEO = Object.fromEntries(["avísame","pásame","mándame","decíme","contáme","fijáte","escribíme","mostráme","confirmáme","dejáme","llamáme","pasáme","mandáme","avisáme","contame","mirá"].filter((w) => w !== "contame" && w !== "mirá").map((w) => [w, w.normalize("NFD").replace(/[\u0300-\u036f]/g, "")]));
@@ -333,8 +328,12 @@ export async function derivados(env) {
   const der = JSON.parse((await kvGet(env, "resp_derivados")) || "{}");
   const out = [];
   for (const [conv, d] of Object.entries(der)) {
-    const c = await env.DB.prepare("SELECT nombre, ult_yo, ult_texto, ult_ts, archivado FROM w_conv WHERE conv=?").bind(conv).first();
-    if (!c || c.ult_yo || c.archivado || Date.now() - d.ts > 14 * 86400e3) continue;   // ya contestaste vos, o es viejo
+    const c = await env.DB.prepare("SELECT nombre, ult_yo, ult_yo_ts, ult_cliente_ts, visto_ts, ult_texto, ult_ts, archivado FROM w_conv WHERE conv=?").bind(conv).first();
+    if (!c || c.archivado || Date.now() - d.ts > 14 * 86400e3) continue;   // no existe o es viejo
+    // Se limpia solo cuando ya no hay nada para hacer: contestaste vos después de la derivación (aunque el cliente haya escrito algo más),
+    // lo marcaste como visto, o lo último del cliente es un cierre ("dale", "gracias", "un abrazo y suerte").
+    const contestoDespues = (c.ult_yo_ts || 0) > d.ts && !RE_DERIVA_BOT.test(String(c.ult_texto || "")) || (c.ult_yo && !RE_DERIVA_BOT.test(String(c.ult_texto || "")));
+    if (contestoDespues || (c.visto_ts || 0) >= Math.max(d.ts, c.ult_cliente_ts || 0) || (!c.ult_yo && esCierre(c.ult_texto))) continue;
     out.push({ conv, nombre: c.nombre || d.nombre || "", resumen: d.resumen, ultimo: String(c.ult_texto || "").slice(0, 160), ts: d.ts });
   }
   return out.sort((x, y) => y.ts - x.ts);

@@ -391,18 +391,35 @@ chk("y frenarlo con 0", inf.rondas === 0 && db.prepare("SELECT v FROM kv WHERE k
   db.prepare("UPDATE kv SET v=? WHERE k='ent:pedido'").run("3");
   let l = 0; await E.cronEntrenador(env, async () => { l++; return null; }, decidir, ahora + 60e3);
   chk("mientras descansa, el cron no llama a la IA", l === 0); db.prepare("DELETE FROM kv WHERE k='ent:enfria'").run(); }
-// 6) CHATS DERIVADOS POR LA IA DE WHATSAPP: lo último es el aviso del bot ("Te voy a derivar..."), nadie contestó → se atienden primero
+// 6) CHATS DERIVADOS POR LA IA DE WHATSAPP: el cliente escribió, el bot de Meta avisó "Te voy a derivar...", nadie de verdad contestó → se atienden primero
 {
   const cv = "5493795101111", tBot = "Te voy a derivar con alguien del equipo para que te ayude con tu consulta";
   msg(cv, 0, "hola quiero traer 50 zapatillas de china", 3 * 3600e3 + 120e3); msg(cv, 1, tBot, 3 * 3600e3 + 60e3);
-  conv(cv, "Derivado IA", tBot, 3 * 3600e3 + 120e3, 1); db.prepare("UPDATE w_conv SET ult_cliente_ts=? WHERE conv=?").run(ahora - 3 * 3600e3 - 120e3, cv);
+  conv(cv, "Derivado IA", "hola quiero traer 50 zapatillas de china", 3 * 3600e3 + 120e3, 0);   // el aviso del bot NO cuenta como respuesta: ult_yo sigue en 0
+  db.prepare("UPDATE w_conv SET bot_ts=? WHERE conv=?").run(ahora - 3 * 3600e3 - 60e3, cv);
   const cv2 = "5493795102222"; msg(cv2, 0, "buenas, necesito 20 cargadores", 60e3 * 60 * 5); conv(cv2, "Normal viejo", "buenas, necesito 20 cargadores", 60e3 * 60 * 5);
   const lst = await A.pendientesResponder(env, { limite: 50 });
-  chk("derivados por la IA de WhatsApp entran a la lista de pendientes", lst.lista.some((x) => x.conv === cv && x.bot === 1));
+  chk("derivados por la IA de WhatsApp entran a la lista y llevan la marca bot", lst.lista.some((x) => x.conv === cv && x.bot === 1) && lst.lista.find((x) => x.conv === cv2)?.bot === 0);
   chk("y van primero, antes que los demás", lst.lista[0]?.conv === cv);
   let prompt = "";
   const rd = await A.redactar(env, async (e, p) => { prompt = p; return { accion: "responder", mensaje: "de que zapatillas estamos hablando", motivo: "x" }; }, cv, { prueba: true, T });
-  chk("el agente los contesta (no dice 'ya contestaste vos') y ve la pregunta del cliente", rd.accion === "responder" && /50 zapatillas/.test(prompt));
+  chk("el agente los contesta y ve la pregunta del cliente", rd.accion === "responder" && /50 zapatillas/.test(prompt));
+}
+// 6b) "PARA VOS" Y "RESPONDER YA" SE LIMPIAN SOLOS
+{
+  const kv = (k, v) => db.prepare("INSERT OR REPLACE INTO kv (k,v,exp) VALUES (?,?,NULL)").run(k, JSON.stringify(v));
+  const d1 = ahora - 5 * 3600e3;
+  const mk = (cv, nombre, ultTxt, ultYo, extra = {}) => { conv(cv, nombre, ultTxt, 4 * 3600e3, ultYo); if (extra.yoTs) db.prepare("UPDATE w_conv SET ult_yo_ts=? WHERE conv=?").run(extra.yoTs, cv); if (extra.visto) db.prepare("UPDATE w_conv SET visto_ts=? WHERE conv=?").run(extra.visto, cv); };
+  mk("5493001", "Pendiente real", "me pasas el precio?", 0);
+  mk("5493002", "Ya contesté después", "dale", 0, { yoTs: ahora - 2 * 3600e3 });
+  mk("5493003", "Se despidió", "Un abrazo y suerte", 0);
+  mk("5493004", "Marcado visto", "no me sirve", 0, { visto: ahora - 1000 });
+  kv("resp_derivados", Object.fromEntries(["5493001", "5493002", "5493003", "5493004"].map((c) => [c, { nombre: c, resumen: "x", ts: d1 }])));
+  const der = (await A.derivados(env)).map((x) => x.conv);
+  chk("Para vos: queda el que sigue pendiente", der.includes("5493001"));
+  chk("Para vos: se va el que ya contestaste después de la derivación", !der.includes("5493002"));
+  chk("Para vos: se va el que se despidió (cierre)", !der.includes("5493003"));
+  chk("Para vos: se va el que marcaste como visto", !der.includes("5493004"));
 }
 
 // 7) SIN CUPO DE GEMINI: no se marca ni se deriva nada; el chat se reintenta
