@@ -198,19 +198,29 @@ export async function redactar(env, iaJSON, conv, { prueba = false, T = null, si
   const q3 = await cotizarConTresDatos(env, iaJSON, { conv, c, msgs, sinContestar, T, prueba });
   if (q3) return fin(q3, c.nombre);
   const est = sim?.est ?? await cargarEstilo(env), reglas = sim?.reglas ?? await cargarReglas(env), guia = sim?.guia ?? await cargarGuia(env), correcciones = sim?.correcciones ?? await cargarCorrecciones(env);
-  let d = await decidirIA(env, iaJSON, { c, msgs, ultimo, est, reglas, guia, correcciones, excluir: sim?.excluir || "" });
-  // Juez: ningún borrador sale sin aprobar. Si no pasa se manda la versión corregida (si cumple todo) o queda para vos.
-  if (d.accion === "responder") {
-    const j = await juzgar(env, iaJSON, { msgs, mensaje: d.mensaje, est, reglas }).catch(() => null);
-    if (j) {
-      d.juez = { puntaje: j.puntaje, fallas: j.fallas.slice(0, 3), ok: j.ok };
-      if (!j.ok) {
-        const arreglado = j.mejorado ? j.mejorado.replace(/[¿¡]/g, "") : "";
-        // La versión corregida también se vuelve a evaluar: solo sale si el juez la aprueba (antes salía directo y una vez mandó un texto escrito como si fuera el cliente)
-        const j2 = arreglado && !chequeoDuro(arreglado, est, msgs).length && !revisarMensaje(arreglado) ? await juzgar(env, iaJSON, { msgs, mensaje: arreglado, est, reglas }).catch(() => null) : null;
-        if (j2?.ok && j2.puntaje !== null && j2.puntaje >= 7) { d = { ...d, mensaje: arreglado, motivo: (d.motivo || "") + " (corregido por el juez)", juez: { ...d.juez, corregido: true, puntaje2: j2.puntaje } }; }
-        else d = { accion: "humano", motivo: `el juez no aprobó el borrador (${j.fallas.slice(0, 2).join("; ") || "puntaje bajo"})`, resumen: d.resumen || "revisar: el borrador no pasó el control", juez: d.juez, borrador: d.mensaje };
-      }
+  // Bucle de autocorrección: borrador -> revisión -> si falla, se vuelve a escribir sabiendo qué falló (hasta 2 intentos) -> recién ahí lo ve el dueño.
+  // Revisión dura: las frases armadas de fotos solo valen si el cliente mandó un adjunto (error real: "por dónde me sale más barato" recibió el pedido de fotos).
+  const hayMedia = sinContestar.some(esMedia), INI_FOTO = FRASE_FOTO.slice(0, 28).toLowerCase();
+  let d, j = null, feedback = "";
+  for (let intento = 0; intento < 2; intento++) {
+    d = await decidirIA(env, iaJSON, { c, msgs, ultimo, est, reglas, guia, correcciones, excluir: sim?.excluir || "", feedback });
+    j = null;
+    if (d.accion !== "responder") break;
+    const frase = !hayMedia && String(d.mensaje || "").toLowerCase().includes(INI_FOTO) ? "usaste la frase del pedido de fotos pero el cliente NO mandó fotos: contestá lo que preguntó" : "";
+    j = await juzgar(env, iaJSON, { msgs, mensaje: d.mensaje, est, reglas, entiende: d.entiende }).catch(() => null);
+    if (frase && j) { j.ok = false; j.fallas = [frase, ...j.fallas]; j.mejorado = ""; }
+    else if (frase) j = { ok: false, puntaje: null, fallas: [frase], mejorado: "" };
+    if (!j || j.ok) break;
+    feedback = j.fallas.slice(0, 3).join("; ").slice(0, 300);
+  }
+  if (d.accion === "responder" && j) {
+    d.juez = { puntaje: j.puntaje, fallas: j.fallas.slice(0, 3), ok: j.ok };
+    if (!j.ok) {
+      const arreglado = j.mejorado ? j.mejorado.replace(/[¿¡]/g, "") : "";
+      // La versión corregida también se vuelve a evaluar: solo sale si el juez la aprueba (antes salía directo y una vez mandó un texto escrito como si fuera el cliente)
+      const j2 = arreglado && !chequeoDuro(arreglado, est, msgs).length && !revisarMensaje(arreglado) && (hayMedia || !arreglado.toLowerCase().includes(INI_FOTO)) ? await juzgar(env, iaJSON, { msgs, mensaje: arreglado, est, reglas, entiende: d.entiende }).catch(() => null) : null;
+      if (j2?.ok && j2.puntaje !== null && j2.puntaje >= 7) { d = { ...d, mensaje: arreglado, motivo: (d.motivo || "") + " (corregido por el juez)", juez: { ...d.juez, corregido: true, puntaje2: j2.puntaje } }; }
+      else d = { accion: "humano", motivo: `el juez no aprobó el borrador (${j.fallas.slice(0, 2).join("; ") || "puntaje bajo"})`, resumen: d.resumen || "revisar: el borrador no pasó el control", juez: d.juez, borrador: d.mensaje, entiende: d.entiende };
     }
   }
   return fin(d, c.nombre);
@@ -264,7 +274,7 @@ const sinContestarTexto = (msgs) => { const o = []; for (const m of [...msgs].re
 
 // Decide qué contestar (la parte "pensar" del contestador). Se usa en producción y en el entrenamiento: ahí recibe
 // reglas de prueba y el id del caso para que los ejemplos parecidos no incluyan la respuesta real.
-export async function decidirIA(env, iaJSON, { c, msgs, ultimo, est = null, reglas = [], guia = "", excluir = "", correcciones = [] }, opts = { prioridad: true }) {
+export async function decidirIA(env, iaJSON, { c, msgs, ultimo, est = null, reglas = [], guia = "", excluir = "", correcciones = [], feedback = "" }, opts = { prioridad: true }) {
   const corrTxt = correccionesTexto(corrSimilares(correcciones, sinContestarTexto(msgs), 3, excluir));
   const sinPares = !est?.pares?.length;
   const ejemplos = sinPares ? ((await env.DB.prepare("SELECT texto FROM w_msg WHERE yo=1 AND grupo=0 AND tipo='text' AND length(texto) BETWEEN 12 AND 220 ORDER BY ts DESC LIMIT 40").all()).results || []).map((x) => "- " + String(x.texto).replace(/\s+/g, " ")).slice(0, 25) : [];
@@ -300,14 +310,17 @@ NO ofrezcas el informe de búsqueda. EXCEPCIÓN: si nombra un producto de marca 
 8. Si no encaja en ninguna y no entendés qué pide: preguntale qué producto busca o qué necesita (regla 7). Solo si ni así se puede avanzar, accion "humano".
 ${corrTxt ? "MIS CORRECCIONES A CASOS PARECIDOS (el dueño te corrigió así; hacé lo que dicen, vale más que cualquier otra regla salvo PROHIBIDO):\n" + corrTxt + "\n" : ""}${guiaTexto(guia)}${reglas?.length ? "REGLAS QUE APRENDÍ (valen como las de arriba; si chocan con REGLAS o PROHIBIDO, mandan estas últimas):\n" + reglasTexto(reglas) + "\n" : ""}ESTILO: 1 a 3 líneas, voseo argentino, como escribo yo (ver ejemplos), sin listas ni títulos, sin muletillas al arrancar ("claro", "dale", "buenísimo", "genial"). Si ya hubo charla hoy, no saludes de nuevo. Si el último mensaje del cliente es de hace más de 12 horas, arrancá con un "Perdón la demora!" corto. Usá el nombre del producto que dijo el cliente.
 PROHIBIDO: prometer que le vas a pasar o mandar algo ("te paso la dirección", "ahí te mando") salvo el link del catálogo en ese mismo mensaje; dar precios, comisiones o cualquier número de plata (los plazos solo con los datos de la regla 2b); ofrecer el informe de búsqueda (eso lo hace el dueño cuando ve las fotos); decir "te paso con alguien", "te derivo", "el equipo", "te llamamos" o prometer que alguien le va a escribir; nombrar vapers, pods o tabaco.
-Devolvé JSON: {"accion":"responder"|"humano"|"nada","mensaje":"texto a enviar (vacío si no es responder)","motivo":"una frase corta","resumen":"3 a 5 palabras: de qué trata el chat y qué debo hacer yo (ej: \"quiere vender sin stock, explicarle dropshipping\")"}`, opts);
+${feedback ? "OJO: TU BORRADOR ANTERIOR FUE RECHAZADO por esto: " + feedback + ". Escribí otro distinto que lo corrija.\n" : ""}ANTES DE DECIDIR: leé el último mensaje del cliente y escribí en "entiende" qué pide o pregunta exactamente, con tus palabras. Tu mensaje tiene que contestar ESO. Las frases armadas (pedido de fotos, pedido de los 3 datos) solo valen para su caso; si el cliente hizo una pregunta (cómo traer más barato, por dónde conviene, si se puede, cuánto tarda), contestala o decile qué necesitás saber para contestarla (qué producto y cuántas unidades), sin usar una frase que no la toca. Si no estás seguro de qué pide, poné "seguridad" bajo.
+Devolvé JSON: {"entiende":"qué pide el cliente en su último mensaje","seguridad":1-10,"accion":"responder"|"humano"|"nada","mensaje":"texto a enviar (vacío si no es responder)","motivo":"una frase corta","resumen":"3 a 5 palabras: de qué trata el chat y qué debo hacer yo (ej: \"quiere vender sin stock, explicarle dropshipping\")"}`, opts);
   if (!ia || !["responder", "humano", "nada"].includes(ia.accion)) return ({ accion: "humano", motivo: "la IA no pudo decidir" });
-  if (ia.accion !== "responder") return ({ accion: ia.accion, motivo: String(ia.motivo || "").slice(0, 120), resumen: ia.resumen });
+  const entiende = String(ia.entiende || "").slice(0, 200);
+  if (ia.accion === "responder" && Number.isFinite(+ia.seguridad) && +ia.seguridad < 5) return ({ accion: "humano", motivo: `no estoy seguro de qué pide (${entiende || "sin claridad"})`, resumen: ia.resumen || "revisar: no quedó claro qué pide", entiende });
+  if (ia.accion !== "responder") return ({ accion: ia.accion, motivo: String(ia.motivo || "").slice(0, 120), resumen: ia.resumen, entiende });
   if (!/[?¿]/.test(ultimo.texto || "") && /(avisame si|av[ií]same cualquier|si te qued[oó]|qued[oó] alguna duda|pudiste ver|si pod[eé]s acordate|te sirvi[oó] la cotizaci[oó]n|lo pudiste)/i.test(ia.mensaje || ""))
     return ({ accion: "nada", motivo: "no preguntó nada; un recordatorio va como seguimiento" });
   const mal = revisarMensaje(ia.mensaje);
   if (mal) return ({ accion: "humano", motivo: `no mandé lo redactado (${mal})`, resumen: ia.resumen });
-  return ({ accion: "responder", mensaje: String(ia.mensaje).trim(), motivo: String(ia.motivo || "").slice(0, 120) });
+  return ({ accion: "responder", mensaje: String(ia.mensaje).trim(), motivo: String(ia.motivo || "").slice(0, 120), entiende });
 }
 
 

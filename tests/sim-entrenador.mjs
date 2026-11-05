@@ -58,7 +58,25 @@ let vueltasJ = 0; const jPrimero = { ok: false, puntaje: 4, fallas: ["pide cosas
 const iaTodoOrig = iaTodo;
 const iaJ2 = async (e, p) => p.includes("revisor de calidad") ? (++vueltasJ === 1 ? jPrimero : { ok: true, puntaje: 8 }) : iaTodoOrig(e, p);
 r = await A.redactar(env, iaJ2, "5491122", { prueba: true, T });
-chk("juez rechaza y la versión corregida APRUEBA una segunda revisión: se manda la corregida", r.accion === "responder" && /pasame el link/.test(r.mensaje) && r.juez?.corregido === true && vueltasJ === 2);
+chk("juez rechaza: el agente reescribe sabiendo qué falló y la segunda versión pasa", r.accion === "responder" && r.juez?.ok === true && vueltasJ === 2);
+{
+  let vj = 0, prompts = []; const iaRe = async (e, p) => p.includes("revisor de calidad") ? (++vj <= 2 ? jPrimero : { ok: true, puntaje: 8 }) : (prompts.push(p), iaTodoOrig(e, p));
+  r = await A.redactar(env, iaRe, "5491122", { prueba: true, T });
+  chk("el segundo intento ve los problemas del primero", /RECHAZADO por esto: pide cosas que ya dio/.test(prompts[1] || ""));
+  chk("si los dos intentos fallan, se prueba la versión mejorada del juez y se re-evalúa", r.accion === "responder" && r.juez?.corregido === true && vj === 3);
+  // caso real: "por dónde me sale más barato" recibió la frase de las fotos aunque no mandó fotos
+  const cvA = "5491199001", frase = A.FRASE_FOTO;
+  conv(cvA, "Agus", "También saber por donde me va a resultar mas barato traer el producto aca", 5 * 60e3); msg(cvA, 0, "También saber por donde me va a resultar mas barato traer el producto aca", 5 * 60e3);
+  let k = 0; const iaAg = async (e, p) => p.includes("revisor de calidad") ? { ok: true, puntaje: 9, responde_pregunta: true } : (++k === 1 ? { entiende: "quiere saber por dónde conviene traer", accion: "responder", mensaje: frase, motivo: "x" } : { entiende: "quiere saber por dónde conviene traer", accion: "responder", mensaje: "depende del producto, que queres traer y cuantas unidades", motivo: "x" });
+  r = await A.redactar(env, iaAg, cvA, { prueba: true, T });
+  chk("la frase de fotos no sale si el cliente no mandó fotos: reescribe y contesta lo que preguntó", r.accion === "responder" && !r.mensaje.includes("no te jode") && /depende del producto/.test(r.mensaje));
+  const iaSiempre = async (e, p) => p.includes("revisor de calidad") ? { ok: true, puntaje: 9 } : { accion: "responder", mensaje: frase, motivo: "x" };
+  r = await A.redactar(env, iaSiempre, cvA, { prueba: true, T });
+  chk("si insiste con la frase fuera de lugar, queda para el dueño", r.accion === "humano");
+  const iaDuda = async (e, p) => p.includes("revisor de calidad") ? { ok: true, puntaje: 9 } : { entiende: "no se entiende", seguridad: 3, accion: "responder", mensaje: "contame mas", motivo: "x" };
+  r = await A.redactar(env, iaDuda, cvA, { prueba: true, T });
+  chk("si el agente no está seguro de qué pide, no contesta: lo deja para el dueño", r.accion === "humano" && /no estoy seguro/.test(r.motivo));
+}
 jIA = { ok: false, puntaje: 5, fallas: ["no contesta"], mensaje_mejorado: "hola de que material son las remeras mixed emotions" };
 r = await A.redactar(env, iaTodo, "5491122", { prueba: true, T });
 chk("si la versión corregida tampoco aprueba (ej. escrita como si fuera el cliente), NO se manda: queda para el dueño", r.accion === "humano" && !r.mensaje);

@@ -117,7 +117,7 @@ export const SOP_EMBUDO = `   a) Si el producto es vago (ej. "de silicona, vario
    d) Si es de China: preguntale si tiene el link de Alibaba o algo del proveedor. Si NO lo tiene → accion "humano". Si lo tiene → pedile el precio FOB unitario y el peso del producto para cotizar directo.`;
 export const OBJETIVO = `Cotizamos solos cuando el cliente manda link de Alibaba + cantidad, o cuando nos pasa peso del producto en gramos, cantidad de unidades y precio FOB unitario. Si falta algo, hay que conseguir esos 3 datos en la menor cantidad de mensajes: pedir TODO lo que falte junto en un solo mensaje y nunca pedir lo que ya dio.`;
 
-export async function juzgar(env, iaJSON, { msgs, mensaje, est, reglas = [] }) {
+export async function juzgar(env, iaJSON, { msgs, mensaje, est, reglas = [], entiende = "" }) {
   const duras = chequeoDuro(mensaje, est, msgs);
   let r = null;
   if (env.JUEZ !== "0") {
@@ -130,13 +130,14 @@ CONVERSACIÓN:
 ${charlaTexto(msgs)}
 
 BORRADOR: "${mensaje}"
-
+${entiende ? `El agente entendió que el cliente pide: "${entiende}". No te fíes: leé vos el ÚLTIMO mensaje del cliente y fijate si eso es cierto.\n` : ""}
 Puntaje de 1 a 10 (7 o más = se puede enviar). Criterios: (1) contesta lo que el cliente realmente escribió o preguntó; (2) avanza hacia el objetivo del negocio sin pedir lo que ya dio; (3) no inventa datos, precios ni promete cosas (los plazos de entrega son válidos solo si coinciden con los DATOS DE PLAZOS); (4) suena a mí: tono, largo y vocabulario, sin ¿ ni ¡ ni frases de call center; (5) no repite lo que ya dije.
-Devolvé JSON: {"ok":true|false,"puntaje":1-10,"fallas":["falla corta"],"mensaje_mejorado":"solo si puntaje<7: el mensaje que YO (el dueño) le mandaría al cliente en lugar del borrador, contestando su último mensaje; nunca escrito como si fuera el cliente. Si no hace falta, vacío"}`, { prioridad: true }).catch(() => null);
+PRIMERO respondé "responde_pregunta": ¿el borrador contesta exactamente lo que el cliente escribió o preguntó en su último mensaje, o al menos le dice qué hace falta para contestarlo? Una frase armada que no toca lo que preguntó (pedir fotos o datos de cotización a quien preguntó otra cosa) es false y puntaje 3 o menos.
+Devolvé JSON: {"responde_pregunta":true|false,"ok":true|false,"puntaje":1-10,"fallas":["falla corta"],"mensaje_mejorado":"solo si puntaje<7: el mensaje que YO (el dueño) le mandaría al cliente en lugar del borrador, contestando su último mensaje; nunca escrito como si fuera el cliente. Si no hace falta, vacío"}`, { prioridad: true }).catch(() => null);
   }
   const puntaje = Number.isFinite(+r?.puntaje) && r?.puntaje !== null ? +r.puntaje : null;   // sin juez (IA caída): valen solo los chequeos duros
   const fallas = [...duras, ...(Array.isArray(r?.fallas) ? r.fallas.map((x) => String(x).slice(0, 80)).slice(0, 4) : [])];
-  return { ok: !duras.length && (puntaje === null || puntaje >= 7) && r?.ok !== false, puntaje, fallas, mejorado: String(r?.mensaje_mejorado || "").trim() };
+  return { ok: !duras.length && (puntaje === null || puntaje >= 7) && r?.ok !== false && r?.responde_pregunta !== false, puntaje, fallas, mejorado: String(r?.mensaje_mejorado || "").trim() };
 }
 
 // ------------------------------------------------------------------ correcciones del dueño
