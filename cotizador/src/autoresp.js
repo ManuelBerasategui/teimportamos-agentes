@@ -57,6 +57,9 @@ async function repararMarcas(env) {
   await kvPut(env, "resp_reparado_v1", Date.now());
 }
 
+// La IA de WhatsApp Business ya "derivó" al cliente ("Te voy a derivar con alguien del equipo") y nadie le contestó: lo último del chat es de ese bot, no tuyo.
+// Esos chats se atienden primero y el agente contesta lo último que escribió el cliente.
+export const RE_DERIVA_BOT = /te voy a derivar con alguien del equipo|ya le avis[eé] a (nuestro|el) equipo[\s\S]{0,120}se pondr[aá]n? en contacto/i;
 export async function pendientesResponder(env, { limite = 10, T = null, desde = 0, dias = 14 } = {}) {
   await repararMarcas(env).catch(() => {});   // desde: ignora chats cuyo último mensaje del cliente es anterior (ms)
   if ((await kvGet(env, "resp_pausa")) === "1") return { pausado: true, lista: [] };
@@ -66,7 +69,7 @@ export async function pendientesResponder(env, { limite = 10, T = null, desde = 
   const ahora = Date.now();
   // Mismo universo que "Responder ya" del panel (respeta lo que marcaste como listo). Orden: primero los que escribieron
   // en las últimas 3 horas (no hacer esperar a los nuevos), después los mejor puntuados, y entre iguales el más viejo primero
-  const filas = (await env.DB.prepare(`SELECT conv, nombre, ult_cliente_ts, ult_texto FROM w_conv WHERE grupo=0 AND archivado=0 AND ult_yo=0 AND COALESCE(prov,0)=0 AND ult_cliente_ts>=? AND ult_cliente_ts<=? AND ult_cliente_ts>COALESCE(visto_ts,0) AND ${SIN_VAPES} AND lower(COALESCE(producto,'')) NOT LIKE '%pod%' ORDER BY (ult_cliente_ts >= ${Date.now() - 3 * 3600e3}) DESC, COALESCE(puntaje,5) DESC, ult_cliente_ts ASC LIMIT 300`).bind(Math.max(ahora - Math.min(Math.max(+dias || 14, 1), 14) * 86400e3, desde || 0), ahora - 45e3).all()).results || [];
+  const filas = (await env.DB.prepare(`SELECT conv, nombre, ult_cliente_ts, ult_texto, ult_yo FROM w_conv WHERE grupo=0 AND archivado=0 AND (ult_yo=0 OR ult_texto LIKE '%derivar con alguien del equipo%' OR ult_texto LIKE '%le avis_ a%equipo%') AND COALESCE(prov,0)=0 AND ult_cliente_ts>=? AND ult_cliente_ts<=? AND ult_cliente_ts>COALESCE(visto_ts,0) AND ${SIN_VAPES} AND lower(COALESCE(producto,'')) NOT LIKE '%pod%' ORDER BY ult_yo DESC, (ult_cliente_ts >= ${Date.now() - 3 * 3600e3}) DESC, COALESCE(puntaje,5) DESC, ult_cliente_ts ASC LIMIT 300`).bind(Math.max(ahora - Math.min(Math.max(+dias || 14, 1), 14) * 86400e3, desde || 0), ahora - 45e3).all()).results || [];
   // Solo se consultan las marcas de los chats de esta lista (antes un LIKE recorría toda la tabla kv en cada vuelta)
   // resp_auto = ya decidido/enviado; resp_toma = otra PC lo está atendiendo ahora (vence a los 10 min si se cortó)
   const vistos = {}, tomados = {}, convs = filas.map((f) => String(f.conv));
@@ -78,7 +81,7 @@ export async function pendientesResponder(env, { limite = 10, T = null, desde = 
     }
   }
   const lista = filas.filter((f) => /^\d{8,15}$/.test(String(f.conv)) && !(vistos[f.conv] >= f.ult_cliente_ts) && !tomados[f.conv]).slice(0, Math.min(limite, topeHora - hechos))
-    .map((f) => ({ conv: f.conv, nombre: f.nombre, ult_cliente_ts: f.ult_cliente_ts, ultimo: String(f.ult_texto || "").slice(0, 200) }));
+    .map((f) => ({ conv: f.conv, nombre: f.nombre, ult_cliente_ts: f.ult_cliente_ts, ultimo: String(f.ult_texto || "").slice(0, 200), bot: f.ult_yo ? 1 : 0 }));
   const quedan = filas.filter((f) => /^\d{8,15}$/.test(String(f.conv)) && !(vistos[f.conv] >= f.ult_cliente_ts)).length;   // incluye los reservados por otra PC
   return { pausado: false, lista, quedan, cotizaciones: cotizaciones.slice(0, Math.max(0, topeHora - hechos)), cot_directo: (await kvGet(env, "cot:directo")) === "1" };
 }
@@ -153,7 +156,7 @@ export async function redactar(env, iaJSON, conv, { prueba = false, T = null, si
     return r;
   };
   if (!c) return { accion: "nada", motivo: "chat no encontrado" };
-  if (c.ult_yo) return fin({ accion: "nada", motivo: "ya contestaste vos" }, c.nombre);
+  if (c.ult_yo && !RE_DERIVA_BOT.test(String(c.ult_texto || ""))) return fin({ accion: "nada", motivo: "ya contestaste vos" }, c.nombre);
   if (!prueba && +((await kvGet(env, "resp_auto:" + conv)) || 0) >= (c.ult_cliente_ts || 0)) return { accion: "nada", motivo: "ya lo atendió la otra PC" };   // dos PCs a la vez: no contestar dos veces
   if (!prueba && !(await reservar(env, conv, 5 * 60e3))) return { accion: "nada", motivo: "lo está atendiendo otra PC" };   // reserva atómica: si dos PCs piden el mismo chat, gana una sola
   const msgs = sim ? sim.msgs : ((await env.DB.prepare("SELECT yo, tipo, texto, ts FROM w_msg WHERE conv=? ORDER BY ts DESC LIMIT 14").bind(conv).all()).results || []).reverse();
@@ -166,7 +169,7 @@ export async function redactar(env, iaJSON, conv, { prueba = false, T = null, si
   // - Lo último es un adjunto sin texto: si es una foto segura (tipo image), se le piden los datos; si puede ser un audio, lo ves vos.
   // - Después del adjunto escribió algo: decide la IA leyendo todo (regla 4b).
   let sinContestar = [];
-  for (const m of [...msgs].reverse()) { if (m.yo) break; sinContestar.push(m); }
+  for (const m of [...msgs].reverse()) { if (m.yo && !RE_DERIVA_BOT.test(String(m.texto || ""))) break; if (!m.yo) sinContestar.push(m); }   // el aviso del bot de WhatsApp no cuenta como respuesta tuya
   const esMedia = (m) => /^(image|video|audio|ptt|document|sticker|file)$/i.test(m.tipo || "") || /^\((image|video|audio|document|sticker|archivo|foto)\)/i.test(String(m.texto || "").trim());
   const fotoSegura = (m) => /^image$/i.test(m.tipo || "") || /^\((image|foto)\)/i.test(String(m.texto || "").trim());
   if (esMedia(ultimo)) {
@@ -279,7 +282,7 @@ LO PRIMERO: respondé al ÚLTIMO mensaje del cliente. Lo anterior es solo contex
 REGLAS (seguí este orden; la primera que aplica manda):
 1. CIERRES Y COTIZACIÓN EN CAMINO: si el cliente mandó link de Alibaba Y cantidad, o contestó la cantidad de un link de Alibaba que mandó antes (la cotización se arma sola y se la mandamos) → accion "nada". También "nada" si lo último del cliente no pide respuesta ("gracias", "ok", "dale", "👍", "listo", "lo veo y te aviso", "lo pienso") → accion "nada".
 1c. PROMESA DE ENVÍO: si lo último del cliente es que te va a mandar algo ("ya te mando", "ya te paso", "en un rato te paso la foto") contestá cortito y natural, sin preguntar nada nuevo, como lo haría el dueño: "dale, cuando puedas me pasás". No lo dejes en "nada" ni en "humano".
-1b. LA IA DE WHATSAPP YA ESTÁ ATENDIENDO: si el último mensaje de YO es el menú automático de bienvenida ("Bienvenido!! Gracias por escribir… Mandame el número…") y el cliente solo contestó con un número o una opción, ese chat lo maneja la IA de WhatsApp Business → accion "nada". Si el último de YO es "Te voy a derivar con alguien del equipo…" y el cliente siguió escribiendo, NO lo dejes para el dueño solo por eso: vos sos quien atiende, seguí con las reglas de abajo.
+1b. LA IA DE WHATSAPP YA ESTÁ ATENDIENDO: si el último mensaje de YO es el menú automático de bienvenida ("Bienvenido!! Gracias por escribir… Mandame el número…") y el cliente solo contestó con un número o una opción, ese chat lo maneja la IA de WhatsApp Business → accion "nada". Si el último de YO es "Te voy a derivar con alguien del equipo…" (lo mandó el bot de WhatsApp, con o sin mensajes nuevos del cliente), NADIE le contestó todavía: NO lo dejes para el dueño solo por eso; vos sos quien atiende y contestás lo último que escribió el cliente (lo que preguntó o pidió antes de ese aviso) con las reglas de abajo.
 2. PARA EL DUEÑO → accion "humano" (no contestes): pagos, transferencias, comprobantes, señas; reclamos o enojo; pide una llamada; negocia o compara precios; preguntas sobre una cotización que YA le pasamos; condiciones del servicio (garantías, envíos a terceros, venta sin stock, dropshipping, formas de pago, mínimos, comisiones, aduana); pide recomendaciones u opciones; pregunta si sos un bot o una persona; pide datos nuestros (dirección del depósito, CBU, alias, datos para el envío, ubicación); ya dio peso + cantidad + precio FOB (hay que cotizarle);  proveedores que nos ofrecen algo; novedades o estado de un pedido que ya está en marcha ("¿les dijeron algo los chinos?", "¿cuándo llega lo mío?"); consultas de aduana, réplicas o canal. NO son motivo para derivar: que el producto tenga marca, que el pedido sea grande, o que el mensaje sea corto o vago: eso se resuelve preguntando (reglas 4 y 7).
 2b. PLAZOS DE ENTREGA ("cuánto tarda", "cuándo llega", "en cuánto tiempo"): contestá SOLO con estos datos, sin sumar otros números ni garantías:
 ${PLAZOS}

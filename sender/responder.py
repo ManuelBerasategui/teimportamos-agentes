@@ -116,6 +116,18 @@ JS_ULTIMO = """() => {
   return m.length ? m[m.length - 1].classList.contains('message-in') : null;
 }"""
 
+JS_ULTIMO_TEXTO = """() => {
+  const main = document.querySelector('#main'); if (!main) return '';
+  const f = [...main.querySelectorAll('[data-id]')].filter(e => /^(true|false)_/.test(e.getAttribute('data-id')));
+  return f.length ? (f[f.length - 1].innerText || '') : '';
+}"""
+RE_BOT_DERIVA = re.compile(r"derivar con alguien del equipo|le avis[eé] a (nuestro|el) equipo", re.I)
+
+def ultimo_es_aviso_bot(pg):
+    # el último mensaje del chat es el aviso automatico de la IA de WhatsApp Business ("Te voy a derivar..."), no algo que escribiste vos
+    try: return bool(RE_BOT_DERIVA.search(pg.evaluate(JS_ULTIMO_TEXTO) or ""))
+    except Exception: return False
+
 def ultimo_del_cliente(pg):
     for _ in range(8):   # los mensajes tardan un poco en dibujarse
         try:
@@ -402,6 +414,7 @@ def main():
                         print(f"  leyendo {lee:.0f}s...")
                         if not dormir(lee): break
                         cli = ultimo_del_cliente(pg)
+                        if cli is False and it.get("bot") and ultimo_es_aviso_bot(pg): cli = True   # chat derivado por la IA de WhatsApp: nadie le contestó
                         if cli is False:
                             print("  En WhatsApp lo último ya es nuestro (el panel no lo tenía). No contesto.")
                             api("/enviar/atendido", {"conv": it["conv"]}); continue
@@ -416,7 +429,7 @@ def main():
                         if not igual_a_lo_escrito(pg, d["mensaje"]):   # alguien tocó esta ventana mientras tipeaba (cambió de chat o escribió)
                             borrar_caja(pg); print("  Alguien usó esta ventana mientras escribía: borro lo mío, no lo mando y lo reintento después.")
                             api("/enviar/reintentar", {"conv": it["conv"]}); chats_saltados.add(it["conv"]); continue
-                        if ultimo_del_cliente(pg) is False:   # mientras tipeaba le escribiste vos (por ejemplo le mandaste un PDF)
+                        if ultimo_del_cliente(pg) is False and not (it.get("bot") and ultimo_es_aviso_bot(pg)):   # mientras tipeaba le escribiste vos (por ejemplo le mandaste un PDF)
                             caja.click(); pg.keyboard.press("Control+A"); pg.keyboard.press("Delete")
                             print("  Mientras escribía le contestaste vos: borro lo mío y no lo mando."); api("/enviar/atendido", {"conv": it["conv"]}); continue
                         caja.press("Enter"); time.sleep(3)

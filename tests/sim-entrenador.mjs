@@ -373,4 +373,18 @@ chk("y frenarlo con 0", inf.rondas === 0 && db.prepare("SELECT v FROM kv WHERE k
   db.prepare("UPDATE kv SET v=? WHERE k='ent:pedido'").run("3");
   let l = 0; await E.cronEntrenador(env, async () => { l++; return null; }, decidir, ahora + 60e3);
   chk("mientras descansa, el cron no llama a la IA", l === 0); db.prepare("DELETE FROM kv WHERE k='ent:enfria'").run(); }
+// 6) CHATS DERIVADOS POR LA IA DE WHATSAPP: lo último es el aviso del bot ("Te voy a derivar..."), nadie contestó → se atienden primero
+{
+  const cv = "5493795101111", tBot = "Te voy a derivar con alguien del equipo para que te ayude con tu consulta";
+  msg(cv, 0, "hola quiero traer 50 zapatillas de china", 3 * 3600e3 + 120e3); msg(cv, 1, tBot, 3 * 3600e3 + 60e3);
+  conv(cv, "Derivado IA", tBot, 3 * 3600e3 + 120e3, 1); db.prepare("UPDATE w_conv SET ult_cliente_ts=? WHERE conv=?").run(ahora - 3 * 3600e3 - 120e3, cv);
+  const cv2 = "5493795102222"; msg(cv2, 0, "buenas, necesito 20 cargadores", 60e3 * 60 * 5); conv(cv2, "Normal viejo", "buenas, necesito 20 cargadores", 60e3 * 60 * 5);
+  const lst = await A.pendientesResponder(env, { limite: 50 });
+  chk("derivados por la IA de WhatsApp entran a la lista de pendientes", lst.lista.some((x) => x.conv === cv && x.bot === 1));
+  chk("y van primero, antes que los demás", lst.lista[0]?.conv === cv);
+  let prompt = "";
+  const rd = await A.redactar(env, async (e, p) => { prompt = p; return { accion: "responder", mensaje: "de que zapatillas estamos hablando", motivo: "x" }; }, cv, { prueba: true, T });
+  chk("el agente los contesta (no dice 'ya contestaste vos') y ve la pregunta del cliente", rd.accion === "responder" && /50 zapatillas/.test(prompt));
+}
+
 console.log(`\nsim-entrenador: ${ok} ok, ${mal} fallas`); process.exit(mal ? 1 : 0);
