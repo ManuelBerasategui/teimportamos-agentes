@@ -261,7 +261,7 @@ export async function rondaEntrenamiento(env, iaBase, decidir, opts = {}) {
   let usos = 0; const contar = async (e, p, o) => { usos++; return iaBase(e, p, o); };
   try { return await rondaInterna(env, contar, decidir, { ...opts, ahora }); } finally { await kvPut(env, kDia, usadosDia + usos); }
 }
-async function rondaInterna(env, iaBase, decidir, { n = 6, maxIA = 45, ahora = Date.now() } = {}) {
+async function rondaInterna(env, iaBase, decidir, { n = 5, maxIA = 36, ahora = Date.now() } = {}) {
   let usos = 0, agotada = false, nulas = 0;
   const ia = async (e, prompt, o = {}) => { if (usos >= maxIA) { agotada = true; return null; } usos++; const r = await iaBase(env, prompt, { ...o, sinRespaldo: true }); if (!r) nulas++; return r; };   // el respaldo de Cloudflare AI queda para los clientes
   let est = await cargarEstilo(env);
