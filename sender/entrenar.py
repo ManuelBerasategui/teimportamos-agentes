@@ -28,6 +28,8 @@ def mostrar(d):
               f"largo típico {e.get('med')} caracteres, {e.get('saludo')}% saludan, {e.get('emoji')}% con emoji. Calculado {fecha(e.get('ts'))}")
     else:
         print("\nTodavía no calculó tu estilo (lo hace de noche o con --ya).")
+    if d.get("guia"):
+        print(f"\nCriterio que el entrenador escribió (versión {d.get('versionesGuia', 1)}):\n  {d['guia']}")
     rs = d.get("reglas") or []
     print(f"\nReglas ({len(rs)}):")
     for i, r in enumerate(rs, 1):
@@ -108,7 +110,7 @@ def main():
         print(f"Entrenamiento intensivo: {d.get('rondas')} rondas, una por minuto (no hace falta tener WhatsApp abierto).")
         print("Cada ronda: toma charlas reales tuyas, el agente contesta SIN ver tu respuesta (con el mismo circuito que en vivo),")
         print("un juez compara, y de los errores salen reglas que solo se quedan si mejoran el puntaje. Ctrl+C deja de mirar (sigue solo).\n")
-        visto, fin = None, time.time() + mins * 60 + 180
+        visto, vistoN, fin = None, None, time.time() + mins * 60 + 180
         try:
             while time.time() < fin:
                 time.sleep(60)
@@ -120,9 +122,9 @@ def main():
                 if u.get("ts") and u.get("ts") != visto:
                     visto = u["ts"]
                     extra = "".join(f"\n      + regla nueva: {r}" for r in u.get("adoptadas") or []) + "".join(f"\n      - descartada: {r}" for r in u.get("descartadas") or [])
-                    print(f"  {fecha(u['ts'])}  puntaje {u.get('score')}/10 en {u.get('casos')} casos, {u.get('malos')} con errores, derivó {u.get('derivados', '-')}{extra}")
-                elif (d.get("nota") or {}).get("ts") and d["nota"]["ts"] != visto:
-                    visto = d["nota"]["ts"]; print(f"  {fecha(visto)}  {d['nota']['nota']}")
+                    print(f"  {fecha(u['ts'])}  puntaje {u.get('score')}/10 en {u.get('casos')} casos, {u.get('malos')} con errores, derivó {u.get('derivados', '-')}{extra}" + (f"\n      + criterio nuevo (mejora {u['guiaNueva'].get('mejora')})" if u.get("guiaNueva") else ""))
+                if (d.get("nota") or {}).get("ts") and d["nota"]["ts"] != vistoN:
+                    vistoN = d["nota"]["ts"]; print(f"  {fecha(vistoN)}  {d['nota']['nota']}")
                 if not d.get("pedido"):
                     break
         except KeyboardInterrupt:

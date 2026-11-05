@@ -226,8 +226,8 @@ export async function rondaEntrenamiento(env, iaBase, decidir, opts = {}) {
   try { return await rondaInterna(env, contar, decidir, { ...opts, ahora }); } finally { await kvPut(env, kDia, usadosDia + usos); }
 }
 async function rondaInterna(env, iaBase, decidir, { n = 8, maxIA = 70, ahora = Date.now() } = {}) {
-  let usos = 0, agotada = false;
-  const ia = async (e, prompt, o = {}) => { if (usos >= maxIA) { agotada = true; return null; } usos++; return iaBase(env, prompt, { ...o, sinRespaldo: true }); };   // el respaldo de Cloudflare AI queda para los clientes
+  let usos = 0, agotada = false, nulas = 0;
+  const ia = async (e, prompt, o = {}) => { if (usos >= maxIA) { agotada = true; return null; } usos++; const r = await iaBase(env, prompt, { ...o, sinRespaldo: true }); if (!r) nulas++; return r; };   // el respaldo de Cloudflare AI queda para los clientes
   let est = await cargarEstilo(env);
   if (!est || ahora - est.ts > 20 * 3600e3) est = await construirEstilo(env, ahora);
   if (!est.pares.length) return { nota: "todavía no hay conversaciones tuyas para entrenar" };
@@ -247,7 +247,10 @@ async function rondaInterna(env, iaBase, decidir, { n = 8, maxIA = 70, ahora = D
     return { p, borr, puntaje: +v.puntaje, fallas: v?.fallas || [], regla: String(v?.regla || "").trim() };
   };
   for (const p of lote) { const r = await correr(p, reglas); if (!r) { if (agotada) break; continue; } res.push(r); if (!p.oro) vistos.add(p.id); }
-  if (!res.length) return { nota: agotada ? "la IA no respondió (cupo agotado), sigo mañana" : "no pude evaluar casos" };
+  if (!res.length) {
+    if (nulas >= 2) { await kvPut(env, "ent:enfria", ahora + 25 * 60e3); return { nota: `Gemini no respondió (${nulas} llamadas sin respuesta: casi seguro sin cupo gratis por ahora); descanso 25 minutos para no gastar el cupo de los clientes` }; }
+    return { nota: agotada ? "la IA no respondió (cupo agotado), sigo mañana" : "no pude evaluar casos (el agente no devolvió respuesta para esos chats)" };
+  }
   const prom = (a) => a.reduce((s, x) => s + x.puntaje, 0) / (a.length || 1);
   const score = Math.round(prom(res) * 10) / 10, malos = res.filter((r) => r.puntaje < 7);
   const prod = await leer(env, K.fallas, []);
@@ -316,6 +319,7 @@ Devolvé JSON: {"criterio":"texto"}`);
 export async function cronEntrenador(env, iaJSON, decidir, tiempo = Date.now()) {
   const d = new Date(tiempo);
   if (d.getUTCHours() === 7 && d.getUTCMinutes() === 5) { await revisarResultados(env, tiempo); await kvPut(env, K.pedido, Math.max(+((await kvGet(env, K.pedido)) || 0), 10)); }   // 04:05 de Argentina
+  if (+((await kvGet(env, "ent:enfria")) || 0) > tiempo) return null;   // descanso por falta de cupo de la IA
   let pedido = +((await kvGet(env, K.pedido)) || 0);
   if (pedido <= 0) {   // bucle continuo: si pasó un rato desde la última ronda, pide otra sola (de noche más seguido; de día más espaciado para no pelear cupo con los clientes)
     const horaAR = (d.getUTCHours() + 21) % 24, cada = (horaAR >= 9 && horaAR < 22 ? 30 : 8) * 60e3, ult = Math.max((await leer(env, K.ultimo, null))?.ts || 0, (await leer(env, "ent:nota", null))?.ts || 0);

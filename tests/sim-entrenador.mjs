@@ -204,6 +204,7 @@ inf = await rr("/enviar/aprendizaje", { agregar: "Si pregunta por plazos, decile
 chk("podés enseñarle una regla (queda como manual)", inf.reglas.some((x) => x.fuente === "manual" && /plazos/.test(x.r)));
 inf = await rr("/enviar/entrenar", { rondas: 2 });
 chk("pedir entrenamiento deja rondas programadas", inf.ok && inf.rondas === 2 && db.prepare("SELECT v FROM kv WHERE k='ent:pedido'").get().v === "2");
+db.prepare("DELETE FROM kv WHERE k='ent:enfria'").run();
 let corrio = 0; const iaCron = async (e, p) => { corrio++; return iaEnt(e, p); };
 await E.cronEntrenador(env, iaCron, decidir, ahora);
 chk("el cron corre una ronda por minuto y descuenta el pedido", corrio > 0 && db.prepare("SELECT v FROM kv WHERE k='ent:pedido'").get().v === "1");
@@ -366,4 +367,10 @@ chk("y frenarlo con 0", inf.rondas === 0 && db.prepare("SELECT v FROM kv WHERE k
   
 }
 
+// sin cupo de Gemini: lo dice claro y descansa para no gastar el cupo de los clientes
+{ db.prepare("DELETE FROM kv WHERE k='ent:enfria'").run(); const r = await E.rondaEntrenamiento(env, async () => null, decidir, { n: 3, ahora });
+  chk("sin respuesta de Gemini: avisa que es el cupo y descansa", /Gemini no respondi/.test(r.nota || "") && +db.prepare("SELECT v FROM kv WHERE k='ent:enfria'").get().v > ahora);
+  db.prepare("UPDATE kv SET v=? WHERE k='ent:pedido'").run("3");
+  let l = 0; await E.cronEntrenador(env, async () => { l++; return null; }, decidir, ahora + 60e3);
+  chk("mientras descansa, el cron no llama a la IA", l === 0); db.prepare("DELETE FROM kv WHERE k='ent:enfria'").run(); }
 console.log(`\nsim-entrenador: ${ok} ok, ${mal} fallas`); process.exit(mal ? 1 : 0);
