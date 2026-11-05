@@ -1,3 +1,4 @@
+import { evento } from "./posthog.js";
 // Entrenador del contestador (el agente que contesta en el WhatsApp del 805). Tres piezas que se retroalimentan:
 //  1) ESTILO: cada día se recalcula cómo escribe el dueño (largo, saludos, frases) y se guardan pares "cliente dijo → yo contesté"
 //     para mostrarle al agente ejemplos reales PARECIDOS a lo que escribió el cliente (antes eran 25 mensajes sueltos).
@@ -390,6 +391,7 @@ export async function revisarCotizacion(env, num, bien, motivo = "") {
   const k = "cot:rev:" + num;
   if (await kvGet(env, k)) return { ...(await estadoCotizaciones(env)), ya: true };
   await kvPut(env, k, bien ? "bien" : "mal");
+  await evento(env, "cotizacion_revisada", { bien: !!bien });
   let racha = +((await kvGet(env, "cot:racha")) || 0);
   if (bien) { racha++; if (racha >= RACHA_META) await kvPut(env, "cot:directo", "1"); }
   else {

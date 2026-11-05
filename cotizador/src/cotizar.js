@@ -1,3 +1,4 @@
+import { evento } from "./posthog.js";
 // Cotizador manual: /panel/cotizar
 // Pegás links (Alibaba, 1688, etc.) con cantidades y las indicaciones; la IA arma la lista, lee las páginas,
 // completa precio y peso, y genera la cotización lista para imprimir/guardar en PDF.
@@ -111,6 +112,7 @@ export async function guardarCotizAuto(env, T, { conv, nombre, items, extra = ""
   const det = items.map((i) => `• ${i.nombre} x${i.cantidad}: USD ${i.precio}/u FOB${i.peso_estimado ? " (peso estimado)" : ""}`).join("\n") + extra;
   await env.DB.prepare("INSERT INTO tareas (id, ts, tipo, tel, nombre, titulo, detalle, datos, ref, estado) VALUES (?,?,?,?,?,?,?,?,?,'abierta')")
     .bind("ca" + id, Date.now(), "cotizacion_auto", conv, cliente, `Cotización lista: ${items.length} producto${items.length > 1 ? "s" : ""} · total USD ${total.toFixed(2)} puesto`, det, JSON.stringify({ cotiz: id, num }), "cotauto:" + id).run();
+  await evento(env, "cotizacion_armada", { total_usd: Math.round(total * 100) / 100, productos: items.length, peso_estimado: est }, conv);
   return { id, num, total, cliente };
 }
 export async function cotizarAuto(env, h, { limite = 2 } = {}) {

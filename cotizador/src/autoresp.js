@@ -9,6 +9,7 @@ const kvGet = async (env, k) => (await env.DB.prepare("SELECT v FROM kv WHERE k=
 const kvPut = (env, k, v) => env.DB.prepare("INSERT INTO kv (k,v,exp) VALUES (?,?,NULL) ON CONFLICT(k) DO UPDATE SET v=excluded.v, exp=NULL").bind(k, String(v)).run();
 const hora = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 13);
 import { calcular, paginaCotizacion, guardarCotizAuto } from "./cotizar.js";
+import { evento } from "./posthog.js";
 import { cargarEstilo, cargarReglas, cargarGuia, guiaTexto, reglasTexto, perfilTexto, similares, ejemplosTexto, juzgar, chequeoDuro, registrarCaso, informe, editarReglas, K as KENT, OBJETIVO, PLAZOS, revisarCotizacion, estadoCotizaciones, cargarCorrecciones, corrSimilares, correccionesTexto, agregarCorreccion, SOP_EMBUDO } from "./entrenador.js";
 const SIN_VAPES = "lower(COALESCE(producto,'')) NOT LIKE '%vap%' AND lower(COALESCE(producto,'')) NOT LIKE '%elf%bar%'";
 export const PRECIO_INFORME = "$5.000";
@@ -148,6 +149,7 @@ export async function redactar(env, iaJSON, conv, { prueba = false, T = null, si
         env.DB.prepare("UPDATE tareas SET estado='resuelta' WHERE ref=? AND estado='abierta' AND tipo NOT IN ('comprobante')").bind("w805:" + conv),
       ]).catch(() => {});
     }
+    await evento(env, "agente_decision", { accion: r.accion, motivo: r.motivo || "", juez: r.juez?.puntaje ?? null, corregido_por_juez: !!r.juez?.corregido }, conv);
     const log = JSON.parse((await kvGet(env, "resp_log")) || "[]");
     log.push({ ts: Date.now(), conv, nombre, accion: r.accion, mensaje: r.mensaje || "", motivo: r.motivo || "" });
     await kvPut(env, "resp_log", JSON.stringify(log.slice(-60)));
@@ -357,6 +359,7 @@ export async function rutaAutoresp(env, req, p, url, iaJSON, h = {}) {
   if (p === "/enviar/cotizacion-enviada" && req.method === "POST") {
     const id = String((await body()).id || "");
     await kvPut(env, "cotsent:" + id, Date.now());
+    await evento(env, "cotizacion_enviada", {}, id);
     await env.DB.prepare("UPDATE tareas SET estado='resuelta' WHERE ref=? AND estado='abierta'").bind("cotauto:" + id).run();
     const k = "resp_hora:" + hora(); await kvPut(env, k, (+((await kvGet(env, k)) || 0)) + 1);
     return json({ ok: true });

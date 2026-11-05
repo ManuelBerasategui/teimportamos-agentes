@@ -5,6 +5,7 @@ import { apiBusquedas, PANEL_BUSQUEDAS, rutaInformes, rutaImagen } from "./busqu
 import { apiRedes, PANEL_REDES, cronRedes, contextoRedes } from "./redes.js";
 import { apiVideos, rutaVideosEditor, cronVideos, despertarEditor } from "./videos.js";
 import { conApp, rutaApp } from "./app.js";
+import { metricasWeb, PANEL_WEB } from "./posthog.js";
 import { rutaTelegram, apiAsistente, cronAsistente } from "./asistente.js";
 import { preguntarAgente, charlaAgente } from "./agente.js";
 import { apiGrupos, cronGrupos } from "./grupos.js";
@@ -2498,6 +2499,7 @@ async function panelAPI(env, req, url, quien) {
   const ruta = url.pathname.replace("/panel/api/", "");
   await prepararTablas(env);
   if (ruta === "importar-viejos") return json({ n: (await importarViejos(env)) + (await limpiezaV13(env)) + (await reabrirV144(env)) });
+  if (ruta === "web/metricas") return json(await metricasWeb(env, +url.searchParams.get("d") || 14));
   if (ruta === "estado") return json({ indexado: (await env.ESTADO.get("panel_indexado")) === "2", usuario: quien });
   if (ruta === "reindexar") return json(await reindexar(env, url.searchParams.get("desde") || ""));
   if (ruta === "tareas") {
@@ -3074,6 +3076,7 @@ button{font:inherit;cursor:pointer}
 
 <div class="vista" id="v-herr"><div class="dash"><div class="herr">
 <a class="card" href="/panel/cotizar"><b>🧮 Cotizar</b><span>Pegás links y cantidades y arma la cotización con PDF.</span></a>
+<a class="card" href="/panel/web"><b>📈 Métricas de la web</b><span>Visitas, páginas, de dónde llegan y eventos, leídos de PostHog.</span></a>
 <a class="card" href="/panel/busquedas"><b>🔎 Buscar proveedores</b><span>1688, Alibaba y mayoristas de otros países, con precio puesto en Argentina. También los informes.</span></a>
 </div></div></div>
 
@@ -3661,6 +3664,7 @@ export default {
     if (url.pathname.startsWith("/panel/api/805/")) return apiLector(env, req, url, iaJSON);
     if (url.pathname.startsWith("/panel/api/cotizar/")) return apiCotizar(env, req, url, url.searchParams.get("quien"), { T, leerPagina, iaJSON, iaConImagenes });
     if (url.pathname === "/panel/cotizar/pdf") return paginaCotizacion(env, url.searchParams.get("id") || "", T);
+    if (url.pathname === "/panel/web") return new Response(conApp(PANEL_WEB), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
     if (url.pathname === "/panel/cotizar") return new Response(conApp(PANEL_COTIZAR), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
     if (url.pathname.startsWith("/panel/api/asistente/")) return apiAsistente(env, req, url, url.searchParams.get("quien"), BASE_URL, iaJSON);
     if (url.pathname.startsWith("/panel/api/videos/")) return apiVideos(env, req, url, url.searchParams.get("quien"));

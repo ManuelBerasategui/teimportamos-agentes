@@ -1,0 +1,25 @@
+// Simulación: eventos hacia PostHog (sin datos personales) y lectura de métricas de la web para el panel
+import { evento, metricasWeb, PANEL_WEB } from "../cotizador/src/posthog.js";
+let ok = 0, mal = 0; const chk = (n, c) => { if (c) { ok++; console.log("✓ " + n); } else { mal++; console.log("FALLA: " + n); } };
+const llamadas = []; const real = globalThis.fetch;
+globalThis.fetch = async (url, o) => { llamadas.push({ url: String(url), o }); const q = o?.body ? JSON.parse(o.body) : {};
+  if (String(url).includes("/capture/")) return new Response("{}", { status: 200 });
+  const sql = q?.query?.query || "";
+  const res = /toDate/.test(sql) ? [["2026-11-03", 10, 4], ["2026-11-04", 20, 9]] : /pathname/.test(sql) ? [["/catalogo", 15], [null, 5]] : /referring/.test(sql) ? [["instagram.com", 8]] : [["click_whatsapp", 6]];
+  return new Response(JSON.stringify({ results: res }), { status: 200 }); };
+chk("sin POSTHOG_KEY no hace nada", (await evento({}, "x", {})) === false && llamadas.length === 0);
+const env = { POSTHOG_KEY: "phc_test", POSTHOG_PERSONAL_KEY: "phx_test", POSTHOG_PROJECT_ID: "123" };
+chk("manda el evento", (await evento(env, "agente_decision", { accion: "responder", motivo: "x", juez: 9, telefono: "549111", nombre: "Juan", mensaje: "hola" }, "5491155667788")) === true);
+const b = JSON.parse(llamadas[0].o.body);
+chk("no manda teléfono, nombre ni texto", !/549115566|Juan|hola/.test(llamadas[0].o.body) && b.properties.accion === "responder" && b.properties.juez === 9);
+chk("el cliente va con una huella, no con el número", /^[0-9a-f]{16}$/.test(b.distinct_id));
+llamadas.length = 0;
+const m = await metricasWeb(env, 14);
+chk("lee las métricas: serie por día, páginas, fuentes y eventos", m.ok && m.serie.length === 2 && m.serie[1].visitantes === 9 && m.paginas[0].p === "/catalogo" && m.paginas[1].p === "/" && m.fuentes[0].f === "instagram.com" && m.eventos[0].e === "click_whatsapp");
+chk("usa la API de lectura con la clave personal (solo consultas)", llamadas.every((l) => /us\.posthog\.com\/api\/projects\/123\/query\//.test(l.url) && l.o.headers.Authorization === "Bearer phx_test"));
+chk("sin claves explica qué falta", !(await metricasWeb({}, 14)).ok && /POSTHOG_PERSONAL_KEY/.test((await metricasWeb({}, 14)).falta));
+globalThis.fetch = async () => new Response(JSON.stringify({ detail: "clave inválida" }), { status: 401 });
+chk("si PostHog rechaza, avisa claro", /clave inválida/.test((await metricasWeb(env, 14)).falta));
+chk("la página del panel existe", /Métricas de la web/.test(PANEL_WEB) && /\/panel\/api\/web\/metricas/.test(PANEL_WEB));
+globalThis.fetch = real;
+console.log(`\nsim-posthog: ${ok} ok, ${mal} fallas`); process.exit(mal ? 1 : 0);
