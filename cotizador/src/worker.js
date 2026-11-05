@@ -6,6 +6,7 @@ import { apiRedes, PANEL_REDES, cronRedes, contextoRedes } from "./redes.js";
 import { apiVideos, rutaVideosEditor, cronVideos, despertarEditor } from "./videos.js";
 import { conApp, rutaApp } from "./app.js";
 import { metricasWeb, PANEL_WEB } from "./posthog.js";
+import { altIA } from "./ia-alterna.js";
 import { rutaTelegram, apiAsistente, cronAsistente } from "./asistente.js";
 import { preguntarAgente, charlaAgente } from "./agente.js";
 import { apiGrupos, cronGrupos } from "./grupos.js";
@@ -889,6 +890,7 @@ async function iaJSON(env, prompt, opts = {}) {
     const res = parsear((j.candidates?.[0]?.content?.parts || []).map((p) => p.text || "").join(""));
     if (res) return res;
   }
+  { const alt = await altIA(env, prompt, opts); if (alt) return alt; }   // IA alternativa (Groq, OpenRouter, OpenAI, Anthropic…) si está configurada: Gemini no es el único camino
   if (opts.sinRespaldo) return null;   // para ideas y tareas de fondo: mejor nada que gastar el respaldo
   // El respaldo (Cloudflare AI) tiene 10.000 "neuronas" gratis por día y también las usa el audio del asistente:
   // las tareas de fondo pueden usarlo como mucho 25 veces por día; lo que pide el dueño (prioridad) tiene 25 más.
