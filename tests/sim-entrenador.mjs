@@ -405,4 +405,12 @@ chk("y frenarlo con 0", inf.rondas === 0 && db.prepare("SELECT v FROM kv WHERE k
   chk("el agente los contesta (no dice 'ya contestaste vos') y ve la pregunta del cliente", rd.accion === "responder" && /50 zapatillas/.test(prompt));
 }
 
+// 7) SIN CUPO DE GEMINI: no se marca ni se deriva nada; el chat se reintenta
+{
+  const cvN = "5491199002"; conv(cvN, "SinIA", "hola quiero 20 relojes", 5 * 60e3); msg(cvN, 0, "hola quiero 20 relojes", 5 * 60e3);
+  const r1 = await A.redactar(env, async () => null, cvN, { T });
+  chk("sin respuesta de la IA: no deriva ni marca el chat (se reintenta)", r1.accion === "nada" && /reintenta/.test(r1.motivo) && !db.prepare("SELECT 1 FROM kv WHERE k=?").get("resp_auto:" + cvN) && !db.prepare("SELECT 1 FROM tareas WHERE ref=?").get("w805:" + cvN));
+  chk("'bueno mi her' es un cierre", A.esCierre("Bueno mi her"));
+}
+
 console.log(`\nsim-entrenador: ${ok} ok, ${mal} fallas`); process.exit(mal ? 1 : 0);

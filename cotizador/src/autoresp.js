@@ -102,7 +102,7 @@ export function revisarMensaje(m) {
 }
 
 // "gracias", "dale joya", "ok perfecto", "no hay problema", "👍"…: solo palabras de cierre, sin pregunta. Se contestan con nada.
-const CIERRE = new Set("gracias graciass mil muchas muchisimas muchísimas ok okey oka okk dale joya joyita listo lista perfecto perfecta genial buenisimo buenísimo barbaro bárbaro excelente igualmente de nada no hay problema problemas tranqui tranca esta bien está bien bien vale hno hermano amigo amiga bro crack capo maestro genio jefe che bueno buenas noches saludos abrazo besos un abrazo".split(" "));
+const CIERRE = new Set("gracias graciass mil muchas muchisimas muchísimas ok okey oka okk dale joya joyita listo lista perfecto perfecta genial buenisimo buenísimo barbaro bárbaro excelente igualmente de nada no hay problema problemas tranqui tranca esta bien está bien bien vale hno hermano amigo amiga bro crack capo maestro genio jefe che bueno her herma mi buenas noches saludos abrazo besos un abrazo".split(" "));
 const CIERRE_FRASE = /(ya te aviso|te aviso|les aviso|te vuelvo a escribir|me vuelvo a comunicar|te escribo (despu[eé]s|m[aá]s tarde|ma[ñn]ana)|despu[eé]s te (aviso|escribo|hablo)|lo (veo|analizo|pienso|consulto|charlo|hablo)|voy a ver|tengo que (verlo|pensarlo|consultarlo|hablarlo)|debo consultarlo|estamos en contacto|por ahora no|ahora no|volver[eé]|vuelvo cuando|cualquier cosa (te|les) (aviso|escribo|hablo)|quedo atento|quedo al pendiente|estoy al pendiente)/;
 export function esCierre(t) {
   const x = String(t || "").toLowerCase().trim();
@@ -205,6 +205,7 @@ export async function redactar(env, iaJSON, conv, { prueba = false, T = null, si
   for (let intento = 0; intento < 2; intento++) {
     d = await decidirIA(env, iaJSON, { c, msgs, ultimo, est, reglas, guia, correcciones, excluir: sim?.excluir || "", feedback });
     j = null;
+    if (d.sinIA) return prueba ? d : { accion: "nada", motivo: d.motivo };   // sin IA no se marca nada: el chat vuelve a la lista y se reintenta
     if (d.accion !== "responder") break;
     const frase = !hayMedia && String(d.mensaje || "").toLowerCase().includes(INI_FOTO) ? "usaste la frase del pedido de fotos pero el cliente NO mandó fotos: contestá lo que preguntó" : "";
     j = await juzgar(env, iaJSON, { msgs, mensaje: d.mensaje, est, reglas, entiende: d.entiende }).catch(() => null);
@@ -312,7 +313,7 @@ ${corrTxt ? "MIS CORRECCIONES A CASOS PARECIDOS (el dueño te corrigió así; ha
 PROHIBIDO: prometer que le vas a pasar o mandar algo ("te paso la dirección", "ahí te mando") salvo el link del catálogo en ese mismo mensaje; dar precios, comisiones o cualquier número de plata (los plazos solo con los datos de la regla 2b); ofrecer el informe de búsqueda (eso lo hace el dueño cuando ve las fotos); decir "te paso con alguien", "te derivo", "el equipo", "te llamamos" o prometer que alguien le va a escribir; nombrar vapers, pods o tabaco.
 ${feedback ? "OJO: TU BORRADOR ANTERIOR FUE RECHAZADO por esto: " + feedback + ". Escribí otro distinto que lo corrija.\n" : ""}ANTES DE DECIDIR: leé el último mensaje del cliente y escribí en "entiende" qué pide o pregunta exactamente, con tus palabras. Tu mensaje tiene que contestar ESO. Las frases armadas (pedido de fotos, pedido de los 3 datos) solo valen para su caso; si el cliente hizo una pregunta (cómo traer más barato, por dónde conviene, si se puede, cuánto tarda), contestala o decile qué necesitás saber para contestarla (qué producto y cuántas unidades), sin usar una frase que no la toca. Si no estás seguro de qué pide, poné "seguridad" bajo.
 Devolvé JSON: {"entiende":"qué pide el cliente en su último mensaje","seguridad":1-10,"accion":"responder"|"humano"|"nada","mensaje":"texto a enviar (vacío si no es responder)","motivo":"una frase corta","resumen":"3 a 5 palabras: de qué trata el chat y qué debo hacer yo (ej: \"quiere vender sin stock, explicarle dropshipping\")"}`, opts);
-  if (!ia || !["responder", "humano", "nada"].includes(ia.accion)) return ({ accion: "humano", motivo: "la IA no pudo decidir" });
+  if (!ia || !["responder", "humano", "nada"].includes(ia.accion)) return ({ accion: "nada", motivo: "la IA no respondió (¿sin cupo de Gemini?): se reintenta más tarde", sinIA: true });
   const entiende = String(ia.entiende || "").slice(0, 200);
   if (ia.accion === "responder" && Number.isFinite(+ia.seguridad) && +ia.seguridad < 5) return ({ accion: "humano", motivo: `no estoy seguro de qué pide (${entiende || "sin claridad"})`, resumen: ia.resumen || "revisar: no quedó claro qué pide", entiende });
   if (ia.accion !== "responder") return ({ accion: ia.accion, motivo: String(ia.motivo || "").slice(0, 120), resumen: ia.resumen, entiende });

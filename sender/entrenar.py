@@ -28,6 +28,8 @@ def mostrar(d):
               f"largo típico {e.get('med')} caracteres, {e.get('saludo')}% saludan, {e.get('emoji')}% con emoji. Calculado {fecha(e.get('ts'))}")
     else:
         print("\nTodavía no calculó tu estilo (lo hace de noche o con --ya).")
+    ag = (d.get("ia") or {}).get("agotados") or []
+    print(f"\nGemini (la IA): " + (f"{len(ag)} modelo(s) SIN CUPO ahora: {', '.join(ag)}. Mientras eso pase el agente deriva todo con 'la IA no pudo decidir'." if ag else "con cupo."))
     if d.get("guia"):
         print(f"\nCriterio que el entrenador escribió (versión {d.get('versionesGuia', 1)}):\n  {d['guia']}")
     rs = d.get("reglas") or []

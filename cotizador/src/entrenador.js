@@ -221,14 +221,18 @@ AGENTE: ${agente}
 Devolvé JSON: {"puntaje":1-10,"fallas":["falla corta"],"regla":"una regla corta en imperativo, general (no de este chat), que evitaría este error; vacío si el agente estuvo bien"}`);
 }
 
+export async function modelosAgotados(env) { try { return ((await env.ESTADO?.list({ prefix: "agotado:" }))?.keys || []).map((k) => k.name.slice(8)); } catch { return []; } }
 export async function rondaEntrenamiento(env, iaBase, decidir, opts = {}) {
   const ahora = opts.ahora || Date.now(), kDia = "ent:usos:" + new Date(ahora - 3 * 3600e3).toISOString().slice(0, 10);
-  const usadosDia = +((await kvGet(env, kDia)) || 0), topeDia = +(env.ENT_MAX_DIA || 2500);
+  const usadosDia = +((await kvGet(env, kDia)) || 0), topeDia = +(env.ENT_MAX_DIA || 600);
   if (usadosDia >= topeDia) return { nota: `hoy ya usé ${usadosDia} llamadas a la IA para entrenar (tope ${topeDia}); sigo mañana para no dejar sin cupo al contestador` };
+  // El cupo gratis de Gemini es compartido con el contestador de los clientes: si ya hay modelos agotados, el entrenamiento no gasta más.
+  const agot = await modelosAgotados(env);
+  if (agot.length >= 2 && !opts.forzarCupo) { await kvPut(env, "ent:enfria", ahora + 30 * 60e3); return { nota: `Gemini ya tiene ${agot.length} modelos sin cupo (${agot.join(", ")}): el entrenamiento descansa 30 minutos para dejarle el cupo a los clientes` }; }
   let usos = 0; const contar = async (e, p, o) => { usos++; return iaBase(e, p, o); };
   try { return await rondaInterna(env, contar, decidir, { ...opts, ahora }); } finally { await kvPut(env, kDia, usadosDia + usos); }
 }
-async function rondaInterna(env, iaBase, decidir, { n = 8, maxIA = 70, ahora = Date.now() } = {}) {
+async function rondaInterna(env, iaBase, decidir, { n = 6, maxIA = 45, ahora = Date.now() } = {}) {
   let usos = 0, agotada = false, nulas = 0;
   const ia = async (e, prompt, o = {}) => { if (usos >= maxIA) { agotada = true; return null; } usos++; const r = await iaBase(env, prompt, { ...o, sinRespaldo: true }); if (!r) nulas++; return r; };   // el respaldo de Cloudflare AI queda para los clientes
   let est = await cargarEstilo(env);
@@ -337,7 +341,7 @@ export async function cronEntrenador(env, iaJSON, decidir, tiempo = Date.now()) 
 
 export async function informe(env) {
   const [reglas, hist, ultimo, fallas, casos, est] = await Promise.all([cargarReglas(env), leer(env, K.hist, []), leer(env, K.ultimo, null), leer(env, K.fallas, []), leer(env, K.casos, []), cargarEstilo(env)]);
-  return { reglas, guia: await cargarGuia(env), versionesGuia: (await leer(env, K.guias, [])).length, hist: hist.slice(-12), ultimo, nota: await leer(env, "ent:nota", null), erroresPendientes: fallas.length, pedido: +((await kvGet(env, K.pedido)) || 0), cotizaciones: await estadoCotizaciones(env), correcciones: (await cargarCorrecciones(env)).length, derivacion: (() => { const t = casos.filter((c) => c.accion !== "nada"); return { de: t.length, pct: t.length ? Math.round((100 * t.filter((c) => c.accion === "humano").length) / t.length) : 0 }; })(), estilo: est ? { ts: est.ts, ...est.stats, pares: est.pares.length } : null,
+  return { ia: { agotados: await modelosAgotados(env) }, reglas, guia: await cargarGuia(env), versionesGuia: (await leer(env, K.guias, [])).length, hist: hist.slice(-12), ultimo, nota: await leer(env, "ent:nota", null), erroresPendientes: fallas.length, pedido: +((await kvGet(env, K.pedido)) || 0), cotizaciones: await estadoCotizaciones(env), correcciones: (await cargarCorrecciones(env)).length, derivacion: (() => { const t = casos.filter((c) => c.accion !== "nada"); return { de: t.length, pct: t.length ? Math.round((100 * t.filter((c) => c.accion === "humano").length) / t.length) : 0 }; })(), estilo: est ? { ts: est.ts, ...est.stats, pares: est.pares.length } : null,
     ultimosCasos: casos.slice(-12).map((c) => ({ ts: c.ts, accion: c.accion, mensaje: c.mensaje, juez: c.juez })) };
 }
 export async function editarReglas(env, { agregar, borrar }) {
