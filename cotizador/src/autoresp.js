@@ -9,7 +9,7 @@ const kvGet = async (env, k) => (await env.DB.prepare("SELECT v FROM kv WHERE k=
 const kvPut = (env, k, v) => env.DB.prepare("INSERT INTO kv (k,v,exp) VALUES (?,?,NULL) ON CONFLICT(k) DO UPDATE SET v=excluded.v, exp=NULL").bind(k, String(v)).run();
 const hora = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 13);
 import { calcular, paginaCotizacion, guardarCotizAuto } from "./cotizar.js";
-import { cargarEstilo, cargarReglas, reglasTexto, perfilTexto, similares, ejemplosTexto, juzgar, chequeoDuro, registrarCaso, informe, editarReglas, K as KENT, OBJETIVO, PLAZOS, revisarCotizacion, estadoCotizaciones, cargarCorrecciones, corrSimilares, correccionesTexto, agregarCorreccion, SOP_EMBUDO } from "./entrenador.js";
+import { cargarEstilo, cargarReglas, cargarGuia, guiaTexto, reglasTexto, perfilTexto, similares, ejemplosTexto, juzgar, chequeoDuro, registrarCaso, informe, editarReglas, K as KENT, OBJETIVO, PLAZOS, revisarCotizacion, estadoCotizaciones, cargarCorrecciones, corrSimilares, correccionesTexto, agregarCorreccion, SOP_EMBUDO } from "./entrenador.js";
 const SIN_VAPES = "lower(COALESCE(producto,'')) NOT LIKE '%vap%' AND lower(COALESCE(producto,'')) NOT LIKE '%elf%bar%'";
 export const PRECIO_INFORME = "$5.000";
 export const FRASE_FOTO = "Si no te jode, podrías pasarme precio fob del producto, peso en kg por unidad, y cuántas unidades buscás?";   // lo dictó el dueño: cuando mandan fotos sin link
@@ -194,8 +194,8 @@ export async function redactar(env, iaJSON, conv, { prueba = false, T = null, si
   // Si el cliente pasó peso, cantidad y FOB: la cotización se arma sola (con controles de que los números tengan sentido)
   const q3 = await cotizarConTresDatos(env, iaJSON, { conv, c, msgs, sinContestar, T, prueba });
   if (q3) return fin(q3, c.nombre);
-  const est = sim?.est ?? await cargarEstilo(env), reglas = sim?.reglas ?? await cargarReglas(env), correcciones = sim?.correcciones ?? await cargarCorrecciones(env);
-  let d = await decidirIA(env, iaJSON, { c, msgs, ultimo, est, reglas, correcciones, excluir: sim?.excluir || "" });
+  const est = sim?.est ?? await cargarEstilo(env), reglas = sim?.reglas ?? await cargarReglas(env), guia = sim?.guia ?? await cargarGuia(env), correcciones = sim?.correcciones ?? await cargarCorrecciones(env);
+  let d = await decidirIA(env, iaJSON, { c, msgs, ultimo, est, reglas, guia, correcciones, excluir: sim?.excluir || "" });
   // Juez: ningún borrador sale sin aprobar. Si no pasa se manda la versión corregida (si cumple todo) o queda para vos.
   if (d.accion === "responder") {
     const j = await juzgar(env, iaJSON, { msgs, mensaje: d.mensaje, est, reglas }).catch(() => null);
@@ -261,7 +261,7 @@ const sinContestarTexto = (msgs) => { const o = []; for (const m of [...msgs].re
 
 // Decide qué contestar (la parte "pensar" del contestador). Se usa en producción y en el entrenamiento: ahí recibe
 // reglas de prueba y el id del caso para que los ejemplos parecidos no incluyan la respuesta real.
-export async function decidirIA(env, iaJSON, { c, msgs, ultimo, est = null, reglas = [], excluir = "", correcciones = [] }, opts = { prioridad: true }) {
+export async function decidirIA(env, iaJSON, { c, msgs, ultimo, est = null, reglas = [], guia = "", excluir = "", correcciones = [] }, opts = { prioridad: true }) {
   const corrTxt = correccionesTexto(corrSimilares(correcciones, sinContestarTexto(msgs), 3, excluir));
   const sinPares = !est?.pares?.length;
   const ejemplos = sinPares ? ((await env.DB.prepare("SELECT texto FROM w_msg WHERE yo=1 AND grupo=0 AND tipo='text' AND length(texto) BETWEEN 12 AND 220 ORDER BY ts DESC LIMIT 40").all()).results || []).map((x) => "- " + String(x.texto).replace(/\s+/g, " ")).slice(0, 25) : [];
@@ -295,7 +295,7 @@ NO ofrezcas el informe de búsqueda. EXCEPCIÓN: si nombra un producto de marca 
 6. CATÁLOGO / STOCK ("qué tienen", "lista de precios", "tienen X en stock"): mandale el link https://www.teimportamosarg.com/catalogo y que ahí están los productos y precios.
 7. SALUDO O "QUIERO INFO" sin decir qué: saludalo y preguntale qué producto quiere traer y si tiene link de Alibaba/1688 o fotos de referencia.
 8. Si no encaja en ninguna y no entendés qué pide: preguntale qué producto busca o qué necesita (regla 7). Solo si ni así se puede avanzar, accion "humano".
-${corrTxt ? "MIS CORRECCIONES A CASOS PARECIDOS (el dueño te corrigió así; hacé lo que dicen, vale más que cualquier otra regla salvo PROHIBIDO):\n" + corrTxt + "\n" : ""}${reglas?.length ? "REGLAS QUE APRENDÍ (valen como las de arriba; si chocan con REGLAS o PROHIBIDO, mandan estas últimas):\n" + reglasTexto(reglas) + "\n" : ""}ESTILO: 1 a 3 líneas, voseo argentino, como escribo yo (ver ejemplos), sin listas ni títulos, sin muletillas al arrancar ("claro", "dale", "buenísimo", "genial"). Si ya hubo charla hoy, no saludes de nuevo. Si el último mensaje del cliente es de hace más de 12 horas, arrancá con un "Perdón la demora!" corto. Usá el nombre del producto que dijo el cliente.
+${corrTxt ? "MIS CORRECCIONES A CASOS PARECIDOS (el dueño te corrigió así; hacé lo que dicen, vale más que cualquier otra regla salvo PROHIBIDO):\n" + corrTxt + "\n" : ""}${guiaTexto(guia)}${reglas?.length ? "REGLAS QUE APRENDÍ (valen como las de arriba; si chocan con REGLAS o PROHIBIDO, mandan estas últimas):\n" + reglasTexto(reglas) + "\n" : ""}ESTILO: 1 a 3 líneas, voseo argentino, como escribo yo (ver ejemplos), sin listas ni títulos, sin muletillas al arrancar ("claro", "dale", "buenísimo", "genial"). Si ya hubo charla hoy, no saludes de nuevo. Si el último mensaje del cliente es de hace más de 12 horas, arrancá con un "Perdón la demora!" corto. Usá el nombre del producto que dijo el cliente.
 PROHIBIDO: prometer que le vas a pasar o mandar algo ("te paso la dirección", "ahí te mando") salvo el link del catálogo en ese mismo mensaje; dar precios, comisiones o cualquier número de plata (los plazos solo con los datos de la regla 2b); ofrecer el informe de búsqueda (eso lo hace el dueño cuando ve las fotos); decir "te paso con alguien", "te derivo", "el equipo", "te llamamos" o prometer que alguien le va a escribir; nombrar vapers, pods o tabaco.
 Devolvé JSON: {"accion":"responder"|"humano"|"nada","mensaje":"texto a enviar (vacío si no es responder)","motivo":"una frase corta","resumen":"3 a 5 palabras: de qué trata el chat y qué debo hacer yo (ej: \"quiere vender sin stock, explicarle dropshipping\")"}`, opts);
   if (!ia || !["responder", "humano", "nada"].includes(ia.accion)) return ({ accion: "humano", motivo: "la IA no pudo decidir" });

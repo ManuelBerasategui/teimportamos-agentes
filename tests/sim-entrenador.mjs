@@ -211,7 +211,7 @@ const c0 = corrio; await E.cronEntrenador(env, iaCron, decidir, ahora + 20e3);
 chk("no se pisan dos rondas a la vez", corrio === c0 || db.prepare("SELECT v FROM kv WHERE k='ent:corre'").get().v === "0");
 const noche = new Date(ahora); noche.setUTCHours(7, 5, 0, 0); db.prepare("UPDATE kv SET v='0' WHERE k='ent:pedido'").run(); db.prepare("UPDATE kv SET v='0' WHERE k='ent:corre'").run();
 await E.cronEntrenador(env, iaCron, decidir, noche.getTime());
-chk("de noche (4:05 de Argentina) pide 3 rondas solo", +db.prepare("SELECT v FROM kv WHERE k='ent:pedido'").get().v === 2);
+chk("de noche (4:05 de Argentina) pide 10 rondas solo", +db.prepare("SELECT v FROM kv WHERE k='ent:pedido'").get().v === 9);
 
 // 7) Producción registra cada decisión para aprender
 db.prepare("DELETE FROM kv WHERE k='ent:casos' OR k LIKE 'resp_%'").run();
@@ -337,7 +337,7 @@ chk("el juez del entrenamiento castiga contestar algo que no tiene que ver con e
 // tope diario y modo intensivo
 const kDia = "ent:usos:" + new Date(ahora - 3 * 3600e3).toISOString().slice(0, 10);
 chk("cuenta las llamadas a la IA usadas para entrenar en el día", +db.prepare("SELECT v FROM kv WHERE k=?").get(kDia).v > 0);
-db.prepare("UPDATE kv SET v='800' WHERE k=?").run(kDia);
+db.prepare("UPDATE kv SET v='2500' WHERE k=?").run(kDia);
 res = await E.rondaEntrenamiento(env, iaR, simu, { n: 4, ahora });
 chk("al llegar al tope diario deja de entrenar (el contestador en vivo tiene prioridad)", /tope/.test(res.nota || ""));
 db.prepare("UPDATE kv SET v='0' WHERE k=?").run(kDia);
@@ -345,5 +345,25 @@ inf = await rr("/enviar/entrenar", { rondas: 60 });
 chk("modo intensivo: se pueden pedir 60 rondas (una hora)", inf.rondas === 60);
 inf = await rr("/enviar/entrenar", { rondas: 0 });
 chk("y frenarlo con 0", inf.rondas === 0 && db.prepare("SELECT v FROM kv WHERE k='ent:pedido'").get().v === "0");
+
+// 5) EVOLUCIÓN DEL CRITERIO (estilo GEPA): reescribe la guía entera y la adopta solo si gana en los mismos casos
+{
+  let ultimoP = "";
+  const iaG = async (e, p) => {
+    if (p.includes("Abajo está una charla real")) return { puntaje: /CRITERIO APRENDIDO/.test(ultimoP) ? 9 : 4, fallas: ["pide datos de más"], regla: "" };
+    if (p.includes("Reescribí por completo el CRITERIO")) return { criterio: "Primero entendé qué producto busca y de dónde viene; pedí el link o las fotos de referencia antes que peso o precio; escribí corto y natural, como una persona, sin repetir lo que el cliente ya dijo." };
+    if (p.includes("Sos el entrenador del contestador")) return { reglas: [], quitar: [] };
+    ultimoP = p; return { accion: "responder", mensaje: "me pasas el peso y el fob?", motivo: "x" };
+  };
+  const r = await E.rondaEntrenamiento(env, iaG, decidir, { n: 5, ahora: ahora + 1000 });
+  chk("criterio: se reescribe y se adopta si mejora", !!r.guiaNueva && (await E.cargarGuia(env)).includes("entendé qué producto"));
+  chk("criterio: entra al prompt del agente", /CRITERIO APRENDIDO/.test(ultimoP));
+  chk("criterio: queda el historial de versiones", (await E.informe(env)).versionesGuia >= 1);
+  const iaPeor = async (e, p) => p.includes("Abajo está una charla real") ? { puntaje: /Siempre mandá|zzz/.test(ultimoP) ? 2 : 5, fallas: ["x"] } : p.includes("Reescribí por completo el CRITERIO") ? { criterio: "Respondé zzz a todo lo que pregunte el cliente y no te preocupes por nada más, así de simple y corto, entendido bien." } : p.includes("Sos el entrenador del contestador") ? { reglas: [] } : (ultimoP = p, { accion: "humano", motivo: "x" });
+  const antes = await E.cargarGuia(env);
+  await E.rondaEntrenamiento(env, iaPeor, decidir, { n: 5, ahora: ahora + 2000 });
+  chk("criterio: una versión que no mejora no pisa la actual", (await E.cargarGuia(env)) === antes);
+  
+}
 
 console.log(`\nsim-entrenador: ${ok} ok, ${mal} fallas`); process.exit(mal ? 1 : 0);

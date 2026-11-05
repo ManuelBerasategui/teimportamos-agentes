@@ -11,7 +11,7 @@ const kvGet = async (env, k) => (await env.DB.prepare("SELECT v FROM kv WHERE k=
 const kvPut = (env, k, v) => env.DB.prepare("INSERT INTO kv (k,v,exp) VALUES (?,?,NULL) ON CONFLICT(k) DO UPDATE SET v=excluded.v, exp=NULL").bind(k, String(v)).run();
 const leer = async (env, k, def) => { try { const v = await kvGet(env, k); return v ? JSON.parse(v) : def; } catch { return def; } };
 const guardar = (env, k, v) => kvPut(env, k, JSON.stringify(v));
-export const K = { estilo: "ent:estilo", reglas: "ent:reglas", casos: "ent:casos", fallas: "ent:fallas", hist: "ent:hist", correcciones: "ent:correcciones", pedido: "ent:pedido", ultimo: "ent:ultimo", vistos: "ent:vistos", rechazadas: "ent:rechazadas", corre: "ent:corre" };
+export const K = { estilo: "ent:estilo", reglas: "ent:reglas", casos: "ent:casos", fallas: "ent:fallas", hist: "ent:hist", correcciones: "ent:correcciones", pedido: "ent:pedido", ultimo: "ent:ultimo", vistos: "ent:vistos", rechazadas: "ent:rechazadas", corre: "ent:corre", guia: "ent:guia", guias: "ent:guias" };
 export const MAX_REGLAS = 12;
 
 const BOT = /^\s*(bienvenid[oa]|te voy a derivar|gracias por escribir)/i;   // mensajes automáticos de WhatsApp Business: no son míos
@@ -86,6 +86,8 @@ export const ejemplosTexto = (ps) => ps.map((p) => `Cliente: ${p.c}\nYo: ${p.y.r
 
 // ------------------------------------------------------------------ reglas aprendidas
 export async function cargarReglas(env) { return (await leer(env, K.reglas, [])).filter((x) => x?.r); }
+export const cargarGuia = async (env) => String((await leer(env, K.guia, "")) || "");
+export const guiaTexto = (g) => g ? "CRITERIO APRENDIDO (lo escribió el entrenador a partir de mis respuestas reales; REGLAS y PROHIBIDO mandan si chocan):\n" + g + "\n" : "";
 export const reglasTexto = (rs) => rs.map((x, i) => `${i + 1}. ${x.r}`).join("\n");
 
 // ------------------------------------------------------------------ 2) JUEZ
@@ -218,27 +220,27 @@ Devolvé JSON: {"puntaje":1-10,"fallas":["falla corta"],"regla":"una regla corta
 
 export async function rondaEntrenamiento(env, iaBase, decidir, opts = {}) {
   const ahora = opts.ahora || Date.now(), kDia = "ent:usos:" + new Date(ahora - 3 * 3600e3).toISOString().slice(0, 10);
-  const usadosDia = +((await kvGet(env, kDia)) || 0), topeDia = +(env.ENT_MAX_DIA || 800);
+  const usadosDia = +((await kvGet(env, kDia)) || 0), topeDia = +(env.ENT_MAX_DIA || 2500);
   if (usadosDia >= topeDia) return { nota: `hoy ya usé ${usadosDia} llamadas a la IA para entrenar (tope ${topeDia}); sigo mañana para no dejar sin cupo al contestador` };
   let usos = 0; const contar = async (e, p, o) => { usos++; return iaBase(e, p, o); };
   try { return await rondaInterna(env, contar, decidir, { ...opts, ahora }); } finally { await kvPut(env, kDia, usadosDia + usos); }
 }
-async function rondaInterna(env, iaBase, decidir, { n = 5, maxIA = 38, ahora = Date.now() } = {}) {
+async function rondaInterna(env, iaBase, decidir, { n = 8, maxIA = 70, ahora = Date.now() } = {}) {
   let usos = 0, agotada = false;
   const ia = async (e, prompt, o = {}) => { if (usos >= maxIA) { agotada = true; return null; } usos++; return iaBase(env, prompt, { ...o, sinRespaldo: true }); };   // el respaldo de Cloudflare AI queda para los clientes
   let est = await cargarEstilo(env);
   if (!est || ahora - est.ts > 20 * 3600e3) est = await construirEstilo(env, ahora);
   if (!est.pares.length) return { nota: "todavía no hay conversaciones tuyas para entrenar" };
-  const reglas = await cargarReglas(env), rechazadas = await leer(env, K.rechazadas, []);
+  const reglas = await cargarReglas(env), guia = await cargarGuia(env), rechazadas = await leer(env, K.rechazadas, []);
   const correcciones = await cargarCorrecciones(env), oro = mezclar(correcciones).slice(0, 3);
   let vistos = new Set(await leer(env, K.vistos, []));
   let cand = est.pares.filter((p) => p.ctx?.length && !p.ctx.at(-1)?.yo && !vistos.has(p.id));
   if (cand.length < n) { vistos = new Set(); cand = est.pares.filter((p) => p.ctx?.length && !p.ctx.at(-1)?.yo); }
   const lote = [...oro, ...mezclar(cand).slice(0, n)], res = [];
-  const correr = async (p, reglasUsar) => {
+  const correr = async (p, reglasUsar, guiaUsar = guia) => {
     const msgs = p.ctx.map((m) => ({ yo: m.yo, texto: m.t, tipo: m.k || "text" }));
     const ultimo = [...msgs].reverse().find((m) => !m.yo);
-    const borr = await decidir({ c: { nombre: "" }, msgs, ultimo, est, reglas: reglasUsar, excluir: p.id, correcciones }, ia);
+    const borr = await decidir({ c: { nombre: "" }, msgs, ultimo, est, reglas: reglasUsar, guia: guiaUsar, excluir: p.id, correcciones }, ia);
     if (!borr) return null;
     const v = await comparar(ia, { ctx: p.ctx, real: p.y, agente: AGENTE(borr), oro: !!p.oro });
     if (!Number.isFinite(+v?.puntaje)) return null;
@@ -277,11 +279,35 @@ Devolvé JSON: {"reglas":["regla"],"quitar":[número de regla existente]}`);
     }
     await guardar(env, K.fallas, []);   // los errores de producción ya se usaron
   }
+  // EVOLUCIÓN DEL CRITERIO (estilo GEPA): el entrenador reescribe el criterio entero mirando errores y aciertos, y se queda con la versión nueva solo si gana en los mismos casos
+  let guiaNueva = null;
+  if (malos.length >= 2 && !agotada) {
+    const versiones = await leer(env, K.guias, []);
+    const g = await ia(null, `Sos el entrenador del contestador de "Te Importamos". Reescribí por completo el CRITERIO: un texto de hasta 1200 caracteres, en español rioplatense, que le explique al agente cómo pensar y decidir como el dueño (qué prioriza, cuándo pregunta, cuándo corta, cómo de largo escribe). No son reglas sueltas: es una guía coherente. No pongas precios, números de plata, promesas ni plazos; no uses "siempre" ni "nunca". Mantené lo que ya funciona del criterio actual y corregí lo que causa los errores.
+OBJETIVO DEL NEGOCIO: ${OBJETIVO}
+CRITERIO ACTUAL:
+${guia || "(vacío)"}
+ERRORES (cliente / lo que contesté yo / lo que hizo el agente / falla):
+${malos.slice(0, 6).map((r, i) => `${i + 1}. ${r.p.c}\n   Yo: ${r.p.y}\n   Agente: ${AGENTE(r.borr)}\n   Falla: ${r.fallas.join("; ")}`).join("\n")}
+ACIERTOS (que no se rompan):
+${res.filter((r) => r.puntaje >= 8).slice(0, 3).map((r, i) => `${i + 1}. ${r.p.c} -> ${AGENTE(r.borr)}`).join("\n") || "(ninguno)"}
+Devolvé JSON: {"criterio":"texto"}`);
+    const txt = String(g?.criterio || "").trim().slice(0, 1300);
+    if (txt.length > 80 && !/\$\s*\d|\bsiempre\b|\bnunca\b|prometé|prometer|sin excepci[oó]n/i.test(txt) && parecido(txt, guia) < 0.95) {
+      const prueba = [...malos.slice(0, 4), ...res.filter((r) => r.puntaje >= 8).slice(0, 3)], nuevos = [];
+      for (const r of prueba) { const x = await correr(r.p, reglas, txt); if (x) nuevos.push({ antes: r.puntaje, despues: x.puntaje }); else if (agotada) break; }
+      const mejora = nuevos.length ? nuevos.reduce((s, x) => s + x.despues - x.antes, 0) / nuevos.length : 0, peores = nuevos.filter((x) => x.despues < x.antes - 2).length;
+      const adopta = nuevos.length >= Math.min(3, prueba.length) && mejora >= 0.3 && peores <= 1;
+      versiones.push({ ts: ahora, texto: txt, mejora: Math.round(mejora * 100) / 100, adoptada: adopta });
+      await guardar(env, K.guias, versiones.slice(-12));
+      if (adopta) { await guardar(env, K.guia, txt); guiaNueva = { mejora: Math.round(mejora * 100) / 100 }; }
+    }
+  }
   const hist = await leer(env, K.hist, []);
   const derivados = res.filter((r) => r.borr.accion === "humano").length;
   hist.push({ ts: ahora, score, n: res.length, derivados, adoptadas: adoptadas.length, descartadas: descartadas.length, ia: usos });
   await guardar(env, K.hist, hist.slice(-40)); await guardar(env, K.vistos, [...vistos].slice(-300));
-  const resumen = { score, derivados, casos: res.length, malos: malos.length, adoptadas, quitadas, descartadas, mejora: detalleMejora ?? null, ia: usos, ts: ahora };
+  const resumen = { guiaNueva, score, derivados, casos: res.length, malos: malos.length, adoptadas, quitadas, descartadas, mejora: detalleMejora ?? null, ia: usos, ts: ahora };
   await guardar(env, K.ultimo, resumen);
   return resumen;
 }
@@ -289,9 +315,13 @@ Devolvé JSON: {"reglas":["regla"],"quitar":[número de regla existente]}`);
 // Lo llama el cron cada minuto: de noche pide 3 rondas; cada ronda corre sola (así cada una usa pocas llamadas a la IA)
 export async function cronEntrenador(env, iaJSON, decidir, tiempo = Date.now()) {
   const d = new Date(tiempo);
-  if (d.getUTCHours() === 7 && d.getUTCMinutes() === 5) { await revisarResultados(env, tiempo); await kvPut(env, K.pedido, Math.max(+((await kvGet(env, K.pedido)) || 0), 3)); }   // 04:05 de Argentina
-  const pedido = +((await kvGet(env, K.pedido)) || 0);
-  if (pedido <= 0) return null;
+  if (d.getUTCHours() === 7 && d.getUTCMinutes() === 5) { await revisarResultados(env, tiempo); await kvPut(env, K.pedido, Math.max(+((await kvGet(env, K.pedido)) || 0), 10)); }   // 04:05 de Argentina
+  let pedido = +((await kvGet(env, K.pedido)) || 0);
+  if (pedido <= 0) {   // bucle continuo: si pasó un rato desde la última ronda, pide otra sola (de noche más seguido; de día más espaciado para no pelear cupo con los clientes)
+    const horaAR = (d.getUTCHours() + 21) % 24, cada = (horaAR >= 9 && horaAR < 22 ? 30 : 8) * 60e3, ult = Math.max((await leer(env, K.ultimo, null))?.ts || 0, (await leer(env, "ent:nota", null))?.ts || 0);
+    if (tiempo - ult < cada) return null;
+    pedido = 1;
+  }
   const corre = +((await kvGet(env, K.corre)) || 0);
   if (tiempo - corre < 3 * 60e3) return null;
   await kvPut(env, K.corre, tiempo); await kvPut(env, K.pedido, pedido - 1);
@@ -300,7 +330,7 @@ export async function cronEntrenador(env, iaJSON, decidir, tiempo = Date.now()) 
 
 export async function informe(env) {
   const [reglas, hist, ultimo, fallas, casos, est] = await Promise.all([cargarReglas(env), leer(env, K.hist, []), leer(env, K.ultimo, null), leer(env, K.fallas, []), leer(env, K.casos, []), cargarEstilo(env)]);
-  return { reglas, hist: hist.slice(-12), ultimo, nota: await leer(env, "ent:nota", null), erroresPendientes: fallas.length, pedido: +((await kvGet(env, K.pedido)) || 0), cotizaciones: await estadoCotizaciones(env), correcciones: (await cargarCorrecciones(env)).length, derivacion: (() => { const t = casos.filter((c) => c.accion !== "nada"); return { de: t.length, pct: t.length ? Math.round((100 * t.filter((c) => c.accion === "humano").length) / t.length) : 0 }; })(), estilo: est ? { ts: est.ts, ...est.stats, pares: est.pares.length } : null,
+  return { reglas, guia: await cargarGuia(env), versionesGuia: (await leer(env, K.guias, [])).length, hist: hist.slice(-12), ultimo, nota: await leer(env, "ent:nota", null), erroresPendientes: fallas.length, pedido: +((await kvGet(env, K.pedido)) || 0), cotizaciones: await estadoCotizaciones(env), correcciones: (await cargarCorrecciones(env)).length, derivacion: (() => { const t = casos.filter((c) => c.accion !== "nada"); return { de: t.length, pct: t.length ? Math.round((100 * t.filter((c) => c.accion === "humano").length) / t.length) : 0 }; })(), estilo: est ? { ts: est.ts, ...est.stats, pares: est.pares.length } : null,
     ultimosCasos: casos.slice(-12).map((c) => ({ ts: c.ts, accion: c.accion, mensaje: c.mensaje, juez: c.juez })) };
 }
 export async function editarReglas(env, { agregar, borrar }) {
