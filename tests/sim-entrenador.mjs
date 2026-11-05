@@ -413,4 +413,19 @@ chk("y frenarlo con 0", inf.rondas === 0 && db.prepare("SELECT v FROM kv WHERE k
   chk("'bueno mi her' es un cierre", A.esCierre("Bueno mi her"));
 }
 
+// 8) APRENDER DE TODO EL CONTEXTO (no solo de mis mensajes): ejemplos con lo que venía antes, parecidos por situación y por resultado
+{
+  const est = await E.cargarEstilo(env);
+  chk("el estilo guarda contexto y resultado de cada respuesta mía", est.v === 2 && est.pares.some((p) => p.ctx?.length >= 2) && est.pares.some((p) => p.r === 1 || p.r === 0));
+  const mk = (id, c, y, ctx, r) => ({ id, ts: 1, c, y, ctx: ctx.map(([yo, t]) => ({ yo, t })), r });
+  const fake = { pares: [
+    mk("a", "bueno dale", "perfecto te espero", [[0, "hola"], [1, "pasame el link"], [0, "bueno dale"]], 0),
+    mk("b", "dale", "genial, cuantas unidades queres", [[0, "hola quiero zapatillas"], [1, "tenes link?"], [0, "dale"]], 1),
+    mk("c", "dale", "ok", [[0, "hola quiero zapatillas"], [0, "dale"]], 0)] };
+  const sim = E.similares(fake, "dale", 2, "", [{ yo: 0, texto: "hola quiero zapatillas" }, { yo: 1, texto: "tenes link?" }, { yo: 0, texto: "dale" }]);
+  chk("elige el caso que venía igual (yo había preguntado) y que funcionó", sim[0]?.id === "b");
+  const t = E.ejemplosTexto([fake.pares[1]]);
+  chk("el ejemplo muestra lo que venía antes y si el cliente siguió", /antes en la charla/.test(t) && /tenes link/.test(t) && /siguió la charla/.test(t));
+}
+
 console.log(`\nsim-entrenador: ${ok} ok, ${mal} fallas`); process.exit(mal ? 1 : 0);

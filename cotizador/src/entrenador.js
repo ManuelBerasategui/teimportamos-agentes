@@ -18,8 +18,17 @@ const BOT = /^\s*(bienvenid[oa]|te voy a derivar|gracias por escribir)/i;   // m
 const STOP = new Set("de la el en y a que lo un una te me se con por para es no si los las del al mi tu su ya le les mas más muy como pero esto eso este esta".split(" "));
 const sinTilde = (t) => String(t || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 const palabras = (t) => sinTilde(t).replace(/https?:\/\/\S+/g, " ").split(/[^a-z0-9ñ]+/).filter(Boolean);
-const comp = (m) => ({ yo: m.yo ? 1 : 0, t: String(m.texto || "(archivo)").replace(/\s+/g, " ").slice(0, 200), ...(m.tipo && m.tipo !== "text" ? { k: m.tipo } : {}) });
+const comp = (m) => ({ yo: m.yo ? 1 : 0, t: String(m.texto || "(archivo)").replace(/\s+/g, " ").slice(0, 160), ...(m.tipo && m.tipo !== "text" ? { k: m.tipo } : {}) });
 export const parecido = (a, b) => { const x = new Set(palabras(a)), y = new Set(palabras(b)); if (!x.size || !y.size) return 0; let i = 0; for (const w of x) if (y.has(w)) i++; return i / (x.size + y.size - i); };
+
+// Firma de la situación: sirve para encontrar casos parecidos por CÓMO venía la charla (no solo por las palabras del último mensaje)
+export function firma(ctx) {
+  const ms = (ctx || []).slice(-6), cli = ms.filter((m) => !m.yo), mios = ms.filter((m) => m.yo), ult = cli.at(-1), miUlt = mios.at(-1);
+  const txt = (m) => String(m?.t || "");
+  return { link: ms.some((m) => /https?:\/\/|alibaba|1688/i.test(txt(m))), adj: ms.some((m) => m.k && m.k !== "text" || /^\(archivo/i.test(txt(m))), num: /\d/.test(txt(ult).replace(/https?:\/\/\S+/g, "")), mePregunte: /\?|\bpasame|\bmandame|\bdecime/i.test(txt(miUlt)), nuevo: !mios.length, largo: ms.length };
+}
+const sitParecida = (a, b) => ["link", "adj", "num", "mePregunte", "nuevo"].filter((k) => a[k] === b[k]).length;
+const VERSION_ESTILO = 2;
 
 // ------------------------------------------------------------------ 1) ESTILO
 function estadisticas(propios) {
@@ -38,6 +47,12 @@ function estadisticas(propios) {
     aperturas: top(ap, Math.max(3, n * 0.03), 6).map(([w, c]) => `${w} (${Math.round((100 * c) / n)}%)`), frases: top(bi, 4, 10).map(([w]) => w) };
 }
 
+// ¿Qué pasó después de mi respuesta? 1 = el cliente siguió la charla dentro de las 48 h, 0 = no volvió a escribir (o se enfrió); undefined = todavía no se sabe
+function resultado(ms, mio, ahora) {
+  const sig = ms.find((x) => x.ts > mio.ts && !x.yo);
+  if (sig) return sig.ts - mio.ts <= 48 * 3600e3 ? 1 : 0;
+  return ahora - mio.ts > 48 * 3600e3 ? 0 : undefined;
+}
 export async function construirEstilo(env, ahora = Date.now()) {
   const filas = ((await env.DB.prepare("SELECT conv, yo, tipo, texto, ts FROM w_msg WHERE grupo=0 AND ts>=? ORDER BY ts DESC LIMIT 5000").bind(ahora - 60 * 86400e3).all()).results || []);
   const porConv = new Map();
@@ -51,7 +66,7 @@ export async function construirEstilo(env, ahora = Date.now()) {
       if (!m.yo) { if (t || m.tipo !== "text") pend.push(t || "(archivo)"); ctx.push(m); continue; }
       const mio = m.tipo === "text" && t.length >= 8 && t.length <= 400 && !BOT.test(t) && !/^https?:\/\/\S+$/.test(t);
       const adjunto = m.tipo !== "text" || /^\((archivo|audio|image|video|document)/i.test(t);
-      if (mio) { propios.push(t); if (pend.length) pares.push({ id: `${conv}:${m.ts}`, ts: m.ts, c: pend.slice(-3).join(" / ").slice(0, 300), y: t, ctx: ctx.slice(-7).map(comp) }); }
+      if (mio) { propios.push(t); if (pend.length) pares.push({ id: `${conv}:${m.ts}`, ts: m.ts, c: pend.slice(-3).join(" / ").slice(0, 300), y: t, ctx: ctx.slice(-7).map(comp), r: resultado(ms, m, ahora) }); }
       else if (adjunto && pend.length) pares.push({ id: `${conv}:${m.ts}`, ts: m.ts, c: pend.slice(-3).join(" / ").slice(0, 300), y: "[respondí con un audio o un archivo]", ctx: ctx.slice(-7).map(comp), k: "adjunto" });
       pend = []; ctx.push(m);
     }
@@ -60,12 +75,13 @@ export async function construirEstilo(env, ahora = Date.now()) {
   }
   const vistos = new Set(), unicos = [];
   const todos = [...pares, ...sinResp.sort((a, b) => b.ts - a.ts).slice(0, 60)].sort((a, b) => b.ts - a.ts);
-  for (const p of todos) { const k = p.k ? p.id : sinTilde(p.y); if (vistos.has(k)) continue; vistos.add(k); unicos.push(unicos.length < 150 || p.k ? p : { id: p.id, ts: p.ts, c: p.c, y: p.y }); if (unicos.length >= 480) break; }
-  const est = { ts: ahora, stats: estadisticas(propios.slice(0, 1500)), pares: unicos };
+  for (const p of todos) { const k = p.k ? p.id : sinTilde(p.y); if (vistos.has(k)) continue; vistos.add(k); unicos.push(unicos.length < 300 || p.k ? p : { id: p.id, ts: p.ts, c: p.c, y: p.y, r: p.r }); if (unicos.length >= 480) break; }
+  const est = { v: VERSION_ESTILO, ts: ahora, stats: estadisticas(propios.slice(0, 1500)), pares: unicos };
   await guardar(env, K.estilo, est);
   return est;
 }
 export const cargarEstilo = (env) => leer(env, K.estilo, null);
+export const estiloViejo = (est) => !est || est.v !== VERSION_ESTILO;
 
 export function perfilTexto(e) {
   const s = e?.stats; if (!s?.n) return "";
@@ -74,15 +90,28 @@ export function perfilTexto(e) {
 }
 
 // Los k pares más parecidos a lo que escribió el cliente (excluye el caso que se está entrenando para que no copie la respuesta real)
-export function similares(est, texto, k = 6, excluir = "") {
+export function similares(est, texto, k = 6, excluir = "", msgs = null) {
   const pares = (est?.pares || []).filter((p) => p.id !== excluir); if (!pares.length) return [];
   const w = new Set(palabras(texto).filter((x) => x.length >= 4 && !STOP.has(x)));
-  const pt = pares.map((p, i) => ({ p, s: [...new Set(palabras(p.c))].filter((x) => w.has(x)).length * 10 - i * 0.01 })).sort((a, b) => b.s - a.s);
-  const out = pt.filter((x) => x.s >= 10).slice(0, k).map((x) => x.p);
-  for (const x of pt) { if (out.length >= Math.min(k, 4)) break; if (!out.includes(x.p)) out.push(x.p); }   // relleno con los más recientes
+  // Contexto de la charla actual: las últimas vueltas (del cliente y mías), no solo el último mensaje
+  const ctxAct = msgs ? msgs.slice(-6).map((m) => ({ yo: m.yo ? 1 : 0, t: String(m.texto || "(archivo)"), ...(m.tipo && m.tipo !== "text" ? { k: m.tipo } : {}) })) : null;
+  const wCtx = ctxAct ? new Set(palabras(ctxAct.slice(0, -1).map((m) => m.t).join(" ")).filter((x) => x.length >= 4 && !STOP.has(x))) : new Set(), fa = ctxAct ? firma(ctxAct) : null;
+  const pt = pares.map((p, i) => {
+    let sc = [...new Set(palabras(p.c))].filter((x) => w.has(x)).length * 10 - i * 0.01;
+    if (p.ctx?.length && fa) {   // se parecen en cómo venía la charla: mismo momento (con link, con foto, primera vez, yo había preguntado) y mismo tema
+      sc += sitParecida(fa, firma(p.ctx)) * 2 + [...new Set(palabras(p.ctx.slice(0, -1).map((m) => m.t).join(" ")))].filter((x) => wCtx.has(x)).length * 3;
+    }
+    if (p.r === 1) sc += 3; else if (p.r === 0) sc -= 2;   // me quedo con lo que funcionó: el cliente siguió la charla
+    return { p, s: sc };
+  }).sort((a, b) => b.s - a.s);
+  const out = pt.filter((x) => x.s >= 8).slice(0, k).map((x) => x.p);
+  for (const x of pt) { if (out.length >= Math.min(k, 4)) break; if (!out.includes(x.p)) out.push(x.p); }
   return out;
 }
-export const ejemplosTexto = (ps) => ps.map((p) => `Cliente: ${p.c}\nYo: ${p.y.replace(/\s+/g, " ")}`).join("\n---\n");
+export const ejemplosTexto = (ps) => ps.map((p) => {
+  const previo = (p.ctx || []).slice(-4, -1).map((m) => `${m.yo ? "Yo" : "Cliente"}: ${m.t.slice(0, 110)}`).join("\n");
+  return `${previo ? "(antes en la charla)\n" + previo + "\n" : ""}Cliente: ${p.c}\nYo: ${p.y.replace(/\s+/g, " ")}${p.r === 1 ? "  [el cliente siguió la charla]" : p.r === 0 ? "  [el cliente no volvió a escribir]" : ""}`;
+}).join("\n---\n");
 
 // ------------------------------------------------------------------ reglas aprendidas
 export async function cargarReglas(env) { return (await leer(env, K.reglas, [])).filter((x) => x?.r); }
@@ -236,7 +265,7 @@ async function rondaInterna(env, iaBase, decidir, { n = 6, maxIA = 45, ahora = D
   let usos = 0, agotada = false, nulas = 0;
   const ia = async (e, prompt, o = {}) => { if (usos >= maxIA) { agotada = true; return null; } usos++; const r = await iaBase(env, prompt, { ...o, sinRespaldo: true }); if (!r) nulas++; return r; };   // el respaldo de Cloudflare AI queda para los clientes
   let est = await cargarEstilo(env);
-  if (!est || ahora - est.ts > 20 * 3600e3) est = await construirEstilo(env, ahora);
+  if (estiloViejo(est) || ahora - est.ts > 20 * 3600e3) est = await construirEstilo(env, ahora);
   if (!est.pares.length) return { nota: "todavía no hay conversaciones tuyas para entrenar" };
   const reglas = await cargarReglas(env), guia = await cargarGuia(env), rechazadas = await leer(env, K.rechazadas, []);
   const correcciones = await cargarCorrecciones(env), oro = mezclar(correcciones).slice(0, 3);
@@ -325,6 +354,7 @@ Devolvé JSON: {"criterio":"texto"}`);
 // Lo llama el cron cada minuto: de noche pide 3 rondas; cada ronda corre sola (así cada una usa pocas llamadas a la IA)
 export async function cronEntrenador(env, iaJSON, decidir, tiempo = Date.now()) {
   const d = new Date(tiempo);
+  if (estiloViejo(await cargarEstilo(env)) && (await leer(env, K.estilo, null)) !== undefined) { try { if ((await env.DB.prepare("SELECT 1 FROM w_msg LIMIT 1").first())) await construirEstilo(env, tiempo); } catch {} }   // formato nuevo (contexto + resultado): se reconstruye una vez
   if (d.getUTCHours() === 7 && d.getUTCMinutes() === 5) { await revisarResultados(env, tiempo); await kvPut(env, K.pedido, Math.max(+((await kvGet(env, K.pedido)) || 0), 10)); }   // 04:05 de Argentina
   if (+((await kvGet(env, "ent:enfria")) || 0) > tiempo) return null;   // descanso por falta de cupo de la IA
   let pedido = +((await kvGet(env, K.pedido)) || 0);

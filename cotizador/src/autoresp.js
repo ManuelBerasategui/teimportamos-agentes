@@ -279,7 +279,7 @@ export async function decidirIA(env, iaJSON, { c, msgs, ultimo, est = null, regl
   const corrTxt = correccionesTexto(corrSimilares(correcciones, sinContestarTexto(msgs), 3, excluir));
   const sinPares = !est?.pares?.length;
   const ejemplos = sinPares ? ((await env.DB.prepare("SELECT texto FROM w_msg WHERE yo=1 AND grupo=0 AND tipo='text' AND length(texto) BETWEEN 12 AND 220 ORDER BY ts DESC LIMIT 40").all()).results || []).map((x) => "- " + String(x.texto).replace(/\s+/g, " ")).slice(0, 25) : [];
-  const parecidos = sinPares ? "" : ejemplosTexto(similares(est, sinContestarTexto(msgs), 6, excluir));
+  const parecidos = sinPares ? "" : ejemplosTexto(similares(est, sinContestarTexto(msgs), 6, excluir, msgs));
   const charla = msgs.map((m) => `${m.yo ? "YO" : "CLIENTE"}: ${String(m.texto || `[${m.tipo}]`).replace(/\s+/g, " ").slice(0, 300)}`).join("\n");
   const ia = await iaJSON(env, `Sos el dueño de "Te Importamos" (importación por encargo desde China y catálogo con stock, Rosario, Argentina) contestando por WhatsApp. Escribí SOLO el próximo mensaje tuyo al cliente.
 Cómo escribo yo (copiá el tono y el largo, no las frases):
