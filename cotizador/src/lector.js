@@ -808,6 +808,13 @@ export async function apiLector(env, req, url, iaJSON) {
     if (r === "preguntar" && req.method === "POST") { const b = await req.json().catch(() => ({})); return json(await preguntarVendedor(env, iaJSON, b.pregunta)); }
   if (r === "seguimiento") return json(await seguimientos(env));
   if (r === "objetivos") return json(await avanceObjetivos(env));
+  if (r === "diag") {   // para ver por qué un chat figura como pendiente: /panel/api/805/diag?conv=549...
+    const conv = String(url.searchParams.get("conv") || "").replace(/\D/g, "");
+    const c = await env.DB.prepare("SELECT conv, nombre, ult_yo, ult_ts, ult_yo_ts, ult_cliente_ts, visto_ts, bot_ts, ult_texto, resp, puntaje FROM w_conv WHERE conv=?").bind(conv).first();
+    const hora = (t) => (t ? new Date(t - 3 * 3600e3).toISOString().replace("T", " ").slice(0, 16) + " (AR)" : "-");
+    const ms = ((await env.DB.prepare("SELECT yo, tipo, ts, substr(texto,1,60) t FROM w_msg WHERE conv=? ORDER BY ts DESC LIMIT 10").bind(conv).all()).results || []).map((m) => ({ quien: m.yo ? "NOSOTROS" : "cliente", tipo: m.tipo, cuando: hora(m.ts), texto: m.t }));
+    return json({ chat: c && { ...c, ult_ts: hora(c.ult_ts), ult_yo_ts: hora(c.ult_yo_ts), ult_cliente_ts: hora(c.ult_cliente_ts), visto_ts: hora(c.visto_ts), bot_ts: hora(c.bot_ts) }, ultimos_mensajes: ms });
+  }
   if (r === "ventas-dia") {   // ventas de un día (al tocar el gráfico del dashboard)
     const dd = /^\d{4}-\d{2}-\d{2}$/.test(url.searchParams.get("d") || "") ? url.searchParams.get("d") : diaAR(), ini = Date.parse(dd + "T00:00:00Z") + AR;
     const l = (await env.DB.prepare("SELECT h.id, h.ts, h.dato, h.conv, c.nombre, c.producto, c.perfil FROM w_hito h LEFT JOIN w_conv c ON c.conv=h.conv WHERE h.tipo='venta' AND h.ts>=? AND h.ts<? AND COALESCE(h.oculto,0)=0 AND COALESCE(c.prov,0)=0 ORDER BY h.ts").bind(ini, ini + 86400e3).all()).results || [];

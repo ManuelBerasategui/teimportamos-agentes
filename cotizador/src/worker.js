@@ -2499,12 +2499,6 @@ async function panelAPI(env, req, url, quien) {
   const ruta = url.pathname.replace("/panel/api/", "");
   await prepararTablas(env);
   if (ruta === "importar-viejos") return json({ n: (await importarViejos(env)) + (await limpiezaV13(env)) + (await reabrirV144(env)) });
-  if (ruta === "805/diag") {   // para ver por qué un chat figura como pendiente: ?conv=549...
-    const conv = String(url.searchParams.get("conv") || "").replace(/\D/g, "");
-    const c = await env.DB.prepare("SELECT conv, nombre, ult_yo, ult_ts, ult_yo_ts, ult_cliente_ts, visto_ts, bot_ts, ult_texto, resp, puntaje FROM w_conv WHERE conv=?").bind(conv).first();
-    const ms = ((await env.DB.prepare("SELECT yo, tipo, ts, substr(texto,1,60) t FROM w_msg WHERE conv=? ORDER BY ts DESC LIMIT 10").bind(conv).all()).results || []).map((m) => ({ ...m, cuando: new Date(m.ts - 3 * 3600e3).toISOString().replace("T", " ").slice(0, 16), quien: m.yo ? "NOSOTROS" : "cliente" }));
-    return json({ chat: c, ultimos_mensajes: ms });
-  }
   if (ruta === "web/metricas") return json(await metricasWeb(env, +url.searchParams.get("d") || 14));
   if (ruta === "estado") return json({ indexado: (await env.ESTADO.get("panel_indexado")) === "2", usuario: quien });
   if (ruta === "reindexar") return json(await reindexar(env, url.searchParams.get("desde") || ""));
