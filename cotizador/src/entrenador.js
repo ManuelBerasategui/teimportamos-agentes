@@ -114,7 +114,9 @@ export const PLAZOS = `PLAZOS DE ENTREGA (son los únicos que se pueden decir; m
 export const SOP_EMBUDO = `   a) Si el producto es vago (ej. "de silicona, varios colores y modelos", "algo así"): pedile fotos de referencia o, al menos, los nombres o modelos que busca.
    b) Si no dijo cantidad: preguntale cuántas unidades busca y, en el mismo mensaje, si lo quiere traer de China o de otro lado.
    c) Si lo quiere traer de un lugar que NO es China → accion "humano" (lo ve el dueño).
-   d) Si es de China: preguntale si tiene el link de Alibaba o algo del proveedor. Si NO lo tiene → accion "humano". Si lo tiene → pedile el precio FOB unitario y el peso del producto para cotizar directo.`;
+   d) Si es de China: preguntale si tiene el link de Alibaba o algo del proveedor. Si NO lo tiene → accion "humano". Si lo tiene → pedile el precio FOB unitario y el peso del producto para cotizar directo.
+   e) Si mandó fotos de los productos (con o sin cantidad): preguntale si tiene links de Alibaba de esos productos o si necesita que se los busquemos. Buscar por fotos lo hace el dueño: si contesta que no tiene links o que los busquen → accion "humano".
+   f) Si pide un rubro o varios productos genéricos (ej. "goma eva e insumos para espejos led") sin cantidad: preguntale qué cantidad busca de cada cosa o si tiene un presupuesto definido. No le pidas fotos como primer paso.`;
 export const OBJETIVO = `Cotizamos solos cuando el cliente manda link de Alibaba + cantidad, o cuando nos pasa peso del producto en gramos, cantidad de unidades y precio FOB unitario. Si falta algo, hay que conseguir esos 3 datos en la menor cantidad de mensajes: pedir TODO lo que falte junto en un solo mensaje y nunca pedir lo que ya dio.`;
 
 export async function juzgar(env, iaJSON, { msgs, mensaje, est, reglas = [], entiende = "" }) {

@@ -325,7 +325,7 @@ def main():
         for it in lista:
             try: d = api("/enviar/redactar", {"conv": it["conv"], "prueba": True})
             except Exception as e: print(f"\n- {it['nombre']} ({it['conv']}): el servidor no respondió a tiempo ({type(e).__name__}). Lo salto."); continue
-            print(f"\n- {it['nombre']} ({it['conv']}) dijo: {it['ultimo']}\n  → {d['accion'].upper()}: {d.get('mensaje') or d.get('motivo', '')}" + (f"\n  PARA VOS: {d.get('resumen') or d.get('motivo', '')}" if d['accion'] == 'humano' else ""))
+            print(f"\n- {it['nombre']} ({it['conv']}) dijo: {it['ultimo']}\n  → {d['accion'].upper()}: {d.get('mensaje') or d.get('motivo', '')}" + (f"\n  PARA VOS: {d.get('resumen') or d.get('motivo', '')}" if d['accion'] == 'humano' else "") + (f"\n  BORRADOR RECHAZADO: {d['borrador']}" if d.get('borrador') else "") + (f"\n  ENTENDIÓ: {d['entiende']}" if d.get('entiende') else ""))
         return
     if "--escritorio" in sys.argv: return main_escritorio(seguir)
     # La página ocupa la ventana real (antes era un tamaño fijo de 1200x800 y en pantallas chicas quedaba cortada la barra de escribir)
