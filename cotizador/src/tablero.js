@@ -57,11 +57,13 @@ export async function calcularDiaEquipo(env, dia) {
 export async function cronTablero(env) {
   if (!env.DB) return;
   await prepararTablero(env);
+  // Cuidado con el cupo gratis de D1 (5 millones de filas leídas por día): todo lo pesado corre espaciado.
+  const horaAR = new Date(Date.now() - AR).getUTCHours();
   const segAct = +((await kvGet(env, "tab_segs_ts")) || 0);
-  if (Date.now() - segAct > 3 * 60e3) await refrescarSegs(env).catch((e) => console.log("segs", e?.message || e));
+  if (horaAR >= 8 && horaAR < 24 && Date.now() - segAct > 20 * 60e3) await refrescarSegs(env).catch((e) => console.log("segs", e?.message || e));
   const ult = +((await kvGet(env, "tab_ult")) || 0);
-  if (Date.now() - ult < 10 * 60e3) return;
-  await perdidosAutomaticos(env).catch((e) => console.log("perdidos", e?.message || e));
+  if (Date.now() - ult < 15 * 60e3) return;
+  if ((await kvGet(env, "perdidos_dia")) !== diaAR()) { await perdidosAutomaticos(env).catch((e) => console.log("perdidos", e?.message || e)); await kvPut(env, "perdidos_dia", diaAR()); }
   await kvPut(env, "tab_ult", Date.now());
   const hoy = diaAR(), ayer = diaAR(Date.now() - DIA);
   await calcularDiaEquipo(env, hoy);
@@ -69,7 +71,8 @@ export async function cronTablero(env) {
   let primero = await kvGet(env, "eqdia_primero");
   if (!primero) { const r = await env.DB.prepare("SELECT MIN(ts) t FROM w_msg WHERE grupo=0 AND hist=0").first().catch(() => null); primero = r?.t ? diaAR(r.t) : hoy; await kvPut(env, "eqdia_primero", primero); }
   let hasta = (await kvGet(env, "eqdia_bf")) || ayer;   // último día ya rellenado hacia atrás
-  for (let i = 0; i < 15 && hasta > primero; i++) { hasta = diaAR(inicioDia(hasta) - DIA / 2); await calcularDiaEquipo(env, hasta); }
+  const minimo = diaAR(Date.now() - 150 * DIA); if (primero < minimo) primero = minimo;
+  for (let i = 0; i < 4 && hasta > primero; i++) { hasta = diaAR(inicioDia(hasta) - DIA / 2); await calcularDiaEquipo(env, hasta); }
   await kvPut(env, "eqdia_bf", hasta);
   await detectarOrigen(env).catch((e) => console.log("origen", e?.message || e));
 }
@@ -99,7 +102,9 @@ export async function perdidosAutomaticos(env) {
 // ---------------------------------------------------------------------------
 // Origen del lead: "(H3)" al final del mensaje precargado del link. También reconoce los textos de siempre.
 export async function detectarOrigen(env, limite = 80) {
-  const convs = await todas(env, "SELECT conv, origen FROM w_conv WHERE grupo=0 AND origen_cod IS NULL AND primer_ts>=? ORDER BY primer_ts DESC LIMIT ?", Date.now() - 90 * DIA, limite);
+  const completo = (await kvGet(env, "origen_bf")) === "1";   // después de la primera pasada solo mira los últimos 2 días
+  const convs = await todas(env, "SELECT conv, origen FROM w_conv WHERE grupo=0 AND origen_cod IS NULL AND primer_ts>=? ORDER BY primer_ts DESC LIMIT ?", Date.now() - (completo ? 2 : 90) * DIA, limite);
+  if (!convs.length && !completo) await kvPut(env, "origen_bf", "1");
   if (!convs.length) return 0;
   const cods = Object.fromEntries((await todas(env, "SELECT codigo, canal FROM origenes")).map((o) => [o.codigo, o.canal]));
   const ops = [];
@@ -131,7 +136,7 @@ const CATS = {
 export async function paraHacer(env) {
   const ahora = Date.now();
   const filas = await todas(env, `SELECT conv, nombre, producto, etapa, accion, puntaje, presup_usd, perfil, ult_yo, ult_texto, ult_cliente_ts, ult_yo_ts, cot_pend, visto_ts, cierre_ts
-    FROM w_conv WHERE grupo=0 AND archivado=0 AND COALESCE(prov,0)=0 AND ult_cliente_ts>=? AND COALESCE(etapa,'') NOT IN ('vendido','perdido','no_cliente')`, ahora - 14 * DIA);
+    FROM w_conv WHERE ult_cliente_ts>=? AND grupo=0 AND archivado=0 AND COALESCE(prov,0)=0 AND COALESCE(etapa,'') NOT IN ('vendido','perdido','no_cliente')`, ahora - 10 * DIA);
   const items = new Map();
   const poner = (cat, c, extra = {}) => {
     const prev = items.get(c.conv);
@@ -170,6 +175,7 @@ export async function paraHacer(env) {
 export async function marcar(env, accion, b, quien) {
   await prepararTablero(env);
   const conv = String(b.conv || "").replace(/\D/g, ""), ahora = Date.now();
+  await kvPut(env, "tab_mark", ahora);
   const cerrarTareas = env.DB.prepare("UPDATE tareas SET estado='resuelta' WHERE (ref=? OR tel=?) AND estado='abierta'").bind("w805:" + conv, conv);
   if (accion === "listo") {
     if (!conv) return { error: "falta el chat" };
@@ -280,6 +286,14 @@ export async function links(env) {
 // Pantalla Hoy en una sola llamada
 export async function hoy(env, liviano = false) {
   await prepararTablero(env);
+  const m = await env.DB.prepare("SELECT MAX(ult_ts) t FROM w_conv").first().catch(() => null);
+  const clave = [m?.t || 0, (await kvGet(env, "tab_segs_ts")) || 0, (await kvGet(env, "tab_mark")) || 0, diaAR()].join("|");
+  if (liviano) { try { const c = JSON.parse((await kvGet(env, "tab_hoy")) || "null"); if (c && c.clave === clave) return { ...c.data, cache: true }; } catch {} }
+  const data = await hoyCalcular(env, liviano);
+  await kvPut(env, "tab_hoy", JSON.stringify({ clave, data: { ...data, ia: null } })).catch(() => {});
+  return data;
+}
+async function hoyCalcular(env, liviano) {
   const [ph, eq, lect, ultMsg, ia] = await Promise.all([
     paraHacer(env),
     todas(env, "SELECT dia, persona, chats, mensajes FROM eq_dia WHERE dia IN (?, ?)", diaAR(), diaAR(Date.now() - DIA)),

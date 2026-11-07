@@ -30,11 +30,19 @@ async function llamar(p, texto, opts, conFormato = true) {
   return r;
 }
 
+// Estado chico: en D1 si está (100.000 escrituras gratis por día); si no, en KV
+function almacen(env) {
+  if (env?.DB) return {
+    get: async (k) => { const r = await env.DB.prepare("SELECT v, exp FROM kv WHERE k=?").bind(k).first().catch(() => null); return r && (!r.exp || r.exp > Date.now()) ? r.v : null; },
+    put: async (k, v, o = {}) => { await env.DB.prepare("INSERT OR REPLACE INTO kv (k, v, exp) VALUES (?,?,?)").bind(k, String(v), o.expirationTtl ? Date.now() + o.expirationTtl * 1000 : null).run().catch(() => {}); },
+  };
+  return env?.ESTADO || null;
+}
 export async function altIA(env, prompt, opts = {}) {
   const lista = proveedores(env);
   if (!lista.length) return null;
   const texto = String(prompt).length > 60000 ? String(prompt).slice(0, 30000) + " [...recortado...] " + String(prompt).slice(-28000) : String(prompt);
-  const E = env.ESTADO, tope = +(env.ALT_MAX_FONDO || 300);
+  const E = almacen(env), tope = +(env.ALT_MAX_FONDO || 300);
   for (const p of lista) {
     try {
       if (E && (await E.get("altago:" + p.id))) continue;                       // sin cupo hace poco: descansa
@@ -56,8 +64,8 @@ export async function altIA(env, prompt, opts = {}) {
 
 // Para el panel: qué IA hay disponible ahora
 export async function estadoIA(env) {
-  const E = env.ESTADO, dia = diaAR();
-  const gem = E ? (await E.list({ prefix: "agotado:" })).keys.length : 0;
+  const E = almacen(env), dia = diaAR();
+  const gem = env.ESTADO ? (await env.ESTADO.list({ prefix: "agotado:" })).keys.length : 0;
   const alt = [];
   for (const p of proveedores(env)) alt.push({ id: p.id, descansando: E ? !!(await E.get("altago:" + p.id)) : false, usosHoy: E ? +((await E.get(`altdia:${p.id}:${dia}`)) || 0) : 0 });
   let ultimo = null; try { ultimo = JSON.parse((E && (await E.get("ia_ultimo"))) || "null"); } catch {}
