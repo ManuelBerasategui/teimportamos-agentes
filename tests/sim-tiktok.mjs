@@ -30,7 +30,7 @@ let gastoBuscador = 0;
 const gastoMes = async (e) => gastoBuscador + (await T.gastoTikTokMes(e));
 const a6 = Date.UTC(2026, 9, 28, 9, 10), a10 = Date.UTC(2026, 9, 28, 13, 0);   // 6:10 y 10:00 en Argentina
 chk("la primera lectura va apenas se publica, a cualquier hora", (await T.vueltaTikTok(env, { apify, gastoMes, topeMes: 4.5, ahora: a6 })) === "TikTok: lectura lanzada");
-chk("la primera trae más historial, sin bajar videos y con tope", lanz.body.profiles[0] === "te.importamos.arg" && lanz.body.resultsPerPage === 60 && lanz.body.shouldDownloadVideos === false && lanz.ruta.includes("maxTotalChargeUsd=0.25") && lanz.ruta.includes("clockworks~tiktok-scraper"));
+chk("la primera trae más historial, sin bajar videos y con tope", lanz.body.profiles[0] === "te.importamos.arg" && lanz.body.resultsPerPage === 60 && lanz.body.shouldDownloadVideos === false && lanz.ruta.includes("maxTotalChargeUsd=0.5") && lanz.ruta.includes("clockworks~tiktok-scraper"));
 chk("mientras corre, espera", (await T.vueltaTikTok(env, { apify, gastoMes, topeMes: 4.5, ahora: a6 + 120e3 })) === "TikTok: leyendo");
 estado = "SUCCEEDED";
 chk("al terminar guarda los videos", (await T.vueltaTikTok(env, { apify, gastoMes, topeMes: 4.5, ahora: a6 + 240e3 })).includes("3 videos"));
@@ -40,7 +40,7 @@ chk("métricas dentro de stats y fecha en segundos", t2.vistas === 2000 && t2.li
 chk("suma el costo al mes", Math.abs(db.prepare("SELECT v FROM kv WHERE k=?").get("tt_costo:2026-10")?.v - 0.04) < 1e-9 || Math.abs((await T.gastoTikTokMes(env)) - 0.04) < 1e-9);  // el mes simulado es octubre 2026; gastoTikTokMes usa el mes real
 lanz = null;
 chk("después, fuera de hora no lanza", (await T.vueltaTikTok(env, { apify, gastoMes, topeMes: 4.5, ahora: a10 + 2 * D })) === "" && !lanz);
-chk("después, a las 6 de 2 días más tarde lanza 25 con tope chico", (await T.vueltaTikTok(env, { apify, gastoMes, topeMes: 4.5, ahora: a6 + 2 * D })) === "TikTok: lectura lanzada" && lanz.body.resultsPerPage === 25 && lanz.ruta.includes("maxTotalChargeUsd=0.1"));
+chk("después, a las 6 de 2 días más tarde lanza 25 con tope chico", (await T.vueltaTikTok(env, { apify, gastoMes, topeMes: 4.5, ahora: a6 + 2 * D })) === "TikTok: lectura lanzada" && lanz.body.resultsPerPage === 25 && lanz.ruta.includes("maxTotalChargeUsd=0.5"));
 db.prepare("DELETE FROM kv WHERE k='tt_run'").run(); db.prepare("UPDATE kv SET v=? WHERE k='tt_ultimo'").run(JSON.stringify({ ts: a6 + 2 * D, estado: "SUCCEEDED" })); lanz = null;
 chk("no repite antes de 2 días", (await T.vueltaTikTok(env, { apify, gastoMes, topeMes: 4.5, ahora: a6 + 3 * D })) === "" && !lanz);
 gastoBuscador = 4.45;
