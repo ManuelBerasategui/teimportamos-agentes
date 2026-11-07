@@ -117,7 +117,7 @@ export async function paraHacer(env) {
     if (c.ult_yo || (c.ult_yo_ts || 0) > (c.ult_cliente_ts || 0)) continue;              // lo último lo escribimos nosotros
     if ((c.cierre_ts || 0) >= (c.ult_cliente_ts || 0) || (c.visto_ts || 0) >= (c.ult_cliente_ts || 0)) continue;   // ya marcado como listo
     if (esCierre(c.ult_texto) || RE_SPAM.test(c.ult_texto || "") || RE_NO_VENDEMOS.test(c.producto || "")) continue;
-    if (RE_PAGO.test(c.ult_texto || "")) poner("pago", c);
+    if (RE_PAGO.test(c.ult_texto || "") || RE_PAGO.test(c.accion || "")) poner("pago", c);
     else if (["cotizado", "negociando"].includes(c.etapa)) poner("cotizado", c);
     else if (c.cot_pend || c.etapa === "falta_cotizar") poner("cotizar", c);
     else poner("consulta", c);
