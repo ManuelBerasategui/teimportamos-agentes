@@ -254,7 +254,7 @@ Devolvé JSON: {"puntaje":1-10,"fallas":["falla corta"],"regla":"una regla corta
 export async function modelosAgotados(env) { try { return ((await env.ESTADO?.list({ prefix: "agotado:" }))?.keys || []).map((k) => k.name.slice(8)); } catch { return []; } }
 export async function rondaEntrenamiento(env, iaBase, decidir, opts = {}) {
   const ahora = opts.ahora || Date.now(), kDia = "ent:usos:" + new Date(ahora - 3 * 3600e3).toISOString().slice(0, 10);
-  const usadosDia = +((await kvGet(env, kDia)) || 0), topeDia = +(env.ENT_MAX_DIA || 600);
+  const usadosDia = +((await kvGet(env, kDia)) || 0), topeDia = +(env.ENT_MAX_DIA || 250);
   if (usadosDia >= topeDia) return { nota: `hoy ya usé ${usadosDia} llamadas a la IA para entrenar (tope ${topeDia}); sigo mañana para no dejar sin cupo al contestador` };
   // El cupo gratis de Gemini es compartido con el contestador de los clientes: si ya hay modelos agotados, el entrenamiento no gasta más.
   const agot = await modelosAgotados(env);

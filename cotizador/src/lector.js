@@ -1303,9 +1303,14 @@ Respondé JSON: {"respuesta":"texto","guardar":[{"tipo":"decision|preferencia|ap
 // 11) Equipo: quién atiende, por dispositivo vinculado del 805 (desde el 14/10/2026)
 // Completá los números cuando sepas de quién es cada dispositivo
 // ---------------------------------------------------------------------------
-const EQUIPO_DISP = { "0":"Manuel","29":"Manuel","31":"Manuel","6":"Matías","20":"Matías","30":"Matías","42":"Manuel", "47":"Manuel","36":"Manuel","43":"Manuel", "44":"Manuel", 37:"Manuel", 39:"Manuel", 45:"Manuel", "99":null }
-const nombreDisp = (autor) => { const d = (String(autor || "").match(/:(\d+)/) || [])[1]; if (d === undefined) return null; if (d in EQUIPO_DISP && !EQUIPO_DISP[d]) return ""; return EQUIPO_DISP[d] || (d === "0" ? "Celular del 805" : "Sin identificar (dispositivo " + d + ")"); };
+const EQUIPO_DISP = { "48":"Manuel","49":"Manuel","50":"Manuel","51":"Manuel","52":"Manuel","53":"Manuel","54":"Manuel","55":"Manuel", "0":"Manuel","29":"Manuel","31":"Manuel","6":"Matías","20":"Matías","30":"Matías","42":"Manuel", "47":"Manuel","36":"Manuel","43":"Manuel", "44":"Manuel", 37:"Manuel", 39:"Manuel", 45:"Manuel", "99":null }
+// Asignaciones hechas desde el panel nuevo (kv equipo_disp): mandan sobre la lista fija
+let DISP_EXTRA = {};
+export async function cargarMapaEquipo(env) { try { DISP_EXTRA = JSON.parse((await kvGet(env, "equipo_disp")) || "{}") || {}; } catch { DISP_EXTRA = {}; } }
+export const esBotTexto = (t) => esBot(t);
+export const nombreDisp = (autor) => { const d = (String(autor || "").match(/:(\d+)/) || [])[1]; if (d === undefined) return null; if (d in DISP_EXTRA) return DISP_EXTRA[d] || ""; if (d in EQUIPO_DISP && !EQUIPO_DISP[d]) return ""; return EQUIPO_DISP[d] || (d === "0" ? "Celular del 805" : "Sin identificar (dispositivo " + d + ")"); };
 export async function metricasEquipo(env, desde) {
+  await cargarMapaEquipo(env);
   const k = "equipo_cache:" + desde, c = JSON.parse((await kvGet(env, k)) || "null");
   if (c && Date.now() - c.ts < 10 * 60e3) return c.d;
   const ms = (await leerPrivados(env, "SELECT conv, yo, autor, texto, ts FROM w_msg WHERE ts>=? AND grupo=0 AND hist=0 ORDER BY conv, ts LIMIT 40000", desde)).results || [];

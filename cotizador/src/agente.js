@@ -3,10 +3,12 @@
 // (ag_chat y ag_mem). Todos los números los calcula el código; la IA solo los interpreta con los manuales.
 import { preguntarVendedor } from "./lector.js";
 import { contextoRedesAgente, MANUAL_REDES } from "./redes.js";
+import { contextoTablero } from "./tablero.js";
 
 export async function preguntarAgente(env, iaJSON, pregunta) {
   const redes = await contextoRedesAgente(env).catch((e) => `REDES: no pude leer los datos (${String(e?.message || e).slice(0, 120)}).`);
-  return preguntarVendedor(env, iaJSON, pregunta, { redes, manualRedes: MANUAL_REDES });
+  const tablero = await contextoTablero(env);
+  return preguntarVendedor(env, iaJSON, pregunta, { redes: tablero + "\n\n" + redes, manualRedes: MANUAL_REDES });
 }
 
 // Últimos mensajes de la charla con el agente (para el panel)

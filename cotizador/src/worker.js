@@ -7,6 +7,8 @@ import { apiVideos, rutaVideosEditor, cronVideos, despertarEditor } from "./vide
 import { conApp, rutaApp } from "./app.js";
 import { metricasWeb, PANEL_WEB } from "./posthog.js";
 import { altIA } from "./ia-alterna.js";
+import { apiTablero, cronTablero } from "./tablero.js";
+import { PANEL_P } from "./panel-p.js";
 import { rutaTelegram, apiAsistente, cronAsistente } from "./asistente.js";
 import { preguntarAgente, charlaAgente } from "./agente.js";
 import { apiGrupos, cronGrupos } from "./grupos.js";
@@ -3580,6 +3582,7 @@ export default {
       if (m % 5 === 0) await correrSeguimientos(env).catch((e) => console.log("Error seguimientos:", e?.stack || e));
       await procesarBuffers(env).catch((e) => console.log("Error red:", e?.stack || e));
       await cronLector(env, iaJSON, evento.scheduledTime || Date.now()).catch((e) => console.log("Error lector 805:", e?.stack || e));
+      await cronTablero(env).catch((e) => console.log("Error tablero:", e?.stack || e));
       // Entrenamiento del contestador: de noche y cuando se pide (rondas chicas, una por minuto)
       await claveNueva(env).catch(() => {});   // clave de Gemini cambiada: limpia los avisos viejos sin esperar a que alguien use la IA
       if (env.DB && env.LECTOR_TOKEN) await cronEntrenador(env, iaJSON, (ctx, ia) => simularRedactar(env, ia, ctx, T), evento.scheduledTime || Date.now()).catch((e) => console.log("Error entrenador:", e?.stack || e));
@@ -3644,6 +3647,7 @@ export default {
         (Object.entries(us).map(([u, p]) => `- "${u}" con contraseña de ${p.length} caracteres (empieza con "${p[0] || ""}" y termina con "${p.slice(-1)}")`).join("\n") || "(ninguno: revisá el formato usuario:contraseña)"),
         { headers: { "Content-Type": "text/plain; charset=utf-8" } });
     }
+    if (url.pathname === "/p" || url.pathname === "/p/") return Response.redirect(new URL("/panel/p", url).toString(), 302);
     if (url.pathname === "/login") return login(env, req, url);
     if (url.pathname === "/logout") return new Response(null, { status: 303, headers: { Location: "/login", "Set-Cookie": "ti_sesion=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax" } });
     if (url.pathname.startsWith("/panel")) {
@@ -3651,6 +3655,8 @@ export default {
       if (!quien) return url.pathname === "/panel" ? Response.redirect(new URL(`/login?volver=${encodeURIComponent(url.pathname + url.search)}`, url).toString(), 303) : new Response("Iniciá sesión", { status: 401 });
       url.searchParams.set("quien", quien);
     }
+    if (url.pathname === "/panel/p") return new Response(conApp(PANEL_P), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
+    if (url.pathname.startsWith("/panel/p/api/")) return apiTablero(env, req, url, url.searchParams.get("quien"));
     if (url.pathname === "/panel/media") {
       try {
         const H = { Authorization: `Bearer ${env.WA_TOKEN}` };
