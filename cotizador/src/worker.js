@@ -3656,7 +3656,7 @@ export default {
       url.searchParams.set("quien", quien);
     }
     if (url.pathname === "/panel" || url.pathname === "/panel/p") return new Response(conApp(PANEL_P), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
-    if (url.pathname.startsWith("/panel/p/api/")) return apiTablero(env, req, url, url.searchParams.get("quien"), iaJSON);
+    if (url.pathname.startsWith("/panel/p/api/")) return apiTablero(env, req, url, url.searchParams.get("quien"), iaJSON).catch((e) => Response.json({ error: String(e?.message || e).slice(0, 400) }, { status: 500 }));
     if (url.pathname === "/panel/media") {
       try {
         const H = { Authorization: `Bearer ${env.WA_TOKEN}` };
