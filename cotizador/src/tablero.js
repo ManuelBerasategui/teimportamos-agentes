@@ -131,7 +131,8 @@ export async function paraHacer(env) {
     const c = { conv: s.conv, nombre: s.nombre, producto: s.producto, accion: s.dueno ? (s.llamada || "Pedido grande o negociación: conviene llamarlo") : (s.sit_texto || "Toca seguimiento"), puntaje: s.puntaje, presup_usd: s.presup_usd, ult_texto: s.ult_texto };
     poner(s.dueno ? "llamar" : "seguimiento", c, { borrador: s.borrador || "", toque: s.toque || 1, dias: s.dias_cot ?? null });
   }
-  const lista = [...items.values()].sort((a, b) => CATS[a.cat].orden - CATS[b.cat].orden || b.puntaje - a.puntaje || b.usd - a.usd || b.espera_h - a.espera_h);
+  const porValor = new Set(["llamar", "seguimiento"]);   // en estas manda la plata en juego; en las demás, qué tan caliente está y cuánto espera
+  const lista = [...items.values()].sort((a, b) => CATS[a.cat].orden - CATS[b.cat].orden || (porValor.has(a.cat) ? b.usd - a.usd || b.puntaje - a.puntaje : b.puntaje - a.puntaje || b.espera_h - a.espera_h));
   return { lista: lista.slice(0, 150), categorias: CATS };
 }
 
