@@ -112,7 +112,7 @@ export async function vueltaTikTok(env, { apify, gastoMes, topeMes, ahora = Date
   const cuantos = !ult ? TIKTOK.videosPrimera : TIKTOK.videos, tope = !ult ? TIKTOK.usdPrimera : TIKTOK.usdPorRun;
   const gasto = await gastoMes(env);
   if (gasto + tope > topeMes) return avisar(env, `TikTok: tope de Apify del mes alcanzado (USD ${gasto.toFixed(2)} de ${topeMes}). Vuelve a leer el mes que viene o subí MAX_USD_MES.`, ahora);
-  const q = new URLSearchParams({ maxItems: String(cuantos), maxTotalChargeUsd: String(tope), timeout: "600" });
+  const q = new URLSearchParams({ maxItems: String(cuantos), maxTotalChargeUsd: String(Math.max(0.5, tope)), timeout: "600" });
   const r = await apify(env, `/acts/${env.ACTOR_TIKTOK || TIKTOK.actor}/runs?${q}`, { method: "POST", body: JSON.stringify({
     profiles: [env.TIKTOK_USUARIO || TIKTOK.usuario], profileScrapeSections: ["videos"], profileSorting: "latest", resultsPerPage: cuantos,
     shouldDownloadVideos: false, shouldDownloadCovers: false, shouldDownloadSubtitles: false, shouldDownloadSlideshowImages: false, shouldDownloadAvatars: false,

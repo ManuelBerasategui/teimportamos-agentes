@@ -301,8 +301,17 @@ async function hoyCalcular(env, liviano) {
     env.DB.prepare("SELECT MAX(ts) t FROM w_msg").first().catch(() => null),
     liviano ? null : estadoIA(env).catch(() => null),
   ]);
+  let redes = null;
+  if (!liviano) {
+    const s7 = Date.now() - 7 * DIA, uno = (sql, ...b) => env.DB.prepare(sql).bind(...b).first().catch(() => null);
+    const [ig, igAct, tt, ttUlt, ttAviso] = await Promise.all([
+      uno("SELECT COUNT(*) n, SUM(alcance) alcance FROM ig_posts WHERE ts>=?", s7), uno("SELECT MAX(actualizado) t FROM ig_posts"),
+      uno("SELECT COUNT(*) n, SUM(vistas) vistas, MAX(ts) ult FROM tt_posts WHERE ts>=?", s7), kvGet(env, "tt_ultimo"), kvGet(env, "tt_aviso")]);
+    let tu = null; try { tu = JSON.parse(ttUlt || "null"); } catch {}
+    redes = { ig: { videos7: ig?.n || 0, alcance7: ig?.alcance || 0, leido: igAct?.t || 0 }, tt: { videos7: tt?.n || 0, vistas7: tt?.vistas || 0, leido: tu?.ts || 0, estado: tu?.estado || "", aviso: String(ttAviso || "").replace(/^\{.*"texto":"?|"?\}$/g, "").slice(0, 160) } };
+  }
   let lector = null; try { lector = JSON.parse(lect || "null"); } catch {}
-  return { ...ph, equipo: eq, hoy: diaAR(), lector: { evento: lector?.evento || "", ultimoMensaje: ultMsg?.t || 0 }, ia };
+  return { ...ph, redes, equipo: eq, hoy: diaAR(), lector: { evento: lector?.evento || "", ultimoMensaje: ultMsg?.t || 0 }, ia };
 }
 
 // Resumen para el agente: números reales, no estimados
