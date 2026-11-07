@@ -206,7 +206,7 @@ export async function seguimientosHoy(env, iaJSON, { desde = 0, cuantos = SEG_TG
 // Para el panel (Hoy › Seguimientos): los mismos que van por Telegram, con el mensaje escrito
 export async function seguimientosPanel(env, iaJSON) {
   let l = []; try { l = await revisarSeguimientos(env, iaJSON, { limite: 0 }); } catch {}
-  return l.map((s) => ({ conv: s.conv, nombre: s.nombre, producto: s.producto, cantidad: s.cantidad, total: s.total, reaccion: s.reaccion, toque: s.toque, perfil: s.perfil, presup_usd: s.presup_usd, dias_cot: s.dias_cot, dias_sin: s.dias_sin, borrador: s.borrador || "", linea: lineaSeguimiento(s) }));
+  return l.map((s) => ({ conv: s.conv, nombre: s.nombre, producto: s.producto, cantidad: s.cantidad, total: s.total, reaccion: s.reaccion, toque: s.toque, perfil: s.perfil, presup_usd: s.presup_usd, dias_cot: s.dias_cot, dias_sin: s.dias_sin, borrador: s.borrador || "", situacion: s.situacion || 0, sit_texto: s.sit_texto || "", dueno: !!s.dueno, llamada: s.llamada || "", linea: lineaSeguimiento(s) }));
 }
 // Botones ✅ / 🚫 de la lista de Telegram
 async function botonSeguimiento(env, cb) {

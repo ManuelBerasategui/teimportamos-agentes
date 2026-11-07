@@ -8,6 +8,8 @@ import random, re, sys, time, urllib.parse
 from datetime import datetime
 import json, urllib.request
 from enviar import api, parar, AQUI, H_DESDE, H_HASTA, URL, TOKEN, variar, os
+# Sin horario: si lo prendés, corre. Para volver a usar HORA_DESDE/HORA_HASTA del .env poné RESP_HORARIO=1
+if os.environ.get("RESP_HORARIO", "0") != "1": H_DESDE, H_HASTA = 0, 24
 from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 
 EXTRA_SEG = int(os.environ.get("RESP_EXTRA_SEG", "2"))          # segundos de más "leyendo" antes de escribir

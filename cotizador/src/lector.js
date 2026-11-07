@@ -60,7 +60,7 @@ export async function prepararLector(env) {
     env.DB.prepare("CREATE TABLE IF NOT EXISTS reportes (id TEXT PRIMARY KEY, tipo TEXT, desde INTEGER, hasta INTEGER, creado INTEGER, datos TEXT)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT, exp INTEGER)"),
   ]);
-    for (const col of ["resp INTEGER", "visto_ts INTEGER DEFAULT 0", "prov INTEGER DEFAULT 0", "visto_esc INTEGER DEFAULT 0", "visto_cot INTEGER DEFAULT 0", "nuevo_ok INTEGER", "perfil TEXT", "presup_usd INTEGER", "origen TEXT", "motivo TEXT", "seg_visto INTEGER DEFAULT 0", "seg_no INTEGER DEFAULT 0", "bot_ts INTEGER DEFAULT 0"]) await env.DB.prepare(`ALTER TABLE w_conv ADD COLUMN ${col}`).run().catch(() => {});
+    for (const col of ["resp INTEGER", "visto_ts INTEGER DEFAULT 0", "prov INTEGER DEFAULT 0", "visto_esc INTEGER DEFAULT 0", "visto_cot INTEGER DEFAULT 0", "nuevo_ok INTEGER", "perfil TEXT", "presup_usd INTEGER", "origen TEXT", "motivo TEXT", "seg_visto INTEGER DEFAULT 0", "seg_no INTEGER DEFAULT 0", "bot_ts INTEGER DEFAULT 0", "seg_situacion TEXT"]) await env.DB.prepare(`ALTER TABLE w_conv ADD COLUMN ${col}`).run().catch(() => {});
   // Una sola vez: marca los chats recientes donde el último aviso fue el del bot de Meta (bot_ts), para que se atiendan primero
   if (!(await env.DB.prepare("SELECT 1 FROM kv WHERE k='bot_ts_listo'").first().catch(() => null))) {
     await env.DB.prepare("UPDATE w_conv SET bot_ts = COALESCE((SELECT MAX(m.ts) FROM w_msg m WHERE m.conv=w_conv.conv AND m.yo=1 AND (m.texto LIKE 'Te voy a derivar con alguien del equipo%' OR m.texto LIKE '%Bienvenid%derivar con alguien%')),0) WHERE ult_cliente_ts>=?").bind(Date.now() - 14 * 86400e3).run().catch(() => {});
@@ -136,13 +136,14 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
   // Programita de la PC (carpeta sender/): pide la lista de seguimientos y marca cada uno. Acá NO se envía nada.
   if (p === "/enviar/lista") {
     const lim = Math.min(Math.max(+url.searchParams.get("limite") || 20, 1), 100);
-    const lista = (await seguimientos(env)).filter((s) => /^\d{8,15}$/.test(String(s.conv)) && s.borrador).slice(0, lim)
+    const lista = (await seguimientosAuto805(env)).filter((s) => /^\d{8,15}$/.test(String(s.conv)) && s.borrador).slice(0, lim)
       .map((s) => ({ conv: s.conv, nombre: s.nombre, producto: s.producto, toque: s.toque, borrador: s.borrador }));
     return Response.json({ ok: true, lista });
   }
   if ((p === "/enviar/hecho" || p === "/enviar/no") && req.method === "POST") {
     const b = await req.json().catch(() => ({}));
     await env.DB.prepare(p === "/enviar/hecho" ? "UPDATE w_conv SET seg_visto=? WHERE conv=?" : "UPDATE w_conv SET seg_no=? WHERE conv=?").bind(Date.now(), String(b.conv || "")).run();
+    if (p === "/enviar/hecho") await logSeg(env, String(b.conv || ""), "auto");
     return Response.json({ ok: true });
   }
   return new Response("no existe", { status: 404 });
@@ -826,7 +827,13 @@ export async function apiLector(env, req, url, iaJSON) {
     return json({ objetivos, seguimientos: segs, perfil });
   }
   if (r === "seguimiento-no" && req.method === "POST") { const b = await req.json().catch(() => ({})); await env.DB.prepare("UPDATE w_conv SET seg_no=? WHERE conv=?").bind(Date.now(), String(b.conv || "")).run(); return json({ ok: true }); }
-  if (r === "seguimiento-listo" && req.method === "POST") { const b = await req.json().catch(() => ({})); await env.DB.prepare("UPDATE w_conv SET seg_visto=? WHERE conv=?").bind(Date.now(), String(b.conv || "")).run(); return json({ ok: true }); }
+  if (r === "seguimiento-listo" && req.method === "POST") { const b = await req.json().catch(() => ({})); await env.DB.prepare("UPDATE w_conv SET seg_visto=? WHERE conv=?").bind(Date.now(), String(b.conv || "")).run();
+    // "Listo" con el borrador de la IA = salió bien (suma para el envío automático); "Mal" vuelve a cero
+    if (b.bien !== false) await kvPut(env, "seg_buenos", String((parseInt((await kvGet(env, "seg_buenos")) || "0") || 0) + 1)); else await kvPut(env, "seg_buenos", "0");
+    await logSeg(env, String(b.conv || ""), b.bien === false ? "dueno-mal" : "dueno"); return json({ ok: true, buenos: parseInt((await kvGet(env, "seg_buenos")) || "0") || 0 }); }
+  if (r === "seguimiento-mal" && req.method === "POST") { await kvPut(env, "seg_buenos", "0"); return json({ ok: true, buenos: 0 }); }
+  if (r === "seguimiento-oferta" && req.method === "POST") { const b = await req.json().catch(() => ({})); await kvPut(env, "seg_oferta", b.on === false ? "0" : "1"); return json({ ok: true, oferta: b.on !== false }); }
+  if (r === "seg-reporte") return json(await reporteSeguimientos(env));
   if (r === "equipo") { const p = url.searchParams.get("p") || "semana", hoy = inicioDiaAR(); return json(await metricasEquipo(env, p === "dia" ? hoy : p === "mes" ? hoy - 29 * 86400e3 : hoy - 6 * 86400e3)); }
   if (r === "objetivo-borrar" && req.method === "POST") { const b = await req.json().catch(() => ({})); await env.DB.prepare("UPDATE ag_obj SET activo=0 WHERE id=?").bind(+b.id || 0).run(); return json({ ok: true }); }
   if (r === "reparar" && req.method === "POST") { const corregidos = await repararPropios(env); return json({ ok: true, corregidos, cotizaciones: await recalcularCotizaciones(env) }); }
@@ -926,7 +933,13 @@ PARTE 4 · COMO LE RESPONDES A MANUEL
 //    y saca qué le mandamos (producto, cantidad y monto) + el mensaje listo. Lo que descarta no vuelve a
 //    aparecer ese día en ningún lado (Telegram, panel, agente).
 const RE_PREG_SEG = /seguimiento|(cotiz\w*|precio|info\w*).{0,80}(no (contest|respond)\w*|gracias|seguir|escribir)|(no (contest|respond)\w*|dijeron gracias).{0,80}(cotiz|precio|info)|a quien (le )?(tengo|tenemos|hay) que (escribir|seguir)/;
-const SEG = { dias: 30, esperas: [1, 2, 4, 7], revisarPorLlamada: 40, revisarPorCron: 20, porLlamada: 10 };
+// Máximo 3 toques por cotización: 1) a las 24-48 h, 2) unos 3 días después (4-5 días), 3) 4 días más (8-10): el tercero es de cierre con opciones
+const SEG = { dias: 30, esperas: [1, 3, 4], revisarPorLlamada: 40, revisarPorCron: 20, porLlamada: 8, buenosParaAuto: 10 };
+// Situaciones (se guardan en w_conv.seg_situacion para medir). Solo 2, 3 y 6 pueden salir solas (después de 10 buenos seguidos).
+export const SITUACIONES = { 1: "pendiente nuestro", 2: "cotizado, silencio", 3: "cierre blando", 4: "consulta con un tercero", 5: "objeción", 6: "esperamos algo del cliente", 7: "pidió fecha futura", 8: "negociación con monto alto" };
+const SIT_AUTO = new Set([2, 3, 6]);
+// Va al dueño (no sale solo): pedido grande, perfil A/B (Mercado Libre o empresa) o lo que la IA marcó (negociación, reclamo, pide llamada/factura/referencias)
+export const vaAlDueno = (s, c) => !!(c?.dueno || Number(c?.situacion) === 8 || (s.presup_usd || 0) > 1000 || s.perfil === "A" || s.perfil === "B");
 // "Gracias", "dale", "lo veo", "después te digo", "ahí me fijo": no pide respuesta, la pelota sigue del lado del cliente
 const RE_ACUSE = /^\s*(ok(a|ey|is)?|okay|dale|gracias|graciass*|muchas gracias|mil gracias|genial|perfecto|buen[ií]simo|bueno|b[aá]rbaro|joya|listo|de una|lo veo|lo pienso|lo charlo|lo hablo|lo consulto|te aviso|te confirmo|cualquier cosa|despu[eé]s (te|vemos|lo)|ah[ií] (me fijo|veo|lo veo)|voy a ver|veo y te|ma[nñ]ana te|en la semana te|👍|🙏|🙌|👌)/i;
 const RE_ACUSE_EN = /(despu[eé]s te (respondo|aviso|digo|escribo|confirmo)|despu[eé]s vemos|lo veo y te|lo (pienso|charlo|hablo|consulto)|te (aviso|confirmo|digo)\b|ah[ií] me fijo|voy a ver|veo bien|en la semana|ma[nñ]ana te|cualquier cosa te|qu[eé] s[eé] yo)/i;
@@ -947,6 +960,26 @@ function queMandamos(m) {
   if (/^\((archivo|image|imagen|document|documento|pdf)\)/i.test(t)) return "archivo";
   if (RE_INFO_ENV.test(t) && t.length >= 25) return "info";
   return "";
+}
+// Registro de cada seguimiento enviado (toque, situación) para medir: respondió a las 48 h / 7 días, avanzó o compró
+async function logSeg(env, conv, quien) {
+  if (!conv) return;
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS w_seg_log (id TEXT PRIMARY KEY, conv TEXT, ts INTEGER, toque INTEGER, situacion TEXT, quien TEXT, texto TEXT)").run().catch(() => {});
+  const cache = await cacheSegIA(env).catch(() => ({})), c = cache[conv] || {};
+  const f = await env.DB.prepare("SELECT seg_situacion FROM w_conv WHERE conv=?").bind(conv).first().catch(() => null);
+  await env.DB.prepare("INSERT OR REPLACE INTO w_seg_log (id, conv, ts, toque, situacion, quien, texto) VALUES (?,?,?,?,?,?,?)")
+    .bind(`${conv}:${Date.now()}`, conv, Date.now(), c.toque || 0, String(c.situacion || f?.seg_situacion || ""), quien, String(c.mensaje || "").slice(0, 500)).run().catch(() => {});
+}
+// Reporte: por situación, cuántos seguimientos, cuántos respondieron en 48 h y cuántos compraron después
+export async function reporteSeguimientos(env, dias = 30) {
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS w_seg_log (id TEXT PRIMARY KEY, conv TEXT, ts INTEGER, toque INTEGER, situacion TEXT, quien TEXT, texto TEXT)").run().catch(() => {});
+  const desde = Date.now() - dias * 86400e3;
+  const filas = (await env.DB.prepare(`SELECT l.situacion sit, COUNT(*) n,
+      SUM(CASE WHEN EXISTS (SELECT 1 FROM w_msg m WHERE m.conv=l.conv AND m.yo=0 AND m.ts>l.ts AND m.ts<l.ts+172800000) THEN 1 ELSE 0 END) resp48,
+      SUM(CASE WHEN EXISTS (SELECT 1 FROM w_hito h WHERE h.conv=l.conv AND h.tipo='venta' AND h.ts>l.ts) THEN 1 ELSE 0 END) ventas
+    FROM w_seg_log l WHERE l.ts>=? GROUP BY l.situacion`).bind(desde).all().catch(() => ({ results: [] }))).results || [];
+  return { dias, buenos: parseInt((await kvGet(env, "seg_buenos")) || "0") || 0, para_auto: SEG.buenosParaAuto, oferta: (await kvGet(env, "seg_oferta")) !== "0",
+    por_situacion: filas.map((x) => ({ situacion: SITUACIONES[x.sit] || "sin clasificar", enviados: x.n, respondieron_48h: x.resp48, compraron: x.ventas })) };
 }
 const ultimos10 = (x) => String(x || "").replace(/\D/g, "").slice(-10);
 const PRI_PERFIL = { A: 0, B: 0, C: 1, D: 2 };
@@ -1031,23 +1064,31 @@ const CLAVE_SEG_IA = "seg_ia";
 async function cacheSegIA(env) { try { return JSON.parse((await kvGet(env, CLAVE_SEG_IA)) || "{}"); } catch { return {}; } }
 const firmaSeg = (s) => `${s.cot_ts}:${s.ult_ts}`;
 const vigente = (c, s, ahora = Date.now()) => !!c && c.f === firmaSeg(s) && ahora - (c.ts || 0) < (c.seguir === false ? 3 : 2) * 86400e3;
+// Situación 7 (pidió que le escribamos en una fecha): no se le escribe antes de esa fecha aunque pase la revisión
+const esperaFecha = (c, ahora = Date.now()) => !!(c?.no_antes && Date.parse(c.no_antes + "T12:00:00-03:00") > ahora);
 // Lista sin IA nueva (usa lo que la IA ya revisó): para contar, el reporte y el agente
 export async function seguimientos(env) {
   const [l, cache] = await Promise.all([candidatosSeguimiento(env), cacheSegIA(env)]);
-  return l.filter((s) => !(vigente(cache[s.conv], s) && cache[s.conv].seguir === false)).map((s) => conDetalle(s, cache[s.conv]));
+  return l.filter((s) => !(vigente(cache[s.conv], s) && cache[s.conv].seguir === false) && !esperaFecha(cache[s.conv])).map((s) => conDetalle(s, cache[s.conv]));
+}
+// Los que el programa de la PC puede mandar solo: revisados por la IA, situación simple, sin pasar al dueño y con 10 buenos seguidos confirmados
+export async function seguimientosAuto805(env) {
+  const buenos = parseInt((await kvGet(env, "seg_buenos")) || "0") || 0;
+  if (buenos < SEG.buenosParaAuto) return [];
+  return (await seguimientos(env)).filter((s) => s.revisado && s.borrador && !s.dueno && SIT_AUTO.has(Number(s.situacion)));
 }
 function conDetalle(s, c) {
   const ok = vigente(c, s);
-  return { ...s, producto: (ok && c.producto) || s.producto, cantidad: (ok && c.cantidad) || "", total: (ok && c.total) || "", borrador: (ok && c.mensaje) || borradorBase(s), revisado: !!ok };
+  return { ...s, producto: (ok && c.producto) || s.producto, cantidad: (ok && c.cantidad) || "", total: (ok && c.total) || "", borrador: (ok && c.mensaje) || borradorBase(s), revisado: !!ok,
+    situacion: ok ? Number(c.situacion) || 0 : 0, sit_texto: ok ? SITUACIONES[c.situacion] || "" : "", dueno: vaAlDueno(s, ok ? c : null), llamada: (ok && c.llamada) || "" };
 }
 // Mensaje de base cuando la IA todavía no revisó el chat (así el botón nunca abre el WhatsApp vacío)
 export function borradorBase(s) {
-  const n = /\p{L}/u.test(String(s.nombre || "")) ? " " + String(s.nombre).trim().split(/\s+/)[0] : "";
-  const que = s.producto ? ` de ${s.producto}` : "";
-  const cosa = { precio: `los precios${que}`, info: `la info${que}`, archivo: `lo que te mandé${que}` }[s.tipo] || `la cotización${que}`;
-  if ((s.toque || 1) >= 3) return `Hola${n}! Último mensajito por ${cosa} 🙌 Si ahora no es el momento no hay drama, cuando quieras lo retomamos.`;
-  if ((s.toque || 1) === 2) return `Hola${n}! ¿Cómo va? Te escribo de nuevo por ${cosa}. ¿La seguís pensando? Si querés lo ajustamos a lo que necesites.`;
-  return `Hola${n}! ¿Cómo va? ¿Pudiste ver ${cosa}? Cualquier duda te ayudo 🙌`;
+  const n = /\p{L}/u.test(String(s.nombre || "")) ? " " + String(s.nombre).trim().split(/\s+/)[0].toLowerCase() : "";
+  const que = s.producto ? `lo de ${s.producto}` : "lo que te pasé";
+  if ((s.toque || 1) >= 3) return `buenas${n}, cerramos ${que} por ahora? me ayuda saber qué te frenó: 1) el precio total 2) el plazo 3) la cantidad mínima 4) no es el momento 5) otra cosa. con un numero me alcanza`;
+  if ((s.toque || 1) === 2) return `buenas${n}, con ${que} se puede arrancar con menos cantidad de prueba para ver cómo se vende. te lo armo así?`;
+  return `buenas${n}, ${que} es el total puesto en tu casa, y el plazo real es de 25 a 40 días. lo ajustamos a otra cantidad o lo dejamos así?`;
 }
 // Una línea corta y útil: a quién, qué le cotizamos (cantidad y monto), cuándo y qué contestó
 export function lineaSeguimiento(s) {
@@ -1064,27 +1105,48 @@ export async function revisarSeguimientos(env, iaJSON, { limite = 10, tope = SEG
   if (faltan.length && iaJSON) {
     for (let i = 0; i < faltan.length; i += SEG.porLlamada) {
       const tanda = faltan.slice(i, i + SEG.porLlamada);
-      const charlas = await Promise.all(tanda.map((s) => env.DB.prepare("SELECT yo, texto, ts FROM w_msg WHERE conv=? AND COALESCE(texto,'')<>'' ORDER BY ts DESC LIMIT 16").bind(s.conv).all().then((r) => (r.results || []).reverse()).catch(() => [])));
-      const r = await iaJSON(env, `Atendés el WhatsApp de "Te Importamos" (importaciones por encargo de China a Argentina, para revendedores y negocios). A estos clientes les mandamos una cotización, precios, un catálogo o información (tiempos, envío, cómo trabajamos) y dejaron de contestar, o solo dijeron "gracias", "lo veo", "después te digo". Ahora es ${fechaHora(Date.now())} (hora Argentina).
-Para cada uno decidí si HOY hay que escribirle y, si sí, escribí el mensaje para que el dueño lo revise y lo mande él.
-"seguir": false si en la charla se ve que NO hace falta: ya compró o pagó, dijo que no o que lo deja, pidió que le escribamos en una fecha que todavía no llegó, quedó en escribirnos él en un plazo que todavía no pasó, el tema ya se resolvió, lo que le mandamos no era comercial (solo un saludo, una pregunta nuestra sin precio ni info, el seguimiento de un envío de una compra ya hecha), le debemos algo nosotros (le dijimos que le pasábamos la cotización o un dato y no se lo pasamos), ya tiene un pedido en curso con nosotros (está esperando que llegue), le dijimos que eso no lo traemos o no lo conseguimos, o no es un cliente (proveedor, conocido, socio). Ante la duda con un cliente al que le pasamos precio o info y no contestó, true.
-"producto", "cantidad" y "total": lo que le COTIZAMOS o le pasamos según la charla (ej. "zapatillas Vans", "20 pares", "USD 640 total" o "USD 32 c/u"). Si no se ve, "".
-Reglas del mensaje:
-- Rioplatense, con voseo, cercano y corto (2 a 4 líneas), sin emojis, como lo escribiría una persona por WhatsApp. Sin "seguimiento", sin "estimado", sin "le escribo para".
-- Nombrá el producto que pidió y terminá con UNA pregunta concreta y fácil de contestar.
-- Según los días desde la cotización: 1-2 días → preguntá si le quedó alguna duda o si quiere ajustar cantidad; 3-6 días → sumá valor con algo real de la charla (tiempos, cómo es el proceso, que nos encargamos de todo, la ganancia si revende) y proponé el siguiente paso; 7 días o más → mensaje de cierre amable ("¿lo dejamos para más adelante o lo seguimos viendo?"), que suele reactivar.
-- Si ya le escribimos antes sin respuesta, no repitas lo mismo: traé algo nuevo.
-- Si en la charla dijo una objeción (caro, mínimo, plazo, desconfianza), respondela sin bajar el precio.
-- Nunca inventes precios, stock, descuentos ni fechas que no estén en la charla.
+      const charlas = await Promise.all(tanda.map((s) => env.DB.prepare("SELECT yo, texto, ts FROM w_msg WHERE conv=? AND COALESCE(texto,'')<>'' ORDER BY ts DESC LIMIT 40").bind(s.conv).all().then((r) => (r.results || []).reverse()).catch(() => [])));
+      const oferta = (await kvGet(env, "seg_oferta")) !== "0";
+      const r = await iaJSON(env, `Atendés el WhatsApp de "Te Importamos" (Rosario: gestionamos importaciones de China para revendedores y comercios; compras grupales/cupos y pedidos a medida por foto o link de Alibaba/1688; nos encargamos de proveedor, aduana y envío; mostramos costos reales; plazo real China puerta a puerta 25 a 40 días). A estos clientes les mandamos cotización, precio, catálogo o info y no avanzaron. Ahora es ${fechaHora(Date.now())} (hora Argentina).
+Lo que cierra ventas NO es recordar que existimos: es sacarle la duda y el riesgo (cuánto paga en total, qué no incluye, qué pasa si sale mal, cómo sigue). Insistir sin aportar nada no funciona.
+PASO 1: leé TODA la charla y elegí UNA situación:
+1 pendiente nuestro (preguntó algo y no le contestamos, o prometimos algo y no lo dimos) → el mensaje es la respuesta atrasada, sin disculpas largas
+2 cotizado y silencio total
+3 cierre blando ("gracias", "ok", "lo veo", "después te digo")
+4 lo consulta con un tercero (socio, padre, contador)
+5 objeción dicha (precio final o costos ocultos, caro, más barato acá, mínimo alto, plazo, desconfianza, factura, forma de pago)
+6 esperamos algo del cliente (peso, cantidad, link, datos de envío, foto)
+7 pidió que le escribamos en una fecha futura → "no_antes" con esa fecha (AAAA-MM-DD) y seguir false si todavía no llegó
+8 negociación activa con monto alto → dueno true
+PASO 2: "seguir" false si ya compró, dijo que no o que lo deja, pidió que no le escriban, es proveedor o no es cliente, ya tiene un pedido en curso, le dijimos que eso no lo traemos, o NO tenés nada nuevo y real para aportar.
+"dueno" true (lo maneja el dueño, no sale solo) si hay negociación sobre costos/flete/aduana/condiciones de pago, pide llamada, factura o referencias, se enojó o reclama, o es un pedido grande o raro. En ese caso "llamada": 2 líneas con qué falta y qué decirle por teléfono.
+PASO 3, el mensaje (va el número de toque de cada cliente):
+- toque 1: claridad, no recordatorio. Resolvé la duda más probable: total puesto en su casa y qué no incluye, plazo real, seña. Si ya preguntó algo, empezá por eso.
+- toque 2: algo NUEVO y real que baje el riesgo: pedido chico de prueba, otra cantidad o transporte${oferta ? `, o la oferta de este toque: 50% off en nuestros honorarios en esta importación (USD 40 en vez de 80), vale 48 h. Usala solo en el toque 2, en pedidos de importación desde China, y como segunda opción después del aporte` : ""}. Nunca "lo pensaste?".
+- toque 3: cierre con opciones numeradas: "qué te frenó? 1) el precio total 2) el plazo 3) la cantidad mínima 4) no es el momento 5) otra cosa". No hay cuarto.
+- situación 4: ofrecé un resumen corto en texto para reenviarle al tercero (producto, total, plazo, seña, qué incluye), con los datos de la charla. No preguntes "hablaste con tu socio?" más de una vez.
+- "más barato acá": no bajes el precio; pedile precio y cantidad que vio para comparar total contra total.
+Estructura: 1) algo concreto de ESTA charla (producto, cantidad, algo que dijo) 2) el aporte nuevo 3) UNA sola pregunta fácil de contestar con una palabra o un número.
+Estilo: rioplatense, voseo, minúsculas naturales, SIN ¿ ni ¡, sin emojis, 2 a 4 líneas cortas, como una persona por WhatsApp. Prohibido: "estimado", "le escribo para", "seguimiento", "quedo atento", "estamos a disposición", "último mensajito", "te quedó alguna duda?" a secas, repetir un mensaje que ya le mandamos.
+Nunca inventes precios, descuentos (salvo la oferta del toque 2), stock, fechas ni casos: usá solo lo que está en la charla o en la cotización. Si falta el total y hace falta, no lo pongas.
+"producto", "cantidad" y "total": lo que le cotizamos según la charla (ej. "zapatillas Vans", "20 pares", "USD 640 total"). Si no se ve, "".
 CLIENTES:
-${tanda.map((s, j) => `#${j + 1} ${s.nombre || "sin nombre"} · producto: ${s.producto || "?"} · le mandamos ${{ precio: "precio", info: "info", archivo: "un archivo (precios o fotos)" }[s.tipo] || "una cotización"} hace ${s.dias_cot} días · ${s.reaccion} · toque ${s.toque}${s.presup_usd ? " · aprox USD " + s.presup_usd : ""}${s.cot_dato ? " · cotización: " + String(s.cot_dato).replace(/\s+/g, " ").slice(0, 160) : ""}
+${tanda.map((s, j) => `#${j + 1} ${s.nombre || "sin nombre"} · producto: ${s.producto || "?"} · le mandamos ${{ precio: "precio", info: "info", archivo: "un archivo (precios o fotos)" }[s.tipo] || "una cotización"} hace ${s.dias_cot} días · ${s.reaccion} · TOQUE ${s.toque} de 3${s.presup_usd ? " · aprox USD " + s.presup_usd : ""}${s.perfil ? " · perfil " + s.perfil : ""}${s.cot_dato ? " · cotización: " + String(s.cot_dato).replace(/\s+/g, " ").slice(0, 240) : ""}
 ${charlas[j].map((m) => (m.yo ? "Nosotros: " : "Cliente: ") + String(m.texto).replace(/\s+/g, " ").slice(0, 300)).join("\n") || "(sin mensajes guardados)"}`).join("\n\n")}
-Respondé SOLO JSON: {"mensajes":[{"n":1,"seguir":true,"motivo":"si seguir es false, por qué en pocas palabras","producto":"","cantidad":"","total":"","mensaje":"..."}]}`).catch(() => null);
+Respondé SOLO JSON: {"mensajes":[{"n":1,"situacion":2,"seguir":true,"dueno":false,"llamada":"","no_antes":"","motivo":"si seguir es false, por qué","producto":"","cantidad":"","total":"","mensaje":"..."}]}`).catch(() => null);
       // Los que la IA no devolvió quedan revisados igual (siguen en la lista, sin mensaje): no se re-preguntan en cada carga
       if (Array.isArray(r?.mensajes)) for (const s of tanda) cache[s.conv] = { f: firmaSeg(s), ts: ahora, seguir: true, motivo: "", producto: "", cantidad: "", total: "", mensaje: "" };
       for (const x of Array.isArray(r?.mensajes) ? r.mensajes : []) {
         const s = tanda[(parseInt(x?.n) || 0) - 1]; if (!s) continue;
-        cache[s.conv] = { f: firmaSeg(s), ts: ahora, seguir: x.seguir !== false, motivo: String(x.motivo || "").slice(0, 120), producto: String(x.producto || "").slice(0, 60), cantidad: String(x.cantidad || "").slice(0, 40), total: String(x.total || "").slice(0, 50), mensaje: String(x.mensaje || "").trim().slice(0, 700) };
+        const sit = Math.min(Math.max(parseInt(x.situacion) || 0, 0), 8), noAntes = /^\d{4}-\d{2}-\d{2}$/.test(String(x.no_antes || "")) ? x.no_antes : "";
+        const msj = String(x.mensaje || "").replace(/[¿¡]/g, "").replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, "").trim().slice(0, 700);
+        cache[s.conv] = { f: firmaSeg(s), ts: ahora, seguir: x.seguir !== false, motivo: String(x.motivo || "").slice(0, 120), producto: String(x.producto || "").slice(0, 60), cantidad: String(x.cantidad || "").slice(0, 40), total: String(x.total || "").slice(0, 50), mensaje: msj,
+          situacion: sit, toque: s.toque, dueno: !!x.dueno, llamada: String(x.llamada || "").slice(0, 300), no_antes: noAntes };
+        if (sit) await env.DB.prepare("UPDATE w_conv SET seg_situacion=? WHERE conv=?").bind(String(sit), s.conv).run().catch(() => {});
+        // Pasa al dueño: una tarea con el resumen y qué decirle por teléfono (una por cotización)
+        if (x.seguir !== false && vaAlDueno(s, cache[s.conv])) await env.DB.prepare("INSERT OR IGNORE INTO tareas (id, ts, tipo, tel, nombre, titulo, detalle, datos, ref, estado) VALUES (?,?,?,?,?,?,?,?,?,'abierta')")
+          .bind(`segd:${s.conv}:${s.cot_ts}`, ahora, "llamar", s.conv, s.nombre || "", `Llamar a ${s.nombre || "+" + s.conv}: ${[cache[s.conv].cantidad, cache[s.conv].producto || s.producto].filter(Boolean).join(" ") || "cotización"}${cache[s.conv].total ? " · " + cache[s.conv].total : ""}`,
+            (cache[s.conv].llamada || "Pedido grande o negociación: mejor por teléfono.") + (msj ? "\nBorrador: " + msj : ""), "", "seguimiento").run().catch(() => {});
       }
     }
     const vivos = new Set(lista.map((s) => s.conv));
@@ -1092,7 +1154,7 @@ Respondé SOLO JSON: {"mensajes":[{"n":1,"seguir":true,"motivo":"si seguir es fa
     await env.DB.prepare("DELETE FROM kv WHERE k LIKE 'seg_ia:%'").run().catch(() => {});
     await kvPut(env, CLAVE_SEG_IA, JSON.stringify(cache));
   }
-  const ok = lista.filter((s) => !(vigente(cache[s.conv], s, ahora) && cache[s.conv].seguir === false)).map((s) => conDetalle(s, cache[s.conv]));
+  const ok = lista.filter((s) => !(vigente(cache[s.conv], s, ahora) && cache[s.conv].seguir === false) && !esperaFecha(cache[s.conv], ahora)).map((s) => conDetalle(s, cache[s.conv]));
   return limite ? ok.slice(0, limite) : ok;
 }
 

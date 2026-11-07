@@ -97,6 +97,15 @@ ${String(indicaciones || "").slice(0, 3000)}`;
 // ---------------------------------------------------------------------------
 const RE_ALIBABA = /https?:\/\/(?:[a-z0-9-]+\.)*alibaba\.com\/[^\s<>"']+/gi;
 
+// Si en "cliente" (o "tel") va el número del cliente, la cotización queda ligada a su chat: el seguimiento sabe qué se le cotizó y el total real
+export async function vincularCotizacion(env, tel, id, num, items, total) {
+  const d = String(tel || "").replace(/\D/g, ""); if (d.length < 8) return null;
+  const f = await env.DB.prepare("SELECT conv FROM w_conv WHERE conv LIKE ? ORDER BY ult_ts DESC LIMIT 1").bind("%" + d.slice(-10)).first().catch(() => null);
+  const conv = f?.conv || d;
+  const dato = `N° ${num}: ${items.map((i) => `${i.cantidad} ${i.nombre}`).join(", ").slice(0, 200)}${total ? ` · total USD ${Math.round(total)}` : ""}`;
+  await env.DB.prepare("INSERT OR REPLACE INTO w_hito (id, conv, tipo, ts, dato) VALUES (?,?,'cotizacion',?,?)").bind("cotm:" + id, conv, Date.now(), dato).run();
+  return conv;
+}
 // Guarda una cotización armada sola (cotiz_manual + tarea "Cotización lista" en Pendientes). La usan la lectura del link
 // de Alibaba y el contestador cuando el cliente pasa peso, cantidad y FOB.
 export async function guardarCotizAuto(env, T, { conv, nombre, items, extra = "", notas = "" }) {
@@ -173,7 +182,8 @@ export async function apiCotizar(env, req, url, quien, h) {
     const id = b.id || Math.random().toString(36).slice(2, 10), num = b.num || (ult?.n || 0) + 1;
     const datos = { items, honorarios: b.honorarios, flete: b.flete, desglose: b.desglose !== false, notas: String(b.notas || "").slice(0, 1500), dolar: b.dolar || null };
     await env.DB.prepare("INSERT OR REPLACE INTO cotiz_manual (id, ts, num, quien, cliente, datos) VALUES (?,?,?,?,?,?)").bind(id, Date.now(), num, quien || "", String(b.cliente || "").slice(0, 80), JSON.stringify(datos)).run();
-    return json({ ok: true, id, num });
+    const vinc = await vincularCotizacion(env, b.tel || b.cliente, id, num, items, (() => { try { return calcular(items, datos, h.T).total; } catch { return null; } })()).catch(() => null);
+    return json({ ok: true, id, num, vinculada: vinc });
   }
   if (r === "lista") return json(((await env.DB.prepare("SELECT id, ts, num, cliente, datos FROM cotiz_manual ORDER BY ts DESC LIMIT 40").all()).results || []).map((f) => { const d = JSON.parse(f.datos); return { id: f.id, ts: f.ts, num: f.num, cliente: f.cliente, n: d.items.length, total: calcular(d.items, d, h.T).total }; }));
   if (r === "una") { const f = await env.DB.prepare("SELECT * FROM cotiz_manual WHERE id=?").bind(url.searchParams.get("id") || "").first(); return f ? json({ ...f, datos: JSON.parse(f.datos) }) : json({ error: "no existe" }, 404); }
