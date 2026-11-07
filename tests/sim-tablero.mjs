@@ -87,6 +87,24 @@ chk("detecta el código del link", db.prepare("SELECT origen, origen_cod FROM w_
 chk("reconoce el mensaje de siempre de los videos", /Instagram/.test(db.prepare("SELECT origen FROM w_conv WHERE conv='5491100000021'").get().origen || ""));
 chk("el link cuenta sus chats", (await T.links(env))[0].leads === 1);
 
+// Perdido automático: cotizado, el cliente no escribe hace 13 días y nuestro último mensaje fue hace 6
+conv("5491100000030", { nombre: "Silencio", cli: h(13), yo: h(6), ult_yo: 1, ult: h(6), etapa: "cotizado", texto: "te paso" });
+conv("5491100000031", { nombre: "Reciente", cli: h(3), yo: h(2), ult_yo: 1, ult: h(2), etapa: "cotizado", texto: "te paso" });
+await T.perdidosAutomaticos(env);
+chk("marca perdido solo al que ya no respondió los seguimientos", db.prepare("SELECT etapa FROM w_conv WHERE conv='5491100000030'").get().etapa === "perdido" && db.prepare("SELECT etapa FROM w_conv WHERE conv='5491100000031'").get().etapa === "cotizado");
+chk("motivo automático", /autom/.test(db.prepare("SELECT motivo FROM w_conv WHERE conv='5491100000030'").get().motivo));
+// Venta detectada por el agente: pide confirmación arriba de todo
+conv("5491100000032", { nombre: "VentaIA", cli: h(0.5), yo: h(0.4), ult_yo: 1, texto: "listo gracias", etapa: "negociando" });
+db.prepare("INSERT INTO w_hito (conv, tipo, ts, dato) VALUES ('5491100000032','venta',?,'20 NFC · $90.000')").run(h(0.4));
+r = await T.paraHacer(env);
+chk("venta detectada aparece primero para confirmar", r.lista[0]?.nombre === "VentaIA" && r.lista[0].cat === "venta");
+await T.marcar(env, "vendido", { conv: "5491100000032", monto: "90000" }, "Manuel");
+chk("confirmada la venta, deja de pedirla", !(await T.paraHacer(env)).lista.some((i) => i.nombre === "VentaIA"));
+const nd = await T.numeros(env, "dia", 7);
+chk("números por día", nd.filas.length === 7 && nd.filas[0].ventas >= 2);
+const ctx = await T.contextoTablero(env);
+chk("el agente ve día por día los chats cruzados con los videos", ctx.includes("DÍA POR DÍA") && ctx.includes("videos:"));
+
 // IA en cadena: Groq sin cupo → pasa a OpenRouter
 const { altIA, estadoIA } = await import(dir + "/ia-alterna.js");
 const real = globalThis.fetch; const urls = [];
@@ -106,6 +124,7 @@ for (const m of PANEL_P.matchAll(/<script>([\s\S]*?)<\/script>/g)) { try { new F
 chk("pestañas Hoy, Chats, Números, Links, Agente", ["hoy", "chats", "num", "links", "ag"].every((v) => PANEL_P.includes('data-v="' + v + '"')));
 chk("sin Telegram", !/telegram/i.test(PANEL_P));
 const W = fs.readFileSync("src/worker.js", "utf8");
+chk("el panel nuevo es el principal y el viejo queda en /panel/viejo", W.includes('url.pathname === "/panel" || url.pathname === "/panel/p"') && W.includes('"/panel/viejo"'));
 chk("rutas del panel nuevo con sesión", W.includes('url.pathname === "/panel/p"') && W.includes('"/panel/p/api/"') && W.indexOf('url.pathname === "/panel/p"') > W.indexOf('url.pathname.startsWith("/panel")'));
 
 console.log(`sim-tablero: ${ok} ok, ${mal} fallas`); process.exit(mal ? 1 : 0);

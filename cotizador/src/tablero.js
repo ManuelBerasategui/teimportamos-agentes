@@ -57,8 +57,11 @@ export async function calcularDiaEquipo(env, dia) {
 export async function cronTablero(env) {
   if (!env.DB) return;
   await prepararTablero(env);
+  const segAct = +((await kvGet(env, "tab_segs_ts")) || 0);
+  if (Date.now() - segAct > 3 * 60e3) await refrescarSegs(env).catch((e) => console.log("segs", e?.message || e));
   const ult = +((await kvGet(env, "tab_ult")) || 0);
   if (Date.now() - ult < 10 * 60e3) return;
+  await perdidosAutomaticos(env).catch((e) => console.log("perdidos", e?.message || e));
   await kvPut(env, "tab_ult", Date.now());
   const hoy = diaAR(), ayer = diaAR(Date.now() - DIA);
   await calcularDiaEquipo(env, hoy);
@@ -69,6 +72,28 @@ export async function cronTablero(env) {
   for (let i = 0; i < 15 && hasta > primero; i++) { hasta = diaAR(inicioDia(hasta) - DIA / 2); await calcularDiaEquipo(env, hasta); }
   await kvPut(env, "eqdia_bf", hasta);
   await detectarOrigen(env).catch((e) => console.log("origen", e?.message || e));
+}
+
+// Seguimientos precalculados (son lentos: ~10 s). El panel lee la copia; el cron la renueva cada 3 minutos.
+export async function refrescarSegs(env) {
+  const segs = await seguimientos(env).catch(() => []);
+  const liv = segs.map((s) => ({ conv: s.conv, nombre: s.nombre, producto: s.producto, revisado: !!s.revisado, dueno: !!s.dueno, situacion: s.situacion || 0, llamada: s.llamada || "", sit_texto: s.sit_texto || "",
+    puntaje: s.puntaje || 0, presup_usd: s.presup_usd || 0, ult_texto: String(s.ult_texto || "").slice(0, 160), borrador: s.borrador || "", toque: s.toque || 1, dias_cot: s.dias_cot ?? null }));
+  await kvPut(env, "tab_segs", JSON.stringify(liv)); await kvPut(env, "tab_segs_ts", Date.now());
+  return liv;
+}
+async function segsGuardados(env) {
+  try { const v = await kvGet(env, "tab_segs"); if (v) return JSON.parse(v); } catch {}
+  return refrescarSegs(env);
+}
+
+// Perdidos automáticos: cotizado o negociando, el cliente no escribe hace 12+ días y lo último fue un mensaje nuestro de hace 5+ días
+// (ya se le hicieron los seguimientos). Si el cliente vuelve a escribir, la IA del lector lo reclasifica sola.
+export async function perdidosAutomaticos(env) {
+  const ahora = Date.now();
+  const r = await env.DB.prepare(`UPDATE w_conv SET etapa='perdido', motivo=COALESCE(NULLIF(motivo,''),'no respondió (automático)'), cierre_ts=?
+    WHERE grupo=0 AND etapa IN ('cotizado','negociando') AND ult_yo=1 AND COALESCE(ult_cliente_ts,0)<? AND COALESCE(ult_yo_ts,0)<?`).bind(ahora, ahora - 12 * DIA, ahora - 5 * DIA).run();
+  return r?.meta?.changes || 0;
 }
 
 // ---------------------------------------------------------------------------
@@ -95,6 +120,7 @@ export async function detectarOrigen(env, limite = 80) {
 // ---------------------------------------------------------------------------
 // Para hacer: todo lo que necesita algo, ordenado por cercanía a la venta
 const CATS = {
+  venta: { orden: 0, titulo: "¿Se vendió? El agente detectó una venta: confirmala" },
   pago: { orden: 1, titulo: "Pago, seña o comprobante" },
   cotizado: { orden: 2, titulo: "Ya cotizado y espera respuesta" },
   cotizar: { orden: 3, titulo: "Falta cotizar" },
@@ -122,8 +148,12 @@ export async function paraHacer(env) {
     else if (c.cot_pend || c.etapa === "falta_cotizar") poner("cotizar", c);
     else poner("consulta", c);
   }
+  // Ventas que el agente detectó en la charla y nadie confirmó todavía
+  const vend = await todas(env, `SELECT h.conv, MAX(h.ts) ts, MAX(h.dato) dato, c.nombre, c.producto, c.presup_usd, c.cierre_ts FROM w_hito h JOIN w_conv c ON c.conv=h.conv
+    WHERE h.tipo='venta' AND h.ts>=? AND COALESCE(h.oculto,0)=0 AND NOT EXISTS (SELECT 1 FROM ventas v WHERE v.conv=h.conv AND v.ts>=h.ts-3*86400000) GROUP BY h.conv`, ahora - 14 * DIA).catch(() => []);
+  for (const v of vend) if ((v.cierre_ts || 0) < v.ts) poner("venta", { conv: v.conv, nombre: v.nombre, producto: v.producto, presup_usd: v.presup_usd, accion: "Detectado: " + String(v.dato || "venta").slice(0, 100) + ". Si es así tocá Vendido; si no, Listo.", ult_cliente_ts: v.ts });
   // Seguimientos (el agente ya decide a quién y redacta el mensaje). Los que van al dueño pasan a "Llamar".
-  const segs = await seguimientos(env).catch(() => []);
+  const segs = await segsGuardados(env);
   const cierres = Object.fromEntries((await todas(env, "SELECT conv, cierre_ts FROM w_conv WHERE cierre_ts IS NOT NULL AND cierre_ts>=?", ahora - 3 * DIA)).map((x) => [x.conv, x.cierre_ts]));
   for (const s of segs) {
     if (cierres[s.conv] || !s.revisado || !s.borrador && !s.dueno) continue;   // solo los que la IA ya revisó y decidió seguir hoy (el resto lo revisa el cron durante el día)
@@ -173,7 +203,10 @@ const lunes = (ts) => { const d = new Date(ts - AR); const w = (d.getUTCDay() + 
 export async function numeros(env, periodo = "semana", n = 8) {
   await prepararTablero(env);
   const ahora = Date.now(), cortes = [];
-  if (periodo === "mes") {
+  if (periodo === "dia") {
+    const h0 = inicioDia(diaAR(ahora));
+    for (let i = 0; i < n; i++) { const a = h0 - i * DIA; cortes.push([a, a + DIA, diaAR(a).slice(5)]); }
+  } else if (periodo === "mes") {
     const d = new Date(ahora - AR);
     for (let i = 0; i < n; i++) { const a = Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - i, 1) + AR, b = Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - i + 1, 1) + AR; cortes.push([a, b, new Date(a - AR).toISOString().slice(0, 7)]); }
   } else {
@@ -245,38 +278,64 @@ export async function links(env) {
 
 // ---------------------------------------------------------------------------
 // Pantalla Hoy en una sola llamada
-export async function hoy(env) {
+export async function hoy(env, liviano = false) {
   await prepararTablero(env);
   const [ph, eq, lect, ultMsg, ia] = await Promise.all([
     paraHacer(env),
     todas(env, "SELECT dia, persona, chats, mensajes FROM eq_dia WHERE dia IN (?, ?)", diaAR(), diaAR(Date.now() - DIA)),
     kvGet(env, "lector_estado"),
     env.DB.prepare("SELECT MAX(ts) t FROM w_msg").first().catch(() => null),
-    estadoIA(env).catch(() => null),
+    liviano ? null : estadoIA(env).catch(() => null),
   ]);
   let lector = null; try { lector = JSON.parse(lect || "null"); } catch {}
   return { ...ph, equipo: eq, hoy: diaAR(), lector: { evento: lector?.evento || "", ultimoMensaje: ultMsg?.t || 0 }, ia };
 }
 
 // Resumen para el agente: números reales, no estimados
+const ahoraMs = () => Date.now();
 export async function contextoTablero(env) {
   try {
     const [n, ph] = await Promise.all([numeros(env, "semana", 4), paraHacer(env)]);
     const f = n.filas.map((x) => `${x.periodo}: ${x.nuevos} chats nuevos, ${x.cotizados} cotizados, ${x.ventas} ventas registradas (ARS ${Math.round(x.ARS)}, USD ${Math.round(x.USD)}, ganancia ARS ${Math.round(x.ganARS)} / USD ${Math.round(x.ganUSD)}), origen ${JSON.stringify(x.origen)}, por línea ${JSON.stringify(x.linea)}, equipo ${JSON.stringify(x.equipo)}`).join("\n");
     const cuenta = {}; for (const i of ph.lista) cuenta[i.cat] = (cuenta[i.cat] || 0) + 1;
-    return `TABLERO (datos reales; las ventas son las que el equipo cargó con el botón Vendido):\n${f}\nPARA HACER AHORA: ${JSON.stringify(cuenta)}. Primeros: ${ph.lista.slice(0, 12).map((i) => `${i.nombre || i.conv} (${ph.categorias[i.cat].titulo}${i.producto ? ", " + i.producto : ""}${i.usd ? ", ~USD " + i.usd : ""})`).join("; ")}`;
+    const nd = await numeros(env, "dia", 14);
+    const desde = nd.filas[nd.filas.length - 1].desde;
+    const [ig, tt, perd] = await Promise.all([
+      todas(env, "SELECT ts, tipo, formato, gancho, texto, alcance, vistas, guardados, compartidos, comentarios, tiempo_ms FROM ig_posts WHERE ts>=? ORDER BY ts", desde).catch(() => []),
+      todas(env, "SELECT ts, texto, vistas, likes, compartidos, guardados FROM tt_posts WHERE ts>=? ORDER BY ts", desde).catch(() => []),
+      todas(env, "SELECT motivo, COUNT(*) n FROM w_conv WHERE etapa='perdido' AND COALESCE(cierre_ts, ult_ts)>=? GROUP BY motivo ORDER BY n DESC LIMIT 8", ahoraMs() - 30 * DIA).catch(() => []),
+    ]);
+    const dias = nd.filas.slice().reverse().map((x) => {
+      const en = (p) => p.ts >= x.desde && p.ts < x.desde + DIA;
+      const v = ig.filter(en).map((p) => `IG ${p.tipo || ""} formato=${p.formato || "?"} gancho="${String(p.gancho || "").slice(0, 60)}" texto="${String(p.texto || "").replace(/\s+/g, " ").slice(0, 90)}" alcance=${p.alcance ?? "?"} guardados=${p.guardados ?? "?"} compartidos=${p.compartidos ?? "?"} comentarios=${p.comentarios ?? "?"} tiempo=${p.tiempo_ms ? Math.round(p.tiempo_ms / 1000) + "s" : "?"}`)
+        .concat(tt.filter(en).map((p) => `TikTok "${String(p.texto || "").replace(/\s+/g, " ").slice(0, 90)}" vistas=${p.vistas ?? "?"} compartidos=${p.compartidos ?? "?"}`));
+      return `${x.periodo}: ${x.nuevos} chats nuevos, ${x.cotizados} cotizados, ${x.ventas} ventas | videos: ${v.length ? v.join(" ; ") : "ninguno"}`;
+    }).join("\n");
+    return `TABLERO (datos reales; las ventas son las que el equipo cargó con el botón Vendido):\n${f}\nDÍA POR DÍA, CHATS DE WHATSAPP CRUZADOS CON LOS VIDEOS PUBLICADOS ESE DÍA (últimos 14):\n${dias}\nMOTIVOS DE PÉRDIDA (30 días): ${JSON.stringify(perd)}\nPARA HACER AHORA: ${JSON.stringify(cuenta)}. Primeros: ${ph.lista.slice(0, 12).map((i) => `${i.nombre || i.conv} (${ph.categorias[i.cat].titulo}${i.producto ? ", " + i.producto : ""}${i.usd ? ", ~USD " + i.usd : ""})`).join("; ")}`;
   } catch (e) { return `TABLERO: no pude leerlo (${String(e?.message || e).slice(0, 100)})`; }
 }
 
 // ---------------------------------------------------------------------------
-export async function apiTablero(env, req, url, quien) {
+const PREGUNTA_CONSEJO = `Analizá los datos del TABLERO y de REDES (día por día: chats nuevos cruzados con los videos de ese día, cotizados, ventas, motivos de pérdida, formatos y ganchos) y decime qué hacer HOY y esta semana para vender más.
+Reglas: lista numerada de acciones concretas ordenadas por impacto en ventas. Cada acción en 1 o 2 líneas y con el dato que la justifica entre paréntesis (número real del tablero, con fecha o video). Si un dato no está, decí que falta; no inventes ni estimes. Nada de teoría ni métricas sueltas: solo acciones. Máximo 8.`;
+export async function apiTablero(env, req, url, quien, iaJSON) {
   const r = url.pathname.replace("/panel/p/api/", "");
   const json = (d) => Response.json(d, { headers: { "Cache-Control": "no-store" } });
   const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
   await prepararTablero(env);
-  if (r === "hoy") return json(await hoy(env));
+  if (r === "hoy") return json(await hoy(env, url.searchParams.get("liviano") === "1"));
+  if (r === "consejo") {
+    const k = "consejo:" + diaAR();
+    if (req.method !== "POST") { const v = await kvGet(env, k); if (v) return json(JSON.parse(v)); if (url.searchParams.get("generar") !== "1") return json({ texto: "", ts: 0 }); }
+    if (!iaJSON) return json({ error: "sin IA" });
+    const { preguntarAgente } = await import("./agente.js");
+    const r2 = await preguntarAgente(env, iaJSON, PREGUNTA_CONSEJO);
+    const out = { texto: r2?.respuesta || "No pude generar el análisis ahora.", ts: Date.now() };
+    if (r2?.respuesta) await kvPut(env, k, JSON.stringify(out));
+    return json(out);
+  }
   if (["listo", "perdido", "vendido", "venta-borrar"].includes(r) && req.method === "POST") return json(await marcar(env, r, body, quien));
-  if (r === "numeros") return json(await numeros(env, url.searchParams.get("p") === "mes" ? "mes" : "semana", Math.min(12, +url.searchParams.get("n") || 8)));
+  if (r === "numeros") return json(await numeros(env, ["mes", "dia"].includes(url.searchParams.get("p")) ? url.searchParams.get("p") : "semana", Math.min(31, +url.searchParams.get("n") || (url.searchParams.get("p") === "dia" ? 14 : 8))));
   if (r === "equipo") return json({ dias: await equipoDias(env, Math.min(400, +url.searchParams.get("d") || 31)), dispositivos: await dispositivos(env) });
   if (r === "asignar" && req.method === "POST") return json(await asignarDispositivo(env, body.disp, body.persona));
   if (r === "links") return json({ links: await links(env), canales: CANALES });

@@ -35,20 +35,21 @@ input,select,textarea{font:inherit;border:1px solid var(--li);background:var(--c
 .modal .card{width:100%;max-width:440px}.modal label{font-size:13px;color:var(--mu);display:block;margin:8px 0 3px}
 .seg{display:inline-flex;background:var(--chip);border-radius:9px;padding:3px}.seg button{border:0;background:none;padding:5px 12px;border-radius:7px;font:inherit;color:var(--mu);cursor:pointer}.seg button.on{background:var(--card);color:var(--tx)}
 .hilo{display:flex;flex-direction:column;gap:8px;margin-bottom:10px}.msg{max-width:85%;padding:9px 12px;border-radius:12px;white-space:pre-wrap}.msg.u{align-self:flex-end;background:var(--ac);color:#fff}.msg.a{align-self:flex-start;background:var(--card);border:1px solid var(--li)}
+.cons{white-space:pre-wrap;color:var(--tx);margin-top:6px}
 .link{font-size:12px;word-break:break-all;color:var(--mu)}
 .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--tx);color:var(--bg);padding:8px 14px;border-radius:9px;display:none;z-index:30}
 </style></head><body>
 <header><div class="hw"><div class="logo">TE.<span>IMPORTAMOS</span></div>
 <nav id="tabs"><button data-v="hoy" class="on">Hoy</button><button data-v="chats">Chats y ventas</button><button data-v="num">Números</button><button data-v="links">Links</button><button data-v="ag">Agente</button></nav>
-<a class="viejo" href="/panel">panel viejo</a></div></header>
+<a class="viejo" href="/panel/viejo">panel viejo</a></div></header>
 <main>
-<section id="v-hoy"><div class="est" id="estado"></div><div class="eq" id="equipoHoy"></div><div id="lista"><div class="vacio">Cargando…</div></div></section>
+<section id="v-hoy"><div class="est" id="estado"></div><div class="card" id="consejo"><b>Lo que dicen los datos</b><div class="mu" id="consTxt">Cargando…</div><div class="acc"><button class="b" id="consBtn">Actualizar análisis</button></div></div><div class="eq" id="equipoHoy"></div><div id="lista"><div class="vacio">Cargando…</div></div></section>
 <section id="v-chats" hidden>
  <div class="fila"><input id="q" placeholder="Buscar chat por nombre, número o producto"><button class="b p" id="ventaSuelta">Registrar venta sin chat</button></div>
  <div id="res"></div><h2>Ventas registradas</h2><div id="ventas"></div>
 </section>
 <section id="v-num" hidden>
- <div class="seg" id="per"><button data-p="semana" class="on">Semana</button><button data-p="mes">Mes</button></div>
+ <div class="seg" id="per"><button data-p="dia">Día</button><button data-p="semana" class="on">Semana</button><button data-p="mes">Mes</button></div>
  <h2>Resultados</h2><div class="tw" id="tRes"></div>
  <h2>Plata por línea de negocio</h2><div class="tw" id="tLin"></div>
  <h2>De dónde vinieron los chats nuevos</h2><div class="tw" id="tOri"></div>
@@ -89,9 +90,17 @@ function ver(v) {
   if (v === "hoy") cargarHoy(); if (v === "chats") { buscar(); cargarVentas(); } if (v === "num") cargarNum(); if (v === "links") cargarLinks(); if (v === "ag") cargarAg();
 }
 
+// ---- Lo que dicen los datos (el agente lo arma una vez por día; se puede actualizar)
+function pintarConsejo(r) { var t = (r && r.texto) || ""; $("#consTxt").className = t ? "cons" : "mu"; $("#consTxt").textContent = t || "Todavía no hay análisis de hoy."; $("#consBtn").textContent = t ? "Actualizar análisis" : "Generar análisis de hoy"; }
+function cargarConsejo() { api("consejo").then(pintarConsejo).catch(function () {}); }
+$("#consBtn").onclick = function () { $("#consTxt").className = "mu"; $("#consTxt").textContent = "El agente está leyendo los números, los chats y los videos… (puede tardar un minuto)"; api("consejo", {}).then(pintarConsejo).catch(function () { $("#consTxt").textContent = "No pude generarlo ahora. Probá de nuevo."; }); };
+cargarConsejo();
+
 // ---- Hoy
-function cargarHoy() {
-  api("hoy").then(function (d) {
+var IA_EST = null;
+function cargarHoy(liviano) {
+  api("hoy" + (liviano ? "?liviano=1" : "")).then(function (d) {
+    if (d.ia) IA_EST = d.ia; else d.ia = IA_EST;
     DATA = d; var est = [];
     var lect = d.lector || {}, fresco = lect.ultimoMensaje && Date.now() - lect.ultimoMensaje < 6 * 3600e3;
     est.push('<span class="pill ' + (lect.evento === "connected" && fresco ? "ok" : "bad") + '">WhatsApp 805 ' + (lect.evento === "connected" && fresco ? "sincronizado" : "sin datos nuevos hace rato: revisá el lector") + "</span>");
@@ -230,5 +239,6 @@ $("#agEnv").onclick = function () {
 };
 
 ver((location.hash || "#hoy").slice(1) || "hoy");
-setInterval(function () { if (!$("#v-hoy").hidden && !$("#mod").classList.contains("on")) cargarHoy(); }, 120000);
+setInterval(function () { if (!document.hidden && !$("#v-hoy").hidden && !$("#mod").classList.contains("on")) cargarHoy(true); }, 20000);
+document.addEventListener("visibilitychange", function () { if (!document.hidden && !$("#v-hoy").hidden) cargarHoy(true); });
 </script></body></html>`;

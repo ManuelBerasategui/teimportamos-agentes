@@ -3655,8 +3655,8 @@ export default {
       if (!quien) return url.pathname === "/panel" ? Response.redirect(new URL(`/login?volver=${encodeURIComponent(url.pathname + url.search)}`, url).toString(), 303) : new Response("Iniciá sesión", { status: 401 });
       url.searchParams.set("quien", quien);
     }
-    if (url.pathname === "/panel/p") return new Response(conApp(PANEL_P), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
-    if (url.pathname.startsWith("/panel/p/api/")) return apiTablero(env, req, url, url.searchParams.get("quien"));
+    if (url.pathname === "/panel" || url.pathname === "/panel/p") return new Response(conApp(PANEL_P), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
+    if (url.pathname.startsWith("/panel/p/api/")) return apiTablero(env, req, url, url.searchParams.get("quien"), iaJSON);
     if (url.pathname === "/panel/media") {
       try {
         const H = { Authorization: `Bearer ${env.WA_TOKEN}` };
@@ -3688,7 +3688,7 @@ export default {
     if (url.pathname === "/panel/accion" || url.pathname === "/panel/enviar") {
       return panelAccion(env, url, req);
     }
-    if (url.pathname === "/panel") return new Response(conApp(PANEL_APP), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
+    if (url.pathname === "/panel/viejo") return new Response(conApp(PANEL_APP), { headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } });
     if (url.pathname === "/numeros") {
       if (clave !== env.VERIFY_TOKEN) return new Response("Falta ?clave=", { status: 401 });
       return new Response(await listarNumeros(env, url.searchParams.get("negocio") || "1769208074411196"), { headers: { "Content-Type": "text/plain; charset=utf-8" } });
