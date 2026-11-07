@@ -96,11 +96,11 @@ export async function detectarOrigen(env, limite = 80) {
 // Para hacer: todo lo que necesita algo, ordenado por cercanía a la venta
 const CATS = {
   pago: { orden: 1, titulo: "Pago, seña o comprobante" },
-  llamar: { orden: 2, titulo: "Llamar o manejarlo vos" },
-  cotizado: { orden: 3, titulo: "Ya cotizado y espera respuesta" },
-  cotizar: { orden: 4, titulo: "Falta cotizar" },
-  seguimiento: { orden: 5, titulo: "Seguimiento que toca hoy" },
-  consulta: { orden: 6, titulo: "Consulta sin responder" },
+  cotizado: { orden: 2, titulo: "Ya cotizado y espera respuesta" },
+  cotizar: { orden: 3, titulo: "Falta cotizar" },
+  llamar: { orden: 4, titulo: "Llamar o manejarlo vos" },
+  consulta: { orden: 5, titulo: "Consulta sin responder" },
+  seguimiento: { orden: 6, titulo: "Seguimiento que toca hoy" },
 };
 export async function paraHacer(env) {
   const ahora = Date.now();
@@ -126,7 +126,8 @@ export async function paraHacer(env) {
   const segs = await seguimientos(env).catch(() => []);
   const cierres = Object.fromEntries((await todas(env, "SELECT conv, cierre_ts FROM w_conv WHERE cierre_ts IS NOT NULL AND cierre_ts>=?", ahora - 3 * DIA)).map((x) => [x.conv, x.cierre_ts]));
   for (const s of segs) {
-    if (cierres[s.conv]) continue;
+    if (cierres[s.conv] || !s.revisado || !s.borrador && !s.dueno) continue;   // solo los que la IA ya revisó y decidió seguir hoy (el resto lo revisa el cron durante el día)
+    if (s.dueno && !(s.situacion === 8 || s.llamada || (s.presup_usd || 0) > 1000)) s.dueno = false;   // perfil A/B solo, sin monto ni negociación: seguimiento normal
     const c = { conv: s.conv, nombre: s.nombre, producto: s.producto, accion: s.dueno ? (s.llamada || "Pedido grande o negociación: conviene llamarlo") : (s.sit_texto || "Toca seguimiento"), puntaje: s.puntaje, presup_usd: s.presup_usd, ult_texto: s.ult_texto };
     poner(s.dueno ? "llamar" : "seguimiento", c, { borrador: s.borrador || "", toque: s.toque || 1, dias: s.dias_cot ?? null });
   }
