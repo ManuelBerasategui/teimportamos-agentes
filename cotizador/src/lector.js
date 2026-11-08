@@ -235,13 +235,14 @@ async function guardarLote(env, lote) {
 export async function metricas(env, desde, hasta = Date.now()) {
   // Liviano: usa índices (w_conv por fechas, w_hito por tipo) y nunca recorre todos los mensajes
   const q = (sql, ...b) => env.DB.prepare(sql).bind(...b).first();
+  const qa = async (sql, ...b) => (await env.DB.prepare(sql).bind(...b).all()).results || [];
   const [nuevos, activos, cot, cotChats, ventas, sinResp] = await Promise.all([
     q("SELECT COUNT(*) n FROM w_conv WHERE primer_ts>=? AND primer_ts<? AND grupo=0 AND COALESCE(nuevo_ok,1)=1", desde, hasta),
     q("SELECT COUNT(*) n FROM w_conv WHERE ult_ts>=? AND ult_ts<? AND grupo=0", desde, hasta),
     q("SELECT COUNT(*) n FROM w_hito WHERE tipo='cotizacion' AND ts>=? AND ts<?", desde, hasta),
     q("SELECT COUNT(DISTINCT conv) n FROM w_hito WHERE tipo='cotizacion' AND ts>=? AND ts<?", desde, hasta),
     q("SELECT COUNT(*) n FROM w_hito h LEFT JOIN w_conv c ON c.conv=h.conv WHERE h.tipo='venta' AND h.ts>=? AND h.ts<? AND COALESCE(h.oculto,0)=0 AND COALESCE(c.prov,0)=0", desde, hasta),
-        q("SELECT COUNT(*) n FROM w_conv WHERE ult_cliente_ts>=? AND grupo=0 AND archivado=0 AND ult_yo=0 AND COALESCE(prov,0)=0 AND lower(COALESCE(producto,'')) NOT LIKE '%vap%' AND lower(COALESCE(producto,'')) NOT LIKE '%elf%bar%' AND lower(COALESCE(producto,'')) NOT LIKE '%pod%' AND ult_cliente_ts>COALESCE(visto_ts,0)", Date.now() - 14 * 86400e3),
+        qa("SELECT ult_texto FROM w_conv WHERE ult_cliente_ts>=? AND grupo=0 AND archivado=0 AND ult_yo=0 AND COALESCE(prov,0)=0 AND lower(COALESCE(producto,'')) NOT LIKE '%vap%' AND lower(COALESCE(producto,'')) NOT LIKE '%elf%bar%' AND lower(COALESCE(producto,'')) NOT LIKE '%pod%' AND ult_cliente_ts>COALESCE(visto_ts,0)", Date.now() - 14 * 86400e3),
   ]);
   // Tiempo de respuesta: solo con los mensajes de las últimas 24 h del período (acotado)
   const desdeResp = Math.max(desde, hasta - 86400e3);
@@ -255,7 +256,7 @@ export async function metricas(env, desde, hasta = Date.now()) {
   esperas.sort((a, b) => a - b);
   return {
     nuevos: nuevos?.n || 0, activos: activos?.n || 0, cotizaciones: cot?.n || 0, chatsCotizados: cotChats?.n || 0,
-    ventas: ventas?.n || 0, sinResponder: sinResp?.n || 0,
+    ventas: ventas?.n || 0, sinResponder: (sinResp || []).filter((r) => !esCierre(r.ult_texto) && !/comprobaci[oó]n r[aá]pida|est[aá]s ofreciendo \*\*/i.test(r.ult_texto || "") && !/^\s*(hola|buenas)[\s.!]*$/i.test(r.ult_texto || "")).length,
     respuestaMin: esperas.length ? Math.round(esperas[Math.floor(esperas.length / 2)]) : null,
     conversion: cotChats?.n ? Math.round(((ventas?.n || 0) / cotChats.n) * 100) : null,
   };
