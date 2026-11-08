@@ -113,6 +113,17 @@ await T.guardarStudio(env, { videos: [{ id: "7430000000000000001", vistas: 100 }
 chk("una lectura vieja no baja las vistas", db.prepare("SELECT vistas FROM tt_posts WHERE id='7430000000000000001'").get().vistas === 12500);
 chk("TikTok queda marcado como leído para el panel", JSON.parse(db.prepare("SELECT v FROM kv WHERE k='tt_ultimo'").get().v).estado === "OK");
 
+// Notas con recordatorio
+const mñn = T.diaAR(Date.now() + 86400e3);
+await T.marcar(env, "nota", { conv: "5491100000003", nota: "Escribir mañana para que pague", para: T.diaAR() }, "Manuel");
+r = await T.paraHacer(env);
+chk("nota con fecha de hoy va arriba de todo como recordatorio", r.lista[0]?.cat === "recordatorio" && r.lista[0].que.includes("pague"));
+chk("el agente ve la nota como importante", (await T.contextoTablero(env)).includes("HOY: IMPORTANTE"));
+await T.marcar(env, "listo", { conv: "5491100000003" }, "Manuel");
+chk("Listo en un recordatorio lo cumple y deja la nota sin fecha", !(await T.paraHacer(env)).lista.some((i) => i.cat === "recordatorio") && db.prepare("SELECT nota, nota_para FROM w_conv WHERE conv='5491100000003'").get().nota_para === null);
+const { PANEL_P: P2 } = await import(dir + "/panel-p.js");
+chk("sin botón de abrir WhatsApp y con botón Nota", !P2.includes("Abrir WhatsApp") && P2.includes('data-a="nota"'));
+
 // IA en cadena: Groq sin cupo → pasa a OpenRouter
 const { altIA, estadoIA } = await import(dir + "/ia-alterna.js");
 const real = globalThis.fetch; const urls = [];

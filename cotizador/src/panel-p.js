@@ -4,7 +4,7 @@ export const PANEL_P = String.raw`<!doctype html>
 <title>Te Importamos</title>
 <style>
 :root{--bg:#f4f1ec;--card:#fff;--tx:#1b1916;--mu:#76705f;--li:#e6e0d6;--ac:#e8590c;--ac2:#ff922b;--ok:#2b8a3e;--bad:#c92a2a;--warn:#e67700;--chip:#f3eee6;--sh:0 1px 2px #0000000d,0 6px 18px #0000000a;
- --c-venta:#7048e8;--c-pago:#2b8a3e;--c-cotizado:#e8590c;--c-cotizar:#f59f00;--c-llamar:#1c7ed6;--c-consulta:#0ca678;--c-seguimiento:#868e96}
+ --c-recordatorio:#fab005;--c-venta:#7048e8;--c-pago:#2b8a3e;--c-cotizado:#e8590c;--c-cotizar:#f59f00;--c-llamar:#1c7ed6;--c-consulta:#0ca678;--c-seguimiento:#868e96}
 :root[data-t="d"],:root:not([data-t="l"]){color-scheme:light dark}
 @media (prefers-color-scheme:dark){:root:not([data-t="l"]){--bg:#121110;--card:#1c1a17;--tx:#f1ede6;--mu:#a49d90;--li:#2f2b26;--chip:#26231f;--sh:0 1px 2px #0006}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.5 "Inter",system-ui,-apple-system,Segoe UI,Roboto,sans-serif;-webkit-font-smoothing:antialiased}
@@ -22,6 +22,8 @@ h2{font-size:13px;text-transform:uppercase;letter-spacing:.6px;color:var(--mu);m
 h2::before{content:"";width:10px;height:10px;border-radius:3px;background:var(--k,var(--ac))}
 .card{background:var(--card);border:1px solid var(--li);border-radius:14px;padding:12px 14px;margin-bottom:9px;box-shadow:var(--sh)}
 [data-cat]{border-left:4px solid var(--k,var(--li))}
+.nota{margin-top:7px;background:color-mix(in srgb,#fab005 16%,var(--card));border-radius:8px;padding:6px 9px;font-size:13.5px}
+.borr[data-copiar]{cursor:pointer}.borr[data-copiar]:hover{border-color:var(--ac)}
 .tel{font-weight:800;font-size:15.5px;cursor:pointer;border-radius:6px;padding:0 4px;margin:0 -4px;transition:background .15s,color .15s}.tel:hover{background:var(--chip);color:var(--ac)}.tel.ok{color:var(--ok)}
 .top{display:flex;gap:8px;flex-wrap:wrap;align-items:baseline}.top b{font-size:15.5px}.mu{color:var(--mu);font-size:13px}.tag{background:var(--chip);border-radius:6px;padding:1px 7px;font-size:12px;font-weight:600}
 .que{margin-top:5px;font-weight:500}.ult{color:var(--mu);font-size:13px;margin-top:3px;font-style:italic}
@@ -145,11 +147,11 @@ function pintarLista() {
   }).join("");
 }
 function tarjeta(i) {
-  var wa = "https://wa.me/" + i.conv + (i.borrador ? "?text=" + encodeURIComponent(i.borrador) : "");
   return '<div class="card" data-cat="' + i.cat + '" style="--k:var(--c-' + i.cat + ')" data-conv="' + esc(i.conv) + '"><div class="top"><span class="tel" data-tel="' + esc(i.conv) + '" title="' + esc(i.nombre || "") + '">' + telFmt(i.conv) + "</span>" + (i.producto ? '<span class="mu">' + esc(i.producto) + "</span>" : "") +
     (i.usd ? '<span class="tag">~USD ' + plata(i.usd) + "</span>" : "") + (i.cat !== "seguimiento" && i.cat !== "llamar" ? '<span class="mu">' + hace(i.espera_h) + "</span>" : (i.toque ? '<span class="tag">toque ' + i.toque + "</span>" : "")) + "</div>" +
-    (i.que ? '<div class="que">' + esc(i.que) + "</div>" : "") + (i.ultimo ? '<div class="ult">"' + esc(i.ultimo) + '"</div>' : "") + (i.borrador ? '<div class="borr">' + esc(i.borrador) + "</div>" : "") +
-    '<div class="acc"><a class="b p" target="_blank" href="' + esc(wa) + '">' + (i.borrador ? "Abrir con el mensaje" : "Abrir WhatsApp") + '</a><button class="b" data-a="listo">Listo</button><button class="b v" data-a="vendido">Vendido</button><button class="b x" data-a="perdido">Perdido</button></div></div>';
+    (i.que ? '<div class="que">' + esc(i.que) + "</div>" : "") + (i.ultimo ? '<div class="ult">"' + esc(i.ultimo) + '"</div>' : "") + (i.borrador ? '<div class="borr" data-copiar="' + esc(i.borrador) + '" title="Tocá para copiar">' + esc(i.borrador) + "</div>" : "") +
+    (i.nota && i.cat !== "recordatorio" ? '<div class="nota">📝 ' + esc(i.nota) + (i.nota_para ? ' <span class="mu">· ' + esc(i.nota_para.slice(5)) + "</span>" : "") + "</div>" : "") +
+    '<div class="acc"><button class="b" data-a="nota" data-nota="' + esc(i.nota || "") + '" data-para="' + esc(i.nota_para || "") + '">Nota</button><button class="b" data-a="listo">Listo</button><button class="b v" data-a="vendido">Vendido</button><button class="b x" data-a="perdido">Perdido</button></div></div>';
 }
 document.addEventListener("click", function (e) {
   var b = e.target.closest("[data-a]"); if (!b) return;
@@ -157,6 +159,7 @@ document.addEventListener("click", function (e) {
   if (a === "listo") api("listo", { conv: conv }).then(function () { card.remove(); toast("Listo, sale de la lista"); });
   if (a === "vendido") modalVenta(conv, card);
   if (a === "perdido") modalPerdido(conv, card);
+  if (a === "nota") modalNota(conv, card, b.dataset.nota || "", b.dataset.para || "");
   if (a === "borrarVenta") { if (confirm("¿Borrar esta venta?")) api("venta-borrar", { id: b.dataset.id }).then(function () { cargarVentas(); toast("Venta borrada"); }); }
 });
 function cerrarModal() { $("#mod").classList.remove("on"); }
@@ -174,6 +177,17 @@ function modalVenta(conv, card) {
       .then(function (r) { if (r.error) return toast(r.error); cerrarModal(); if (card) card.remove(); toast("Venta registrada"); cargarVentas(); });
   };
 }
+function manana() { var d = new Date(Date.now() - 3 * 3600e3 + 86400e3); return d.toISOString().slice(0, 10); }
+function modalNota(conv, card, nota, para) {
+  $("#modC").innerHTML = '<b>Nota</b><label>Qué hay que hacer o recordar</label><textarea id="nTxt" rows="3" placeholder="Ej: escribir mañana para que pague">' + esc(nota) + '</textarea>' +
+    '<label>Recordármelo el</label><div class="fila"><input id="nPara" type="date" value="' + esc(para) + '"><button class="b" id="nMan">Mañana</button></div><div class="mu">Con fecha, ese día aparece arriba de todo y el agente te lo marca como importante.</div>' +
+    '<div class="acc"><button class="b p" id="nOk">Guardar</button>' + (nota ? '<button class="b x" id="nBorrar">Borrar nota</button>' : "") + '<button class="b" data-cerrar>Cancelar</button></div>';
+  $("#mod").classList.add("on"); $("#nTxt").focus();
+  $("#nMan").onclick = function () { $("#nPara").value = manana(); };
+  var guardar = function (txt) { api("nota", { conv: conv, nota: txt, para: $("#nPara").value }).then(function (r) { if (r.error) return toast(r.error); cerrarModal(); toast(txt ? "Nota guardada" : "Nota borrada"); cargarHoy(); }); };
+  $("#nOk").onclick = function () { guardar($("#nTxt").value.trim()); };
+  if ($("#nBorrar")) $("#nBorrar").onclick = function () { guardar(""); };
+}
 function modalPerdido(conv, card) {
   var motivos = ["Precio total", "Plazo", "Cantidad mínima", "Lo compra en otro lado / más barato acá", "No respondió más", "No es el momento", "Desconfianza", "Otro"];
   $("#modC").innerHTML = '<b>Marcar como perdido</b><label>Motivo</label><select id="pMot">' + motivos.map(function (m) { return "<option>" + m + "</option>"; }).join("") + '</select><div class="acc"><button class="b x" id="pOk">Marcar perdido</button><button class="b" data-cerrar>Cancelar</button></div>';
@@ -188,7 +202,7 @@ function buscar() {
   api("buscar?q=" + encodeURIComponent($("#q").value)).then(function (l) {
     $("#res").innerHTML = (l || []).map(function (c) {
       return '<div class="card" data-conv="' + esc(c.conv) + '"><div class="top"><b>' + esc(c.nombre || "+" + c.conv) + '</b><span class="mu">' + esc(c.producto || "") + '</span><span class="tag">' + esc(c.etapa || "sin etapa") + '</span></div><div class="ult">"' + esc(String(c.ult_texto || "").slice(0, 120)) + '"</div>' +
-        '<div class="acc"><a class="b" target="_blank" href="https://wa.me/' + esc(c.conv) + '">WhatsApp</a><button class="b v" data-a="vendido">Vendido</button><button class="b x" data-a="perdido">Perdido</button></div></div>';
+        '<div class="acc"><button class="b" data-a="nota">Nota</button><button class="b v" data-a="vendido">Vendido</button><button class="b x" data-a="perdido">Perdido</button></div></div>';
     }).join("") || '<div class="vacio">Sin resultados.</div>';
   });
 }

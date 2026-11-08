@@ -1168,9 +1168,9 @@ export async function metricasPerfil(env, desde) {
     all(`SELECT COALESCE(c.perfil,'sin') perfil, COUNT(*) chats,
       SUM(CASE WHEN EXISTS (SELECT 1 FROM w_hito h WHERE h.conv=c.conv AND h.tipo='cotizacion' AND h.ts>=?) THEN 1 ELSE 0 END) cotizados,
       SUM(CASE WHEN EXISTS (SELECT 1 FROM w_hito h WHERE h.conv=c.conv AND h.tipo='venta' AND h.ts>=? AND COALESCE(h.oculto,0)=0) THEN 1 ELSE 0 END) ventas,
-      SUM(COALESCE(c.presup_usd,0)) usd ${base} GROUP BY 1`, desde, desde, desde),
-    all(`SELECT c.origen, COALESCE(c.perfil,'sin') perfil, COUNT(*) n ${base} AND c.origen IS NOT NULL GROUP BY 1, 2`, desde),
-    all(`SELECT c.motivo, COUNT(*) n ${base} AND c.motivo IS NOT NULL GROUP BY 1`, desde),
+      SUM(COALESCE(c.presup_usd,0)) usd ${base} GROUP BY 1`, desde, desde, desde, desde),
+    all(`SELECT c.origen, COALESCE(c.perfil,'sin') perfil, COUNT(*) n ${base} AND c.origen IS NOT NULL GROUP BY 1, 2`, desde, desde),
+    all(`SELECT c.motivo, COUNT(*) n ${base} AND c.motivo IS NOT NULL GROUP BY 1`, desde, desde),
   ]);
   return { perfiles, origen, motivos };
 }

@@ -28,7 +28,7 @@ export async function prepararTablero(env) {
     env.DB.prepare("CREATE TABLE IF NOT EXISTS origenes (codigo TEXT PRIMARY KEY, nombre TEXT, canal TEXT, creado INTEGER, quien TEXT)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT, exp INTEGER)"),
   ]);
-  for (const col of ["origen_cod TEXT", "cierre_ts INTEGER"]) await env.DB.prepare("ALTER TABLE w_conv ADD COLUMN " + col).run().catch(() => {});
+  for (const col of ["origen_cod TEXT", "cierre_ts INTEGER", "nota TEXT", "nota_ts INTEGER", "nota_para TEXT", "nota_quien TEXT"]) await env.DB.prepare("ALTER TABLE w_conv ADD COLUMN " + col).run().catch(() => {});
   listo = true;
 }
 const kvGet = async (env, k) => (await env.DB.prepare("SELECT v FROM kv WHERE k=?").bind(k).first().catch(() => null))?.v ?? null;
@@ -125,6 +125,7 @@ export async function detectarOrigen(env, limite = 80) {
 // ---------------------------------------------------------------------------
 // Para hacer: todo lo que necesita algo, ordenado por cercanía a la venta
 const CATS = {
+  recordatorio: { orden: -1, titulo: "Recordatorios de hoy (notas)" },
   venta: { orden: 0, titulo: "¿Se vendió? El agente detectó una venta: confirmala" },
   pago: { orden: 1, titulo: "Pago, seña o comprobante" },
   cotizado: { orden: 2, titulo: "Ya cotizado y espera respuesta" },
@@ -167,6 +168,13 @@ export async function paraHacer(env) {
     poner(s.dueno ? "llamar" : "seguimiento", c, { borrador: s.borrador || "", toque: s.toque || 1, dias: s.dias_cot ?? null });
   }
   const porValor = new Set(["llamar", "seguimiento"]);   // en estas manda la plata en juego; en las demás, qué tan caliente está y cuánto espera
+  // Notas del equipo: las que vencen hoy van arriba de todo; las demás se muestran en su tarjeta
+  const notas = await todas(env, "SELECT conv, nombre, producto, presup_usd, puntaje, nota, nota_para, nota_quien FROM w_conv WHERE nota IS NOT NULL AND nota<>''").catch(() => []);
+  const hoyD = diaAR();
+  for (const n of notas) {
+    if (n.nota_para && n.nota_para <= hoyD) { items.delete(n.conv); poner("recordatorio", { ...n, accion: n.nota, ult_cliente_ts: ahora }, { para: n.nota_para }); }
+    const it = items.get(n.conv); if (it) { it.nota = n.nota; it.nota_para = n.nota_para || ""; }
+  }
   const lista = [...items.values()].sort((a, b) => CATS[a.cat].orden - CATS[b.cat].orden || (porValor.has(a.cat) ? b.usd - a.usd || b.puntaje - a.puntaje : b.puntaje - a.puntaje || b.espera_h - a.espera_h));
   return { lista: lista.slice(0, 150), categorias: CATS };
 }
@@ -177,8 +185,16 @@ export async function marcar(env, accion, b, quien) {
   const conv = String(b.conv || "").replace(/\D/g, ""), ahora = Date.now();
   await kvPut(env, "tab_mark", ahora);
   const cerrarTareas = env.DB.prepare("UPDATE tareas SET estado='resuelta' WHERE (ref=? OR tel=?) AND estado='abierta'").bind("w805:" + conv, conv);
+  if (accion === "nota") {
+    if (!conv) return { error: "falta el chat" };
+    const texto = String(b.nota || "").trim().slice(0, 500), para = /^\d{4}-\d{2}-\d{2}$/.test(b.para || "") ? b.para : null;
+    await env.DB.prepare("UPDATE w_conv SET nota=?, nota_ts=?, nota_para=?, nota_quien=? WHERE conv=?").bind(texto || null, ahora, texto ? para : null, quien || "", conv).run();
+    return { ok: true };
+  }
   if (accion === "listo") {
     if (!conv) return { error: "falta el chat" };
+    const rec = await env.DB.prepare("SELECT nota_para FROM w_conv WHERE conv=?").bind(conv).first().catch(() => null);
+    if (rec?.nota_para && rec.nota_para <= diaAR()) { await env.DB.prepare("UPDATE w_conv SET nota_para=NULL WHERE conv=?").bind(conv).run(); return { ok: true }; }   // recordatorio cumplido: queda la nota, sin fecha
     await env.DB.batch([env.DB.prepare("UPDATE w_conv SET cierre_ts=?, seg_visto=? WHERE conv=?").bind(ahora, ahora, conv), cerrarTareas]);
     return { ok: true };
   }
@@ -357,7 +373,9 @@ export async function contextoTablero(env) {
         .concat(tt.filter(en).map((p) => `TikTok "${String(p.texto || "").replace(/\s+/g, " ").slice(0, 90)}" vistas=${p.vistas ?? "?"} compartidos=${p.compartidos ?? "?"}`));
       return `${x.periodo}: ${x.nuevos} chats nuevos, ${x.cotizados} cotizados, ${x.ventas} ventas | videos: ${v.length ? v.join(" ; ") : "ninguno"}`;
     }).join("\n");
-    return `TABLERO (datos reales; las ventas son las que el equipo cargó con el botón Vendido):\n${f}\nDÍA POR DÍA, CHATS DE WHATSAPP CRUZADOS CON LOS VIDEOS PUBLICADOS ESE DÍA (últimos 14):\n${dias}\nMOTIVOS DE PÉRDIDA (30 días): ${JSON.stringify(perd)}\nPARA HACER AHORA: ${JSON.stringify(cuenta)}. Primeros: ${ph.lista.slice(0, 12).map((i) => `${i.nombre || i.conv} (${ph.categorias[i.cat].titulo}${i.producto ? ", " + i.producto : ""}${i.usd ? ", ~USD " + i.usd : ""})`).join("; ")}`;
+    const nts = await todas(env, "SELECT conv, nombre, producto, nota, nota_para FROM w_conv WHERE nota IS NOT NULL AND nota<>'' ORDER BY nota_ts DESC LIMIT 40").catch(() => []);
+    const notasTxt = nts.map((n) => `${n.nombre || n.conv} (+${n.conv}${n.producto ? ", " + n.producto : ""}): "${n.nota}"${n.nota_para ? " → recordar el " + n.nota_para + (n.nota_para <= diaAR() ? " (HOY: IMPORTANTE)" : "") : ""}`).join("\n");
+    return `NOTAS DEL EQUIPO (las escribe Manuel; si una tiene fecha de hoy o vencida, mencionala primero como importante):\n${notasTxt || "ninguna"}\nTABLERO (datos reales; las ventas son las que el equipo cargó con el botón Vendido):\n${f}\nDÍA POR DÍA, CHATS DE WHATSAPP CRUZADOS CON LOS VIDEOS PUBLICADOS ESE DÍA (últimos 14):\n${dias}\nMOTIVOS DE PÉRDIDA (30 días): ${JSON.stringify(perd)}\nPARA HACER AHORA: ${JSON.stringify(cuenta)}. Primeros: ${ph.lista.slice(0, 12).map((i) => `${i.nombre || i.conv} (${ph.categorias[i.cat].titulo}${i.producto ? ", " + i.producto : ""}${i.usd ? ", ~USD " + i.usd : ""})`).join("; ")}`;
   } catch (e) { return `TABLERO: no pude leerlo (${String(e?.message || e).slice(0, 100)})`; }
 }
 
@@ -380,7 +398,7 @@ export async function apiTablero(env, req, url, quien, iaJSON) {
     if (r2?.respuesta) await kvPut(env, k, JSON.stringify(out));
     return json(out);
   }
-  if (["listo", "perdido", "vendido", "venta-borrar"].includes(r) && req.method === "POST") return json(await marcar(env, r, body, quien));
+  if (["listo", "perdido", "vendido", "venta-borrar", "nota"].includes(r) && req.method === "POST") return json(await marcar(env, r, body, quien));
   if (r === "numeros") return json(await numeros(env, ["mes", "dia"].includes(url.searchParams.get("p")) ? url.searchParams.get("p") : "semana", Math.min(31, +url.searchParams.get("n") || (url.searchParams.get("p") === "dia" ? 14 : 8))));
   if (r === "equipo") return json({ dias: await equipoDias(env, Math.min(400, +url.searchParams.get("d") || 31)), dispositivos: await dispositivos(env) });
   if (r === "asignar" && req.method === "POST") return json(await asignarDispositivo(env, body.disp, body.persona));
