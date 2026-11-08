@@ -283,6 +283,29 @@ export async function links(env) {
 }
 
 // ---------------------------------------------------------------------------
+// TikTok Studio (desde la PC): guarda en tt_posts, la misma tabla que usa Apify, así el agente y el panel lo ven igual
+const num = (x) => { const v = Number(String(x ?? "").replace(/[^\d.]/g, "")); return Number.isFinite(v) && String(x ?? "") !== "" ? Math.round(v) : null; };
+export async function guardarStudio(env, b) {
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS tt_posts (id TEXT PRIMARY KEY, ts INTEGER, link TEXT, texto TEXT, duracion INTEGER, portada TEXT, vistas INTEGER, likes INTEGER, comentarios INTEGER, compartidos INTEGER, guardados INTEGER, seguidores INTEGER, actualizado INTEGER)").run();
+  for (const col of ["tiempo_ms INTEGER", "completado REAL", "fuente TEXT"]) await env.DB.prepare("ALTER TABLE tt_posts ADD COLUMN " + col).run().catch(() => {});
+  const ahora = Date.now(), vids = (Array.isArray(b?.videos) ? b.videos : []).slice(0, 300).filter((v) => /^\d{6,25}$/.test(String(v.id || "")));
+  const ops = vids.map((v) => {
+    let ts = num(v.ts); if (ts && ts < 1e12) ts *= 1000;
+    return env.DB.prepare(`INSERT INTO tt_posts (id, ts, link, texto, duracion, portada, vistas, likes, comentarios, compartidos, guardados, seguidores, actualizado, tiempo_ms, completado, fuente)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, 'studio') ON CONFLICT(id) DO UPDATE SET ts=COALESCE(excluded.ts, tt_posts.ts), texto=COALESCE(NULLIF(excluded.texto,''), tt_posts.texto),
+      vistas=MAX(COALESCE(excluded.vistas,0), COALESCE(tt_posts.vistas,0)), likes=MAX(COALESCE(excluded.likes,0), COALESCE(tt_posts.likes,0)), comentarios=MAX(COALESCE(excluded.comentarios,0), COALESCE(tt_posts.comentarios,0)),
+      compartidos=MAX(COALESCE(excluded.compartidos,0), COALESCE(tt_posts.compartidos,0)), guardados=MAX(COALESCE(excluded.guardados,0), COALESCE(tt_posts.guardados,0)),
+      tiempo_ms=COALESCE(excluded.tiempo_ms, tt_posts.tiempo_ms), completado=COALESCE(excluded.completado, tt_posts.completado), actualizado=excluded.actualizado, fuente='studio'`)
+      .bind(String(v.id), ts, v.link || `https://www.tiktok.com/@te.importamos.arg/video/${v.id}`, String(v.texto || "").slice(0, 600), num(v.duracion), String(v.portada || "").slice(0, 500),
+        num(v.vistas), num(v.likes), num(v.comentarios), num(v.compartidos), num(v.guardados), num(b?.seguidores), ahora, num(v.tiempo_ms), v.completado != null ? Number(v.completado) : null);
+  });
+  for (let i = 0; i < ops.length; i += 50) await env.DB.batch(ops.slice(i, i + 50));
+  await kvPut(env, "tt_ultimo", JSON.stringify({ ts: ahora, estado: vids.length ? "OK" : "VACIO", fuente: "studio", videos: vids.length }));
+  if (vids.length) await env.DB.prepare("DELETE FROM kv WHERE k='tt_aviso'").run().catch(() => {});
+  return { ok: true, guardados: vids.length };
+}
+
+// ---------------------------------------------------------------------------
 // Pantalla Hoy en una sola llamada
 export async function hoy(env, liviano = false) {
   await prepararTablero(env);

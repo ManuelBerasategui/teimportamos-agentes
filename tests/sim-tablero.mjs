@@ -105,6 +105,14 @@ chk("números por día", nd.filas.length === 7 && nd.filas[0].ventas >= 2);
 const ctx = await T.contextoTablero(env);
 chk("el agente ve día por día los chats cruzados con los videos", ctx.includes("DÍA POR DÍA") && ctx.includes("videos:"));
 
+// TikTok Studio desde la PC
+const gs = await T.guardarStudio(env, { videos: [{ id: "7430000000000000001", ts: 1793000000000, texto: "Esto por Mercado Libre", vistas: 12500, likes: 800, guardados: 95, tiempo_ms: 7500, completado: 0.21 }, { id: "malo" }] });
+const tt1 = db.prepare("SELECT vistas, guardados, tiempo_ms, fuente FROM tt_posts WHERE id='7430000000000000001'").get();
+chk("TikTok Studio guarda los videos válidos con tiempo visto", gs.guardados === 1 && tt1.vistas === 12500 && tt1.tiempo_ms === 7500 && tt1.fuente === "studio");
+await T.guardarStudio(env, { videos: [{ id: "7430000000000000001", vistas: 100 }] });
+chk("una lectura vieja no baja las vistas", db.prepare("SELECT vistas FROM tt_posts WHERE id='7430000000000000001'").get().vistas === 12500);
+chk("TikTok queda marcado como leído para el panel", JSON.parse(db.prepare("SELECT v FROM kv WHERE k='tt_ultimo'").get().v).estado === "OK");
+
 // IA en cadena: Groq sin cupo → pasa a OpenRouter
 const { altIA, estadoIA } = await import(dir + "/ia-alterna.js");
 const real = globalThis.fetch; const urls = [];
