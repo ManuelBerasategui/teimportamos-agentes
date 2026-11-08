@@ -22,6 +22,7 @@ h2{font-size:13px;text-transform:uppercase;letter-spacing:.6px;color:var(--mu);m
 h2::before{content:"";width:10px;height:10px;border-radius:3px;background:var(--k,var(--ac))}
 .card{background:var(--card);border:1px solid var(--li);border-radius:14px;padding:12px 14px;margin-bottom:9px;box-shadow:var(--sh)}
 [data-cat]{border-left:4px solid var(--k,var(--li))}
+.tel{font-weight:800;font-size:15.5px;cursor:pointer;border-radius:6px;padding:0 4px;margin:0 -4px;transition:background .15s,color .15s}.tel:hover{background:var(--chip);color:var(--ac)}.tel.ok{color:var(--ok)}
 .top{display:flex;gap:8px;flex-wrap:wrap;align-items:baseline}.top b{font-size:15.5px}.mu{color:var(--mu);font-size:13px}.tag{background:var(--chip);border-radius:6px;padding:1px 7px;font-size:12px;font-weight:600}
 .que{margin-top:5px;font-weight:500}.ult{color:var(--mu);font-size:13px;margin-top:3px;font-style:italic}
 .borr{margin-top:8px;background:var(--chip);border-radius:10px;padding:8px 10px;font-size:13px;white-space:pre-wrap;border:1px dashed var(--li)}
@@ -84,6 +85,9 @@ var $ = function (s) { return document.querySelector(s); };
 function esc(s) { return String(s == null ? "" : s).replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; }); }
 function api(p, body) { return fetch("/panel/p/api/" + p, body ? { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}).then(function (r) { if (r.status === 401) { location.href = "/login?volver=/panel/p"; } return r.json(); }); }
 function toast(t) { var e = $("#toast"); e.textContent = t; e.style.display = "block"; setTimeout(function () { e.style.display = "none"; }, 2200); }
+function telFmt(c) { c = String(c || ""); var m = c.match(/^549(\d{2,4})(\d{6,8})$/); return "+" + (m ? "54 9 " + m[1] + " " + m[2].slice(0, -4) + "-" + m[2].slice(-4) : c); }
+document.addEventListener("click", function (e) { var t = e.target.closest("[data-tel]"); if (!t) return; var n = "+" + t.dataset.tel;
+  (navigator.clipboard ? navigator.clipboard.writeText(n) : Promise.reject()).then(function () { t.classList.add("ok"); setTimeout(function () { t.classList.remove("ok"); }, 900); toast("Número copiado"); }).catch(function () { prompt("Número:", n); }); });
 function plata(n) { return Math.round(n || 0).toLocaleString("es-AR"); }
 function hace(h) { return h < 1 ? "recién" : h < 48 ? "hace " + h + " h" : "hace " + Math.round(h / 24) + " días"; }
 var LINEAS = [], DATA = null;
@@ -142,7 +146,7 @@ function pintarLista() {
 }
 function tarjeta(i) {
   var wa = "https://wa.me/" + i.conv + (i.borrador ? "?text=" + encodeURIComponent(i.borrador) : "");
-  return '<div class="card" data-cat="' + i.cat + '" style="--k:var(--c-' + i.cat + ')" data-conv="' + esc(i.conv) + '"><div class="top"><b>' + esc(i.nombre || "+" + i.conv) + "</b>" + (i.producto ? '<span class="mu">' + esc(i.producto) + "</span>" : "") +
+  return '<div class="card" data-cat="' + i.cat + '" style="--k:var(--c-' + i.cat + ')" data-conv="' + esc(i.conv) + '"><div class="top"><span class="tel" data-tel="' + esc(i.conv) + '" title="' + esc(i.nombre || "") + '">' + telFmt(i.conv) + "</span>" + (i.producto ? '<span class="mu">' + esc(i.producto) + "</span>" : "") +
     (i.usd ? '<span class="tag">~USD ' + plata(i.usd) + "</span>" : "") + (i.cat !== "seguimiento" && i.cat !== "llamar" ? '<span class="mu">' + hace(i.espera_h) + "</span>" : (i.toque ? '<span class="tag">toque ' + i.toque + "</span>" : "")) + "</div>" +
     (i.que ? '<div class="que">' + esc(i.que) + "</div>" : "") + (i.ultimo ? '<div class="ult">"' + esc(i.ultimo) + '"</div>' : "") + (i.borrador ? '<div class="borr">' + esc(i.borrador) + "</div>" : "") +
     '<div class="acc"><a class="b p" target="_blank" href="' + esc(wa) + '">' + (i.borrador ? "Abrir con el mensaje" : "Abrir WhatsApp") + '</a><button class="b" data-a="listo">Listo</button><button class="b v" data-a="vendido">Vendido</button><button class="b x" data-a="perdido">Perdido</button></div></div>';
@@ -158,7 +162,7 @@ document.addEventListener("click", function (e) {
 function cerrarModal() { $("#mod").classList.remove("on"); }
 $("#mod").addEventListener("click", function (e) { if (e.target.id === "mod" || e.target.dataset.cerrar !== undefined) cerrarModal(); });
 function modalVenta(conv, card) {
-  var nombre = card ? (card.querySelector("b") || {}).textContent : "";
+  var nombre = card ? ((card.querySelector("[data-tel]") || card.querySelector("b") || {}).textContent || "") : "";
   $("#modC").innerHTML = "<b>Registrar venta" + (nombre ? " · " + esc(nombre) : "") + "</b>" + (conv ? "" : '<label>Nombre del cliente</label><input id="vNom">') +
     '<label>Monto total cobrado</label><div class="fila"><input id="vMonto" inputmode="decimal" placeholder="ej. 350000"><select id="vMon"><option>ARS</option><option>USD</option></select></div>' +
     '<label>Ganancia nuestra (lo que nos queda)</label><input id="vGan" inputmode="decimal" placeholder="ej. 60000">' +

@@ -3667,7 +3667,7 @@ export default {
       } catch { return new Response("No se pudo cargar la foto", { status: 502 }); }
     }
     // Un solo agente: el chat de la pestaña Agente, el asistente del 805 y el de Redes van al mismo (ventas + contenido, misma memoria)
-    if (req.method === "POST" && ["/panel/api/agente/preguntar", "/panel/api/805/preguntar", "/panel/api/redes/preguntar"].includes(url.pathname)) { const b = await req.json().catch(() => ({})); return Response.json(await preguntarAgente(env, iaJSON, String(b.pregunta || ""))); }
+    if (req.method === "POST" && ["/panel/api/agente/preguntar", "/panel/api/805/preguntar", "/panel/api/redes/preguntar"].includes(url.pathname)) { const b = await req.json().catch(() => ({})); try { return Response.json(await preguntarAgente(env, iaJSON, String(b.pregunta || ""))); } catch (e) { console.log("agente", e?.stack || e); return Response.json({ respuesta: "No pude responder: " + String(e?.message || e).slice(0, 300) }); } }
     if (url.pathname === "/panel/api/agente/charla") return Response.json(await charlaAgente(env));
     if (url.pathname.startsWith("/panel/api/805/grupos")) return apiGrupos(env, req, url, iaJSON);
     if (url.pathname.startsWith("/panel/api/805/")) return apiLector(env, req, url, iaJSON);
