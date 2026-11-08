@@ -51,7 +51,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid color-mix(in srgb,var(
 .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--tx);color:var(--bg);padding:9px 15px;border-radius:10px;display:none;z-index:30;font-weight:600}
 @media (max-width:560px){.viejo{display:none}nav button{padding:6px 9px;font-size:13px}}
 </style></head><body>
-<header><div class="hw"><div class="logo"><i></i>TE.<span>IMPORTAMOS</span></div>
+<header><div class="hw"><div class="logo"><i></i>TE <span>IMPORTAMOS</span></div>
 <nav id="tabs"><button data-v="hoy" class="on">Hoy</button><button data-v="chats">Chats y ventas</button><button data-v="num">Números</button><button data-v="links">Links</button><button data-v="ag">Agente</button></nav>
 <a class="viejo" href="/panel/viejo">panel viejo</a></div></header>
 <main>
