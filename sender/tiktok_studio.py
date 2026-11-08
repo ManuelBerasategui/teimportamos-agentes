@@ -42,6 +42,7 @@ ALIAS = {
     "tiempo": ["average_watch_time", "avg_watch_time", "avgWatchTime", "avg_play_time", "averageWatchTime"],
     "completado": ["full_watched_rate", "finish_rate", "completion_rate", "finishRate", "full_video_watched_rate"],
     "portada": ["cover_url", "coverUrl", "cover", "thumbnail"],
+    "video_url": ["download_urls", "play_addr", "download_addr", "play_url"],
 }
 ID_KEYS = ["item_id", "itemId", "aweme_id", "awemeId", "video_id", "id"]
 
@@ -66,7 +67,7 @@ def recorrer(x, videos):
                 for f in fuentes:
                     r = valor(f, nombres)
                     if r is not None:
-                        if campo in ("texto", "portada"):
+                        if campo in ("texto", "portada", "video_url"):
                             if not v.get(campo): v[campo] = str(r)
                         else:
                             try:
@@ -79,7 +80,7 @@ def recorrer(x, videos):
         for val in x: recorrer(val, videos)
 
 def normalizar(v):
-    out = {"id": v["id"], "texto": v.get("texto", "")[:600], "portada": v.get("portada", "")}
+    out = {"id": v["id"], "texto": v.get("texto", "")[:600], "portada": v.get("portada", "")[:500]}
     for c in ("vistas", "likes", "comentarios", "compartidos", "guardados"):
         if c in v: out[c] = int(v[c])
     if "ts" in v: out["ts"] = int(v["ts"] * 1000 if v["ts"] < 1e12 else v["ts"])
@@ -122,9 +123,34 @@ def leer(ver=False, login=False):
         for _ in range(8):   # bajar para que cargue más videos
             page.mouse.wheel(0, 3000); page.wait_for_timeout(1500)
         page.wait_for_timeout(2000)
+        transcribir(ctx, videos)
         ctx.close()
     DEBUG.write_text(json.dumps(muestras, ensure_ascii=False, indent=1), encoding="utf-8")
     return [normalizar(v) for v in videos.values() if any(k in v for k in ("vistas", "likes"))]
+
+def api_get(path):
+    req = urllib.request.Request(f"{URL}/lector{path}", headers={"Authorization": f"Bearer {TOKEN}", "User-Agent": "Mozilla/5.0 TeImportamos-TikTokStudio"})
+    with urllib.request.urlopen(req, timeout=60) as r: return json.load(r)
+
+def transcribir(ctx, videos):
+    """Baja hasta 15 videos que todavía no tienen guion y los manda a transcribir (Whisper de Groq, gratis)."""
+    try: ids = api_get("/tiktok-pendientes").get("ids", [])
+    except Exception as e: print("No pude pedir pendientes de guion:", e); return
+    hechos = 0
+    for vid in ids:
+        url = (videos.get(vid) or {}).get("video_url")
+        if not url: continue
+        try:
+            r = ctx.request.get(url, timeout=60000, headers={"Referer": "https://www.tiktok.com/"})
+            if not r.ok: continue
+            datos = r.body()
+            req = urllib.request.Request(f"{URL}/lector/tiktok-transcribir", data=datos, method="POST",
+                headers={"Authorization": f"Bearer {TOKEN}", "Content-Type": "video/mp4", "X-Video-Id": vid, "User-Agent": "Mozilla/5.0 TeImportamos-TikTokStudio"})
+            with urllib.request.urlopen(req, timeout=120) as resp: res = json.load(resp)
+            if res.get("ok"): hechos += 1
+            else: print("Guion", vid, "->", res.get("error"))
+        except Exception as e: print("Guion", vid, "error:", e)
+    if hechos: print(f"Guiones transcriptos: {hechos}")
 
 def una_vez(ver=False):
     vids = leer(ver=ver)

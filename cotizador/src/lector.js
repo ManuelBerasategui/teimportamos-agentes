@@ -114,6 +114,8 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
   // el puente marca el mensaje como "media" y sigue.
   if (p === "/whatsapp-web-webhook/media") return new Response("no guardamos archivos", { status: 402 });
   // TikTok Studio leído desde la PC (sender/tiktok_studio.py): gratis, con los datos de dueño de la cuenta
+  if (p === "/tiktok-pendientes") { const { tiktokSinGuion } = await import("./tablero.js"); return Response.json(await tiktokSinGuion(env)); }
+  if (p === "/tiktok-transcribir" && req.method === "POST") { const { transcribirTikTok } = await import("./tablero.js"); return Response.json(await transcribirTikTok(env, req.headers.get("x-video-id"), await req.arrayBuffer())); }
   if (p === "/tiktok-studio" && req.method === "POST") { const { guardarStudio } = await import("./tablero.js"); return Response.json(await guardarStudio(env, await req.json().catch(() => ({})))); }
   // QR de vinculación: Termux lo sube y el panel lo muestra (para escanearlo con el celular del 805)
   if (p === "/qr" && req.method === "POST") {

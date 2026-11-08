@@ -124,6 +124,18 @@ chk("Listo en un recordatorio lo cumple y deja la nota sin fecha", !(await T.par
 const { PANEL_P: P2 } = await import(dir + "/panel-p.js");
 chk("sin botón de abrir WhatsApp y con botón Nota", !P2.includes("Abrir WhatsApp") && P2.includes('data-a="nota"'));
 
+// Guiones de TikTok con Whisper de Groq
+{ const real0 = globalThis.fetch; let pedido = null;
+  globalThis.fetch = async (u, o) => { pedido = { u: String(u), o }; return new Response("Esto por Mercado Libre. Querés saber cuánto me quedó?", { status: 200 }); };
+  env.GROQ_API_KEY = "g";
+  const pend = await T.tiktokSinGuion(env);
+  chk("pide guion de los videos sin transcribir", pend.ids.includes("7430000000000000001"));
+  const tr = await T.transcribirTikTok(env, "7430000000000000001", new ArrayBuffer(5000));
+  chk("transcribe con Whisper de Groq y guarda el guion", tr.ok && /audio\/transcriptions/.test(pedido.u) && /Mercado Libre/.test(db.prepare("SELECT guion FROM tt_posts WHERE id='7430000000000000001'").get().guion));
+  chk("no lo vuelve a pedir", !(await T.tiktokSinGuion(env)).ids.includes("7430000000000000001"));
+  chk("el agente ve los guiones", (await T.contextoTablero(env)).includes("GUION: Esto por Mercado Libre"));
+  delete env.GROQ_API_KEY; globalThis.fetch = real0; }
+
 // IA en cadena: Groq sin cupo → pasa a OpenRouter
 const { altIA, estadoIA } = await import(dir + "/ia-alterna.js");
 const real = globalThis.fetch; const urls = [];

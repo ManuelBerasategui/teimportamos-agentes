@@ -321,6 +321,28 @@ export async function guardarStudio(env, b) {
   return { ok: true, guardados: vids.length };
 }
 
+// Guiones: la PC baja el video y el worker lo transcribe con Whisper de Groq (gratis con GROQ_API_KEY). Una sola vez por video.
+export async function tiktokSinGuion(env) {
+  await env.DB.prepare("ALTER TABLE tt_posts ADD COLUMN guion TEXT").run().catch(() => {});
+  if (!env.GROQ_API_KEY) return { ids: [], aviso: "falta GROQ_API_KEY en Cloudflare" };
+  const r = await todas(env, "SELECT id FROM tt_posts WHERE guion IS NULL AND COALESCE(vistas,0)>0 ORDER BY (ts>=?) DESC, vistas DESC LIMIT 15", Date.now() - 14 * DIA);
+  return { ids: r.map((x) => x.id) };
+}
+export async function transcribirTikTok(env, id, buf) {
+  id = String(id || ""); if (!/^\d{6,25}$/.test(id)) return { error: "id inválido" };
+  if (!buf || buf.byteLength < 1000) return { error: "video vacío" };
+  if (buf.byteLength > 24 * 1024 * 1024) { await env.DB.prepare("UPDATE tt_posts SET guion='' WHERE id=?").bind(id).run(); return { error: "video muy pesado (más de 24 MB), se saltea" }; }
+  await env.DB.prepare("ALTER TABLE tt_posts ADD COLUMN guion TEXT").run().catch(() => {});
+  const fd = new FormData();
+  fd.append("file", new Blob([buf], { type: "video/mp4" }), id + ".mp4");
+  fd.append("model", env.GROQ_WHISPER || "whisper-large-v3-turbo"); fd.append("language", "es"); fd.append("response_format", "text"); fd.append("temperature", "0");
+  const r = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", { method: "POST", headers: { Authorization: "Bearer " + env.GROQ_API_KEY }, body: fd });
+  if (!r.ok) return { error: "Groq " + r.status + ": " + (await r.text()).slice(0, 200) };
+  const texto = (await r.text()).trim().slice(0, 4000);
+  await env.DB.prepare("UPDATE tt_posts SET guion=? WHERE id=?").bind(texto, id).run();
+  return { ok: true, caracteres: texto.length };
+}
+
 // ---------------------------------------------------------------------------
 // Pantalla Hoy en una sola llamada
 export async function hoy(env, liviano = false) {
@@ -375,13 +397,15 @@ export async function contextoTablero(env) {
     }).join("\n");
     const nts = await todas(env, "SELECT conv, nombre, producto, nota, nota_para FROM w_conv WHERE nota IS NOT NULL AND nota<>'' ORDER BY nota_ts DESC LIMIT 40").catch(() => []);
     const notasTxt = nts.map((n) => `${n.nombre || n.conv} (+${n.conv}${n.producto ? ", " + n.producto : ""}): "${n.nota}"${n.nota_para ? " → recordar el " + n.nota_para + (n.nota_para <= diaAR() ? " (HOY: IMPORTANTE)" : "") : ""}`).join("\n");
+    const guiones = await todas(env, "SELECT ts, texto, vistas, likes, compartidos, guardados, guion FROM tt_posts WHERE guion IS NOT NULL AND guion<>'' AND ts>=? ORDER BY vistas DESC LIMIT 10", Date.now() - 60 * DIA).catch(() => []);
+    const guionesTxt = guiones.map((g) => `${diaAR(g.ts)} · ${g.vistas} vistas · ${g.guardados ?? "?"} guardados · ${g.compartidos ?? "?"} compartidos · gancho escrito "${String(g.texto || "").slice(0, 60)}"\n  GUION: ${String(g.guion).replace(/\s+/g, " ").slice(0, 900)}`).join("\n");
     const hechos = [
       `CHATS SIN RESPONDER DE VERDAD AHORA: ${ph.lista.filter((i) => ["pago", "cotizado", "cotizar", "consulta"].includes(i.cat)).length} (ya sin cierres tipo "gracias/dale/ok", spam ni saludos sueltos). Usá ESTE número, no otro conteo de "sin responder".`,
       diaAR() <= "2026-11-09" ? "Los DMs de Instagram están BLOQUEADOS por Instagram hasta el 09/11/2026: no recomiendes contestarlos antes de esa fecha." : "",
       "Las ventas reales son solo las cargadas con el botón Vendido; si casi no hay cargadas, decí que falta registrar ventas antes de concluir que no se vendió.",
       "Si preguntan por qué no se vende: separá en etapas con números (chats nuevos vs semanas anteriores → cotizados → ventas) y señalá en qué etapa se cae; decí qué dato falta medir en vez de suponer.",
     ].filter(Boolean).join("\n");
-    return `HECHOS DEL NEGOCIO (mandan sobre cualquier otro dato):\n${hechos}\nNOTAS DEL EQUIPO (las escribe Manuel; si una tiene fecha de hoy o vencida, mencionala primero como importante):\n${notasTxt || "ninguna"}\nTABLERO (datos reales; las ventas son las que el equipo cargó con el botón Vendido):\n${f}\nDÍA POR DÍA, CHATS DE WHATSAPP CRUZADOS CON LOS VIDEOS PUBLICADOS ESE DÍA (últimos 14):\n${dias}\nMOTIVOS DE PÉRDIDA (30 días): ${JSON.stringify(perd)}\nPARA HACER AHORA: ${JSON.stringify(cuenta)}. Primeros: ${ph.lista.slice(0, 12).map((i) => `${i.nombre || i.conv} (${ph.categorias[i.cat].titulo}${i.producto ? ", " + i.producto : ""}${i.usd ? ", ~USD " + i.usd : ""})`).join("; ")}`;
+    return `HECHOS DEL NEGOCIO (mandan sobre cualquier otro dato):\n${hechos}\nGUIONES TRANSCRIPTOS DE LOS MEJORES VIDEOS DE TIKTOK (60 días, por vistas; usalos para comparar estructuras: gancho, desarrollo, giro, CTA):\n${guionesTxt || "todavía no hay guiones transcriptos"}\nNOTAS DEL EQUIPO (las escribe Manuel; si una tiene fecha de hoy o vencida, mencionala primero como importante):\n${notasTxt || "ninguna"}\nTABLERO (datos reales; las ventas son las que el equipo cargó con el botón Vendido):\n${f}\nDÍA POR DÍA, CHATS DE WHATSAPP CRUZADOS CON LOS VIDEOS PUBLICADOS ESE DÍA (últimos 14):\n${dias}\nMOTIVOS DE PÉRDIDA (30 días): ${JSON.stringify(perd)}\nPARA HACER AHORA: ${JSON.stringify(cuenta)}. Primeros: ${ph.lista.slice(0, 12).map((i) => `${i.nombre || i.conv} (${ph.categorias[i.cat].titulo}${i.producto ? ", " + i.producto : ""}${i.usd ? ", ~USD " + i.usd : ""})`).join("; ")}`;
   } catch (e) { return `TABLERO: no pude leerlo (${String(e?.message || e).slice(0, 100)})`; }
 }
 
