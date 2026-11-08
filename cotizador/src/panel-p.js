@@ -278,6 +278,6 @@ $("#agEnv").onclick = function () {
 };
 
 ver((location.hash || "#hoy").slice(1) || "hoy");
-setInterval(function () { if (!document.hidden && !$("#v-hoy").hidden && !$("#mod").classList.contains("on")) cargarHoy(true); }, 30000);
+setInterval(function () { if (!document.hidden && document.hasFocus() && !$("#v-hoy").hidden && !$("#mod").classList.contains("on")) cargarHoy(true); }, 30000);
 document.addEventListener("visibilitychange", function () { if (!document.hidden && !$("#v-hoy").hidden) cargarHoy(true); });
 </script></body></html>`;

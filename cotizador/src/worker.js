@@ -3547,11 +3547,11 @@ $("#tareas").onclick = function (ev) {
 function arrancar() {
   var q = new URLSearchParams(location.search);
   if (q.get("tel")) { verTab("chats"); abrir(q.get("tel").replace(/\D/g, "")); } else if (q.get("tab") === "chats") verTab("chats"); else cargarDash();
-  setInterval(function () { if (document.hidden) return; if ($("#v-chats").classList.contains("on")) { cargarChat(false); if (++ciclosLista % 5 === 0) cargarLista(); } }, 3000);
+  setInterval(function () { if (document.hidden || !document.hasFocus()) return; if ($("#v-chats").classList.contains("on")) { cargarChat(false); if (++ciclosLista % 4 === 0) cargarLista(); } }, 15000);
   var ciclosLista = 0;
-  setInterval(function () { if (!document.hidden && $("#v-dash").classList.contains("on")) cargarDash(); }, 60000);
+  setInterval(function () { if (!document.hidden && document.hasFocus() && $("#v-dash").classList.contains("on")) cargarDash(); }, 300000);
   api("importar-viejos").then(function (r) { if (r.n) { aviso("Pasé " + r.n + " pendiente(s) viejos al panel"); contarPend(); } }).catch(function () {});
-  contarPend(); setInterval(function () { if (!document.hidden) contarPend(); }, 30000);
+  contarPend(); setInterval(function () { if (!document.hidden && document.hasFocus()) contarPend(); }, 120000);
   if (q.get("tab") === "pend") verTab("pend");
   if (q.get("tab") === "herr") verTab("herr");
   if (q.get("tab") === "agentes") { var bAg = q.get("ag") && document.querySelector('#agLista button[data-a="' + q.get("ag") + '"]'); if (bAg) { AG = bAg.dataset.a; document.querySelectorAll("#agLista button").forEach(function (x) { x.classList.toggle("on", x === bAg); }); } verTab("agentes"); }
