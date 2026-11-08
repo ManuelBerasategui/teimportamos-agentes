@@ -24,6 +24,7 @@ h2::before{content:"";width:10px;height:10px;border-radius:3px;background:var(--
 [data-cat]{border-left:4px solid var(--k,var(--li))}
 .nota{margin-top:7px;background:color-mix(in srgb,#fab005 16%,var(--card));border-radius:8px;padding:6px 9px;font-size:13.5px}
 .borr[data-copiar]{cursor:pointer}.borr[data-copiar]:hover{border-color:var(--ac)}
+details.grupo>summary{list-style:none;cursor:pointer}details.grupo>summary::-webkit-details-marker{display:none}details.grupo>summary h2::after{content:"▸";margin-left:auto;color:var(--mu);transition:transform .15s}details.grupo[open]>summary h2::after{transform:rotate(90deg)}details.grupo>summary h2{margin:16px 0 10px;padding:10px 12px;background:var(--card);border:1px solid var(--li);border-radius:12px}
 .tel{font-weight:800;font-size:15.5px;cursor:pointer;border-radius:6px;padding:0 4px;margin:0 -4px;transition:background .15s,color .15s}.tel:hover{background:var(--chip);color:var(--ac)}.tel.ok{color:var(--ok)}
 .top{display:flex;gap:8px;flex-wrap:wrap;align-items:baseline}.top b{font-size:15.5px}.mu{color:var(--mu);font-size:13px}.tag{background:var(--chip);border-radius:6px;padding:1px 7px;font-size:12px;font-weight:600}
 .que{margin-top:5px;font-weight:500}.ult{color:var(--mu);font-size:13px;margin-top:3px;font-style:italic}
@@ -138,12 +139,15 @@ function cargarHoy(liviano) {
     pintarLista();
   }).catch(function () { $("#lista").innerHTML = '<div class="vacio">No pude cargar. Recargá la página.</div>'; });
 }
+var ABIERTOS = {}; try { ABIERTOS = JSON.parse(localStorage.getItem("ti_abiertos") || "{}") || {}; } catch (e) {}
+document.addEventListener("toggle", function (e) { var d = e.target; if (!d.classList || !d.classList.contains("grupo")) return; ABIERTOS[d.dataset.k] = d.open; try { localStorage.setItem("ti_abiertos", JSON.stringify(ABIERTOS)); } catch (er) {} }, true);
 function pintarLista() {
   var d = DATA, cats = d.categorias, orden = Object.keys(cats).sort(function (a, b) { return cats[a].orden - cats[b].orden; });
   if (!d.lista.length) { $("#lista").innerHTML = '<div class="vacio">Nada pendiente. Buen momento para grabar contenido o prospectar.</div>'; return; }
   $("#lista").innerHTML = orden.map(function (k) {
     var it = d.lista.filter(function (i) { return i.cat === k; }); if (!it.length) return "";
-    return '<h2 style="--k:var(--c-' + k + ')">' + esc(cats[k].titulo) + ' <span class="n">' + it.length + "</span></h2>" + it.map(tarjeta).join("");
+    var abierto = ABIERTOS[k] != null ? ABIERTOS[k] : ["recordatorio", "venta", "pago"].indexOf(k) >= 0;
+    return '<details class="grupo" data-k="' + k + '"' + (abierto ? " open" : "") + '><summary><h2 style="--k:var(--c-' + k + ')">' + esc(cats[k].titulo) + ' <span class="n">' + it.length + "</span></h2></summary>" + it.map(tarjeta).join("") + "</details>";
   }).join("");
 }
 function tarjeta(i) {
