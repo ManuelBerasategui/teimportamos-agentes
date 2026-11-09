@@ -137,10 +137,18 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
     return Response.json({ ok: true, guardados: n.mensajes });
   }
   if (p.startsWith("/enviar/") && p !== "/enviar/lista" && p !== "/enviar/hecho" && p !== "/enviar/no") { const r = await rutaAutoresp(env, req, p, url, iaJSON, h); if (r) return r; }
-  // Programita de la PC (carpeta sender/): pide la lista de seguimientos y marca cada uno. Acá NO se envía nada.
+  // Vista previa autenticada para el sender. Puede refrescar borradores, pero no envía ni marca chats como enviados.
+  if (p === "/seguimientos" && req.method === "GET") {
+    const lim = Math.min(Math.max(+url.searchParams.get("limite") || 20, 1), 20);
+    if (url.searchParams.get("refrescar") === "1") await revisarSeguimientos(env, iaJSON, { limite: 0, tope: lim, forzar: true });
+    const lista = (await seguimientos(env)).filter((s) => /^\d{8,15}$/.test(String(s.conv)) && s.borrador).slice(0, lim)
+      .map((s) => ({ conv: s.conv, nombre: s.nombre, producto: s.producto, cantidad: s.cantidad, total: s.total, tipo: s.tipo, toque: s.toque, situacion: s.situacion, revisado: s.revisado, dueno: s.dueno, llamada: s.llamada, reaccion: s.reaccion, dias_cot: s.dias_cot, borrador: s.borrador }));
+    return Response.json({ ok: true, lista });
+  }
+  // Programita de la PC: lista de seguimientos disponibles, sin enviarlos ni marcarlos aquí.
   if (p === "/enviar/lista") {
     const lim = Math.min(Math.max(+url.searchParams.get("limite") || 20, 1), 100);
-    const lista = (await seguimientosAuto805(env)).filter((s) => /^\d{8,15}$/.test(String(s.conv)) && s.borrador).slice(0, lim)
+    const lista = (await seguimientos(env)).filter((s) => /^\d{8,15}$/.test(String(s.conv)) && s.borrador).slice(0, lim)
       .map((s) => ({ conv: s.conv, nombre: s.nombre, producto: s.producto, toque: s.toque, borrador: s.borrador }));
     return Response.json({ ok: true, lista });
   }
@@ -1090,10 +1098,10 @@ function conDetalle(s, c) {
 // Mensaje de base cuando la IA todavía no revisó el chat (así el botón nunca abre el WhatsApp vacío)
 export function borradorBase(s) {
   const n = /\p{L}/u.test(String(s.nombre || "")) ? " " + String(s.nombre).trim().split(/\s+/)[0].toLowerCase() : "";
-  const que = s.producto ? `lo de ${s.producto}` : "lo que te pasé";
-  if ((s.toque || 1) >= 3) return `buenas${n}, cerramos ${que} por ahora? me ayuda saber qué te frenó: 1) el precio total 2) el plazo 3) la cantidad mínima 4) no es el momento 5) otra cosa. con un numero me alcanza`;
-  if ((s.toque || 1) === 2) return `buenas${n}, con ${que} se puede arrancar con menos cantidad de prueba para ver cómo se vende. te lo armo así?`;
-  return `buenas${n}, ${que} es el total puesto en tu casa, y el plazo real es de 25 a 40 días. lo ajustamos a otra cantidad o lo dejamos así?`;
+  const que = s.producto ? "lo de " + s.producto : "lo que te pasé";
+  if ((s.toque || 1) >= 3) return "buenas" + n + ", cerramos " + que + " por ahora? qué te frenó más: 1) el precio total 2) la cantidad 3) el plazo 4) no es el momento 5) otra cosa. con un número me alcanza";
+  if ((s.toque || 1) === 2) return "buenas" + n + ", para avanzar con " + que + ", te sirve que revise una cantidad menor y te pase el total para comparar?";
+  return "buenas" + n + ", te escribo por " + que + ": qué te frena más, el precio total o la cantidad? si es la cantidad, puedo revisar otra opción y pasarte el total para comparar.";
 }
 // Una línea corta y útil: a quién, qué le cotizamos (cantidad y monto), cuándo y qué contestó
 export function lineaSeguimiento(s) {
@@ -1104,15 +1112,15 @@ export function lineaSeguimiento(s) {
 }
 // Revisa con IA los que faltan hoy y devuelve los que de verdad hay que seguir (con producto, cantidad, monto y mensaje)
 // tope: cuántos revisa la IA en esta llamada (el resto lo va revisando el cron de a poco durante el día)
-export async function revisarSeguimientos(env, iaJSON, { limite = 10, tope = SEG.revisarPorLlamada } = {}) {
+export async function revisarSeguimientos(env, iaJSON, { limite = 10, tope = SEG.revisarPorLlamada, forzar = false } = {}) {
   const lista = await candidatosSeguimiento(env), cache = await cacheSegIA(env), ahora = Date.now();
-  const faltan = lista.filter((s) => !vigente(cache[s.conv], s, ahora)).slice(0, tope);
+  const faltan = lista.filter((s) => forzar || !vigente(cache[s.conv], s, ahora)).slice(0, tope);
   if (faltan.length && iaJSON) {
     for (let i = 0; i < faltan.length; i += SEG.porLlamada) {
       const tanda = faltan.slice(i, i + SEG.porLlamada);
       const charlas = await Promise.all(tanda.map((s) => env.DB.prepare("SELECT yo, texto, ts FROM w_msg WHERE conv=? AND COALESCE(texto,'')<>'' ORDER BY ts DESC LIMIT 40").bind(s.conv).all().then((r) => (r.results || []).reverse()).catch(() => [])));
       const oferta = (await kvGet(env, "seg_oferta")) !== "0";
-      const r = await iaJSON(env, `Atendés el WhatsApp de "Te Importamos" (Rosario: gestionamos importaciones de China para revendedores y comercios; compras grupales/cupos y pedidos a medida por foto o link de Alibaba/1688; nos encargamos de proveedor, aduana y envío; mostramos costos reales; plazo real China puerta a puerta 25 a 40 días). A estos clientes les mandamos cotización, precio, catálogo o info y no avanzaron. Ahora es ${fechaHora(Date.now())} (hora Argentina).
+      const r = await iaJSON(env, `Atendés el WhatsApp de "Te Importamos" (Rosario: gestionamos importaciones de China para revendedores y comercios; compras grupales/cupos y pedidos a medida por foto o link de Alibaba/1688; nos encargamos de proveedor, aduana y envío; mostramos costos reales; plazo real China puerta a puerta 25 a 40 días). A estos clientes les mandamos cotización, precio, catálogo o info y dejaron de contestar o no avanzaron. Ahora es ${fechaHora(Date.now())} (hora Argentina).
 Lo que cierra ventas NO es recordar que existimos: es sacarle la duda y el riesgo (cuánto paga en total, qué no incluye, qué pasa si sale mal, cómo sigue). Insistir sin aportar nada no funciona.
 PASO 1: leé TODA la charla y elegí UNA situación:
 1 pendiente nuestro (preguntó algo y no le contestamos, o prometimos algo y no lo dimos) → el mensaje es la respuesta atrasada, sin disculpas largas
@@ -1126,14 +1134,12 @@ PASO 1: leé TODA la charla y elegí UNA situación:
 PASO 2: "seguir" false si ya compró, dijo que no o que lo deja, pidió que no le escriban, es proveedor o no es cliente, ya tiene un pedido en curso, le dijimos que eso no lo traemos, o NO tenés nada nuevo y real para aportar.
 "dueno" true (lo maneja el dueño, no sale solo) si hay negociación sobre costos/flete/aduana/condiciones de pago, pide llamada, factura o referencias, se enojó o reclama, o es un pedido grande o raro. En ese caso "llamada": 2 líneas con qué falta y qué decirle por teléfono.
 PASO 3, el mensaje (va el número de toque de cada cliente):
-- toque 1: claridad, no recordatorio. Resolvé la duda más probable: total puesto en su casa y qué no incluye, plazo real, seña. Si ya preguntó algo, empezá por eso.
-- toque 2: algo NUEVO y real que baje el riesgo: pedido chico de prueba, otra cantidad o transporte${oferta ? `, o la oferta de este toque: 50% off en nuestros honorarios en esta importación (USD 40 en vez de 80), vale 48 h. Usala solo en el toque 2, en pedidos de importación desde China, y como segunda opción después del aporte` : ""}. Nunca "lo pensaste?".
-- toque 3: cierre con opciones numeradas: "qué te frenó? 1) el precio total 2) el plazo 3) la cantidad mínima 4) no es el momento 5) otra cosa". No hay cuarto.
-- situación 4: ofrecé un resumen corto en texto para reenviarle al tercero (producto, total, plazo, seña, qué incluye), con los datos de la charla. No preguntes "hablaste con tu socio?" más de una vez.
-- "más barato acá": no bajes el precio; pedile precio y cantidad que vio para comparar total contra total.
+- toque 1: retomá algo concreto de esta charla y preguntá directamente si el precio total o la cantidad lo frenan. Ofrecé revisar otra cantidad y pasarle el total para comparar. Cerrá con un próximo paso fácil.
+- toque 2: preguntá qué lo frena, el precio total o la cantidad. Podés ofrecer revisar otra cantidad y comparar el total; no prometas descuentos, rebajas ni un resultado de precio. Nunca "lo pensaste?".
+- toque 3: cierre con opciones numeradas: "qué te frenó? 1) el precio total 2) la cantidad 3) el plazo 4) no es el momento 5) otra cosa". No hay cuarto.
 Estructura: 1) algo concreto de ESTA charla (producto, cantidad, algo que dijo) 2) el aporte nuevo 3) UNA sola pregunta fácil de contestar con una palabra o un número.
 Estilo: rioplatense, voseo, minúsculas naturales, SIN ¿ ni ¡, sin emojis, 2 a 4 líneas cortas, como una persona por WhatsApp. Prohibido: "estimado", "le escribo para", "seguimiento", "quedo atento", "estamos a disposición", "último mensajito", "te quedó alguna duda?" a secas, repetir un mensaje que ya le mandamos.
-Nunca inventes precios, descuentos (salvo la oferta del toque 2), stock, fechas ni casos: usá solo lo que está en la charla o en la cotización. Si falta el total y hace falta, no lo pongas.
+Nunca inventes precios, descuentos, stock, fechas ni casos: usá solo lo que está en la charla o en la cotización. Si falta el total y hace falta, no lo pongas.
 "producto", "cantidad" y "total": lo que le cotizamos según la charla (ej. "zapatillas Vans", "20 pares", "USD 640 total"). Si no se ve, "".
 CLIENTES:
 ${tanda.map((s, j) => `#${j + 1} ${s.nombre || "sin nombre"} · producto: ${s.producto || "?"} · le mandamos ${{ precio: "precio", info: "info", archivo: "un archivo (precios o fotos)" }[s.tipo] || "una cotización"} hace ${s.dias_cot} días · ${s.reaccion} · TOQUE ${s.toque} de 3${s.presup_usd ? " · aprox USD " + s.presup_usd : ""}${s.perfil ? " · perfil " + s.perfil : ""}${s.cot_dato ? " · cotización: " + String(s.cot_dato).replace(/\s+/g, " ").slice(0, 240) : ""}

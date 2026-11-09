@@ -1,6 +1,7 @@
 """Contesta los mensajes de WhatsApp que esperan respuesta, escribiendo como una persona (WhatsApp Web, ventana propia).
-Uso:  python responder.py --prueba   -> solo muestra qué contestaría a cada chat, NO abre WhatsApp ni envía nada
-      python responder.py            -> contesta hasta que no queden pendientes y termina
+Uso:  python responder.py --prueba   -> muestra respuestas y seguimientos, NO abre WhatsApp ni envía nada
+      python responder.py --prueba --solo-seguimientos -> vista previa de hasta 10 seguimientos
+      python responder.py            -> contesta y hace seguimientos en WhatsApp Web
       python responder.py --escritorio --seguir -> usa el WhatsApp que ya tenés abierto (app o tu Chrome), sin QR
       python responder.py --seguir   -> queda andando y revisa cada 2 minutos hasta que lo cortes
 Para frenarlo: Ctrl+C, un archivo llamado STOP en esta carpeta, o escribirle al bot de Telegram "pausar respuestas"."""
@@ -10,7 +11,6 @@ import json, urllib.request
 from enviar import api, parar, AQUI, H_DESDE, H_HASTA, URL, TOKEN, variar, os
 # Sin horario: si lo prendés, corre. Para volver a usar HORA_DESDE/HORA_HASTA del .env poné RESP_HORARIO=1
 if os.environ.get("RESP_HORARIO", "0") != "1": H_DESDE, H_HASTA = 0, 24
-from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 
 EXTRA_SEG = int(os.environ.get("RESP_EXTRA_SEG", "2"))          # segundos de más "leyendo" antes de escribir
 PAUSA_MIN = int(os.environ.get("RESP_PAUSA_MIN_SEG", "8"))      # pausa entre un chat y el siguiente
@@ -185,21 +185,24 @@ def guardar_cotizacion(p, c):
     api("/enviar/cotizacion-guardada", {"id": c["id"]}); print(f"  Cotización N° {c['num']} guardada para revisar: cotizaciones\\{nombre_pdf}")
 
 def mandar_seguimiento(pg, saltados):
-    """Manda UN seguimiento del panel (si hay). Devuelve True si mandó. Si uno no corresponde pasa al siguiente.
-    Los chats nuevos siempre tienen prioridad: después de cada seguimiento se vuelve a mirar si alguien escribió."""
-    try: lista = [x for x in api("/enviar/lista?limite=20")["lista"] if x["conv"] not in saltados]
-    except Exception as e: print(f"  No pude traer los seguimientos ({e})."); return False
+    """Manda un seguimiento revisado del Worker, usando su borrador personalizado."""
+    from playwright.sync_api import TimeoutError as PWTimeout
+    try:
+        lista = [x for x in api("/seguimientos?limite=20").get("lista", []) if x.get("conv") not in saltados and x.get("revisado") and x.get("borrador") and not x.get("dueno")]
+    except Exception as e:
+        print(f"  No pude traer los seguimientos ({e})."); return False
     for s in lista:
         if parar() or pausado(): return False
-        texto = variar(s)
-        print(f"\nSeguimiento · {s['nombre']} ({s['conv']}): {texto}")
+        texto = str(s.get("borrador") or "").strip()
+        if not texto: continue
+        print(f"\nSeguimiento · {s.get('nombre', 'sin nombre')} ({s['conv']}): {texto}")
         try:
             pg.goto(f"https://web.whatsapp.com/send?phone={s['conv']}")
             try: pg.wait_for_selector(CAJA, timeout=45000)
             except PWTimeout: print("  No abrió el chat (¿número sin WhatsApp?). Lo salteo."); saltados.add(s["conv"]); continue
             if not dormir(random.uniform(2, 4)): return False
-            if ultimo_del_cliente(pg) is True:   # el cliente escribió: eso se contesta como chat, no con un seguimiento
-                print("  El cliente escribió último: no mando seguimiento (lo toma el contestador)."); saltados.add(s["conv"]); continue
+            if ultimo_del_cliente(pg) is not False:
+                print("  No pude confirmar que nuestro mensaje sea el último: no mando seguimiento."); saltados.add(s["conv"]); continue
             caja = pg.locator(CAJA).first
             if caja.inner_text().strip(): print("  La caja ya tenía texto. Lo salteo."); saltados.add(s["conv"]); continue
             if not escribir(pg, caja, texto): return False
@@ -217,6 +220,7 @@ ESCRITORIO = os.environ.get("ESCRITORIO", "app")   # app = WhatsApp de escritori
 def main_escritorio(seguir):
     """Usa el WhatsApp que ya tenés abierto con sesión (app de escritorio o WhatsApp Web en tu Chrome): abre el chat con el
     mensaje ya escrito, espera el tiempo que tardaría una persona y aprieta Enter. Mientras corre, no uses el teclado ni el mouse."""
+    from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
     import webbrowser, pyautogui, pygetwindow as gw
     def al_frente():
         w = gw.getActiveWindow()
@@ -273,17 +277,7 @@ def main_escritorio(seguir):
             lista = [x for x in lista if x["conv"] not in saltados]
             quedan = 0 if QUEDAN <= len(saltados) else QUEDAN
             if not lista:
-                # Todo contestado: un seguimiento por vez (si alguien escribe, se le contesta primero)
-                if SEGUIMIENTOS and not quedan and seg_enviados < SEG_MAX:
-                    try: segs = [x for x in api("/enviar/lista?limite=20")["lista"] if x["conv"] not in seg_saltados]
-                    except Exception: segs = []
-                    if segs:
-                        s0 = segs[0]; t = variar(s0); print(f"\nSeguimiento · {s0['nombre']} ({s0['conv']}): {t}")
-                        if abrir_y_enviar(s0["conv"], t, random.uniform(3, 6) + len(t) * 0.08):
-                            api("/enviar/hecho", {"conv": s0["conv"]}); seg_enviados += 1; print("  Enter apretado ✅")
-                        else: seg_saltados.add(s0["conv"])
-                        if not dormir(random.randint(PAUSA_MIN, PAUSA_MAX)): break
-                        continue
+                # Los seguimientos solo salen desde WhatsApp Web con borrador personalizado.
                 if not seguir: print("No quedan chats para contestar."); break
                 print(f"{datetime.now():%H:%M} · " + (f"quedan {quedan} sin contestar (otra PC o tope por hora)." if quedan else "no hay chats esperando respuesta.") + " Vuelvo a mirar en 2 minutos.")
                 if not dormir(120): break
@@ -313,6 +307,7 @@ def main_escritorio(seguir):
 def main():
     global QUEDAN
     prueba, seguir = "--prueba" in sys.argv, "--seguir" in sys.argv
+    solo_seguimientos = "--solo-seguimientos" in sys.argv
     if "--pausado" in sys.argv: (AQUI / "PAUSA").touch()   # abrir.bat: abre WhatsApp sin contestar
     if not prueba and not (H_DESDE <= datetime.now().hour < H_HASTA):
         if not seguir: sys.exit(f"Fuera de horario ({H_DESDE}:00 a {H_HASTA}:00). Cambialo en .env si querés.")
@@ -320,6 +315,12 @@ def main():
         while not (H_DESDE <= datetime.now().hour < H_HASTA):
             if not dormir(300): return
     if prueba:
+        if solo_seguimientos:
+            try: segs = api("/seguimientos?refrescar=1&limite=10").get("lista", [])
+            except Exception as e: sys.exit(f"No pude cargar la vista previa de seguimientos: {e}")
+            print(f"Vista previa de seguimientos ({len(segs)} borradores). No se abrió WhatsApp ni se envió o marcó ningún chat.")
+            for s in segs: print(f"\n- {s.get('nombre') or 'sin nombre'} (+{s['conv']}) · toque {s.get('toque', '?')} · {'revisado por IA' if s.get('revisado') else 'borrador de respaldo, sin revisión IA'}\n  {s.get('borrador', '')}")
+            return
         pend = hay_pendientes() or ([], [])
         lista, cots = pend
         for c in cots: print(f"\n- COTIZACIÓN N° {c['num']} lista para {c['nombre']} ({c['conv']}): total USD {c['total']} → se enviaría el PDF con un texto corto.")
@@ -327,9 +328,16 @@ def main():
         for it in lista:
             try: d = api("/enviar/redactar", {"conv": it["conv"], "prueba": True})
             except Exception as e: print(f"\n- {it['nombre']} ({it['conv']}): el servidor no respondió a tiempo ({type(e).__name__}). Lo salto."); continue
-            print(f"\n- {it['nombre']} ({it['conv']}) dijo: {it['ultimo']}\n  → {d['accion'].upper()}: {d.get('mensaje') or d.get('motivo', '')}" + (f"\n  PARA VOS: {d.get('resumen') or d.get('motivo', '')}" if d['accion'] == 'humano' else "") + (f"\n  BORRADOR RECHAZADO: {d['borrador']}" if d.get('borrador') else "") + (f"\n  ENTENDIÓ: {d['entiende']}" if d.get('entiende') else ""))
+            print(f"\n- {it['nombre']} ({it['conv']}) dijo: {it['ultimo']}\n  → {d['accion'].upper()}: {d.get('mensaje') or d.get('motivo', '')}")
+        try: segs = api("/seguimientos?refrescar=1&limite=20").get("lista", [])
+        except Exception as e: print(f"\nNo pude cargar los borradores de seguimiento ({e})."); segs = []
+        print(f"\nBorradores de seguimiento ({len(segs)}). Vista previa: no se abrió WhatsApp ni se envió o marcó ningún chat.")
+        for s in segs: print(f"\n- {s.get('nombre') or 'sin nombre'} (+{s['conv']}) · toque {s.get('toque', '?')} · {'revisado por IA' if s.get('revisado') else 'borrador de respaldo, sin revisión IA'}\n  {s.get('borrador', '')}")
         return
-    if "--escritorio" in sys.argv: return main_escritorio(seguir)
+    if "--escritorio" in sys.argv:
+        if solo_seguimientos: sys.exit("--solo-seguimientos requiere WhatsApp Web para verificar el último mensaje y tipear letra por letra.")
+        return main_escritorio(seguir)
+    from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
     # La página ocupa la ventana real (antes era un tamaño fijo de 1200x800 y en pantallas chicas quedaba cortada la barra de escribir)
     args = {"minimizada": ["--start-minimized", "--window-size=1280,800"], "oculta": ["--window-position=-32000,-32000", "--window-size=1280,800"]}.get(VENTANA, ["--start-maximized"])
     with sync_playwright() as p:
@@ -348,11 +356,23 @@ def main():
                     print(f"{datetime.now():%H:%M} · fuera de horario: sigo a las {H_DESDE}:00.")
                     if not dormir(300): break
                     continue
-                try: pend = hay_pendientes()
-                except Exception as e:
-                    print(f"{datetime.now():%H:%M} · no pude hablar con el panel ({str(e).splitlines()[0][:80]}). Reintento en 1 minuto.")
-                    if not dormir(60): break
-                    continue
+                if solo_seguimientos:
+                    try:
+                        estado = api(f"/enviar/responder?limite=1&desde={desde_ms()}&dias={DIAS}")
+                        if estado.get("pausado"): pend = None
+                        else:
+                            QUEDAN = estado.get("quedan", len(estado.get("lista", [])))
+                            pend = ([], [])
+                    except Exception as e:
+                        print(f"{datetime.now():%H:%M} · no pude comprobar el estado del agente ({str(e).splitlines()[0][:80]}). Reintento en 1 minuto.")
+                        if not dormir(60): break
+                        continue
+                else:
+                    try: pend = hay_pendientes()
+                    except Exception as e:
+                        print(f"{datetime.now():%H:%M} · no pude hablar con el panel ({str(e).splitlines()[0][:80]}). Reintento en 1 minuto.")
+                        if not dormir(60): break
+                        continue
                 if pend is None:   # pausado desde Telegram: espera en vez de cerrarse
                     if not seguir: break
                     if not dormir(120): break

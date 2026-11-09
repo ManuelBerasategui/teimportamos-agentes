@@ -21,7 +21,7 @@ import { cronEntrenador } from "./entrenador.js";
  * Variables: WA_TOKEN, WA_PHONE_ID, VERIFY_TOKEN, GEMINI_KEY, ADMIN_PHONE (varios separados por coma)
  * Opcionales: NUMERO_AGENTE (número donde atiende el agente, ej. 5493412595936), NUMERO_EQUIPO, APP_SECRET (verifica que los mensajes vengan de Meta), SHEETS_URL (leads a Google Sheets)
  * Bindings:  ESTADO (KV), AI (Workers AI), DB (D1, recomendado: memoria consistente)
- * Trigger:   Cron cada 1 minuto (red de seguridad de respuestas, seguimientos cada 5 min y resumen a la hora en punto)
+ * Trigger:   Cron cada 1 minuto (red de seguridad de respuestas y revisión de borradores; los seguimientos comerciales se envían desde la PC)
  * Respuesta: el agente espera ESPERA.segundos desde el ÚLTIMO mensaje del cliente y contesta todo junto (sin depender del cron)
  */
 
@@ -1067,45 +1067,6 @@ async function recordarVentanas(env) {
     console.log("Recordatorio de ventana a", n, ok ? "enviado" : "falló");
   }
 }
-async function seguimientosAuto(env) {
-  const ahora = Date.now();
-  for (const k of (await env.ESTADO.list({ prefix: "v3:" })).keys) {
-    const tel = k.name.slice(3);
-    if (esAdmin(env, tel)) continue;
-    const e = JSON.parse((await env.ESTADO.get(k.name)) || "null");
-    if (!e?.historial?.length || !e.ultimoMensaje) continue;
-    const hs = (ahora - e.ultimoMensaje) / 3600e3, env2 = e.segEnviados || 0;
-    const toca = env2 === 0 && hs >= SEGUIMIENTO_AUTO.primero ? 1 : 0;
-    if (!toca || hs > SEGUIMIENTO_AUTO.ventana) continue;   // fuera de las 24 h: WhatsApp cobra, no se manda
-    const ultimo = e.historial[e.historial.length - 1];
-    if (ultimo.r === "c" || e.sinInteres || e.baja || ["pagado", "pago_informado"].includes(e.etapa) || (e.derivado && ahora - Date.parse(e.derivado.cuando) < 3 * 86400e3) || (await env.ESTADO.get(`pausa:${tel}`))) continue;
-    const quien = { c: "Cliente", a: "Vos", h: "Equipo" };
-    const soloSaludo = !e.historial.some((h) => h.r === "c" && !/vi un video tuyo/i.test(h.t) && String(h.t).replace(/[^a-z0-9]/gi, "").length > 3);
-    const r = await iaJSON(env, `Sos quien atiende el WhatsApp de "Te Importamos" (importaciones por encargo). El cliente no responde hace ${Math.round(hs)} horas. Escribí UN seguimiento (el único que le vamos a mandar). Primero aportá claridad con algo concreto de la charla (el total puesto en su casa, qué no incluye, el plazo real de 25 a 40 días, cómo sigue): eso es lo principal. La OFERTA va como segunda opción, al final, para que se decida; si no encaja, no la pongas.
-OFERTAS PERMITIDAS (elegí la que mejor encaje con lo que consultó; nunca más de 10% de descuento):
-- Importación desde China (Alibaba, cotización, producto a buscar): 50% off en nuestros honorarios (USD 40 en vez de 80).
-- Productos del catálogo o combos: envío gratis llevando 5 unidades o más, o hasta 10% de descuento en el pedido.
-- Zapatillas: envío gratis desde 3 pares.
-- Si todavía no dijo qué quiere: 50% off en honorarios en su primera importación si nos cuenta qué producto busca.
-La oferta vale 48 h. Estilo: rioplatense, voseo, minúscula, CERO emojis, sin ¿ ni ¡, 1 o 2 mensajes cortos separados por "||". Natural, nada de "estimado cliente". Retomá lo concreto que se habló${soloSaludo ? " (en este caso solo saludó: preguntale qué producto vio en el video)" : ""} y cerrá con una pregunta simple.
-Si el cliente dijo que no le interesa, que no le escriban, o se despidió cerrando la charla, respondé enviar false.
-Respondé SOLO JSON: {"enviar": true|false, "mensaje": "...", "oferta": "descripción corta de la oferta que diste", "honorarios50": true|false}
-
-Resumen: ${e.resumen || "-"}
-${e.historial.slice(-12).map((h) => `${quien[h.r] || h.r}: ${String(h.t).slice(0, 220)}`).join("\n")}`);
-    e.segEnviados = toca;
-    if (r?.oferta) e.oferta = { texto: String(r.oferta).slice(0, 200), honorarios50: !!r.honorarios50, vence: Date.now() + 48 * 3600e3 };
-    if (r && r.enviar === false) { e.sinInteres = true; await env.ESTADO.put(k.name, JSON.stringify(e), { expirationTtl: 90 * 86400 }); continue; }
-    if (!r?.mensaje) continue;   // sin IA no se manda un seguimiento genérico
-    const texto = sinEmojis(r.mensaje);
-    for (const parte of texto.split("||").map((x) => x.trim()).filter(Boolean)) { await enviar(env, tel, parte); await dormir(1200); }
-    e.historial = [...e.historial, { r: "a", t: `(seguimiento) ${texto.replace(/\|\|/g, " / ")}`.slice(0, 2000) }].slice(-60);
-    await env.ESTADO.put(k.name, JSON.stringify(e), { expirationTtl: 90 * 86400 });
-    await anotarResumen(env, { tipo: "seguimiento", tel, nombre: e.nombre });
-    await guardarLead(env, tel, e, {});
-  }
-}
-
 // ---------------- Comandos del equipo (desde el celular admin) ----------------
 async function comandoAdmin(env, de, texto) {
   const [cmd, ...resto] = texto.trim().split(/\s+/);
@@ -1719,31 +1680,6 @@ async function enCola(env, de, fn) {
   try { await fn(); } finally { await env.ESTADO.delete(k); }
 }
 
-async function correrSeguimientos(env) {
-  const lst = await env.ESTADO.list({ prefix: "seg:" });
-  for (const k of lst.keys) {
-    const s = JSON.parse((await env.ESTADO.get(k.name)) || "null");
-    if (!s || Date.now() < s.cuando) continue;
-    const para = k.name.slice(4);
-    await env.ESTADO.delete(k.name);
-    if (await env.ESTADO.get(`pausa:${para}`)) continue;
-    const e = JSON.parse((await env.ESTADO.get(`v3:${para}`)) || "{}");
-    let t;
-    if (s.tipo === "recomendar") {
-      const c = e.combo || {};
-      const lista = await catalogo(env);
-      const base = lista.filter((p) => (c.rubro ? RUBROS[c.rubro] : Object.values(RUBROS).flat()).includes(p.cat) && (!c.presupuesto || p.precio <= c.presupuesto));
-      const it = mezclar(base).slice(0, 5);
-      if (!it.length) continue;
-      t = `¿Pudiste mirar el catálogo? 👀 Te dejo 5 que te recomiendo${c.rubro ? " de " + c.rubro.toLowerCase() : ""}${c.presupuesto ? " para tu presupuesto" : ""}:\n\n` +
-        it.map((p) => `• ${p.nombre} — ${pesos(p.precio)}\n  ${p.url}`).join("\n") + `\n\n_Precios por transferencia._ ¿Alguno te interesa? Te armo el combo con cantidades.`;
-      if (e.combo) e.combo.paso = "armado";
-    } else t = SEGUIMIENTO[s.tipo].texto(e.nombre?.split(" ")[0]);
-    for (const parte of sinEmojis(t).split("||").map((x) => x.trim()).filter(Boolean)) await enviar(env, para, parte);
-    e.historial = [...(e.historial || []), { r: "a", t: t.replace(/\|\|/g, " / ") }].slice(-60);
-    await env.ESTADO.put(`v3:${para}`, JSON.stringify(e), { expirationTtl: 90 * 86400 });
-  }
-}
 // ---------- Política de privacidad (requerida por Meta) ----------
 const PRIVACIDAD = `<!doctype html><html lang="es"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -3576,10 +3512,8 @@ export default {
     ctx.waitUntil((async () => {
       const h = new Date(evento.scheduledTime || Date.now()).getUTCHours();
       if (h === APRENDIZAJE.horaUTC && m === APRENDIZAJE.minuto) await autoaprender(env).catch((e) => console.log("Error autoaprender:", e?.stack || e));
-      if (m % 5 === 0) await seguimientosAuto(env).catch((e) => console.log("Error seguimiento auto:", e?.stack || e));
       if (m % 5 === 0) await recordarVentanas(env).catch((e) => console.log("Error recordatorio ventana:", e?.stack || e));
       if (m % 5 === 2) await supervisarChats(env, h % SALUD.supervisorCadaHoras === 0 && m === 22).catch((e) => console.log("Error supervisor:", e?.stack || e));
-      if (m % 5 === 0) await correrSeguimientos(env).catch((e) => console.log("Error seguimientos:", e?.stack || e));
       await procesarBuffers(env).catch((e) => console.log("Error red:", e?.stack || e));
       await cronLector(env, iaJSON, evento.scheduledTime || Date.now()).catch((e) => console.log("Error lector 805:", e?.stack || e));
       await cronTablero(env).catch((e) => console.log("Error tablero:", e?.stack || e));
@@ -3620,7 +3554,7 @@ export default {
     }
     if (url.pathname === "/resumen") { if (clave !== env.VERIFY_TOKEN) return new Response("Falta ?clave=", { status: 401 }); await enviarResumen(env); return new Response("Resumen enviado (si había actividad)"); }
     if (url.pathname === "/supervisar") { if (clave !== env.VERIFY_TOKEN) return new Response("Falta ?clave=", { status: 401 }); return new Response(await supervisarChats(env, true), { headers: { "Content-Type": "text/plain; charset=utf-8" } }); }
-    if (url.pathname === "/seguimientos") { if (clave !== env.VERIFY_TOKEN) return new Response("Falta ?clave=", { status: 401 }); await seguimientosAuto(env); return new Response("Seguimientos revisados"); }
+    if (url.pathname === "/seguimientos") { if (clave !== env.VERIFY_TOKEN) return new Response("Falta ?clave=", { status: 401 }); return new Response("Los seguimientos automáticos están desactivados; la vista previa está en el sender de la PC."); }
     if (url.pathname === "/aprender-ahora") { if (clave !== env.VERIFY_TOKEN) return new Response("Falta ?clave=", { status: 401 }); return new Response(await autoaprender(env, true), { headers: { "Content-Type": "text/plain; charset=utf-8" } }); }
     if (url.pathname === "/procesar") { await procesarBuffers(env, true); return new Response("ok"); }
     if (url.pathname === "/login-diagnostico") {

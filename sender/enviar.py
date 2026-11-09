@@ -1,28 +1,19 @@
-"""Envía los seguimientos del panel por WhatsApp Web, uno por uno, con pausas largas.
-Uso:  python enviar.py            -> pide confirmación en cada mensaje (recomendado al empezar)
-      python enviar.py --auto     -> envía solo, con límites y pausas
-      python enviar.py --escritorio -> usa la app de WhatsApp de Windows ya abierta (sin Chrome)
-      python enviar.py --escritorio --prueba -> prueba con 4, sin pausas largas y sin marcar nada
-      python enviar.py --seco     -> no envía nada, solo muestra qué haría
-Ctrl+C o crear un archivo llamado STOP en esta carpeta corta todo."""
-import json, os, random, re, sys, time, urllib.error, urllib.parse, urllib.request
-from datetime import datetime
+"""Compatibilidad: delega todo en responder.py; por defecto solo muestra una vista previa."""
+import json, os, random, re, sys, time, urllib.error, urllib.request
 from pathlib import Path
-from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
 
 AQUI = Path(__file__).parent
 
 def cargar_env():
     p = AQUI / ".env"
-    if not p.exists(): p = AQUI / "config.txt"   # también vale config.txt (más fácil de crear y editar en Windows)
-    if not p.exists():
-        sys.exit("Falta la configuración: copiá .env.example como .env (o como config.txt) y completalo.")
-    for l in p.read_text(encoding="utf-8-sig").splitlines():   # utf-8-sig: el Bloc de notas a veces agrega una marca invisible al inicio
-        if "=" in l and not l.strip().startswith("#"):
-            k, v = l.split("=", 1); os.environ.setdefault(k.strip(), v.strip())
+    if not p.exists(): p = AQUI / "config.txt"
+    if not p.exists(): sys.exit("Falta la configuración: copiá .env.example como .env y completá LECTOR_TOKEN.")
+    for linea in p.read_text(encoding="utf-8-sig").splitlines():
+        if "=" in linea and not linea.strip().startswith("#"):
+            k, v = linea.split("=", 1); os.environ.setdefault(k.strip(), v.strip())
 
 cargar_env()
-URL = os.environ["PANEL_URL"].rstrip("/")          # ej: https://tu-worker.workers.dev
+URL = os.environ["PANEL_URL"].rstrip("/")
 TOKEN = os.environ["LECTOR_TOKEN"]
 MAX = int(os.environ.get("MAX_POR_CORRIDA", "50"))
 PAUSA_MIN = int(os.environ.get("PAUSA_MIN_SEG", "45"))
@@ -31,12 +22,10 @@ H_DESDE = int(os.environ.get("HORA_DESDE", "9"))
 H_HASTA = int(os.environ.get("HORA_HASTA", "20"))
 
 def api(path, body=None):
-    req = urllib.request.Request(f"{URL}/lector{path}", headers={"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) TeImportamos-Sender/1.0"},
-                                 data=json.dumps(body).encode() if body is not None else None, method="POST" if body is not None else "GET")
-    for intento in (1, 2, 3):   # el servidor a veces tarda (IA ocupada): se reintenta en vez de cortar todo
+    req = urllib.request.Request(f"{URL}/lector{path}", headers={"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json", "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) TeImportamos-Sender/1.0"}, data=json.dumps(body).encode() if body is not None else None, method="POST" if body is not None else "GET")
+    for intento in (1, 2, 3):
         try:
-            with urllib.request.urlopen(req, timeout=60) as r:
-                return json.load(r)
+            with urllib.request.urlopen(req, timeout=60) as r: return json.load(r)
         except (TimeoutError, ConnectionError, urllib.error.URLError) as e:
             if isinstance(e, urllib.error.HTTPError) or intento == 3: raise
             time.sleep(3 * intento)
@@ -50,98 +39,19 @@ def _nombre(s):
     return n.capitalize() if len(n) >= 3 and n.lower() != "none" else ""
 
 def variar(s):
-    """Cambia un poco cada mensaje (saludo/cierre/puntuación) sin tocar el contenido, para que no salgan todos idénticos."""
-    t = s["borrador"].strip()
+    t = str(s.get("borrador") or "").strip()
     if not t.lower().startswith(EMPIEZA_SALUDO) and random.random() < 0.8:
-        g = random.choice(SALUDOS)
-        n = _nombre(s)
-        if n and n.lower() not in t.lower() and not g.endswith("?") and random.random() < 0.5:
-            g = g[:-1] + f" {n}" + g[-1]
+        g = random.choice(SALUDOS); n = _nombre(s)
+        if n and n.lower() not in t.lower() and not g.endswith("?") and random.random() < 0.5: g = g[:-1] + f" {n}" + g[-1]
         t = f"{g} {t}"
-    if t.endswith(".") and random.random() < 0.3:
-        t = t[:-1]
-    if (not t.endswith("?") or random.random() < 0.3) and not t.endswith(("avisame.", "atento.", "leo.", "🙂")):
-        t += random.choice(CIERRES)
-    return t.replace("¿", "").replace("¡", "").strip()   # una persona no escribe el signo de apertura en WhatsApp
+    if t.endswith(".") and random.random() < 0.3: t = t[:-1]
+    if (not t.endswith("?") or random.random() < 0.3) and not t.endswith(("avisame.", "atento.", "leo.", "🙂")): t += random.choice(CIERRES)
+    return t.replace("¿", "").replace("¡", "").strip()
 
 def parar():
     return (AQUI / "STOP").exists()
 
-PRUEBA = "--prueba" in sys.argv   # prueba rápida: pocos mensajes, pausas de 4 s, no marca nada en el panel
-
-def main_escritorio(lista, auto):
-    """Usa la app de WhatsApp de Windows que ya tenés abierta y con sesión: abre el chat con el texto puesto y aprieta Enter."""
-    import pyautogui, pygetwindow as gw
-    enviados = 0
-    for i, s in enumerate(lista, 1):
-        if parar(): print("STOP detectado."); break
-        texto = variar(s)
-        print(f"\n[{i}/{len(lista)}] {s['nombre']} ({s['conv']})\n  {texto}")
-        if not auto and not PRUEBA:
-            r = input("  Enter = enviar | n = marcar 'no seguir' | s = saltar | q = salir: ").strip().lower()
-            if r == "q": break
-            if r == "s": continue
-            if r == "n": api("/enviar/no", {"conv": s["conv"]}); continue
-        os.startfile(f"whatsapp://send?phone={s['conv']}&text={urllib.parse.quote(texto)}")
-        time.sleep(5)
-        ventanas = [w for w in gw.getWindowsWithTitle("WhatsApp") if w.title.strip() == "WhatsApp"]
-        if not ventanas: print("  No encuentro la ventana de WhatsApp. Frenando para no apretar Enter en otra cosa."); break
-        try: ventanas[0].activate()
-        except Exception: pass
-        time.sleep(1.5)
-        if gw.getActiveWindow() is None or gw.getActiveWindow().title.strip() != "WhatsApp":
-            print("  WhatsApp no quedó al frente. Frenando."); break
-        print(f"  Ventana al frente: {gw.getActiveWindow().title!r}")
-        pyautogui.press("enter"); time.sleep(2)
-        enviados += 1
-        if PRUEBA: print("  Enter apretado (PRUEBA: no se marca en el panel). Mirá en WhatsApp si salió.")
-        else: api("/enviar/hecho", {"conv": s["conv"]}); print("  Enter apretado ✅ (verificá en WhatsApp que salió)")
-        if i < len(lista):
-            t = 4 if PRUEBA else random.randint(PAUSA_MIN, PAUSA_MAX); print(f"  Pausa {t}s... (no toques el teclado ni el mouse)"); time.sleep(t)
-    print(f"\nListo. Enviados: {enviados}")
-
-def main():
-    seco, auto = "--seco" in sys.argv, "--auto" in sys.argv
-    if not seco and not (H_DESDE <= datetime.now().hour < H_HASTA):
-        sys.exit(f"Fuera de horario ({H_DESDE}:00 a {H_HASTA}:00). Cambialo en .env si querés.")
-    lista = api(f"/enviar/lista?limite={4 if PRUEBA else MAX}")["lista"]
-    print(f"{len(lista)} seguimientos para hoy.")
-    if not lista: return
-    if seco:
-        for s in lista: print(f"- {s['nombre']} ({s['conv']}): {variar(s)}")
-        return
-    if "--escritorio" in sys.argv: return main_escritorio(lista, auto)
-    with sync_playwright() as p:
-        ctx = p.chromium.launch_persistent_context(str(AQUI / "perfil"), headless=False, no_viewport=True, args=["--start-maximized"])
-        pg = ctx.pages[0] if ctx.pages else ctx.new_page()
-        pg.goto("https://web.whatsapp.com")
-        print("Si pide QR, escanealo con el celular (solo la primera vez). Esperando WhatsApp Web...")
-        pg.wait_for_selector('#pane-side', timeout=180000)
-        enviados = 0
-        for i, s in enumerate(lista, 1):
-            if parar(): print("STOP detectado."); break
-            texto = variar(s)
-            print(f"\n[{i}/{len(lista)}] {s['nombre']} ({s['conv']})\n  {texto}")
-            if not auto:
-                r = input("  Enter = enviar | n = marcar 'no seguir' | s = saltar | q = salir: ").strip().lower()
-                if r == "q": break
-                if r == "s": continue
-                if r == "n": api("/enviar/no", {"conv": s["conv"]}); continue
-            pg.goto(f"https://web.whatsapp.com/send?phone={s['conv']}&text={urllib.parse.quote(texto)}")
-            try:
-                caja = pg.wait_for_selector('footer div[contenteditable="true"]', timeout=45000)
-                pg.wait_for_timeout(2500)
-                if not caja.inner_text().strip():
-                    print("  No cargó el texto, salto este."); continue
-                caja.press("Enter")
-                pg.wait_for_timeout(3000)
-            except PWTimeout:
-                print("  El número no está en WhatsApp o no cargó. Salto."); continue
-            api("/enviar/hecho", {"conv": s["conv"]}); enviados += 1; print("  Enviado ✅")
-            if i < len(lista):
-                t = random.randint(PAUSA_MIN, PAUSA_MAX); print(f"  Pausa {t}s..."); time.sleep(t)
-        print(f"\nListo. Enviados: {enviados}")
-        ctx.close()
-
 if __name__ == "__main__":
-    main()
+    if not any(arg in sys.argv for arg in ("--prueba", "--seguir")): sys.argv.append("--prueba")
+    import responder
+    responder.main()

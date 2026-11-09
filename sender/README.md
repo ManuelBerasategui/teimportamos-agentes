@@ -1,27 +1,28 @@
-# Enviador de seguimientos (PC)
+# Agente de WhatsApp y seguimientos (PC)
 
-Toma la lista de seguimientos del panel y la manda por WhatsApp Web, uno por uno, con pausas largas. No usa IA: no gasta tokens.
-El lector del celular sigue siendo solo de lectura; esto es aparte.
+responder.py unifica respuestas y seguimientos comerciales. Los borradores se personalizan con la conversación; al enviar, el agente confirma en WhatsApp Web que el último mensaje sea nuestro y tipea el texto letra por letra.
 
+La primera revisión de borradores se hace en modo seguro: no abre WhatsApp, no envía y no marca chats como enviados. Los envíos automáticos comerciales antiguos del Worker quedaron desactivados en el código.
 ## Instalación (una vez)
 1. Instalá Python (python.org, tildar "Add to PATH").
 2. Doble clic en `instalar.bat`.
 3. Copiá `.env.example` como `.env` y completá `PANEL_URL` y `LECTOR_TOKEN` (el mismo del lector). El token queda solo en tu PC.
 
-## Uso
-- `python enviar.py --seco`: muestra la lista sin enviar nada (probá esto primero).
-- `enviar.bat`: te pide confirmación (Enter) en cada mensaje. Usalo los primeros días.
-- `python enviar.py --auto`: envía solo con pausas al azar de 45–130 s, hasta 50 por corrida (después frena; lo volvés a correr más tarde), entre las 9 y las 20 h.
-- Para frenar: Ctrl+C o crear un archivo `STOP` en esta carpeta.
+## Uso seguro y paso a paso
+1. Instalá Python (python.org, marcá Add to PATH) y ejecutá instalar.bat.
+2. Copiá .env.example como .env y el PANEL_URL ya está cargado y solo completá LECTOR_TOKEN. El token queda solo en esta PC.
+3. Con el Worker actualizado y el lector sincronizado, ejecutá desde esta carpeta:
 
-La primera vez abre una ventana de Chrome propia: escaneá el QR con el celular (usa su propia sesión de WhatsApp Web, no toca la tuya).
-Cada mensaje se varía un poco (saludo, cierre, puntuación) para que no salgan idénticos.
-Cada envío queda marcado como hecho en el panel; "n" lo marca como "no seguir".
+   python responder.py --prueba --solo-seguimientos
 
-## Ojo
-- No está probado contra WhatsApp Web real: si cambian la página puede fallar. Empezá con `--seco` y luego con confirmación.
-- El riesgo de bloqueo depende del volumen y de que te marquen como spam, no de quién aprieta el botón. Mantené pocos por día, pausas largas, y mensajes a gente que ya habló con vos.
+   Esto pide una sola vista previa autenticada, refresca hasta 10 borradores y muestra los textos reales. No abre WhatsApp, no envía y no marca chats como enviados. También podés hacer doble clic en previsualizar_seguimientos.bat.
+4. Revisá cada borrador. Para ver también la cola de respuestas, usá python responder.py --prueba; esa opción consulta además los chats que esperan respuesta.
+5. python enviar.py también deriva al agente unificado y por defecto muestra vista previa.
 
+Para pausar el agente, conservá el archivo PAUSA. Para frenar una corrida, Ctrl+C o crear STOP. El envío de seguimientos desde WhatsApp Web requiere quitar PAUSA y ejecutar expresamente el agente; no uses activar.bat antes de revisar la vista previa.
+
+## Envío de seguimientos
+python responder.py --solo-seguimientos procesa únicamente seguimientos revisados por IA que no requieran intervención del dueño. Usa WhatsApp Web y respeta PAUSA; no ejecutar hasta haber revisado los borradores reales. Cada mensaje se marca como enviado solo después de que WhatsApp Web confirma la escritura.
 ## Usar la app de escritorio de WhatsApp (sin Chrome ni QR)
 `python enviar.py --escritorio` (agregá `--auto` para que no pida confirmación). Usa la app que ya tenés abierta con sesión: abre cada chat con el mensaje puesto y aprieta Enter.
 Necesita `python -m pip install pyautogui pygetwindow` (ya incluido en `instalar.bat`). Mientras corre, no uses la PC (el Enter va a la ventana que esté al frente; si WhatsApp no queda al frente, frena solo).

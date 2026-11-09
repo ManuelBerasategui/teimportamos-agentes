@@ -1,13 +1,17 @@
-// Seguimientos rediseñados: situaciones, máximo 3 toques, oferta solo en el toque 2, pasar al dueño, fecha futura, envío automático tras 10 buenos. Correr desde cotizador/
+// Seguimientos: situaciones, máximo 3 toques, recálculo sin prometer descuentos, pasar al dueño y fecha futura. Correr desde cotizador/
 import { DatabaseSync } from "node:sqlite";
 import fs from "fs";
+import os from "os";
+import path from "path";
+import { pathToFileURL } from "node:url";
 let ok = 0, mal = 0; const chk = (n, c) => { c ? (ok++, console.log("✓ " + n)) : (mal++, console.log("FALLA: " + n)); };
-const dir = fs.mkdtempSync("/tmp/seg2-");
-for (const f of fs.readdirSync("src")) fs.copyFileSync("src/" + f, dir + "/" + f);
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), "seg2-"));
+const sourceDir = new URL("../cotizador/src/", import.meta.url);
+for (const f of fs.readdirSync(sourceDir)) fs.copyFileSync(new URL(f, sourceDir), path.join(dir, f));
 const db = new DatabaseSync(":memory:");
 const stmt = (sql, b = []) => ({ bind: (...x) => stmt(sql, x), run: async () => { db.prepare(sql).run(...b); return {}; }, first: async () => db.prepare(sql).get(...b) ?? null, all: async () => ({ results: db.prepare(sql).all(...b) }) });
 const env = { DB: { prepare: (s) => stmt(s), batch: async (a) => { for (const x of a) await x.run(); } } };
-const L = await import(dir + "/lector.js");
+const L = await import(pathToFileURL(path.join(dir, "lector.js")));
 await L.prepararLector(env);
 const D = 86400e3, ahora = Date.now(), h = (d) => ahora - d * D;
 let nm = 0;
@@ -44,7 +48,7 @@ const por = Object.fromEntries(l.map((x) => [x.nombre, x]));
 chk("toque 1 y toque 2 entran", por.Ana?.toque === 1 && por.Beto?.toque === 2);
 chk("con 3 toques sin respuesta no hay cuarto", !por.Caro);
 chk("el prompt clasifica situaciones y lee la charla", /PASO 1/.test(prompts[0]) && /pendiente nuestro/.test(prompts[0]) && /TOQUE 1 de 3/.test(prompts[0]));
-chk("la oferta de honorarios está prendida y solo para el toque 2", /50% off en nuestros honorarios/.test(prompts[0]) && /solo en el toque 2/.test(prompts[0]));
+chk("no promete descuentos y ofrece revisar otra cantidad", /no prometas descuentos/.test(prompts[0]) && !/50% off en nuestros honorarios/.test(prompts[0]) && /revise una cantidad menor/.test(L.borradorBase({ nombre: "Ana", toque: 2 })));
 chk("al mensaje se le sacan ¿ ¡ y emojis", por.Ana && !/[¿¡🙌]/u.test(por.Ana.borrador));
 chk("situación guardada en w_conv", db.prepare("SELECT seg_situacion s FROM w_conv WHERE conv='5493410000001'").get().s === "2");
 chk("perfil A pasa al dueño con tarea de llamada", por.Dani?.dueno && !!db.prepare("SELECT 1 FROM tareas WHERE tel='5493410000004' AND tipo='llamar'").get());
@@ -61,7 +65,7 @@ chk("un Mal vuelve a cero", (await L.seguimientosAuto805(env)).length === 0);
 const rep = await (await L.apiLector(env, new Request("https://x/panel/api/805/seg-reporte"), new URL("https://x/panel/api/805/seg-reporte"), null)).json();
 chk("reporte por situación con el registro", rep.buenos === 0 && rep.oferta === true && Array.isArray(rep.por_situacion));
 // Cotización del panel con el número del cliente: queda ligada a su chat
-const C = await import(dir + "/cotizar.js");
+const C = await import(pathToFileURL(path.join(dir, "cotizar.js")));
 const conv2 = await C.vincularCotizacion(env, "+54 9 341 000-0001", "abc", 7, [{ cantidad: 20, nombre: "auriculares" }], 412);
 chk("cotización vinculada al chat por el número", conv2 === "5493410000001" && /total USD 412/.test(db.prepare("SELECT dato FROM w_hito WHERE id='cotm:abc'").get().dato));
-console.log(`\nsim-seguimientos2: ${ok} ok, ${mal} fallas`); process.exit(mal ? 1 : 0);
+console.log(`\nsim-seguimientos2: ${ok} ok, ${mal} fallas`); if (mal) throw new Error("simulations failed");
