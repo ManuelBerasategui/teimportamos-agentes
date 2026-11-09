@@ -86,6 +86,7 @@ export async function refrescarSegs(env) {
   const liv = segs.map((s) => ({ conv: s.conv, nombre: s.nombre, producto: s.producto, revisado: !!s.revisado, dueno: !!s.dueno, situacion: s.situacion || 0, llamada: s.llamada || "", sit_texto: s.sit_texto || "",
     puntaje: s.puntaje || 0, presup_usd: s.presup_usd || 0, ult_texto: String(s.ult_texto || "").slice(0, 160), borrador: s.borrador || "", toque: s.toque || 1, dias_cot: s.dias_cot ?? null }));
   await kvPut(env, "tab_segs", JSON.stringify(liv)); await kvPut(env, "tab_segs_ts", Date.now());
+  await anotarCandidatos(env, liv).catch((e) => console.log("cand", e?.message || e));
   return liv;
 }
 async function segsGuardados(env) {
@@ -304,26 +305,30 @@ export async function links(env) {
 // ---------------------------------------------------------------------------
 // Objetivos diarios: historias (de Instagram) y seguimientos (del lector), contados solos
 export const OBJ_DEF = { historias: 4, seg_min: 40, seg_max: 50, videos_semana: 24 };
-// Seguimiento = mensaje nuestro a un chat donde los últimos en escribir fuimos nosotros, hace 12 h o más (cuenta 1 por chat por día)
+// Seguimiento = (a) lo que registra el sender al mandarlo (w_seg_log, quien='auto') o (b) un mensaje nuestro, a mano,
+// a un chat que ESE DÍA estaba en la lista de seguimientos del agente (seg_cand). Un "¿avanzamos con el pago?" a otro chat no cuenta.
+async function anotarCandidatos(env, lista) {
+  const dia = diaAR(), ahora = Date.now();
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS seg_cand (dia TEXT, conv TEXT, ts INTEGER, PRIMARY KEY (dia, conv))").run();
+  const ops = lista.filter((x) => x.revisado && (x.borrador || x.dueno)).map((x) => env.DB.prepare("INSERT OR IGNORE INTO seg_cand (dia, conv, ts) VALUES (?,?,?)").bind(dia, x.conv, ahora));
+  for (let i = 0; i < ops.length; i += 50) await env.DB.batch(ops.slice(i, i + 50));
+}
 export async function calcularSeguimientosDia(env, dia) {
   await cargarMapaEquipo(env);
   const d0 = inicioDia(dia);
-  // Barato para D1: solo los mensajes del día + 1 fila por chat (el último mensaje anterior al día)
-  const hoyMs = await todas(env, "SELECT conv, yo, autor, texto, ts FROM w_msg WHERE ts>=? AND ts<? AND grupo=0 AND hist=0 ORDER BY conv, ts", d0, d0 + DIA);
-  const convs = [...new Set(hoyMs.map((m) => m.conv))];
-  const previos = [], ult = {};
-  for (let i = 0; i < convs.length; i += 90) {   // índice (conv, ts): lee solo los mensajes de esos chats en los 3 días previos
-    const lote = convs.slice(i, i + 90);
-    for (const x of await todas(env, `SELECT conv, yo, autor, texto, ts FROM w_msg WHERE conv IN (${lote.map(() => "?").join(",")}) AND ts>=? AND ts<? AND grupo=0 AND hist=0`, ...lote, d0 - 3 * DIA, d0))
-      if (!ult[x.conv] || x.ts > ult[x.conv].ts) ult[x.conv] = x;
-  }
-  previos.push(...Object.values(ult));
-  const ms = previos.concat(hoyMs).sort((a, b) => (a.conv < b.conv ? -1 : a.conv > b.conv ? 1 : a.ts - b.ts));
-  const hechos = new Map(); let conv = null, prev = null;
-  for (const m of ms) {
-    if (m.conv !== conv) { conv = m.conv; prev = null; }
-    if (m.ts >= d0 && m.yo && prev && prev.yo && m.ts - prev.ts >= 12 * 3600e3 && !hechos.has(m.conv) && !esBotTexto(m.texto)) hechos.set(m.conv, nombreDisp(m.autor) || "Sin identificar");
-    prev = m;
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS seg_cand (dia TEXT, conv TEXT, ts INTEGER, PRIMARY KEY (dia, conv))").run();
+  const [cand, auto] = await Promise.all([
+    todas(env, "SELECT conv, ts FROM seg_cand WHERE dia=?", dia),
+    todas(env, "SELECT conv FROM w_seg_log WHERE ts>=? AND ts<? AND quien IN ('auto','dueno')", d0, d0 + DIA).catch(() => []),
+  ]);
+  const hechos = new Map();
+  for (const a of auto) hechos.set(a.conv, "Sender");
+  const desde = Object.fromEntries(cand.map((c) => [c.conv, c.ts]));
+  const lista = Object.keys(desde).filter((c) => !hechos.has(c));
+  for (let i = 0; i < lista.length; i += 90) {
+    const lote = lista.slice(i, i + 90);
+    for (const m of await todas(env, `SELECT conv, autor, texto, ts FROM w_msg WHERE conv IN (${lote.map(() => "?").join(",")}) AND ts>=? AND ts<? AND yo=1 AND grupo=0 AND hist=0 ORDER BY ts`, ...lote, d0, d0 + DIA))
+      if (m.ts >= desde[m.conv] && !hechos.has(m.conv) && !esBotTexto(m.texto)) hechos.set(m.conv, nombreDisp(m.autor) || "Sin identificar");
   }
   const por = {}; for (const p of hechos.values()) por[p] = (por[p] || 0) + 1;
   await env.DB.batch([env.DB.prepare("CREATE TABLE IF NOT EXISTS obj_dia (dia TEXT, clave TEXT, valor INTEGER, PRIMARY KEY (dia, clave))"),
@@ -335,7 +340,7 @@ export async function calcularSeguimientosDia(env, dia) {
 export async function objetivos(env) {
   await env.DB.prepare("CREATE TABLE IF NOT EXISTS obj_dia (dia TEXT, clave TEXT, valor INTEGER, PRIMARY KEY (dia, clave))").run();
   let obj = OBJ_DEF; try { obj = { ...OBJ_DEF, ...JSON.parse((await kvGet(env, "objetivos")) || "{}") }; } catch {}
-  const hoyD = diaAR(), d0 = inicioDia(hoyD), sem = lunes(Date.now());
+  const hoyD = diaAR(), d0 = inicioDia(hoyD), sem = d0 - new Date(d0 - AR).getUTCDay() * DIA;   // semana de domingo a sábado
   const [seg, hist, ig, tt] = await Promise.all([
     todas(env, "SELECT clave, valor FROM obj_dia WHERE dia=? AND clave LIKE 'seg:%'", hoyD),
     env.DB.prepare("SELECT COUNT(*) n FROM ig_historias WHERE ts>=? AND ts<?").bind(d0, d0 + DIA).first().catch(() => null),

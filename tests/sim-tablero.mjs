@@ -136,13 +136,16 @@ chk("sin botón de abrir WhatsApp y con botón Nota", !P2.includes("Abrir WhatsA
   chk("el agente ve los guiones", (await T.contextoTablero(env)).includes("GUION: Esto por Mercado Libre"));
   delete env.GROQ_API_KEY; globalThis.fetch = real0; }
 
-// Objetivos: seguimientos contados desde el lector
+// Objetivos: seguimientos = sender + a mano a chats que estaban en la lista del día
 { const d0 = Date.parse(T.diaAR() + "T00:00:00Z") + 3 * 3600e3;
-  msg("5491100000040", 0, "cuanto sale?", d0 - 2 * 86400e3); msg("5491100000040", 1, "te paso la cotizacion", d0 - 30 * 3600e3, "x:52@s");
-  msg("5491100000040", 1, "pudiste ver la cotizacion?", d0 + 3600e3, "x:52@s");          // seguimiento (nuestro, 31 h después de nuestro último)
-  msg("5491100000041", 0, "hola", d0 + 3600e3); msg("5491100000041", 1, "hola! que necesitas?", d0 + 3700e3, "x:6@s");   // respuesta, no seguimiento
+  db.prepare("CREATE TABLE IF NOT EXISTS seg_cand (dia TEXT, conv TEXT, ts INTEGER, PRIMARY KEY (dia, conv))").run();
+  db.prepare("CREATE TABLE IF NOT EXISTS w_seg_log (id TEXT PRIMARY KEY, conv TEXT, ts INTEGER, toque INTEGER, situacion TEXT, quien TEXT, texto TEXT)").run();
+  db.prepare("INSERT INTO seg_cand VALUES (?, '5491100000040', ?)").run(T.diaAR(), d0 + 1000);
+  msg("5491100000040", 1, "pudiste ver la cotizacion?", d0 + 3600e3, "x:52@s");                 // a mano, estaba en la lista → cuenta
+  msg("5491100000041", 1, "queres avanzar con el pago?", d0 + 3600e3, "x:52@s");                // no estaba en la lista → no cuenta
+  db.prepare("INSERT INTO w_seg_log VALUES ('a1','5491100000042',?,1,'','auto','')").run(d0 + 5000);   // lo mandó el sender
   const o = await T.calcularSeguimientosDia(env, T.diaAR());
-  chk("cuenta seguimientos y no respuestas", o.total >= 1 && o.por.Manuel >= 1 && !o.por["Matías"]);
+  chk("seguimientos: cuenta sender y a mano de la lista, no otros mensajes", o.total === 2 && o.por.Sender === 1 && o.por.Manuel === 1);
   db.prepare("CREATE TABLE IF NOT EXISTS ig_historias (id TEXT PRIMARY KEY, ts INTEGER, tipo TEXT, link TEXT, visto INTEGER)").run();
   db.prepare("INSERT INTO ig_historias VALUES ('h1', ?, 'IMAGE', '', 0)").run(d0 + 7200e3);
   const ob = await T.objetivos(env);
