@@ -146,8 +146,9 @@ chk("sin botón de abrir WhatsApp y con botón Nota", !P2.includes("Abrir WhatsA
   db.prepare("INSERT INTO w_seg_log VALUES ('a1','5491100000042',?,1,'','auto','')").run(d0 + 5000);   // lo mandó el sender
   const o = await T.calcularSeguimientosDia(env, T.diaAR());
   chk("seguimientos: cuenta sender y a mano de la lista, no otros mensajes", o.total === 2 && o.por.Sender === 1 && o.por.Manuel === 1);
-  db.prepare("CREATE TABLE IF NOT EXISTS ig_historias (id TEXT PRIMARY KEY, ts INTEGER, tipo TEXT, link TEXT, visto INTEGER)").run();
-  db.prepare("INSERT INTO ig_historias VALUES ('h1', ?, 'IMAGE', '', 0)").run(d0 + 7200e3);
+  db.prepare("CREATE TABLE IF NOT EXISTS ig_stories_pub (id TEXT PRIMARY KEY, ts INTEGER, tipo TEXT, link TEXT, visto INTEGER)").run();
+  db.prepare("INSERT INTO ig_stories_pub VALUES ('h1', ?, 'IMAGE', '', 0)").run(d0 + 7200e3);
+  db.prepare("CREATE TABLE IF NOT EXISTS ig_historias (id TEXT PRIMARY KEY, ts INTEGER, titulo TEXT)").run(); db.prepare("INSERT INTO ig_historias VALUES ('idea1', ?, 'idea de historia')").run(d0 + 7300e3);
   const ob = await T.objetivos(env);
   chk("objetivos: historias de hoy y meta por defecto 4", ob.historias === 1 && ob.obj.historias === 4 && ob.obj.seg_min === 40); }
 

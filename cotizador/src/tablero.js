@@ -343,7 +343,7 @@ export async function objetivos(env) {
   const hoyD = diaAR(), d0 = inicioDia(hoyD), sem = d0 - new Date(d0 - AR).getUTCDay() * DIA;   // semana de domingo a sábado
   const [seg, hist, ig, tt] = await Promise.all([
     todas(env, "SELECT clave, valor FROM obj_dia WHERE dia=? AND clave LIKE 'seg:%'", hoyD),
-    env.DB.prepare("SELECT COUNT(*) n FROM ig_historias WHERE ts>=? AND ts<?").bind(d0, d0 + DIA).first().catch(() => null),
+    env.DB.prepare("SELECT COUNT(*) n FROM ig_stories_pub WHERE ts>=? AND ts<?").bind(d0, d0 + DIA).first().catch(() => null),
     env.DB.prepare("SELECT COUNT(*) n FROM ig_posts WHERE ts>=? AND COALESCE(tipo,'')<>'STORY'").bind(sem).first().catch(() => null),
     env.DB.prepare("SELECT COUNT(*) n FROM tt_posts WHERE ts>=?").bind(sem).first().catch(() => null)]);
   const s = Object.fromEntries(seg.map((x) => [x.clave.slice(4), x.valor]));

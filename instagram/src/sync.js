@@ -212,10 +212,12 @@ Respondé SOLO JSON: {"formato":"clave","gancho":"texto o vacío"}`, img);
 // Una vuelta completa (cron cada 2 horas o botón del panel)
 // Historias activas (duran 24 h; la sincronización corre cada 2 h, así se registran todas). Para el objetivo diario del panel.
 export async function syncHistorias(env, ig) {
-  await env.DB.prepare("CREATE TABLE IF NOT EXISTS ig_historias (id TEXT PRIMARY KEY, ts INTEGER, tipo TEXT, link TEXT, visto INTEGER)").run();
+  // Tabla propia: "ig_historias" ya la usa el generador de IDEAS de historias (no confundir)
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS ig_stories_pub (id TEXT PRIMARY KEY, ts INTEGER, tipo TEXT, link TEXT, visto INTEGER)").run();
+  await env.DB.prepare("DELETE FROM ig_historias WHERE titulo IS NULL AND lote IS NULL AND estado IS NULL").run().catch(() => {});   // limpia si alguna vez se mezcló
   const lista = (await ig("/me/stories", "GET", { fields: "id,media_type,timestamp,permalink" })).data || [];
   const ahora = Date.now();
-  for (const h of lista) await env.DB.prepare("INSERT INTO ig_historias (id, ts, tipo, link, visto) VALUES (?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET visto=excluded.visto")
+  for (const h of lista) await env.DB.prepare("INSERT INTO ig_stories_pub (id, ts, tipo, link, visto) VALUES (?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET visto=excluded.visto")
     .bind(String(h.id), Date.parse(h.timestamp) || ahora, h.media_type || "", h.permalink || "", ahora).run();
   return lista.length;
 }
