@@ -136,6 +136,18 @@ chk("sin botón de abrir WhatsApp y con botón Nota", !P2.includes("Abrir WhatsA
   chk("el agente ve los guiones", (await T.contextoTablero(env)).includes("GUION: Esto por Mercado Libre"));
   delete env.GROQ_API_KEY; globalThis.fetch = real0; }
 
+// Objetivos: seguimientos contados desde el lector
+{ const d0 = Date.parse(T.diaAR() + "T00:00:00Z") + 3 * 3600e3;
+  msg("5491100000040", 0, "cuanto sale?", d0 - 2 * 86400e3); msg("5491100000040", 1, "te paso la cotizacion", d0 - 30 * 3600e3, "x:52@s");
+  msg("5491100000040", 1, "pudiste ver la cotizacion?", d0 + 3600e3, "x:52@s");          // seguimiento (nuestro, 31 h después de nuestro último)
+  msg("5491100000041", 0, "hola", d0 + 3600e3); msg("5491100000041", 1, "hola! que necesitas?", d0 + 3700e3, "x:6@s");   // respuesta, no seguimiento
+  const o = await T.calcularSeguimientosDia(env, T.diaAR());
+  chk("cuenta seguimientos y no respuestas", o.total >= 1 && o.por.Manuel >= 1 && !o.por["Matías"]);
+  db.prepare("CREATE TABLE IF NOT EXISTS ig_historias (id TEXT PRIMARY KEY, ts INTEGER, tipo TEXT, link TEXT, visto INTEGER)").run();
+  db.prepare("INSERT INTO ig_historias VALUES ('h1', ?, 'IMAGE', '', 0)").run(d0 + 7200e3);
+  const ob = await T.objetivos(env);
+  chk("objetivos: historias de hoy y meta por defecto 4", ob.historias === 1 && ob.obj.historias === 4 && ob.obj.seg_min === 40); }
+
 // IA en cadena: Groq sin cupo → pasa a OpenRouter
 const { altIA, estadoIA } = await import(dir + "/ia-alterna.js");
 const real = globalThis.fetch; const urls = [];

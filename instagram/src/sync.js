@@ -210,6 +210,15 @@ Respondé SOLO JSON: {"formato":"clave","gancho":"texto o vacío"}`, img);
 }
 
 // Una vuelta completa (cron cada 2 horas o botón del panel)
+// Historias activas (duran 24 h; la sincronización corre cada 2 h, así se registran todas). Para el objetivo diario del panel.
+export async function syncHistorias(env, ig) {
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS ig_historias (id TEXT PRIMARY KEY, ts INTEGER, tipo TEXT, link TEXT, visto INTEGER)").run();
+  const lista = (await ig("/me/stories", "GET", { fields: "id,media_type,timestamp,permalink" })).data || [];
+  const ahora = Date.now();
+  for (const h of lista) await env.DB.prepare("INSERT INTO ig_historias (id, ts, tipo, link, visto) VALUES (?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET visto=excluded.visto")
+    .bind(String(h.id), Date.parse(h.timestamp) || ahora, h.media_type || "", h.permalink || "", ahora).run();
+  return lista.length;
+}
 export async function syncCompleto(env, igBase, iaImagen, iniciales = {}) {
   await prepararSync(env);
   const ig = conTope(igBase);
@@ -217,6 +226,7 @@ export async function syncCompleto(env, igBase, iaImagen, iniciales = {}) {
   try { out.cuenta = !!(await syncCuenta(env, ig)); } catch (e) { out.cuenta = e.message; }
   try { out.posts = await syncPosts(env, ig, iniciales); } catch (e) { out.posts = e.message; }
   try { out.dms = await syncDMs(env, ig); } catch (e) { out.dms = e.message; }
+  if (new Date(Date.now() - 3 * 3600e3).getUTCHours() === 23) { try { out.historias = await syncHistorias(env, ig); } catch (e) { out.historias = e.message; } }   // una vez por día, ~23:17 (las historias duran 24 h)
   try { out.clasificados = await clasificar(env, ig, iaImagen); } catch (e) { out.clasificados = e.message; }
   out.consultas = ig.usadas();
   await kvPut(env, "ig_sync_ts", Date.now());

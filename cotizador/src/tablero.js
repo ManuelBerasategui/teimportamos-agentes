@@ -63,6 +63,9 @@ export async function cronTablero(env) {
   if (horaAR >= 8 && horaAR < 24 && Date.now() - segAct > 20 * 60e3) await refrescarSegs(env).catch((e) => console.log("segs", e?.message || e));
   const ult = +((await kvGet(env, "tab_ult")) || 0);
   if (Date.now() - ult < 15 * 60e3) return;
+  if (horaAR >= 8 && Date.now() - +((await kvGet(env, "obj_ts")) || 0) > 60 * 60e3) { await calcularSeguimientosDia(env, diaAR()).catch((e) => console.log("obj", e?.message || e)); await kvPut(env, "obj_ts", Date.now()); }
+  const ayerO = diaAR(Date.now() - DIA);
+  if (!(await kvGet(env, "objfin:" + ayerO))) { await calcularSeguimientosDia(env, ayerO).catch(() => {}); await kvPut(env, "objfin:" + ayerO, 1); }
   if ((await kvGet(env, "perdidos_dia")) !== diaAR()) { await perdidosAutomaticos(env).catch((e) => console.log("perdidos", e?.message || e)); await kvPut(env, "perdidos_dia", diaAR()); }
   await kvPut(env, "tab_ult", Date.now());
   const hoy = diaAR(), ayer = diaAR(Date.now() - DIA);
@@ -299,6 +302,51 @@ export async function links(env) {
 }
 
 // ---------------------------------------------------------------------------
+// Objetivos diarios: historias (de Instagram) y seguimientos (del lector), contados solos
+export const OBJ_DEF = { historias: 4, seg_min: 40, seg_max: 50, videos_semana: 24 };
+// Seguimiento = mensaje nuestro a un chat donde los últimos en escribir fuimos nosotros, hace 12 h o más (cuenta 1 por chat por día)
+export async function calcularSeguimientosDia(env, dia) {
+  await cargarMapaEquipo(env);
+  const d0 = inicioDia(dia);
+  // Barato para D1: solo los mensajes del día + 1 fila por chat (el último mensaje anterior al día)
+  const hoyMs = await todas(env, "SELECT conv, yo, autor, texto, ts FROM w_msg WHERE ts>=? AND ts<? AND grupo=0 AND hist=0 ORDER BY conv, ts", d0, d0 + DIA);
+  const convs = [...new Set(hoyMs.map((m) => m.conv))];
+  const previos = [], ult = {};
+  for (let i = 0; i < convs.length; i += 90) {   // índice (conv, ts): lee solo los mensajes de esos chats en los 3 días previos
+    const lote = convs.slice(i, i + 90);
+    for (const x of await todas(env, `SELECT conv, yo, autor, texto, ts FROM w_msg WHERE conv IN (${lote.map(() => "?").join(",")}) AND ts>=? AND ts<? AND grupo=0 AND hist=0`, ...lote, d0 - 3 * DIA, d0))
+      if (!ult[x.conv] || x.ts > ult[x.conv].ts) ult[x.conv] = x;
+  }
+  previos.push(...Object.values(ult));
+  const ms = previos.concat(hoyMs).sort((a, b) => (a.conv < b.conv ? -1 : a.conv > b.conv ? 1 : a.ts - b.ts));
+  const hechos = new Map(); let conv = null, prev = null;
+  for (const m of ms) {
+    if (m.conv !== conv) { conv = m.conv; prev = null; }
+    if (m.ts >= d0 && m.yo && prev && prev.yo && m.ts - prev.ts >= 12 * 3600e3 && !hechos.has(m.conv) && !esBotTexto(m.texto)) hechos.set(m.conv, nombreDisp(m.autor) || "Sin identificar");
+    prev = m;
+  }
+  const por = {}; for (const p of hechos.values()) por[p] = (por[p] || 0) + 1;
+  await env.DB.batch([env.DB.prepare("CREATE TABLE IF NOT EXISTS obj_dia (dia TEXT, clave TEXT, valor INTEGER, PRIMARY KEY (dia, clave))"),
+    env.DB.prepare("DELETE FROM obj_dia WHERE dia=? AND clave LIKE 'seg:%'").bind(dia),
+    env.DB.prepare("INSERT OR REPLACE INTO obj_dia (dia, clave, valor) VALUES (?, 'seg:total', ?)").bind(dia, hechos.size),
+    ...Object.entries(por).map(([p, n]) => env.DB.prepare("INSERT OR REPLACE INTO obj_dia (dia, clave, valor) VALUES (?, ?, ?)").bind(dia, "seg:" + p, n))]);
+  return { total: hechos.size, por };
+}
+export async function objetivos(env) {
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS obj_dia (dia TEXT, clave TEXT, valor INTEGER, PRIMARY KEY (dia, clave))").run();
+  let obj = OBJ_DEF; try { obj = { ...OBJ_DEF, ...JSON.parse((await kvGet(env, "objetivos")) || "{}") }; } catch {}
+  const hoyD = diaAR(), d0 = inicioDia(hoyD), sem = lunes(Date.now());
+  const [seg, hist, ig, tt] = await Promise.all([
+    todas(env, "SELECT clave, valor FROM obj_dia WHERE dia=? AND clave LIKE 'seg:%'", hoyD),
+    env.DB.prepare("SELECT COUNT(*) n FROM ig_historias WHERE ts>=? AND ts<?").bind(d0, d0 + DIA).first().catch(() => null),
+    env.DB.prepare("SELECT COUNT(*) n FROM ig_posts WHERE ts>=? AND COALESCE(tipo,'')<>'STORY'").bind(sem).first().catch(() => null),
+    env.DB.prepare("SELECT COUNT(*) n FROM tt_posts WHERE ts>=?").bind(sem).first().catch(() => null)]);
+  const s = Object.fromEntries(seg.map((x) => [x.clave.slice(4), x.valor]));
+  const segTotal = s.total || 0; delete s.total;
+  return { obj, historias: hist?.n || 0, seguimientos: segTotal, seguimientosPor: s, videosIG: ig?.n || 0, videosTT: tt?.n || 0, actualizado: +((await kvGet(env, "obj_ts")) || 0) };
+}
+
+// ---------------------------------------------------------------------------
 // TikTok Studio (desde la PC): guarda en tt_posts, la misma tabla que usa Apify, así el agente y el panel lo ven igual
 const num = (x) => { const v = Number(String(x ?? "").replace(/[^\d.]/g, "")); return Number.isFinite(v) && String(x ?? "") !== "" ? Math.round(v) : null; };
 export async function guardarStudio(env, b) {
@@ -439,5 +487,13 @@ export async function apiTablero(env, req, url, quien, iaJSON) {
     return json(await todas(env, "SELECT conv, nombre, producto, etapa, ult_ts, ult_texto, presup_usd FROM w_conv WHERE grupo=0 AND COALESCE(prov,0)=0 AND (lower(COALESCE(nombre,'')) LIKE ? OR conv LIKE ? OR lower(COALESCE(producto,'')) LIKE ?) ORDER BY ult_ts DESC LIMIT 40", q, q, q));
   }
   if (r === "lineas") return json({ lineas: LINEAS });
+  if (r === "objetivos") {
+    if (req.method === "POST") {
+      const o = {}; for (const k of Object.keys(OBJ_DEF)) if (body[k] != null && body[k] !== "") o[k] = Math.max(0, Math.min(500, +body[k] || 0));
+      await kvPut(env, "objetivos", JSON.stringify(o));
+    }
+    if (url.searchParams.get("recalcular") === "1") { await calcularSeguimientosDia(env, diaAR()); await kvPut(env, "obj_ts", Date.now()); }
+    return json(await objetivos(env));
+  }
   return json({ error: "ruta desconocida" });
 }

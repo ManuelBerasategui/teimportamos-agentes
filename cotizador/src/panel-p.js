@@ -25,6 +25,8 @@ h2::before{content:"";width:10px;height:10px;border-radius:3px;background:var(--
 .nota{margin-top:7px;background:color-mix(in srgb,#fab005 16%,var(--card));border-radius:8px;padding:6px 9px;font-size:13.5px}
 .borr[data-copiar]{cursor:pointer}.borr[data-copiar]:hover{border-color:var(--ac)}
 details.grupo>summary{list-style:none;cursor:pointer}details.grupo>summary::-webkit-details-marker{display:none}details.grupo>summary h2::after{content:"▸";margin-left:auto;color:var(--mu);transition:transform .15s}details.grupo[open]>summary h2::after{transform:rotate(90deg)}details.grupo>summary h2{margin:16px 0 10px;padding:10px 12px;background:var(--card);border:1px solid var(--li);border-radius:12px}
+.obj{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-top:8px}.obj .kp{display:flex;justify-content:space-between}.obj b{font-size:20px}
+.barra{height:8px;border-radius:6px;background:var(--chip);overflow:hidden;margin-top:4px}.barra i{display:block;height:100%;background:linear-gradient(90deg,var(--ac),var(--ac2));border-radius:6px}.barra i.ok{background:var(--ok)}
 .tel{font-weight:800;font-size:15.5px;cursor:pointer;border-radius:6px;padding:0 4px;margin:0 -4px;transition:background .15s,color .15s}.tel:hover{background:var(--chip);color:var(--ac)}.tel.ok{color:var(--ok)}
 .top{display:flex;gap:8px;flex-wrap:wrap;align-items:baseline}.top b{font-size:15.5px}.mu{color:var(--mu);font-size:13px}.tag{background:var(--chip);border-radius:6px;padding:1px 7px;font-size:12px;font-weight:600}
 .que{margin-top:5px;font-weight:500}.ult{color:var(--mu);font-size:13px;margin-top:3px;font-style:italic}
@@ -56,7 +58,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid color-mix(in srgb,var(
 <nav id="tabs"><button data-v="hoy" class="on">Hoy</button><button data-v="chats">Chats y ventas</button><button data-v="num">Números</button><button data-v="links">Links</button><button data-v="ag">Agente</button></nav>
 <a class="viejo" href="/panel/viejo">panel viejo</a></div></header>
 <main>
-<section id="v-hoy"><div class="est" id="estado"></div><div class="card" id="consejo"><b>Lo que dicen los datos</b><div class="mu" id="consTxt">Cargando…</div><div class="acc"><button class="b" id="consBtn">Actualizar análisis</button></div></div><div class="eq" id="equipoHoy"></div><div id="lista"><div class="vacio">Cargando…</div></div></section>
+<section id="v-hoy"><div class="est" id="estado"></div><div class="card" id="objetivos"><div class="top"><b>Objetivos de hoy</b><button class="b" id="objEdit" style="margin-left:auto">Editar</button></div><div id="objBody" class="mu">Cargando…</div></div><div class="card" id="consejo"><b>Lo que dicen los datos</b><div class="mu" id="consTxt">Cargando…</div><div class="acc"><button class="b" id="consBtn">Actualizar análisis</button></div></div><div class="eq" id="equipoHoy"></div><div id="lista"><div class="vacio">Cargando…</div></div></section>
 <section id="v-chats" hidden>
  <div class="fila"><input id="q" placeholder="Buscar chat por nombre, número o producto"><button class="b p" id="ventaSuelta">Registrar venta sin chat</button></div>
  <div id="res"></div><h2>Ventas registradas</h2><div id="ventas"></div>
@@ -111,6 +113,29 @@ function pintarConsejo(r) { var t = (r && r.texto) || ""; $("#consTxt").classNam
 function cargarConsejo() { api("consejo").then(pintarConsejo).catch(function () {}); }
 $("#consBtn").onclick = function () { $("#consTxt").className = "mu"; $("#consTxt").textContent = "El agente está leyendo los números, los chats y los videos… (puede tardar un minuto)"; api("consejo", {}).then(pintarConsejo).catch(function () { $("#consTxt").textContent = "No pude generarlo ahora. Probá de nuevo."; }); };
 cargarConsejo();
+
+// ---- Objetivos (se cuentan solos: historias desde Instagram, seguimientos desde el lector)
+var OBJ = null;
+function barra(v, meta) { var p = meta ? Math.min(100, Math.round(v / meta * 100)) : 0; return '<div class="barra"><i class="' + (v >= meta ? "ok" : "") + '" style="width:' + p + '%"></i></div>'; }
+function cargarObj(recalc) {
+  api("objetivos" + (recalc ? "?recalcular=1" : "")).then(function (d) {
+    OBJ = d; var o = d.obj, por = Object.keys(d.seguimientosPor || {}).map(function (p) { return esc(p) + " " + d.seguimientosPor[p]; }).join(" · ");
+    $("#objBody").className = ""; $("#objBody").innerHTML = '<div class="obj">' +
+      '<div><div class="kp"><span>Historias de Instagram</span></div><b>' + d.historias + " / " + o.historias + "</b>" + barra(d.historias, o.historias) + "</div>" +
+      '<div><div class="kp"><span>Seguimientos</span></div><b>' + d.seguimientos + " / " + o.seg_min + "–" + o.seg_max + "</b>" + barra(d.seguimientos, o.seg_min) + (por ? '<div class="mu">' + por + "</div>" : "") + "</div>" +
+      '<div><div class="kp"><span>Videos de la semana</span></div><b>IG ' + d.videosIG + " · TikTok " + d.videosTT + " / " + o.videos_semana + "</b>" + barra(Math.min(d.videosIG, d.videosTT), o.videos_semana) + "</div></div>" +
+      '<div class="mu" style="margin-top:6px">Seguimientos actualizados ' + (d.actualizado ? new Date(d.actualizado).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) : "—") + ' · se cuentan solos cada hora · <a href="#" id="objRec">actualizar ahora</a></div>';
+    $("#objRec").onclick = function (e) { e.preventDefault(); $("#objBody").className = "mu"; cargarObj(true); };
+  }).catch(function () {});
+}
+$("#objEdit").onclick = function () {
+  var o = (OBJ && OBJ.obj) || {};
+  $("#modC").innerHTML = '<b>Objetivos</b><label>Historias por día</label><input id="oH" type="number" value="' + (o.historias || 4) + '"><label>Seguimientos por día (mínimo y máximo)</label><div class="fila"><input id="oS1" type="number" value="' + (o.seg_min || 40) + '"><input id="oS2" type="number" value="' + (o.seg_max || 50) + '"></div><label>Videos por semana (por red)</label><input id="oV" type="number" value="' + (o.videos_semana || 24) + '"><div class="acc"><button class="b p" id="oOk">Guardar</button><button class="b" data-cerrar>Cancelar</button></div>';
+  $("#mod").classList.add("on");
+  $("#oOk").onclick = function () { api("objetivos", { historias: $("#oH").value, seg_min: $("#oS1").value, seg_max: $("#oS2").value, videos_semana: $("#oV").value }).then(function () { cerrarModal(); toast("Objetivos guardados"); cargarObj(); }); };
+};
+cargarObj();
+setInterval(function () { if (!document.hidden && document.hasFocus() && !$("#v-hoy").hidden) cargarObj(); }, 300000);
 
 // ---- Hoy
 var IA_EST = null, RD_EST = null;
