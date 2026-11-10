@@ -1,6 +1,6 @@
 # Sandbox para entrenar seguimientos
 
-Este entorno practica mensajes con 100 conversaciones ficticias. No accede al lector, a WhatsApp ni a contactos reales. PLAY solo simula el tipeo en la página.
+Este entorno practica mensajes con 100 conversaciones ficticias y con más contexto. Incluye cotizaciones vistas sin respuesta, objeciones de precio, cantidades para probar, plazos, decisiones compartidas, listas de precios e información de productos. No accede al lector, a WhatsApp ni a contactos reales. PLAY solo simula el tipeo en la página.
 
 ## Abrir y recuperar el entrenamiento compartido
 
