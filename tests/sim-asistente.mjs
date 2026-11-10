@@ -65,10 +65,11 @@ const mandarS = async (text) => { const ctx = { p: null, waitUntil(x) { this.p =
 const capS = []; const fetchS = globalThis.fetch; globalThis.fetch = async (u, o) => { if (String(u).endsWith("/sendMessage")) capS.push(JSON.parse(o.body)); return fetchS(u, o); };
 await mandarS("seguimientos");
 const ms = capS.at(-1);
-chk("seguimientos: lista con mensaje listo", ms?.text.includes("Seguimientos de hoy: 1") && ms.text.includes("Ana") && ms.text.includes("cotizado hace 4 d") && ms.text.includes("¿pudiste ver lo de los auriculares?"));
-chk("seguimientos: botón abre WhatsApp con el texto", ms?.reply_markup?.inline_keyboard?.[0]?.[0]?.url === "https://wa.me/5493410000001?text=" + encodeURIComponent("Ana, ¿pudiste ver lo de los auriculares? ¿Te sirve que lo ajustemos a 30?"));
+// La IA devuelve ¿ ¡ pero el seguimiento se guarda sin ellos (estilo del dueño: sin ¿ ni ¡)
+chk("seguimientos: lista con mensaje listo", ms?.text.includes("Seguimientos de hoy: 1") && ms.text.includes("Ana") && ms.text.includes("cotizado hace 4 d") && ms.text.includes("pudiste ver lo de los auriculares?") && !ms.text.includes("¿"));
+chk("seguimientos: botón abre WhatsApp con el texto", ms?.reply_markup?.inline_keyboard?.[0]?.[0]?.url === "https://wa.me/5493410000001?text=" + encodeURIComponent("Ana, pudiste ver lo de los auriculares? Te sirve que lo ajustemos a 30?"));
 chk("seguimientos: la IA ve la charla", promptSeg.includes("Cliente: cuanto me salen 50 auriculares?") && promptSeg.includes("le mandamos una cotización hace 4 días"));
-await mandarS("seg"); chk("seguimientos: el mensaje se escribe una vez por día", llamadasSeg === 1 && capS.at(-1).text.includes("¿pudiste ver"));
+await mandarS("seg"); chk("seguimientos: el mensaje se escribe una vez por día", llamadasSeg === 1 && capS.at(-1).text.includes("pudiste ver"));
 { const n0 = capS.length; await mandarS("Pasame una lista de 100 números para hacer seguimiento, no los que hay que contestar");
   const nv = capS.slice(n0); chk("pedido libre de seguimientos (con cantidad) trae la lista con botones", nv.length > 0 && nv.some((x) => x.reply_markup?.inline_keyboard?.[0]?.[0]?.url?.startsWith("https://wa.me/"))); }
 const nS = capS.length; await A.cronAsistente(env, t(13), iaS); chk("10 hs manda los seguimientos al chat principal", capS.length === nS + 1 && capS.at(-1).chat_id === "111" && capS.at(-1).reply_markup);
