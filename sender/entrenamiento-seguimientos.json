@@ -3367,18 +3367,48 @@
   ],
   "training": {
     "silencio": {
-      "instruction": "para casos como este \"hola Tomás, voy directo por los 12 lámparas de escritorio: qué te frena para avanzar, el precio, la cantidad o que no es el momento? con una opción me alcanza.\", que sean parecidos, yo te lo cambio asi \"hola Tomás, voy directo por los 12 lámparas de escritorio: qué te frena para avanzar, el precio, la cantidad o algo mas??\" hay que ser mas concretos, sin mensajes tan largos, le damos opciones para que conteste y de razones, pero no lo abrumamos",
-      "example": "{{nombre}}, sobre la cotización de {{cantidad}} {{producto}}: qué te frena para avanzar, el precio, la cantidad o algo más?",
+      "instruction": "Cuando ya enviamos una cotización y el cliente la vio pero no respondió, retomar el producto y la cantidad exacta. Preguntar de forma directa si lo frena el precio, la cantidad u otro tema. Una pregunta, sin reproches ni introducción larga.",
+      "example": "{{nombre}}, por la cotización de {{cantidad}} {{producto}}, ¿qué te frena para avanzar: el precio, la cantidad o algo más?",
       "sourceChat": "sim-005",
-      "savedAt": 1794310895332
+      "savedAt": 1794319467818
     },
     "precio": {
-      "instruction": "para casos donde el cliente ya dijo \"me quedó más de lo que tenía pensado\", y casos parecidos, buscamos decirle algo de lestilo \"lautaro, querés que ajustemos las cantidades, o de ultima vemos otras posibilidades para traer, que se ajusten a tu presupuesto?\"",
-      "example": "{{nombre}}, querés que ajustemos las cantidades, o de última vemos otras posibilidades para traer, que se ajusten a tu presupuesto?",
+      "instruction": "Si el cliente ya dijo que el precio supera lo que pensaba, reconocer el freno y ofrecer dos caminos concretos: revisar cantidad o ver otra alternativa del producto dentro del presupuesto. No prometer descuentos ni disponibilidad.",
+      "example": "{{nombre}}, ¿querés que ajustemos las cantidades de {{producto}} o vemos otra alternativa que se ajuste a tu presupuesto?",
       "sourceChat": "sim-006",
-      "savedAt": 1794311073145
+      "savedAt": 1794319467818
+    },
+    "cantidad": {
+      "instruction": "Si le interesa el producto pero necesita empezar con menos, preguntar qué cantidad le sirve y ofrecer verificar una opción antes de confirmar. No insistir con el mínimo ni prometer que se puede.",
+      "example": "{{nombre}}, por las {{cantidad}} unidades de {{producto}}, ¿querés que revise una cantidad menor para arrancar?",
+      "sourceChat": "sim-002",
+      "savedAt": 1794319467818
+    },
+    "plazo": {
+      "instruction": "Si el freno es el tiempo, preguntar la fecha concreta en que necesita el producto y verificar el plazo real antes de asegurar que llega.",
+      "example": "{{nombre}}, ¿para qué fecha necesitás {{cantidad}} unidades de {{producto}}? Verifico si llegamos antes de avanzar.",
+      "sourceChat": "sim-003",
+      "savedAt": 1794319467818
+    },
+    "decision": {
+      "instruction": "Si comparte la decisión con un socio, pareja o equipo, preguntar si pudieron revisar la propuesta y ofrecer pasar el dato puntual que falte. Sin apurar ni usar frases vacías.",
+      "example": "{{nombre}}, ¿pudieron revisar la cotización de {{producto}}? Si les falta algo para decidir, decime qué dato y te lo paso.",
+      "sourceChat": "sim-004",
+      "savedAt": 1794319467818
+    },
+    "lista": {
+      "instruction": "Si recibió una lista de productos y precios, volver a esa lista, pedir que elija un producto y una cantidad aproximada para cotizar ese caso y moverlo al pedido.",
+      "example": "{{nombre}}, de la lista que te pasé, ¿qué producto te interesa? Decime una cantidad aproximada y te cotizo ese.",
+      "sourceChat": "sim-090",
+      "savedAt": 1794319467818
+    },
+    "info": {
+      "instruction": "Si recibió información o comparación de productos, mencionar lo conversado, pedir que elija el modelo y la cantidad, y llevarlo al paso concreto de cotizar o pedir.",
+      "example": "{{nombre}}, de los modelos de {{producto}} que vimos, ¿cuál te interesa? Con el modelo y la cantidad te preparo el siguiente paso.",
+      "sourceChat": "sim-007",
+      "savedAt": 1794319467818
     }
   },
   "currentId": "sim-006",
-  "updatedAt": 1794311080388
+  "updatedAt": 1794319486562
 }
