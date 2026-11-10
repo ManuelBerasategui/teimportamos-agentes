@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 34928)
+Total output lines: 1374
+
 import { rutaAutoresp } from "./autoresp.js";
 import { esCierre } from "./cierre.js";
 // ============================================================================
@@ -137,18 +140,25 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
     return Response.json({ ok: true, guardados: n.mensajes });
   }
   if (p.startsWith("/enviar/") && p !== "/enviar/lista" && p !== "/enviar/hecho" && p !== "/enviar/no") { const r = await rutaAutoresp(env, req, p, url, iaJSON, h); if (r) return r; }
-  // Vista previa autenticada para el sender. Puede refrescar borradores, pero no envía ni marca chats como enviados.
-  if (p === "/seguimientos" && req.method === "GET") {
-    const lim = Math.min(Math.max(+url.searchParams.get("limite") || 20, 1), 20);
-    if (url.searchParams.get("refrescar") === "1") await revisarSeguimientos(env, iaJSON, { limite: 0, tope: lim, forzar: true });
-    const lista = (await seguimientos(env)).filter((s) => /^\d{8,15}$/.test(String(s.conv)) && s.borrador).slice(0, lim)
-      .map((s) => ({ conv: s.conv, nombre: s.nombre, producto: s.producto, cantidad: s.cantidad, total: s.total, tipo: s.tipo, toque: s.toque, situacion: s.situacion, revisado: s.revisado, dueno: s.dueno, llamada: s.llamada, reaccion: s.reaccion, dias_cot: s.dias_cot, borrador: s.borrador }));
-    return Response.json({ ok: true, lista });
+  // Vista previa del mismo flujo que usa la PC. Puede pedirle a la IA que actualice borradores,
+  // pero nunca marca un seguimiento como enviado ni lo envía por WhatsApp.
+  if (p === "/enviar/seguimientos-preview" && req.method === "GET") {
+    const lim = Math.min(Math.max(+url.searchParams.get("limite") || 40, 1), 100);
+    const actualizar = url.searchParams.get("actualizar") === "1";
+    if (actualizar) {
+      const tope = Math.min(Math.max(+url.searchParams.get("tope") || 20, 1), SEG.revisarPorLlamada);
+      await revisarSeguimientos(env, iaJSON, { limite: 0, tope });
+    }
+    const lista = (await seguimientos(env)).filter((s) => /^\d{8,15}$/.test(String(s.conv)) && s.borrador).slice(0, lim);
+    const buenos = parseInt((await kvGet(env, "seg_buenos")) || "0") || 0;
+    return Response.json({ ok: true, simulacion: true, auto_habilitado: buenos >= SEG.buenosParaAuto, buenos, para_auto: SEG.buenosParaAuto,
+      lista: lista.map((s) => ({ conv: s.conv, nombre: s.nombre, producto: s.producto, toque: s.toque, situacion: s.situacion, sit_texto: s.sit_texto,
+        revisado: s.revisado, dueno: s.dueno, motivo: s.motivo || "", borrador: s.borrador })) });
   }
-  // Programita de la PC: lista de seguimientos disponibles, sin enviarlos ni marcarlos aquí.
+  // Programita de la PC (carpeta sender/): pide la lista de seguimientos y marca cada uno. Acá NO se envía nada.
   if (p === "/enviar/lista") {
     const lim = Math.min(Math.max(+url.searchParams.get("limite") || 20, 1), 100);
-    const lista = (await seguimientos(env)).filter((s) => /^\d{8,15}$/.test(String(s.conv)) && s.borrador).slice(0, lim)
+    const lista = (await seguimientosAuto805(env)).filter((s) => /^\d{8,15}$/.test(String(s.conv)) && s.borrador).slice(0, lim)
       .map((s) => ({ conv: s.conv, nombre: s.nombre, producto: s.producto, toque: s.toque, borrador: s.borrador }));
     return Response.json({ ok: true, lista });
   }
@@ -616,214 +626,7 @@ export async function cronLector(env, iaJSON, scheduledTime) {
   if (!env.DB || !env.LECTOR_TOKEN) return;   // el lector no está configurado todavía
   await prepararLector(env);
   if (!(await kvGet(env, "lector_reparado_v1"))) await repararPropios(env).catch((e) => console.log("lector reparar", e?.stack || e));
-  if (!(await kvGet(env, "lector_resp_v1"))) { await env.DB.prepare("UPDATE w_conv SET analizado_ts=0 WHERE ult_yo=0 AND grupo=0 AND ult_cliente_ts>=?").bind(Date.now() - 72 * 3600e3).run(); await kvPut(env, "lector_resp_v1", Date.now()); }
-  if (!(await kvGet(env, "lector_ventas_v1"))) { await env.DB.prepare("UPDATE w_conv SET analizado_ts=0 WHERE conv IN (SELECT conv FROM w_hito WHERE tipo='venta') OR ult_ts>=?").bind(Date.now() - 3 * 86400e3).run(); await kvPut(env, "lector_ventas_v1", Date.now()); }
-  if (!(await kvGet(env, "lector_audit_v4"))) {
-    await env.DB.batch([env.DB.prepare("DELETE FROM w_audit"), env.DB.prepare("DELETE FROM w_hito WHERE tipo='venta' AND id LIKE 'v:%' AND COALESCE(oculto,0)=0")]);
-    const dias = []; for (let t = Date.parse("2026-10-01T12:00:00Z"); diaAR(t) < diaAR(Date.now()); t += 86400e3) dias.push(diaAR(t));
-    await kvPut(env, "lector_backfill", JSON.stringify(dias)); await kvPut(env, "lector_audit_v4", Date.now());
-  }
-  if (!(await kvGet(env, "lector_pend_res_v1"))) {
-    await env.DB.prepare("UPDATE tareas SET estado='resuelta' WHERE estado='abierta' AND ref LIKE 'w805:%' AND tipo IN ('cotizacion','promesa') AND EXISTS (SELECT 1 FROM w_msg m WHERE m.conv=tareas.tel AND m.yo=1 AND m.ts>tareas.ts AND (m.tipo<>'text' OR m.texto LIKE '(archivo)%' OR m.texto LIKE '%http%' OR m.texto LIKE '%usd%' OR m.texto LIKE '%$%'))").run();
-    await kvPut(env, "lector_pend_res_v1", Date.now());
-  }
-  if (!(await kvGet(env, "lector_pend_v2"))) { await env.DB.prepare("UPDATE w_conv SET analizado_ts=0 WHERE conv IN (SELECT tel FROM tareas WHERE estado='abierta' AND ref LIKE 'w805:%')").run(); await kvPut(env, "lector_pend_v2", Date.now()); }
-  if (!(await kvGet(env, "lector_pend_v1"))) { await env.DB.prepare("UPDATE w_conv SET analizado_ts=0 WHERE grupo=0 AND ult_ts>=?").bind(Date.now() - 3 * 86400e3).run(); await kvPut(env, "lector_pend_v1", Date.now()); }
-  if (!(await kvGet(env, "lector_cotiz_v2"))) await recalcularCotizaciones(env).catch((e) => console.log("lector cotiz", e?.stack || e));
-  if (!(await kvGet(env, "lector_bot_v1"))) await repararBot(env).catch((e) => console.log("lector bot", e?.stack || e));
-  // Ventas v2 (29/10): se vuelven a revisar las ventas del último mes con las reglas nuevas (envío/saldo/compra repetida no cuentan)
-  if (!(await kvGet(env, "ventas_v2"))) {
-    const l = (await env.DB.prepare("SELECT DISTINCT conv, ts FROM w_hito WHERE tipo='venta' AND COALESCE(oculto,0)=0 AND ts>=? ORDER BY ts").bind(Date.now() - 35 * 86400e3).all()).results || [];
-    await kvPut(env, "ventas_v2_pend", JSON.stringify([...new Set(l.map((x) => x.conv + "|" + diaAR(x.ts)))])); await kvPut(env, "ventas_v2", Date.now());
-  }
-  {
-    const pend = JSON.parse((await kvGet(env, "ventas_v2_pend")) || "[]");
-    if (pend.length) {   // de a 2 por minuto, en orden (así las primeras quedan como "ya registradas" para las siguientes)
-      for (const x of pend.splice(0, 2)) { const [conv, dia] = x.split("|"); await auditarCotizaciones(env, iaJSON, { dia, conv, rehacer: true, limite: 1 }).catch((e) => console.log("ventas v2", e?.stack || e)); }
-      await kvPut(env, "ventas_v2_pend", JSON.stringify(pend));
-    }
-  }
-  const t = new Date(scheduledTime);
-  const m = t.getUTCMinutes(), hAR = (t.getUTCHours() + 21) % 24;
-  if (m % 15 === 7) await analizarChats(env, iaJSON).catch((e) => console.log("lector analizar", e?.stack || e));
-  // Pendientes viejos: si ya le escribimos después de crearse (y lo último es nuestro), o pasaron 4 días sin que el cliente escriba, se cierran solos (van a seguimientos)
-  if (m % 15 === 9) await env.DB.prepare("UPDATE tareas SET estado='resuelta' WHERE estado='abierta' AND ref LIKE 'w805:%' AND EXISTS (SELECT 1 FROM w_conv c WHERE c.conv=tareas.tel AND ((c.ult_yo=1 AND COALESCE(c.ult_yo_ts,0)>tareas.ts) OR (tareas.ts<? AND COALESCE(c.ult_cliente_ts,0)<tareas.ts)))").bind(Date.now() - 4 * 86400e3).run().catch((e) => console.log("lector pend cierre", e?.stack || e));
-  // Seguimientos: la IA va revisando la lista de a 20 durante el día (8 a 21 h), así a las 10 ya está casi toda lista
-  if (m === 43 && hAR >= 8 && hAR < 21 && hAR % 2 === 0) await revisarSeguimientos(env, iaJSON, { limite: 0, tope: SEG.revisarPorCron }).catch((e) => console.log("lector seguimientos", e?.stack || e));
-  if (m % 15 === 11) await auditarCotizaciones(env, iaJSON, { limite: 18 }).catch((e) => console.log("lector auditar", e?.stack || e));
-  if (m % 15 === 4) {   // recálculo de días anteriores, de a uno, hasta terminar
-    const pend = JSON.parse((await kvGet(env, "lector_backfill")) || "[]");
-    if (pend.length) {
-      const r = await auditarCotizaciones(env, iaJSON, { dia: pend[pend.length - 1], limite: 18 }).catch(() => null);
-      if (r && r.pendientes === 0) { pend.pop(); await kvPut(env, "lector_backfill", JSON.stringify(pend)); }
-    }
-  }
-  if (m % 30 === 3) await alertasRapidas(env).catch((e) => console.log("lector alertas", e?.stack || e));
-  { const lista = [...NO_CLIENTES], kf = "no_clientes:" + lista.join(","); if (lista.length && !(await kvGet(env, kf))) { const q = lista.map(() => "?").join(","); await env.DB.batch([env.DB.prepare(`UPDATE w_conv SET prov=1, perfil=NULL, etapa='no_cliente' WHERE conv IN (${q})`).bind(...lista), env.DB.prepare(`UPDATE w_hito SET oculto=1 WHERE tipo='venta' AND conv IN (${q})`).bind(...lista), env.DB.prepare(`UPDATE tareas SET estado='resuelta' WHERE estado='abierta' AND tel IN (${q})`).bind(...lista), env.DB.prepare("DELETE FROM kv WHERE k='lector_resumen'")]); await kvPut(env, kf, Date.now()); } }
-  if (!(await kvGet(env, "perfil_v1"))) { await env.DB.prepare("UPDATE w_conv SET analizado_ts=0 WHERE grupo=0 AND ult_ts>=?").bind(Date.now() - 14 * 86400e3).run(); await kvPut(env, "perfil_v1", Date.now()); }
-  // Reporte diario: desde las 21 h; si falla o se saltea, reintenta cada 10 min y se recupera durante todo el día siguiente
-  {
-    const ref = hAR >= 21 ? scheduledTime : scheduledTime - 86400e3;
-    for (const [tipo, dias] of [["805_diario", 1], ["805_semanal", 7]]) {
-      if (tipo === "805_semanal" && new Date(ref - AR).getUTCDay() !== 0) continue;
-      const desde = inicioDiaAR(ref) + 86400e3 - dias * 86400e3, id = `${tipo}:${diaAR(desde)}`;
-      if (await env.DB.prepare("SELECT 1 FROM reportes WHERE id=?").bind(id).first()) continue;
-      const k = "lector_intento:" + id;
-      if (Date.now() - (+(await kvGet(env, k)) || 0) < 9 * 60e3) continue;
-      await kvPut(env, k, Date.now());
-      await generarReporte(env, iaJSON, tipo, ref, true).catch((e) => console.log("lector reporte", tipo, e?.stack || e));
-      break;   // uno por vuelta
-    }
-  }
-  // Aviso si el puente dejó de mandar datos hace mucho (posible desvinculación)
-  if (m === 30) {
-    const ult = +(await kvGet(env, "lector_ultimo")) || 0, avisado = +(await kvGet(env, "lector_avisado")) || 0;
-    if (ult && Date.now() - ult > 6 * 3600e3 && avisado < ult && horaAR() >= 10 && horaAR() < 22) {
-      await telegram(env, "⚠️ Hace más de 6 horas que no llegan mensajes del 805 al lector. Puede que se haya desvinculado: revisá Dispositivos vinculados en el celular.");
-      await kvPut(env, "lector_avisado", Date.now());
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// 7) API del panel (/panel/api/805/...)
-// ---------------------------------------------------------------------------
-// ---------------------------------------------------------------------------
-// 8) Asistente interno: preguntas en lenguaje natural sobre los chats del 805
-// ---------------------------------------------------------------------------
-const VACIAS_Q = new Set("que quien cual cuales como cuando donde cuanto cuantos cuantas para por con sin los las del una uno unos unas este esta esto ese esa eso hoy ayer semana mes dia dias tenia tengo tenes tiene tienen mandar mande mandarle decime deci acordas acuerdas producto productos pidieron pidio pedido mucho mucha muchos muchas algun alguna alguien hay habia fue era son mas menos todo todos todas cliente clientes chat chats whatsapp".split(" "));
-export async function preguntarAsistente(env, iaJSON, pregunta, historial = []) {
-  await prepararLector(env);
-  const q = String(pregunta || "").slice(0, 600);
-  const ahora = Date.now(), hoy = inicioDiaAR(ahora);
-  const dias = /semana|7 d[ií]as/i.test(q) ? 7 : /mes|30 d[ií]as/i.test(q) ? 30 : /ayer/i.test(q) ? 2 : 3;
-  const desde = /\bhoy\b/i.test(q) && !/ayer|semana|mes/i.test(q) ? hoy : hoy - (dias - 1) * 86400e3;
-  const [mHoy, mRango] = await Promise.all([metricas(env, hoy), metricas(env, desde)]);
-  const productos = (await env.DB.prepare("SELECT producto, COUNT(*) n FROM w_conv WHERE grupo=0 AND producto<>'' AND ult_ts>=? GROUP BY lower(producto) ORDER BY n DESC LIMIT 15").bind(desde).all()).results || [];
-  const chats = (await env.DB.prepare("SELECT conv, nombre, puntaje, temp, producto, etapa, accion, resumen, ult_yo, ult_ts, ult_texto, cot_pend FROM w_conv WHERE grupo=0 AND archivado=0 AND ult_ts>=? ORDER BY COALESCE(puntaje,0) DESC, ult_ts DESC LIMIT 160").bind(desde).all()).results || [];
-  // Búsqueda por palabras de la pregunta en TODOS los mensajes (para "¿a quién le tenía que mandar X?")
-  const palabras = [...new Set(normalQ(q).split(/[^a-z0-9ñ]+/).filter((w) => w.length > 3 && !VACIAS_Q.has(w)))].slice(0, 3);
-  let hallados = [];
-  for (const w of palabras) {
-    const raiz = w.replace(/(es|s)$/, "");
-    const r = (await env.DB.prepare("SELECT m.conv, c.nombre, m.yo, m.texto, m.ts FROM w_msg m LEFT JOIN w_conv c ON c.conv=m.conv WHERE m.ts>=? AND m.grupo=0 AND lower(m.texto) LIKE ? ORDER BY m.ts DESC LIMIT 40").bind(ahora - 10 * 86400e3, `%${raiz}%`).all()).results || [];
-    hallados.push(...r);
-  }
-  const vistos = new Set(); hallados = hallados.filter((h) => { const k = h.conv + h.ts; if (vistos.has(k)) return false; vistos.add(k); return true; }).slice(0, 90);
-  const fmtChat = (c) => `- ${c.nombre || "sin nombre"} (+${c.conv}) · ${c.puntaje ?? "?"}/10 · ${c.producto || "-"} · etapa ${c.etapa || "-"}${c.cot_pend ? " · ESPERA COTIZACIÓN" : ""}${!c.ult_yo ? " · SIN RESPONDER" : ""} · último ${fechaHora(c.ult_ts)}: "${String(c.ult_texto || "").slice(0, 120)}"${c.resumen ? " · " + c.resumen : ""}${c.accion ? " · pendiente: " + String(c.accion).replace(/\|p\d$/, "") : ""}`;
-  const contexto = `MÉTRICAS DE HOY (exactas): ${JSON.stringify(mHoy)}
-MÉTRICAS DESDE ${fechaHora(desde)}: ${JSON.stringify(mRango)}
-PRODUCTOS MÁS CONSULTADOS (desde ${fechaHora(desde)}): ${productos.map((p) => `${p.producto} (${p.n})`).join(", ") || "sin datos"}
-CHATS ACTIVOS DESDE ${fechaHora(desde)} (ordenados por calidad):
-${chats.map(fmtChat).join("\n").slice(0, 45000)}
-MENSAJES QUE COINCIDEN CON LA PREGUNTA (${palabras.join(", ") || "ninguna palabra clave"}):
-${hallados.map((h) => `[${fechaHora(h.ts)}] ${h.nombre || "sin nombre"} (+${h.conv}) ${h.yo ? "NOSOTROS" : "CLIENTE"}: ${String(h.texto).slice(0, 300)}`).join("\n").slice(0, 30000) || "ninguno"}`;
-  const conv = (historial || []).slice(-6).map((h) => `${h.r === "u" ? "YO" : "ASISTENTE"}: ${String(h.t).slice(0, 800)}`).join("\n");
-  const r = await iaJSON(env, `Sos el asistente interno de "Te Importamos" (importaciones). Respondés preguntas del dueño sobre los chats del WhatsApp Business 805, usando SOLO los datos de abajo. Ahora es ${fechaHora(ahora)} (hora Argentina).
-Reglas:
-- No inventes nada. Si los datos no alcanzan, decilo y sugerí cómo averiguarlo.
-- Citá siempre nombre y número (formato +549...) de cada cliente que menciones, y cuando sirva, una frase textual corta entre comillas.
-- Sé breve y ordenado: primero la respuesta directa, después una lista corta si hace falta. Sin emojis. Español rioplatense.
-- Los conteos de chats nuevos, cotizaciones y ventas son exactos; los puntajes y productos los estimó la IA.
-${conv ? "CONVERSACIÓN PREVIA:\n" + conv + "\n" : ""}
-DATOS:
-${contexto}
-
-PREGUNTA: ${q}
-Respondé JSON: {"respuesta":"texto"}`);
-  return { respuesta: r?.respuesta || "No pude responder ahora (la IA no contestó). Probá de nuevo en un minuto.", fuentes: { chats: chats.length, mensajes: hallados.length } };
-}
-const normalQ = (t) => String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-
-export async function apiLector(env, req, url, iaJSON) {
-  await prepararLector(env);
-  const r = url.pathname.replace("/panel/api/805/", "");
-  const json = (x) => Response.json(x);
-  if (r === "resumen") {
-    const cache = JSON.parse((await kvGet(env, "lector_resumen")) || "null");
-    if (cache && Date.now() - cache.ts < 5 * 60e3 && !url.searchParams.get("fresco")) return json(cache.d);
-    const hoy = inicioDiaAR();
-    const [dia, semana, mes, l] = await Promise.all([metricas(env, hoy), metricas(env, hoy - 6 * 86400e3), metricas(env, hoy - 29 * 86400e3), listas(env)]);
-    const estado = JSON.parse((await kvGet(env, "lector_estado")) || "null");
-    const productos = (await env.DB.prepare("SELECT producto, COUNT(*) n FROM w_conv WHERE grupo=0 AND producto<>'' AND ult_ts>=? GROUP BY lower(producto) ORDER BY n DESC LIMIT 10").bind(hoy - 6 * 86400e3).all()).results || [];
-    const serie = (await env.DB.prepare("SELECT primer_ts ts FROM w_conv WHERE primer_ts>=? AND grupo=0").bind(hoy - 29 * 86400e3).all()).results || [];
-    const porDia = {}; for (let i = 29; i >= 0; i--) porDia[diaAR(hoy - i * 86400e3 + 3600e3)] = 0;
-    // Distribuciones para los gráficos (chats con actividad en el período; usa el índice de ult_ts)
-    const dist = {};
-    for (const [k, desde] of [["dia", hoy], ["semana", hoy - 6 * 86400e3], ["mes", hoy - 29 * 86400e3]]) {
-      const filas = (await env.DB.prepare("SELECT temp, etapa, puntaje FROM w_conv WHERE ult_ts>=? AND grupo=0 AND archivado=0").bind(desde).all()).results || [];
-      const t = { caliente: 0, tibio: 0, frio: 0, sin: 0 }, e = {}, pu = Array(10).fill(0);
-      for (const f of filas) {
-        if (t[f.temp] !== undefined && f.temp !== "sin") t[f.temp]++; else t.sin++;
-        if (f.etapa) e[f.etapa] = (e[f.etapa] || 0) + 1;
-        if (f.puntaje >= 1 && f.puntaje <= 10) pu[f.puntaje - 1]++;
-      }
-      const prods = (await env.DB.prepare("SELECT producto, COUNT(*) n FROM w_conv WHERE ult_ts>=? AND grupo=0 AND producto<>'' GROUP BY lower(producto) ORDER BY n DESC LIMIT 10").bind(desde).all()).results || [];
-      dist[k] = { temp: t, etapa: e, puntaje: pu, productos: prods };
-    }
-    for (const s of serie) { const k = diaAR(s.ts); if (k in porDia) porDia[k]++; }
-    const cotPorDia = {}, venPorDia = {}, cotVistos = new Set();
-    for (const k in porDia) { cotPorDia[k] = 0; venPorDia[k] = 0; }
-    const hitosDia = (await env.DB.prepare("SELECT h.tipo, h.ts, h.conv FROM w_hito h LEFT JOIN w_conv c ON c.conv=h.conv WHERE h.tipo IN ('cotizacion','venta') AND h.ts>=? AND COALESCE(h.oculto,0)=0 AND COALESCE(c.prov,0)=0").bind(hoy - 29 * 86400e3).all()).results || [];
-    for (const h of hitosDia) {
-      const k = diaAR(h.ts);
-      if (!(k in porDia)) continue;
-      if (h.tipo === "venta") venPorDia[k]++;
-      else if (!cotVistos.has(k + h.conv)) { cotVistos.add(k + h.conv); cotPorDia[k]++; }
-    }
-    const d = { dist, dia, semana, mes, ...l, estado, ultimo: +(await kvGet(env, "lector_ultimo")) || null, telegram: !!(env.TELEGRAM_TOKEN && (env.TELEGRAM_CHAT || (await kvGet(env, "telegram_chat")))), configurado: !!env.LECTOR_TOKEN, productos, nuevosPorDia: porDia, cotPorDia, venPorDia };
-    await kvPut(env, "lector_resumen", JSON.stringify({ ts: Date.now(), d }));
-    return json(d);
-  }
-  if (r === "chats") {
-    const q = (url.searchParams.get("q") || "").trim(), f = url.searchParams.get("f") || "todos";
-    const cond = { todos: "1=1", calientes: "puntaje>=7", sin: "ult_yo=0", cotizar: "cot_pend=1", grupos: "grupo=1", archivados: "archivado=1", urgentes: "COALESCE(prov,0)=0 AND ult_ts>=" + (Date.now() - 3 * 86400e3) + " AND etapa NOT IN ('vendido','perdido','no_cliente') AND (accion LIKE '%|p1' OR (resp=1 AND ult_yo=0 AND puntaje>=7) OR (cot_pend=1 AND puntaje>=6))" }[f] || "1=1";
-    const filas = (await env.DB.prepare(`SELECT * FROM w_conv WHERE ${cond} ${f === "archivados" ? "" : "AND archivado=0"} ${f === "grupos" ? "" : "AND grupo=0"} ${q ? "AND (nombre LIKE ? OR conv LIKE ? OR producto LIKE ?)" : ""} ORDER BY ${f === "urgentes" ? "puntaje DESC, ult_ts DESC" : "ult_ts DESC"} LIMIT 200`)
-      .bind(...(q ? [`%${q}%`, `%${q}%`, `%${q}%`] : [])).all()).results || [];
-    return json(filas);
-  }
-  if (r === "chat") {
-    const conv = url.searchParams.get("conv");
-    const c = await env.DB.prepare("SELECT * FROM w_conv WHERE conv=?").bind(conv).first();
-    const ms = ((await env.DB.prepare("SELECT yo, autor, autor_nombre, tipo, texto, ts FROM w_msg WHERE conv=? ORDER BY ts DESC LIMIT 300").bind(conv).all()).results || []).reverse();
-    const hitos = (await env.DB.prepare("SELECT tipo, ts FROM w_hito WHERE conv=? ORDER BY ts").bind(conv).all()).results || [];
-    return json({ conv: c, mensajes: ms, hitos });
-  }
-  if (r === "auditar" && req.method === "POST") { const b = await req.json().catch(() => ({})); return json(await auditarCotizaciones(env, iaJSON, { limite: Math.min(60, +b.limite || 30), dia: b.dia || null, conv: b.conv || null, debug: !!b.debug, rehacer: !!b.rehacer })); }
-  if (r === "visto" && req.method === "POST") {
-    const b = await req.json(); const conv = String(b.conv || "");
-    if (b.lista === "ven") await env.DB.prepare("UPDATE w_hito SET oculto=1 WHERE id=? AND tipo='venta'").bind(String(b.id || "")).run();
-    else { const col = b.lista === "esc" ? "visto_esc" : b.lista === "cot" ? "visto_cot" : "visto_ts"; await env.DB.prepare(`UPDATE w_conv SET ${col}=? WHERE conv=?`).bind(Date.now(), conv).run(); }
-    if (b.lista !== "ven") await env.DB.prepare("UPDATE tareas SET estado='hecha' WHERE ref=? AND estado='abierta'").bind("w805:" + conv).run();
-    await env.DB.prepare("DELETE FROM kv WHERE k='lector_resumen'").run(); return json({ ok: true });
-  }
-  if (r === "archivar" && req.method === "POST") {
-    const b = await req.json(); await env.DB.prepare("UPDATE w_conv SET archivado=? WHERE conv=?").bind(b.si ? 1 : 0, b.conv).run(); return json({ ok: true });
-  }
-  if (r === "analizar" && req.method === "POST") {
-    const n = await analizarChats(env, iaJSON, { limite: 24 });
-    return json({ ok: true, analizados: n });
-  }
-  if (r === "reporte" && req.method === "POST") {
-    const b = await req.json().catch(() => ({}));
-    const rep = await generarReporte(env, iaJSON, b.tipo === "805_semanal" ? "805_semanal" : "805_diario");
-    return json({ ok: true, ...rep });
-  }
-  if (r === "borrar-reporte" && req.method === "POST") {
-    const b = await req.json().catch(() => ({}));
-    await env.DB.prepare("DELETE FROM reportes WHERE id=? AND tipo LIKE '805_%'").bind(String(b.id || "")).run();
-    return json({ ok: true });
-  }
-  if (r === "reportes") {
-    const filas = (await env.DB.prepare("SELECT id, tipo, desde, hasta, creado, datos FROM reportes WHERE tipo LIKE '805_%' ORDER BY desde DESC, tipo LIMIT 60").all()).results || [];
-    return json(filas.map((f) => ({ ...f, datos: JSON.parse(f.datos || "{}") })));
-  }
-  if (r === "telegram" && req.method === "POST") return json(await vincularTelegram(env));
-    if (r === "preguntar" && req.method === "POST") { const b = await req.json().catch(() => ({})); return json(await preguntarVendedor(env, iaJSON, b.pregunta)); }
-  if (r === "seguimiento") return json(await seguimientos(env));
-  if (r === "objetivos") return json(await avanceObjetivos(env));
-  if (r === "diag") {   // para ver por qué un chat figura como pendiente: /panel/api/805/diag?conv=549...
-    const conv = String(url.searchParams.get("conv") || "").replace(/\D/g, "");
+  if (!(await kv…4928 tokens truncated…nst conv = String(url.searchParams.get("conv") || "").replace(/\D/g, "");
     const c = await env.DB.prepare("SELECT conv, nombre, ult_yo, ult_ts, ult_yo_ts, ult_cliente_ts, visto_ts, bot_ts, ult_texto, resp, puntaje FROM w_conv WHERE conv=?").bind(conv).first();
     const hora = (t) => (t ? new Date(t - 3 * 3600e3).toISOString().replace("T", " ").slice(0, 16) + " (AR)" : "-");
     const ms = ((await env.DB.prepare("SELECT yo, tipo, ts, substr(texto,1,60) t FROM w_msg WHERE conv=? ORDER BY ts DESC LIMIT 10").bind(conv).all()).results || []).map((m) => ({ quien: m.yo ? "NOSOTROS" : "cliente", tipo: m.tipo, cuando: hora(m.ts), texto: m.t }));
@@ -1056,7 +859,7 @@ async function candidatosSeguimiento(env, ahora = Date.now()) {
     const dias = new Set(ms.filter((m) => m.yo && m.ts > desdeToque + 3 * 3600e3).map((m) => diaAR(m.ts)));
     if ((f.seg_visto || 0) > desdeToque) dias.add(diaAR(f.seg_visto));    // "Listo" en el panel o en Telegram cuenta como toque
     const toques = dias.size;
-    if (toques >= SEG.esperas.length) continue;                       // ya le escribimos 4 veces sin respuesta: frío
+    if (toques >= SEG.esperas.length) continue;                       // ya le escribimos 3 veces sin respuesta: frío
     const movida = Math.max(f.ult_yo_ts || 0, f.ult_cliente_ts || 0, f.seg_visto || 0, ult?.ts || 0);
     const diasSin = (ahora - movida) / 86400e3;
     if (diasSin < SEG.esperas[toques]) continue;
@@ -1098,10 +901,10 @@ function conDetalle(s, c) {
 // Mensaje de base cuando la IA todavía no revisó el chat (así el botón nunca abre el WhatsApp vacío)
 export function borradorBase(s) {
   const n = /\p{L}/u.test(String(s.nombre || "")) ? " " + String(s.nombre).trim().split(/\s+/)[0].toLowerCase() : "";
-  const que = s.producto ? "lo de " + s.producto : "lo que te pasé";
-  if ((s.toque || 1) >= 3) return "buenas" + n + ", cerramos " + que + " por ahora? qué te frenó más: 1) el precio total 2) la cantidad 3) el plazo 4) no es el momento 5) otra cosa. con un número me alcanza";
-  if ((s.toque || 1) === 2) return "buenas" + n + ", para avanzar con " + que + ", te sirve que revise una cantidad menor y te pase el total para comparar?";
-  return "buenas" + n + ", te escribo por " + que + ": qué te frena más, el precio total o la cantidad? si es la cantidad, puedo revisar otra opción y pasarte el total para comparar.";
+  const que = s.producto || "la cotización que te pasé";
+  if ((s.toque || 1) >= 3) return `buenas${n}, voy directo: qué te frenó más con ${que}? 1) el precio total 2) el plazo 3) la cantidad mínima 4) no es el momento 5) otra cosa. con un número me alcanza`;
+  if ((s.toque || 1) === 2) return `buenas${n}, qué te falta para avanzar con ${que}? si el monto te frena, puedo revisar otra cantidad`;
+  return `buenas${n}, si el total de ${que} te quedó alto, qué cantidad tenías en mente para recalcular?`;
 }
 // Una línea corta y útil: a quién, qué le cotizamos (cantidad y monto), cuándo y qué contestó
 export function lineaSeguimiento(s) {
@@ -1112,15 +915,15 @@ export function lineaSeguimiento(s) {
 }
 // Revisa con IA los que faltan hoy y devuelve los que de verdad hay que seguir (con producto, cantidad, monto y mensaje)
 // tope: cuántos revisa la IA en esta llamada (el resto lo va revisando el cron de a poco durante el día)
-export async function revisarSeguimientos(env, iaJSON, { limite = 10, tope = SEG.revisarPorLlamada, forzar = false } = {}) {
+export async function revisarSeguimientos(env, iaJSON, { limite = 10, tope = SEG.revisarPorLlamada } = {}) {
   const lista = await candidatosSeguimiento(env), cache = await cacheSegIA(env), ahora = Date.now();
-  const faltan = lista.filter((s) => forzar || !vigente(cache[s.conv], s, ahora)).slice(0, tope);
+  const faltan = lista.filter((s) => !vigente(cache[s.conv], s, ahora)).slice(0, tope);
   if (faltan.length && iaJSON) {
     for (let i = 0; i < faltan.length; i += SEG.porLlamada) {
       const tanda = faltan.slice(i, i + SEG.porLlamada);
       const charlas = await Promise.all(tanda.map((s) => env.DB.prepare("SELECT yo, texto, ts FROM w_msg WHERE conv=? AND COALESCE(texto,'')<>'' ORDER BY ts DESC LIMIT 40").bind(s.conv).all().then((r) => (r.results || []).reverse()).catch(() => [])));
       const oferta = (await kvGet(env, "seg_oferta")) !== "0";
-      const r = await iaJSON(env, `Atendés el WhatsApp de "Te Importamos" (Rosario: gestionamos importaciones de China para revendedores y comercios; compras grupales/cupos y pedidos a medida por foto o link de Alibaba/1688; nos encargamos de proveedor, aduana y envío; mostramos costos reales; plazo real China puerta a puerta 25 a 40 días). A estos clientes les mandamos cotización, precio, catálogo o info y dejaron de contestar o no avanzaron. Ahora es ${fechaHora(Date.now())} (hora Argentina).
+      const r = await iaJSON(env, `Atendés el WhatsApp de "Te Importamos" (Rosario: gestionamos importaciones de China para revendedores y comercios; compras grupales/cupos y pedidos a medida por foto o link de Alibaba/1688; nos encargamos de proveedor, aduana y envío; mostramos costos reales; plazo real China puerta a puerta 25 a 40 días). A estos clientes les mandamos cotización, precio, catálogo o info y no avanzaron. Ahora es ${fechaHora(Date.now())} (hora Argentina).
 Lo que cierra ventas NO es recordar que existimos: es sacarle la duda y el riesgo (cuánto paga en total, qué no incluye, qué pasa si sale mal, cómo sigue). Insistir sin aportar nada no funciona.
 PASO 1: leé TODA la charla y elegí UNA situación:
 1 pendiente nuestro (preguntó algo y no le contestamos, o prometimos algo y no lo dimos) → el mensaje es la respuesta atrasada, sin disculpas largas
@@ -1134,12 +937,14 @@ PASO 1: leé TODA la charla y elegí UNA situación:
 PASO 2: "seguir" false si ya compró, dijo que no o que lo deja, pidió que no le escriban, es proveedor o no es cliente, ya tiene un pedido en curso, le dijimos que eso no lo traemos, o NO tenés nada nuevo y real para aportar.
 "dueno" true (lo maneja el dueño, no sale solo) si hay negociación sobre costos/flete/aduana/condiciones de pago, pide llamada, factura o referencias, se enojó o reclama, o es un pedido grande o raro. En ese caso "llamada": 2 líneas con qué falta y qué decirle por teléfono.
 PASO 3, el mensaje (va el número de toque de cada cliente):
-- toque 1: retomá algo concreto de esta charla y preguntá directamente si el precio total o la cantidad lo frenan. Ofrecé revisar otra cantidad y pasarle el total para comparar. Cerrá con un próximo paso fácil.
-- toque 2: preguntá qué lo frena, el precio total o la cantidad. Podés ofrecer revisar otra cantidad y comparar el total; no prometas descuentos, rebajas ni un resultado de precio. Nunca "lo pensaste?".
-- toque 3: cierre con opciones numeradas: "qué te frenó? 1) el precio total 2) la cantidad 3) el plazo 4) no es el momento 5) otra cosa". No hay cuarto.
-Estructura: 1) algo concreto de ESTA charla (producto, cantidad, algo que dijo) 2) el aporte nuevo 3) UNA sola pregunta fácil de contestar con una palabra o un número.
+- toque 1: retomá el producto y la cantidad de la charla. Andá directo: preguntá si el total le quedó por encima de lo esperado; si es así, ofrecé recalcular otra cantidad, sin prometer que va a bajar.
+- toque 2: aportá algo NUEVO y real que baje el riesgo: una cantidad de prueba viable u otra alternativa que surja de la charla${oferta ? `, o la oferta confirmada de este toque: 50% off en honorarios (USD 40 en vez de 80), vale 48 h. Usala solo en el toque 2, en pedidos de importación desde China, y como segunda opción después del aporte` : ""}. Cerrá con un próximo paso concreto para cotizar o avanzar; no preguntes "lo pensaste?".
+- toque 3: cierre directo y respetuoso con opciones numeradas: "qué te frenó más? 1) el precio total 2) el plazo 3) la cantidad mínima 4) no es el momento 5) otra cosa". No hay cuarto.
+- situación 4: ofrecé un resumen corto en texto para reenviarle al tercero (producto, total, plazo, seña, qué incluye), con los datos de la charla. No preguntes "hablaste con tu socio?" más de una vez.
+- "más barato acá": no bajes el precio; pedile precio y cantidad que vio para comparar total contra total.
+Estructura: 1) algo concreto de ESTA charla (producto, cantidad, cotización o algo que dijo) 2) un próximo paso que acerque al cierre (recalcular cantidad, aclarar una objeción o definir si avanza) 3) UNA sola pregunta fácil de contestar. Directo, amable y sin presionar. No uses preguntas genéricas como "pudiste evaluar la cotización?" si podés preguntar qué le frenó.
 Estilo: rioplatense, voseo, minúsculas naturales, SIN ¿ ni ¡, sin emojis, 2 a 4 líneas cortas, como una persona por WhatsApp. Prohibido: "estimado", "le escribo para", "seguimiento", "quedo atento", "estamos a disposición", "último mensajito", "te quedó alguna duda?" a secas, repetir un mensaje que ya le mandamos.
-Nunca inventes precios, descuentos, stock, fechas ni casos: usá solo lo que está en la charla o en la cotización. Si falta el total y hace falta, no lo pongas.
+Nunca inventes precios, descuentos (salvo la oferta del toque 2), stock, fechas ni casos: usá solo lo que está en la charla o en la cotización. Si falta el total y hace falta, no lo pongas.
 "producto", "cantidad" y "total": lo que le cotizamos según la charla (ej. "zapatillas Vans", "20 pares", "USD 640 total"). Si no se ve, "".
 CLIENTES:
 ${tanda.map((s, j) => `#${j + 1} ${s.nombre || "sin nombre"} · producto: ${s.producto || "?"} · le mandamos ${{ precio: "precio", info: "info", archivo: "un archivo (precios o fotos)" }[s.tipo] || "una cotización"} hace ${s.dias_cot} días · ${s.reaccion} · TOQUE ${s.toque} de 3${s.presup_usd ? " · aprox USD " + s.presup_usd : ""}${s.perfil ? " · perfil " + s.perfil : ""}${s.cot_dato ? " · cotización: " + String(s.cot_dato).replace(/\s+/g, " ").slice(0, 240) : ""}

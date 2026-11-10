@@ -28,6 +28,7 @@ Orden acordado con Manuel el 07/11/2026: primero el panel nuevo y el agente de W
 8. Antes de escalar: que un abogado revise ley de datos personales y Registro No Llame.
 
 ## C. Otros pendientes detectados
-- sim-asistente (4 fallas) ya fallaba en main desde el commit b1de32c. Las simulaciones de seguimientos se corrigieron y pasan: sim-seguimientos (77/0) y sim-seguimientos2 (14/0).
+- `sim-seguimientos.mjs` y `sim-seguimientos2.mjs` pasan después de alinear las simulaciones con el flujo actual. El resto del paquete de simulaciones todavía no se puede ejecutar completo en Windows: varias pruebas escriben en `/tmp` o `C:\tmp`.
+- Sigue pendiente revisar `sim-asistente` (el registro anterior reportaba 4 fallas) y `sim-buscador` (el registro anterior reportaba un enlace faltante a `/panel/busquedas`).
 - Origen por reel: las respuestas de Instagram muestran el número (no un link), así que los reels sin link no se pueden marcar con código. Las historias con sticker de link, la bio, los anuncios y la prospección sí.
 - Cupos en el panel (lugares, señas, fecha de cierre): falta definir de dónde salen los datos.

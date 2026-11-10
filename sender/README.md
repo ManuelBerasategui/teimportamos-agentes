@@ -1,32 +1,38 @@
-# Agente de WhatsApp y seguimientos (PC)
+# Agente único del WhatsApp 805 (PC)
 
-responder.py unifica respuestas y seguimientos comerciales. Los borradores se personalizan con la conversación; al enviar, el agente confirma en WhatsApp Web que el último mensaje sea nuestro y tipea el texto letra por letra.
+El mismo `responder.py` atiende las consultas y manda los seguimientos personalizados. Lee la conversación, elige el mensaje y lo escribe letra por letra en WhatsApp Web. La ruta vieja de Cloudflare y el enviador separado ya no mandan seguimientos.
 
-La primera revisión de borradores se hace en modo seguro: no abre WhatsApp, no envía y no marca chats como enviados. Los envíos automáticos comerciales antiguos del Worker quedaron desactivados en el código.
+## Sandbox para practicar seguimientos
+Abrí `sandbox.html` (o ejecutá `abrir-sandbox.bat`) para practicar con 100 conversaciones ficticias. PLAY simula el tipeo en la pantalla; no conecta con el lector, WhatsApp ni clientes reales. Podés pausar, editar el borrador y guardar una corrección como ejemplo para futuros chats de la misma situación. El estado y las correcciones se guardan en el almacenamiento local de este navegador; usá **Exportar entrenamiento** para descargar un respaldo JSON e importalo luego desde el mismo sandbox. Las reglas y ejemplos exportados son material de entrenamiento para revisar e incorporar al agente real; el sandbox no modifica el modelo ni el sender productivo.
+
+### Continuar en otra PC y compartir entrenamiento
+- La copia compartida está en `sender/entrenamiento-seguimientos.json`. En otra PC, abrí `sandbox.html`, tocá **Importar** y elegí ese archivo para recuperar el progreso y las dos correcciones iniciales.
+- Cada persona entrena en su propio navegador. Al terminar, usá **Exportar entrenamiento** y conservá ese JSON.
+- Para aportar correcciones, subí el JSON exportado como reemplazo de `sender/entrenamiento-seguimientos.json` en una rama de práctica y abrí una PR contra `seguimientos-sandbox`. Así el grupo actualiza una copia compartida sin tocar `main`, que dispara el despliegue de producción.
+- Este repositorio es público: el JSON de práctica contiene solo conversaciones ficticias. No subas exportaciones con chats reales, teléfonos, nombres completos ni otros datos de clientes.
+- Los ejemplos de menos de 24 caracteres se omiten al importar y no se usan en los mensajes; guardá el borrador completo.
+
 ## Instalación (una vez)
 1. Instalá Python (python.org, tildar "Add to PATH").
 2. Doble clic en `instalar.bat`.
 3. Copiá `.env.example` como `.env` y completá `PANEL_URL` y `LECTOR_TOKEN` (el mismo del lector). El token queda solo en tu PC.
 
-## Uso seguro y paso a paso
-1. Instalá Python (python.org, marcá Add to PATH) y ejecutá instalar.bat.
-2. Copiá .env.example como .env y el PANEL_URL ya está cargado y solo completá LECTOR_TOKEN. El token queda solo en esta PC.
-3. Con el Worker actualizado y el lector sincronizado, ejecutá desde esta carpeta:
+## Uso
+- `python responder.py --prueba`: muestra respuestas y seguimientos personalizados; no abre WhatsApp, no envía y no marca nada como hecho.
+- `python responder.py --seguir`: deja al agente atendiendo consultas y, cuando no quedan pendientes, revisa los seguimientos.
+- `python responder.py --seguir --solo-seguimientos`: deja el mismo agente trabajando solo con seguimientos.
+- Los seguimientos no se envían solos hasta que haya 10 borradores seguidos marcados como buenos en el panel. Los pedidos grandes, perfiles A/B y negociaciones quedan para Manuel.
+- `enviar.py` queda como acceso compatible al mismo agente; sin `--auto` muestra una vista previa. `enviar.bat` también muestra una vista previa.
+- Para frenar: Ctrl+C o crear un archivo `STOP` en esta carpeta.
 
-   python responder.py --prueba --solo-seguimientos
+La primera vez abre una ventana de Chrome propia: escaneá el QR con el celular (usa su propia sesión de WhatsApp Web, no toca la tuya). Antes de enviar un seguimiento, comprueba que el último mensaje sea nuestro; si no lo puede confirmar, lo saltea. Cada envío queda marcado como hecho en el panel.
 
-   Esto pide una sola vista previa autenticada, refresca hasta 10 borradores y muestra los textos reales. No abre WhatsApp, no envía y no marca chats como enviados. También podés hacer doble clic en previsualizar_seguimientos.bat.
-4. Revisá cada borrador. Para ver también la cola de respuestas, usá python responder.py --prueba; esa opción consulta además los chats que esperan respuesta.
-5. python enviar.py también deriva al agente unificado y por defecto muestra vista previa.
+## Ojo
+- No está probado contra WhatsApp Web real: si cambian la página puede fallar. Empezá con `python responder.py --prueba`.
+- El riesgo de bloqueo depende del volumen y de que te marquen como spam, no de quién aprieta el botón. Mantené pocos por día, pausas largas, y mensajes a gente que ya habló con vos.
 
-Para pausar el agente, conservá el archivo PAUSA. Para frenar una corrida, Ctrl+C o crear STOP. El envío de seguimientos desde WhatsApp Web requiere quitar PAUSA y ejecutar expresamente el agente; no uses activar.bat antes de revisar la vista previa.
-
-## Envío de seguimientos
-python responder.py --solo-seguimientos procesa únicamente seguimientos revisados por IA que no requieran intervención del dueño. Usa WhatsApp Web y respeta PAUSA; no ejecutar hasta haber revisado los borradores reales. Cada mensaje se marca como enviado solo después de que WhatsApp Web confirma la escritura.
-## Usar la app de escritorio de WhatsApp (sin Chrome ni QR)
-`python enviar.py --escritorio` (agregá `--auto` para que no pida confirmación). Usa la app que ya tenés abierta con sesión: abre cada chat con el mensaje puesto y aprieta Enter.
-Necesita `python -m pip install pyautogui pygetwindow` (ya incluido en `instalar.bat`). Mientras corre, no uses la PC (el Enter va a la ventana que esté al frente; si WhatsApp no queda al frente, frena solo).
-Limitación: no puede saber si el número existe en WhatsApp. Con el modo Chrome sí.
+## App de escritorio
+El modo `--escritorio` puede seguir contestando consultas, pero no manda seguimientos: para esos se usa WhatsApp Web con el agente que escribe letra por letra y verifica el chat antes de enviar.
 
 ## Abrir, activar y pausar (sin cerrar la ventana)
 - `abrir.bat`: abre el WhatsApp del agente (visible) **en pausa**: conectado, pero no contesta nada.
