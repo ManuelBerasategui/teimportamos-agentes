@@ -136,7 +136,7 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
     if (!lote.history && n.clienteNuevo) ctx?.waitUntil(alertasRapidas(env).catch(() => {}));
     return Response.json({ ok: true, guardados: n.mensajes });
   }
-  if (p.startsWith("/enviar/") && p !== "/enviar/lista" && p !== "/enviar/hecho" && p !== "/enviar/no") { const r = await rutaAutoresp(env, req, p, url, iaJSON, h); if (r) return r; }
+  if (p.startsWith("/enviar/") && p !== "/enviar/lista" && !p.startsWith("/enviar/seg-externos") && p !== "/enviar/hecho" && p !== "/enviar/no") { const r = await rutaAutoresp(env, req, p, url, iaJSON, h); if (r) return r; }
   // Vista previa autenticada para el sender. Puede refrescar borradores, pero no envía ni marca chats como enviados.
   if (p === "/seguimientos" && req.method === "GET") {
     const lim = Math.min(Math.max(+url.searchParams.get("limite") || 20, 1), 20);
@@ -146,6 +146,8 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
     return Response.json({ ok: true, lista });
   }
   // Programita de la PC: lista de seguimientos disponibles, sin enviarlos ni marcarlos aquí.
+  if (p === "/enviar/seg-externos") return Response.json({ ok: true, ...(await segExternos(env, Math.min(+url.searchParams.get("limite") || 40, 80))) });
+  if (p === "/enviar/seg-externos-guardar" && req.method === "POST") return Response.json({ ok: true, ...(await guardarSegExternos(env, (await req.json().catch(() => ({}))).mensajes)) });
   if (p === "/enviar/lista") {
     const lim = Math.min(Math.max(+url.searchParams.get("limite") || 20, 1), 100);
     const lista = (await seguimientos(env)).filter((s) => /^\d{8,15}$/.test(String(s.conv)) && s.borrador).slice(0, lim)
@@ -1167,6 +1169,36 @@ Respondé SOLO JSON: {"mensajes":[{"n":1,"situacion":2,"seguir":true,"dueno":fal
   }
   const ok = lista.filter((s) => !(vigente(cache[s.conv], s, ahora) && cache[s.conv].seguir === false) && !esperaFecha(cache[s.conv], ahora)).map((s) => conDetalle(s, cache[s.conv]));
   return limite ? ok.slice(0, limite) : ok;
+}
+
+// Seguimientos escritos desde afuera (otra IA, ej. Claude con el token del lector) cuando la IA del worker no tiene cupo:
+// segExternos(env) devuelve los que faltan con su charla; guardarSegExternos guarda los mensajes igual que si los hubiera escrito la IA.
+export async function segExternos(env, limite = 40) {
+  const lista = await candidatosSeguimiento(env), cache = await cacheSegIA(env), ahora = Date.now();
+  const faltan = lista.filter((s) => !vigente(cache[s.conv], s, ahora) || !cache[s.conv]?.mensaje && cache[s.conv]?.seguir !== false).slice(0, limite);
+  const out = [];
+  for (const s of faltan) {
+    const m = ((await env.DB.prepare("SELECT yo, texto, ts FROM w_msg WHERE conv=? AND COALESCE(texto,'')<>'' ORDER BY ts DESC LIMIT 40").bind(s.conv).all().catch(() => ({}))).results || []).reverse();
+    out.push({ conv: s.conv, nombre: s.nombre, producto: s.producto, tipo: s.tipo, dias_cot: s.dias_cot, reaccion: s.reaccion, toque: s.toque, perfil: s.perfil, presup_usd: s.presup_usd, cot_dato: s.cot_dato,
+      charla: m.map((x) => `${fechaHora(x.ts)} ${x.yo ? "Nosotros" : "Cliente"}: ${String(x.texto).replace(/\s+/g, " ").slice(0, 400)}`) });
+  }
+  return { total: lista.length, faltan: out };
+}
+export async function guardarSegExternos(env, mensajes) {
+  const lista = await candidatosSeguimiento(env), cache = await cacheSegIA(env), ahora = Date.now(), por = new Map(lista.map((s) => [s.conv, s]));
+  let n = 0;
+  for (const x of Array.isArray(mensajes) ? mensajes : []) {
+    const s = por.get(String(x?.conv || "")); if (!s) continue;
+    const sit = Math.min(Math.max(parseInt(x.situacion) || 0, 0), 8), noAntes = /^\d{4}-\d{2}-\d{2}$/.test(String(x.no_antes || "")) ? x.no_antes : "";
+    const msj = String(x.mensaje || "").replace(/[¿¡]/g, "").replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, "").replace(/ {2,}/g, " ").trim().slice(0, 900);
+    cache[s.conv] = { f: firmaSeg(s), ts: ahora, seguir: x.seguir !== false, motivo: String(x.motivo || "").slice(0, 120), producto: String(x.producto || "").slice(0, 60), cantidad: String(x.cantidad || "").slice(0, 40), total: String(x.total || "").slice(0, 50), mensaje: msj,
+      situacion: sit, toque: s.toque, dueno: !!x.dueno, llamada: String(x.llamada || "").slice(0, 300), no_antes: noAntes, externo: true };
+    if (sit) await env.DB.prepare("UPDATE w_conv SET seg_situacion=? WHERE conv=?").bind(String(sit), s.conv).run().catch(() => {});
+    n++;
+  }
+  await kvPut(env, CLAVE_SEG_IA, JSON.stringify(cache));
+  await kvPut(env, "tab_segs_ts", "0").catch(() => {});   // que el tablero lo recalcule en el próximo minuto
+  return { guardados: n };
 }
 
 // Chats, cotizados y ventas por perfil, de dónde vienen y por qué se pierden

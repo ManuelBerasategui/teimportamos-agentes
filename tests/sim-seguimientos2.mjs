@@ -68,4 +68,12 @@ chk("reporte por situación con el registro", rep.buenos === 0 && rep.oferta ===
 const C = await import(pathToFileURL(path.join(dir, "cotizar.js")));
 const conv2 = await C.vincularCotizacion(env, "+54 9 341 000-0001", "abc", 7, [{ cantidad: 20, nombre: "auriculares" }], 412);
 chk("cotización vinculada al chat por el número", conv2 === "5493410000001" && /total USD 412/.test(db.prepare("SELECT dato FROM w_hito WHERE id='cotm:abc'").get().dato));
+// Seguimientos escritos desde afuera (cuando la IA del worker no tiene cupo)
+db.prepare("DELETE FROM kv WHERE k='seg_ia'").run();
+const ext = await L.segExternos(env);
+chk("externos: trae los que faltan con la charla", ext.faltan.length >= 2 && ext.faltan.some((x) => x.charla.length));
+const conv0 = ext.faltan[0].conv;
+await L.guardarSegExternos(env, [{ conv: conv0, situacion: 2, mensaje: "¡hola! 🙌 te armo el total?" }]);
+const tras = await L.seguimientos(env);
+chk("externos: queda revisado con el mensaje (sin ¿¡ ni emojis)", tras.some((x) => x.conv === conv0 && x.revisado && x.borrador === "hola! te armo el total?"));
 console.log(`\nsim-seguimientos2: ${ok} ok, ${mal} fallas`); if (mal) throw new Error("simulations failed");
