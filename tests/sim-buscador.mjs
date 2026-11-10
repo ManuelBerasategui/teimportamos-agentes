@@ -62,6 +62,8 @@ globalThis.fetch = async (u, o = {}) => {
     if (u.includes("/users/me")) return R({ data: { username: "manu", plan: { id: "FREE" } } });
     if (o.method === "POST" && u.includes("/runs?")) {
       if (!apifyArranca) return R({ error: { message: "Monthly usage hard limit exceeded" } }, 402);
+      // La lectura de TikTok (buscador/src/tiktok.js, tope mínimo USD 0,50 de Apify) también lanza un run: no es una búsqueda de proveedores
+      if (/tiktok/i.test(u)) { assert.match(u, /maxTotalChargeUsd=0\.5\b/); return R({ data: { id: "run-tiktok-" + llamadas.length, defaultDatasetId: "ds-tiktok", status: "READY" } }, 201); }
       const f = u.includes("1688") ? "1688" : "ali";
       assert.match(u, /maxTotalChargeUsd=0\.12/); assert.match(u, /maxItems=20/);
       return R({ data: { id: "run-" + f + "-" + llamadas.length, defaultDatasetId: "ds-" + f, status: "READY" } }, 201);
@@ -85,7 +87,7 @@ assert.deepEqual(P.ESQUEMA, B.ESQUEMA); assert.deepEqual(P.MIGRACIONES, B.MIGRAC
 const pg = await W.fetch(new Request("https://x/panel/busquedas", { headers: { cookie: cM } }), env, ctx);
 assert.equal(pg.status, 200); assert.match(await pg.text(), /Encargar informe/); bien("la página /panel/busquedas carga con login");
 assert.equal((await W.fetch(new Request("https://x/panel/api/busquedas/lista"), env, ctx)).status, 401); bien("sin login, la API responde 401");
-const app = await (await W.fetch(new Request("https://x/panel", { headers: { cookie: cM } }), env, ctx)).text();
+const app = await (await W.fetch(new Request("https://x/panel/viejo", { headers: { cookie: cM } }), env, ctx)).text();   // el link a Búsquedas quedó en /panel/viejo (/panel ahora es el panel nuevo)
 assert.match(app, /href="\/panel\/busquedas"/); assert.match(app, /busqueda_lista: "Búsqueda de proveedores lista"/); bien("el panel tiene el link a Búsquedas y entiende las tareas busqueda_lista");
 
 console.log("2) Alta y reparto alternado");

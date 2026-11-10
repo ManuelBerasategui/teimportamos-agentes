@@ -9,11 +9,50 @@ Uso:  python entrenar.py                 -> muestra lo que aprendió (reglas, pu
       python entrenar.py --corregir-desde correcciones.txt        -> carga varias (una por línea: numero | corrección)
       python entrenar.py --bien N        -> confirmás que la cotización N° N que armó el agente estaba bien (7 seguidas y las manda directo)
       python entrenar.py --mal N "motivo"-> estaba mal: la racha vuelve a 0, vuelve a guardarlas para revisar y aprende del error
+      python entrenar.py --pautas-seg archivo.json -> carga las pautas de SEGUIMIENTOS que exportaste del sandbox (reemplaza las anteriores)
+      python entrenar.py --pautas-seg    -> muestra las pautas de seguimientos cargadas;  --pautas-seg --borrar las saca
 Por la noche (4 AM) entrena solo con tus charlas reales: contesta sin ver tu respuesta, se compara y de los errores salen reglas
 nuevas; una regla solo se queda si mejora el puntaje."""
-import sys, time
+import json, re, sys, time
 from datetime import datetime
 from enviar import api
+
+# Situaciones del sandbox de seguimientos (sender/sandbox.html)
+SITUACIONES_SANDBOX = {"precio": "le parecio caro", "cantidad": "quiere arrancar con menos unidades", "plazo": "lo frena el plazo",
+                       "decision": "lo decide con otra persona", "silencio": "vio la cotizacion y no contesto",
+                       "lista": "le pasamos lista de precios y no eligio", "info": "le pasamos info de productos y no avanzo",
+                       "estilo": "estilo general (vale para todas)"}
+
+
+def pautas_desde_sandbox(ruta):
+    """Lee el JSON exportado del sandbox y arma las pautas (situación, pauta, ejemplo) para el worker."""
+    try:
+        d = json.load(open(ruta, encoding="utf-8-sig"))
+    except FileNotFoundError:
+        sys.exit(f"No encuentro el archivo: {ruta}")
+    except ValueError:
+        sys.exit("Ese archivo no es un JSON válido.")
+    if not isinstance(d, dict) or not isinstance(d.get("training"), dict):
+        sys.exit("Ese archivo no es un entrenamiento exportado del sandbox (falta 'training').")
+    pautas = []
+    for sit, r in d["training"].items():
+        if not isinstance(r, dict):
+            continue
+        pauta, ej = str(r.get("instruction") or "").strip(), str(r.get("example") or "").strip()
+        ej = re.sub(r"\{\{\s*([a-z_]+)\s*\}\}", lambda m: "[" + m.group(1).replace("_", " ") + "]", ej)   # {{producto}} -> [producto]
+        if len(pauta) >= 12:
+            pautas.append({"situacion": SITUACIONES_SANDBOX.get(sit, sit.replace("_", " ")), "pauta": pauta, "ejemplo": ej})
+    pautas.sort(key=lambda p: p["situacion"] != SITUACIONES_SANDBOX["estilo"])   # el estilo general va primero
+    if not pautas:
+        sys.exit("El archivo no trae pautas con instrucción escrita.")
+    return pautas
+
+
+def mostrar_pautas(d):
+    ps = d.get("pautas") or []
+    print(f"\nPautas de seguimientos ({len(ps)})" + (f", cargadas {fecha(d.get('ts'))}:" if ps else ": ninguna."))
+    for i, p in enumerate(ps, 1):
+        print(f"  {i}. [{p.get('situacion')}] {p.get('pauta')}" + (f"\n     tono: {p.get('ejemplo')}" if p.get("ejemplo") else ""))
 
 
 def fecha(ms):
@@ -66,7 +105,17 @@ def mostrar(d):
 
 def main():
     a = sys.argv[1:]
-    if "--regla" in a:
+    if "--pautas-seg" in a:
+        i = a.index("--pautas-seg")
+        if "--borrar" in a:
+            mostrar_pautas(api("/enviar/pautas-seg", {"pautas": []})); print("Listo: saqué las pautas de seguimientos.")
+        elif len(a) > i + 1:
+            d = api("/enviar/pautas-seg", {"pautas": pautas_desde_sandbox(a[i + 1])})
+            mostrar_pautas(d)
+            print("\nListo. La IA las usa al escribir los próximos seguimientos (los borradores ya hechos se rehacen solos en hasta 2 días).")
+        else:
+            mostrar_pautas(api("/enviar/pautas-seg"))
+    elif "--regla" in a:
         txt = " ".join(a[a.index("--regla") + 1:]).strip()
         if len(txt) < 9:
             sys.exit("Escribí la regla completa entre comillas.")

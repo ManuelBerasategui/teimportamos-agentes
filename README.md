@@ -13,6 +13,7 @@
 - Carruseles: se arman con Claude (skill `carrusel-teimportamos`), ya no desde el panel.
 - Cada cambio que se sube a `main` lo publica Cloudflare automáticamente (Workers Builds, una carpeta raíz por worker).
 - Las claves y variables viven en Cloudflare (Settings > Variables). `keep_vars: true` hace que el deploy no las borre. **Nunca subir claves a este repo.**
-- `tests/`: simulaciones en Node (D1 con `node:sqlite`, Meta y Gemini simulados). Correr desde `cotizador/`: `node ../tests/sim.mjs` (y sim3, sim11, sim13, sim14, sim15, sim-buscador, sim-ig-metricas, sim-ig-redes, sim-videos, sim-cotizauto, sim-asistente, sim-ideas, sim16, sim-panel, sim-tiktok, sim-agente, sim-seguimientos, sim-grupos, sim-noperder, sim-entrenador, sim-posthog, sim-tablero).
+- `tests/`: simulaciones en Node (D1 con `node:sqlite`, Meta y Gemini simulados). Correr desde `cotizador/`: `node ../tests/sim.mjs` (y sim3, sim11, sim13, sim14, sim15, sim-buscador, sim-ig-metricas, sim-ig-redes, sim-videos, sim-cotizauto, sim-asistente, sim-ideas, sim16, sim-panel, sim-tiktok, sim-agente, sim-seguimientos, sim-grupos, sim-noperder, sim-entrenador, sim-posthog, sim-tablero, sim-pautas-seg).
+- Pautas de seguimientos: lo que se corrige en el sandbox de seguimientos (rama `seguimientos-sandbox`, `sender/sandbox.html`) se exporta a JSON y se carga con `python entrenar.py --pautas-seg archivo.json`. La IA de `lector.js` las usa como criterio general al escribir cada seguimiento, adaptado a la charla de cada cliente (no copia los ejemplos). Ver las cargadas: `python entrenar.py --pautas-seg`; sacarlas: `python entrenar.py --pautas-seg --borrar`.
 
 _Deploy automático activo desde el 05/10/2026._

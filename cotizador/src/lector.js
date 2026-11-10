@@ -136,7 +136,7 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
     if (!lote.history && n.clienteNuevo) ctx?.waitUntil(alertasRapidas(env).catch(() => {}));
     return Response.json({ ok: true, guardados: n.mensajes });
   }
-  if (p.startsWith("/enviar/") && p !== "/enviar/lista" && !p.startsWith("/enviar/seg-externos") && p !== "/enviar/hecho" && p !== "/enviar/no") { const r = await rutaAutoresp(env, req, p, url, iaJSON, h); if (r) return r; }
+  if (p.startsWith("/enviar/") && p !== "/enviar/lista" && !p.startsWith("/enviar/seg-externos") && p !== "/enviar/pautas-seg" && p !== "/enviar/hecho" && p !== "/enviar/no") { const r = await rutaAutoresp(env, req, p, url, iaJSON, h); if (r) return r; }
   // Vista previa autenticada para el sender. Puede refrescar borradores, pero no envía ni marca chats como enviados.
   if (p === "/seguimientos" && req.method === "GET") {
     const lim = Math.min(Math.max(+url.searchParams.get("limite") || 20, 1), 20);
@@ -148,6 +148,8 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
   // Programita de la PC: lista de seguimientos disponibles, sin enviarlos ni marcarlos aquí.
   if (p === "/enviar/seg-externos") return Response.json({ ok: true, ...(await segExternos(env, Math.min(+url.searchParams.get("limite") || 40, 80))) });
   if (p === "/enviar/seg-externos-guardar" && req.method === "POST") return Response.json({ ok: true, ...(await guardarSegExternos(env, (await req.json().catch(() => ({}))).mensajes)) });
+  // Pautas de seguimiento del dueño (GET las muestra; POST {pautas:[{situacion, pauta, ejemplo}]} las reemplaza; [] las borra)
+  if (p === "/enviar/pautas-seg") return Response.json({ ok: true, ...(req.method === "POST" ? await guardarPautasSeg(env, (await req.json().catch(() => ({}))).pautas) : await pautasSeg(env)) });
   if (p === "/enviar/lista") {
     const lim = Math.min(Math.max(+url.searchParams.get("limite") || 20, 1), 100);
     const lista = (await seguimientos(env)).filter((s) => /^\d{8,15}$/.test(String(s.conv)) && s.borrador).slice(0, lim)
@@ -1081,6 +1083,27 @@ const firmaSeg = (s) => `${s.cot_ts}:${s.ult_ts}`;
 const vigente = (c, s, ahora = Date.now()) => !!c && c.f === firmaSeg(s) && ahora - (c.ts || 0) < (c.seguir === false ? 3 : 2) * 86400e3;
 // Situación 7 (pidió que le escribamos en una fecha): no se le escribe antes de esa fecha aunque pase la revisión
 const esperaFecha = (c, ahora = Date.now()) => !!(c?.no_antes && Date.parse(c.no_antes + "T12:00:00-03:00") > ahora);
+// Pautas de seguimiento del dueño: salen de sus correcciones (sandbox de seguimientos) y la IA las usa como criterio
+// general, adaptado a cada charla, no como plantilla. Se cargan con `python entrenar.py --pautas-seg archivo.json`.
+const CLAVE_PAUTAS = "seg_pautas", MAX_PAUTAS = 15;
+const limpioPauta = (x, n) => String(x ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim().slice(0, n);
+export async function pautasSeg(env) {
+  try { const d = JSON.parse((await kvGet(env, CLAVE_PAUTAS)) || "null"); return Array.isArray(d?.pautas) ? d : { pautas: [], ts: 0 }; } catch { return { pautas: [], ts: 0 }; }
+}
+export async function guardarPautasSeg(env, pautas) {
+  const ok = (Array.isArray(pautas) ? pautas : []).map((x) => ({ situacion: limpioPauta(x?.situacion, 60), pauta: limpioPauta(x?.pauta, 400), ejemplo: limpioPauta(x?.ejemplo, 400).replace(/[¿¡]/g, "") }))
+    .filter((x) => x.pauta.length >= 12).slice(0, MAX_PAUTAS);
+  const d = { pautas: ok, ts: Date.now() };
+  await kvPut(env, CLAVE_PAUTAS, JSON.stringify(d));
+  return d;
+}
+export function pautasTexto(d) {
+  if (!d?.pautas?.length) return "";
+  return `CRITERIO DEL DUEÑO (sale de sus correcciones). Para los toques 1 y 2 manda sobre las indicaciones de arriba; el toque 3 mantiene el cierre con opciones numeradas, y nunca cambia lo de no inventar, "seguir" ni "dueno".
+Entendé la IDEA de cada pauta y aplicala a la situación que más se parezca aunque el caso no sea igual (ej.: si el cliente dijo que es caro, vale la pauta de precio aunque haya sido toque 1). El ejemplo muestra solo el tono: NO lo copies, escribí el mensaje para ESTE cliente con lo que dijo en su charla.
+${d.pautas.map((x, i) => `${i + 1}. ${x.situacion ? x.situacion + ": " : ""}${x.pauta}${x.ejemplo ? ` (tono: "${x.ejemplo}")` : ""}`).join("\n")}
+`;
+}
 // Lista sin IA nueva (usa lo que la IA ya revisó): para contar, el reporte y el agente
 export async function seguimientos(env) {
   const [l, cache] = await Promise.all([candidatosSeguimiento(env), cacheSegIA(env)]);
@@ -1118,6 +1141,7 @@ export async function revisarSeguimientos(env, iaJSON, { limite = 10, tope = SEG
   const lista = await candidatosSeguimiento(env), cache = await cacheSegIA(env), ahora = Date.now();
   const faltan = lista.filter((s) => forzar || !vigente(cache[s.conv], s, ahora)).slice(0, tope);
   if (faltan.length && iaJSON) {
+    const criterio = pautasTexto(await pautasSeg(env));
     for (let i = 0; i < faltan.length; i += SEG.porLlamada) {
       const tanda = faltan.slice(i, i + SEG.porLlamada);
       const charlas = await Promise.all(tanda.map((s) => env.DB.prepare("SELECT yo, texto, ts FROM w_msg WHERE conv=? AND COALESCE(texto,'')<>'' ORDER BY ts DESC LIMIT 40").bind(s.conv).all().then((r) => (r.results || []).reverse()).catch(() => [])));
@@ -1140,7 +1164,7 @@ PASO 3, el mensaje (va el número de toque de cada cliente):
 - toque 2: preguntá qué lo frena, el precio total o la cantidad. Podés ofrecer revisar otra cantidad y comparar el total; no prometas descuentos, rebajas ni un resultado de precio. Nunca "lo pensaste?".
 - toque 3: cierre con opciones numeradas: "qué te frenó? 1) el precio total 2) la cantidad 3) el plazo 4) no es el momento 5) otra cosa". No hay cuarto.
 Estructura: 1) algo concreto de ESTA charla (producto, cantidad, algo que dijo) 2) el aporte nuevo 3) UNA sola pregunta fácil de contestar con una palabra o un número.
-Estilo: rioplatense, voseo, minúsculas naturales, SIN ¿ ni ¡, sin emojis, 2 a 4 líneas cortas, como una persona por WhatsApp. Prohibido: "estimado", "le escribo para", "seguimiento", "quedo atento", "estamos a disposición", "último mensajito", "te quedó alguna duda?" a secas, repetir un mensaje que ya le mandamos.
+${criterio}Estilo: rioplatense, voseo, minúsculas naturales, SIN ¿ ni ¡, sin emojis, 2 a 4 líneas cortas, como una persona por WhatsApp. Prohibido: "estimado", "le escribo para", "seguimiento", "quedo atento", "estamos a disposición", "último mensajito", "te quedó alguna duda?" a secas, repetir un mensaje que ya le mandamos.
 Nunca inventes precios, descuentos, stock, fechas ni casos: usá solo lo que está en la charla o en la cotización. Si falta el total y hace falta, no lo pongas.
 "producto", "cantidad" y "total": lo que le cotizamos según la charla (ej. "zapatillas Vans", "20 pares", "USD 640 total"). Si no se ve, "".
 CLIENTES:
@@ -1182,7 +1206,7 @@ export async function segExternos(env, limite = 40) {
     out.push({ conv: s.conv, nombre: s.nombre, producto: s.producto, tipo: s.tipo, dias_cot: s.dias_cot, reaccion: s.reaccion, toque: s.toque, perfil: s.perfil, presup_usd: s.presup_usd, cot_dato: s.cot_dato,
       charla: m.map((x) => `${fechaHora(x.ts)} ${x.yo ? "Nosotros" : "Cliente"}: ${String(x.texto).replace(/\s+/g, " ").slice(0, 400)}`) });
   }
-  return { total: lista.length, faltan: out };
+  return { total: lista.length, faltan: out, criterio: pautasTexto(await pautasSeg(env)) };
 }
 export async function guardarSegExternos(env, mensajes) {
   const lista = await candidatosSeguimiento(env), cache = await cacheSegIA(env), ahora = Date.now(), por = new Map(lista.map((s) => [s.conv, s]));
