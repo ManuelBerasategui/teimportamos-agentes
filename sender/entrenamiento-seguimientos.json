@@ -1,0 +1,2425 @@
+{
+  "product": "TE.IMPORTAMOS.ARG sandbox",
+  "mode": "offline-practice-only",
+  "version": 1,
+  "exportedAt": "2026-11-10T11:44:40.389Z",
+  "chats": [
+    {
+      "id": "sim-001",
+      "name": "Lucía",
+      "scenario": "precio",
+      "product": "tazas térmicas",
+      "qty": 12,
+      "total": "USD 280",
+      "date": "hace 1 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 12 tazas térmicas. El total estimado es USD 280; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "¿Ese total ya incluye el envío?",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-002",
+      "name": "Nicolás",
+      "scenario": "cantidad",
+      "product": "luces LED",
+      "qty": 12,
+      "total": "USD 280",
+      "date": "hace 2 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 12 luces LED. El total estimado es USD 280; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "yo necesitaba menos unidades",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-003",
+      "name": "Emilia",
+      "scenario": "plazo",
+      "product": "remeras básicas",
+      "qty": 12,
+      "total": "USD 280",
+      "date": "hace 3 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 12 remeras básicas. El total estimado es USD 280; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "lo necesito para el mes que viene",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-004",
+      "name": "Damián",
+      "scenario": "decision",
+      "product": "juguetes didácticos",
+      "qty": 12,
+      "total": "USD 280",
+      "date": "hace 4 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 12 juguetes didácticos. El total estimado es USD 280; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "lo tengo que charlar con mi socio",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-005",
+      "name": "Tomás",
+      "scenario": "silencio",
+      "product": "lámparas de escritorio",
+      "qty": 12,
+      "total": "USD 280",
+      "date": "hace 5 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 12 lámparas de escritorio. El total estimado es USD 280; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "(sin respuesta después de recibir la cotización)",
+          "time": "11:14"
+        }
+      ],
+      "status": "simulated",
+      "sentText": "hola Tomás, voy directo por los 12 lámparas de escritorio: qué te frena para avanzar, el precio, la cantidad o que no es el momento? con una opción me alcanza.",
+      "savedDraft": "hola Tomás, voy directo por los 12 lámparas de escritorio: qué te frena para avanzar, el precio, la cantidad o algo mas??"
+    },
+    {
+      "id": "sim-006",
+      "name": "Lautaro",
+      "scenario": "precio",
+      "product": "cámaras deportivas",
+      "qty": 24,
+      "total": "USD 410",
+      "date": "hace 6 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 24 cámaras deportivas. El total estimado es USD 410; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "me quedó más de lo que tenía pensado",
+          "time": "11:14"
+        }
+      ],
+      "status": "simulated",
+      "sentText": "lautaro, querés que ajustemos las cantidades, o de ultima vemos otras posibilidades para traer, que se ajusten a tu presupuesto?",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-007",
+      "name": "Julieta",
+      "scenario": "cantidad",
+      "product": "cajas organizadoras",
+      "qty": 24,
+      "total": "USD 410",
+      "date": "hace 7 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 24 cajas organizadoras. El total estimado es USD 410; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "el mínimo se me hace mucho",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-008",
+      "name": "Lucía",
+      "scenario": "plazo",
+      "product": "zapatillas urbanas",
+      "qty": 24,
+      "total": "USD 410",
+      "date": "hace 8 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 24 zapatillas urbanas. El total estimado es USD 410; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "el tiempo de entrega me complica",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-009",
+      "name": "Nicolás",
+      "scenario": "decision",
+      "product": "botellas deportivas",
+      "qty": 24,
+      "total": "USD 410",
+      "date": "hace 9 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 24 botellas deportivas. El total estimado es USD 410; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "se lo paso a mi pareja y te digo",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-010",
+      "name": "Emilia",
+      "scenario": "silencio",
+      "product": "fundas para celular",
+      "qty": 24,
+      "total": "USD 410",
+      "date": "hace 10 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 24 fundas para celular. El total estimado es USD 410; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "(vio la cotización, no respondió)",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-011",
+      "name": "Malena",
+      "scenario": "precio",
+      "product": "lámparas de escritorio",
+      "qty": 36,
+      "total": "USD 560",
+      "date": "hace 11 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 36 lámparas de escritorio. El total estimado es USD 560; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "lo tengo que revisar por el precio",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-012",
+      "name": "Valentina",
+      "scenario": "cantidad",
+      "product": "vasos térmicos",
+      "qty": 36,
+      "total": "USD 560",
+      "date": "hace 12 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 36 vasos térmicos. El total estimado es USD 560; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "¿se puede arrancar con una cantidad más chica?",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-013",
+      "name": "Lautaro",
+      "scenario": "plazo",
+      "product": "parlantes bluetooth",
+      "qty": 36,
+      "total": "USD 560",
+      "date": "hace 1 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 36 parlantes bluetooth. El total estimado es USD 560; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "tengo una fecha en mente y no sé si llegamos",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-014",
+      "name": "Julieta",
+      "scenario": "decision",
+      "product": "sets de mate",
+      "qty": 36,
+      "total": "USD 560",
+      "date": "hace 2 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 36 sets de mate. El total estimado es USD 560; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "estoy comparando opciones",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-015",
+      "name": "Lucía",
+      "scenario": "silencio",
+      "product": "organizadores",
+      "qty": 36,
+      "total": "USD 560",
+      "date": "hace 3 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 36 organizadores. El total estimado es USD 560; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "(último mensaje: gracias, después te digo)",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-016",
+      "name": "Martina",
+      "scenario": "precio",
+      "product": "fundas para celular",
+      "qty": 48,
+      "total": "USD 735",
+      "date": "hace 4 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 48 fundas para celular. El total estimado es USD 735; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "gracias, hago números y te digo",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-017",
+      "name": "Bruno",
+      "scenario": "cantidad",
+      "product": "auriculares",
+      "qty": 48,
+      "total": "USD 735",
+      "date": "hace 5 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 48 auriculares. El total estimado es USD 735; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "quería probar primero",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-018",
+      "name": "Malena",
+      "scenario": "plazo",
+      "product": "relojes digitales",
+      "qty": 48,
+      "total": "USD 735",
+      "date": "hace 6 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 48 relojes digitales. El total estimado es USD 735; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "lo voy viendo, no tengo apuro",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-019",
+      "name": "Valentina",
+      "scenario": "decision",
+      "product": "kits de manicura",
+      "qty": 48,
+      "total": "USD 735",
+      "date": "hace 7 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 48 kits de manicura. El total estimado es USD 735; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "dejame que lo piense y vuelvo",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-020",
+      "name": "Lautaro",
+      "scenario": "silencio",
+      "product": "tazas térmicas",
+      "qty": 48,
+      "total": "USD 735",
+      "date": "hace 8 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 48 tazas térmicas. El total estimado es USD 735; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "(pidió información y quedó en silencio)",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-021",
+      "name": "Benjamín",
+      "scenario": "precio",
+      "product": "organizadores",
+      "qty": 60,
+      "total": "USD 890",
+      "date": "hace 9 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 60 organizadores. El total estimado es USD 890; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "¿Ese total ya incluye el envío?",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-022",
+      "name": "Mateo",
+      "scenario": "cantidad",
+      "product": "mochilas",
+      "qty": 60,
+      "total": "USD 890",
+      "date": "hace 10 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 60 mochilas. El total estimado es USD 890; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "yo necesitaba menos unidades",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-023",
+      "name": "Martina",
+      "scenario": "plazo",
+      "product": "herramientas inalámbricas",
+      "qty": 60,
+      "total": "USD 890",
+      "date": "hace 11 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 60 herramientas inalámbricas. El total estimado es USD 890; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "lo necesito para el mes que viene",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-024",
+      "name": "Bruno",
+      "scenario": "decision",
+      "product": "accesorios para mascotas",
+      "qty": 60,
+      "total": "USD 890",
+      "date": "hace 12 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 60 accesorios para mascotas. El total estimado es USD 890; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "lo tengo que charlar con mi socio",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-025",
+      "name": "Malena",
+      "scenario": "silencio",
+      "product": "cámaras deportivas",
+      "qty": 60,
+      "total": "USD 890",
+      "date": "hace 1 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 60 cámaras deportivas. El total estimado es USD 890; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "(sin respuesta después de recibir la cotización)",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-026",
+      "name": "Julián",
+      "scenario": "precio",
+      "product": "tazas térmicas",
+      "qty": 12,
+      "total": "USD 1.120",
+      "date": "hace 2 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 12 tazas térmicas. El total estimado es USD 1.120; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "me quedó más de lo que tenía pensado",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-027",
+      "name": "Agustina",
+      "scenario": "cantidad",
+      "product": "luces LED",
+      "qty": 12,
+      "total": "USD 1.120",
+      "date": "hace 3 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 12 luces LED. El total estimado es USD 1.120; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "el mínimo se me hace mucho",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-028",
+      "name": "Benjamín",
+      "scenario": "plazo",
+      "product": "remeras básicas",
+      "qty": 12,
+      "total": "USD 1.120",
+      "date": "hace 4 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 12 remeras básicas. El total estimado es USD 1.120; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "el tiempo de entrega me complica",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-029",
+      "name": "Mateo",
+      "scenario": "decision",
+      "product": "juguetes didácticos",
+      "qty": 12,
+      "total": "USD 1.120",
+      "date": "hace 5 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 12 juguetes didácticos. El total estimado es USD 1.120; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "se lo paso a mi pareja y te digo",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-030",
+      "name": "Martina",
+      "scenario": "silencio",
+      "product": "lámparas de escritorio",
+      "qty": 12,
+      "total": "USD 1.120",
+      "date": "hace 6 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 12 lámparas de escritorio. El total estimado es USD 1.120; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "(vio la cotización, no respondió)",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-031",
+      "name": "Milagros",
+      "scenario": "precio",
+      "product": "cámaras deportivas",
+      "qty": 24,
+      "total": "USD 280",
+      "date": "hace 7 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 24 cámaras deportivas. El total estimado es USD 280; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "lo tengo que revisar por el precio",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-032",
+      "name": "Thiago",
+      "scenario": "cantidad",
+      "product": "cajas organizadoras",
+      "qty": 24,
+      "total": "USD 280",
+      "date": "hace 8 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 24 cajas organizadoras. El total estimado es USD 280; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "¿se puede arrancar con una cantidad más chica?",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-033",
+      "name": "Julián",
+      "scenario": "plazo",
+      "product": "zapatillas urbanas",
+      "qty": 24,
+      "total": "USD 280",
+      "date": "hace 9 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 24 zapatillas urbanas. El total estimado es USD 280; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "tengo una fecha en mente y no sé si llegamos",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-034",
+      "name": "Agustina",
+      "scenario": "decision",
+      "product": "botellas deportivas",
+      "qty": 24,
+      "total": "USD 280",
+      "date": "hace 10 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 24 botellas deportivas. El total estimado es USD 280; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "estoy comparando opciones",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-035",
+      "name": "Benjamín",
+      "scenario": "silencio",
+      "product": "fundas para celular",
+      "qty": 24,
+      "total": "USD 280",
+      "date": "hace 11 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 24 fundas para celular. El total estimado es USD 280; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "(último mensaje: gracias, después te digo)",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-036",
+      "name": "Sofía",
+      "scenario": "precio",
+      "product": "lámparas de escritorio",
+      "qty": 36,
+      "total": "USD 410",
+      "date": "hace 12 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 36 lámparas de escritorio. El total estimado es USD 410; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "gracias, hago números y te digo",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-037",
+      "name": "Santiago",
+      "scenario": "cantidad",
+      "product": "vasos térmicos",
+      "qty": 36,
+      "total": "USD 410",
+      "date": "hace 1 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 36 vasos térmicos. El total estimado es USD 410; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "quería probar primero",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-038",
+      "name": "Milagros",
+      "scenario": "plazo",
+      "product": "parlantes bluetooth",
+      "qty": 36,
+      "total": "USD 410",
+      "date": "hace 2 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 36 parlantes bluetooth. El total estimado es USD 410; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "lo voy viendo, no tengo apuro",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-039",
+      "name": "Thiago",
+      "scenario": "decision",
+      "product": "sets de mate",
+      "qty": 36,
+      "total": "USD 410",
+      "date": "hace 3 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 36 sets de mate. El total estimado es USD 410; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "dejame que lo piense y vuelvo",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-040",
+      "name": "Julián",
+      "scenario": "silencio",
+      "product": "organizadores",
+      "qty": 36,
+      "total": "USD 410",
+      "date": "hace 4 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 36 organizadores. El total estimado es USD 410; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "(pidió información y quedó en silencio)",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-041",
+      "name": "Facundo",
+      "scenario": "precio",
+      "product": "fundas para celular",
+      "qty": 48,
+      "total": "USD 560",
+      "date": "hace 5 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 48 fundas para celular. El total estimado es USD 560; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "¿Ese total ya incluye el envío?",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-042",
+      "name": "Florencia",
+      "scenario": "cantidad",
+      "product": "auriculares",
+      "qty": 48,
+      "total": "USD 560",
+      "date": "hace 6 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 48 auriculares. El total estimado es USD 560; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "yo necesitaba menos unidades",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-043",
+      "name": "Sofía",
+      "scenario": "plazo",
+      "product": "relojes digitales",
+      "qty": 48,
+      "total": "USD 560",
+      "date": "hace 7 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 48 relojes digitales. El total estimado es USD 560; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "lo necesito para el mes que viene",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-044",
+      "name": "Santiago",
+      "scenario": "decision",
+      "product": "kits de manicura",
+      "qty": 48,
+      "total": "USD 560",
+      "date": "hace 8 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 48 kits de manicura. El total estimado es USD 560; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "lo tengo que charlar con mi socio",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-045",
+      "name": "Milagros",
+      "scenario": "silencio",
+      "product": "tazas térmicas",
+      "qty": 48,
+      "total": "USD 560",
+      "date": "hace 9 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 48 tazas térmicas. El total estimado es USD 560; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "(sin respuesta después de recibir la cotización)",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-046",
+      "name": "Carolina",
+      "scenario": "precio",
+      "product": "organizadores",
+      "qty": 60,
+      "total": "USD 735",
+      "date": "hace 10 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 60 organizadores. El total estimado es USD 735; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "me quedó más de lo que tenía pensado",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-047",
+      "name": "Camila",
+      "scenario": "cantidad",
+      "product": "mochilas",
+      "qty": 60,
+      "total": "USD 735",
+      "date": "hace 11 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 60 mochilas. El total estimado es USD 735; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "el mínimo se me hace mucho",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-048",
+      "name": "Facundo",
+      "scenario": "plazo",
+      "product": "herramientas inalámbricas",
+      "qty": 60,
+      "total": "USD 735",
+      "date": "hace 12 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 60 herramientas inalámbricas. El total estimado es USD 735; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "el tiempo de entrega me complica",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-049",
+      "name": "Florencia",
+      "scenario": "decision",
+      "product": "accesorios para mascotas",
+      "qty": 60,
+      "total": "USD 735",
+      "date": "hace 1 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 60 accesorios para mascotas. El total estimado es USD 735; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "se lo paso a mi pareja y te digo",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-050",
+      "name": "Sofía",
+      "scenario": "silencio",
+      "product": "cámaras deportivas",
+      "qty": 60,
+      "total": "USD 735",
+      "date": "hace 2 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 60 cámaras deportivas. El total estimado es USD 735; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "(vio la cotización, no respondió)",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-051",
+      "name": "Micaela",
+      "scenario": "precio",
+      "product": "tazas térmicas",
+      "qty": 12,
+      "total": "USD 890",
+      "date": "hace 3 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 12 tazas térmicas. El total estimado es USD 890; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "lo tengo que revisar por el precio",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-052",
+      "name": "Franco",
+      "scenario": "cantidad",
+      "product": "luces LED",
+      "qty": 12,
+      "total": "USD 890",
+      "date": "hace 4 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 12 luces LED. El total estimado es USD 890; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "¿se puede arrancar con una cantidad más chica?",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-053",
+      "name": "Carolina",
+      "scenario": "plazo",
+      "product": "remeras básicas",
+      "qty": 12,
+      "total": "USD 890",
+      "date": "hace 5 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 12 remeras básicas. El total estimado es USD 890; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "tengo una fecha en mente y no sé si llegamos",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-054",
+      "name": "Camila",
+      "scenario": "decision",
+      "product": "juguetes didácticos",
+      "qty": 12,
+      "total": "USD 890",
+      "date": "hace 6 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 12 juguetes didácticos. El total estimado es USD 890; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "estoy comparando opciones",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-055",
+      "name": "Facundo",
+      "scenario": "silencio",
+      "product": "lámparas de escritorio",
+      "qty": 12,
+      "total": "USD 890",
+      "date": "hace 7 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 12 lámparas de escritorio. El total estimado es USD 890; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "(último mensaje: gracias, después te digo)",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-056",
+      "name": "Damián",
+      "scenario": "precio",
+      "product": "cámaras deportivas",
+      "qty": 24,
+      "total": "USD 1.120",
+      "date": "hace 8 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 24 cámaras deportivas. El total estimado es USD 1.120; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "gracias, hago números y te digo",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-057",
+      "name": "Tomás",
+      "scenario": "cantidad",
+      "product": "cajas organizadoras",
+      "qty": 24,
+      "total": "USD 1.120",
+      "date": "hace 9 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 24 cajas organizadoras. El total estimado es USD 1.120; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "quería probar primero",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-058",
+      "name": "Micaela",
+      "scenario": "plazo",
+      "product": "zapatillas urbanas",
+      "qty": 24,
+      "total": "USD 1.120",
+      "date": "hace 10 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 24 zapatillas urbanas. El total estimado es USD 1.120; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "lo voy viendo, no tengo apuro",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-059",
+      "name": "Franco",
+      "scenario": "decision",
+      "product": "botellas deportivas",
+      "qty": 24,
+      "total": "USD 1.120",
+      "date": "hace 11 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 24 botellas deportivas. El total estimado es USD 1.120; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "dejame que lo piense y vuelvo",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-060",
+      "name": "Carolina",
+      "scenario": "silencio",
+      "product": "fundas para celular",
+      "qty": 24,
+      "total": "USD 1.120",
+      "date": "hace 12 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 24 fundas para celular. El total estimado es USD 1.120; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "(pidió información y quedó en silencio)",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-061",
+      "name": "Nicolás",
+      "scenario": "precio",
+      "product": "lámparas de escritorio",
+      "qty": 36,
+      "total": "USD 280",
+      "date": "hace 1 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 36 lámparas de escritorio. El total estimado es USD 280; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "¿Ese total ya incluye el envío?",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-062",
+      "name": "Emilia",
+      "scenario": "cantidad",
+      "product": "vasos térmicos",
+      "qty": 36,
+      "total": "USD 280",
+      "date": "hace 2 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 36 vasos térmicos. El total estimado es USD 280; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "yo necesitaba menos unidades",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-063",
+      "name": "Damián",
+      "scenario": "plazo",
+      "product": "parlantes bluetooth",
+      "qty": 36,
+      "total": "USD 280",
+      "date": "hace 3 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 36 parlantes bluetooth. El total estimado es USD 280; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "lo necesito para el mes que viene",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-064",
+      "name": "Tomás",
+      "scenario": "decision",
+      "product": "sets de mate",
+      "qty": 36,
+      "total": "USD 280",
+      "date": "hace 4 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 36 sets de mate. El total estimado es USD 280; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "lo tengo que charlar con mi socio",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-065",
+      "name": "Micaela",
+      "scenario": "silencio",
+      "product": "organizadores",
+      "qty": 36,
+      "total": "USD 280",
+      "date": "hace 5 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 36 organizadores. El total estimado es USD 280; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "(sin respuesta después de recibir la cotización)",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-066",
+      "name": "Julieta",
+      "scenario": "precio",
+      "product": "fundas para celular",
+      "qty": 48,
+      "total": "USD 410",
+      "date": "hace 6 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 48 fundas para celular. El total estimado es USD 410; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "me quedó más de lo que tenía pensado",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-067",
+      "name": "Lucía",
+      "scenario": "cantidad",
+      "product": "auriculares",
+      "qty": 48,
+      "total": "USD 410",
+      "date": "hace 7 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 48 auriculares. El total estimado es USD 410; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "el mínimo se me hace mucho",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-068",
+      "name": "Nicolás",
+      "scenario": "plazo",
+      "product": "relojes digitales",
+      "qty": 48,
+      "total": "USD 410",
+      "date": "hace 8 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 48 relojes digitales. El total estimado es USD 410; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "el tiempo de entrega me complica",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-069",
+      "name": "Emilia",
+      "scenario": "decision",
+      "product": "kits de manicura",
+      "qty": 48,
+      "total": "USD 410",
+      "date": "hace 9 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 48 kits de manicura. El total estimado es USD 410; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "se lo paso a mi pareja y te digo",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-070",
+      "name": "Damián",
+      "scenario": "silencio",
+      "product": "tazas térmicas",
+      "qty": 48,
+      "total": "USD 410",
+      "date": "hace 10 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 48 tazas térmicas. El total estimado es USD 410; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "(vio la cotización, no respondió)",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-071",
+      "name": "Valentina",
+      "scenario": "precio",
+      "product": "organizadores",
+      "qty": 60,
+      "total": "USD 560",
+      "date": "hace 11 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 60 organizadores. El total estimado es USD 560; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "lo tengo que revisar por el precio",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-072",
+      "name": "Lautaro",
+      "scenario": "cantidad",
+      "product": "mochilas",
+      "qty": 60,
+      "total": "USD 560",
+      "date": "hace 12 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 60 mochilas. El total estimado es USD 560; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "¿se puede arrancar con una cantidad más chica?",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-073",
+      "name": "Julieta",
+      "scenario": "plazo",
+      "product": "herramientas inalámbricas",
+      "qty": 60,
+      "total": "USD 560",
+      "date": "hace 1 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 60 herramientas inalámbricas. El total estimado es USD 560; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "tengo una fecha en mente y no sé si llegamos",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-074",
+      "name": "Lucía",
+      "scenario": "decision",
+      "product": "accesorios para mascotas",
+      "qty": 60,
+      "total": "USD 560",
+      "date": "hace 2 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 60 accesorios para mascotas. El total estimado es USD 560; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "estoy comparando opciones",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-075",
+      "name": "Nicolás",
+      "scenario": "silencio",
+      "product": "cámaras deportivas",
+      "qty": 60,
+      "total": "USD 560",
+      "date": "hace 3 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 60 cámaras deportivas. El total estimado es USD 560; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "(último mensaje: gracias, después te digo)",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-076",
+      "name": "Bruno",
+      "scenario": "precio",
+      "product": "tazas térmicas",
+      "qty": 12,
+      "total": "USD 735",
+      "date": "hace 4 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 12 tazas térmicas. El total estimado es USD 735; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "gracias, hago números y te digo",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-077",
+      "name": "Malena",
+      "scenario": "cantidad",
+      "product": "luces LED",
+      "qty": 12,
+      "total": "USD 735",
+      "date": "hace 5 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 12 luces LED. El total estimado es USD 735; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "quería probar primero",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-078",
+      "name": "Valentina",
+      "scenario": "plazo",
+      "product": "remeras básicas",
+      "qty": 12,
+      "total": "USD 735",
+      "date": "hace 6 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 12 remeras básicas. El total estimado es USD 735; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "lo voy viendo, no tengo apuro",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-079",
+      "name": "Lautaro",
+      "scenario": "decision",
+      "product": "juguetes didácticos",
+      "qty": 12,
+      "total": "USD 735",
+      "date": "hace 7 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 12 juguetes didácticos. El total estimado es USD 735; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "dejame que lo piense y vuelvo",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-080",
+      "name": "Julieta",
+      "scenario": "silencio",
+      "product": "lámparas de escritorio",
+      "qty": 12,
+      "total": "USD 735",
+      "date": "hace 8 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 12 lámparas de escritorio. El total estimado es USD 735; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "(pidió información y quedó en silencio)",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-081",
+      "name": "Mateo",
+      "scenario": "precio",
+      "product": "cámaras deportivas",
+      "qty": 24,
+      "total": "USD 890",
+      "date": "hace 9 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 24 cámaras deportivas. El total estimado es USD 890; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "¿Ese total ya incluye el envío?",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-082",
+      "name": "Martina",
+      "scenario": "cantidad",
+      "product": "cajas organizadoras",
+      "qty": 24,
+      "total": "USD 890",
+      "date": "hace 10 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 24 cajas organizadoras. El total estimado es USD 890; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "yo necesitaba menos unidades",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-083",
+      "name": "Bruno",
+      "scenario": "plazo",
+      "product": "zapatillas urbanas",
+      "qty": 24,
+      "total": "USD 890",
+      "date": "hace 11 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 24 zapatillas urbanas. El total estimado es USD 890; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "lo necesito para el mes que viene",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-084",
+      "name": "Malena",
+      "scenario": "decision",
+      "product": "botellas deportivas",
+      "qty": 24,
+      "total": "USD 890",
+      "date": "hace 12 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 24 botellas deportivas. El total estimado es USD 890; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "lo tengo que charlar con mi socio",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-085",
+      "name": "Valentina",
+      "scenario": "silencio",
+      "product": "fundas para celular",
+      "qty": 24,
+      "total": "USD 890",
+      "date": "hace 1 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 24 fundas para celular. El total estimado es USD 890; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "(sin respuesta después de recibir la cotización)",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-086",
+      "name": "Agustina",
+      "scenario": "precio",
+      "product": "lámparas de escritorio",
+      "qty": 36,
+      "total": "USD 1.120",
+      "date": "hace 2 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 36 lámparas de escritorio. El total estimado es USD 1.120; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "me quedó más de lo que tenía pensado",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-087",
+      "name": "Benjamín",
+      "scenario": "cantidad",
+      "product": "vasos térmicos",
+      "qty": 36,
+      "total": "USD 1.120",
+      "date": "hace 3 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 36 vasos térmicos. El total estimado es USD 1.120; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "el mínimo se me hace mucho",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-088",
+      "name": "Mateo",
+      "scenario": "plazo",
+      "product": "parlantes bluetooth",
+      "qty": 36,
+      "total": "USD 1.120",
+      "date": "hace 4 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 36 parlantes bluetooth. El total estimado es USD 1.120; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "el tiempo de entrega me complica",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-089",
+      "name": "Martina",
+      "scenario": "decision",
+      "product": "sets de mate",
+      "qty": 36,
+      "total": "USD 1.120",
+      "date": "hace 5 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 36 sets de mate. El total estimado es USD 1.120; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "se lo paso a mi pareja y te digo",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-090",
+      "name": "Bruno",
+      "scenario": "silencio",
+      "product": "organizadores",
+      "qty": 36,
+      "total": "USD 1.120",
+      "date": "hace 6 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 36 organizadores. El total estimado es USD 1.120; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "(vio la cotización, no respondió)",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-091",
+      "name": "Thiago",
+      "scenario": "precio",
+      "product": "fundas para celular",
+      "qty": 48,
+      "total": "USD 280",
+      "date": "hace 7 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 48 fundas para celular. El total estimado es USD 280; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "lo tengo que revisar por el precio",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-092",
+      "name": "Julián",
+      "scenario": "cantidad",
+      "product": "auriculares",
+      "qty": 48,
+      "total": "USD 280",
+      "date": "hace 8 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 48 auriculares. El total estimado es USD 280; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "¿se puede arrancar con una cantidad más chica?",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-093",
+      "name": "Agustina",
+      "scenario": "plazo",
+      "product": "relojes digitales",
+      "qty": 48,
+      "total": "USD 280",
+      "date": "hace 9 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 48 relojes digitales. El total estimado es USD 280; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "tengo una fecha en mente y no sé si llegamos",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-094",
+      "name": "Benjamín",
+      "scenario": "decision",
+      "product": "kits de manicura",
+      "qty": 48,
+      "total": "USD 280",
+      "date": "hace 10 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 48 kits de manicura. El total estimado es USD 280; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "estoy comparando opciones",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-095",
+      "name": "Mateo",
+      "scenario": "silencio",
+      "product": "tazas térmicas",
+      "qty": 48,
+      "total": "USD 280",
+      "date": "hace 11 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 48 tazas térmicas. El total estimado es USD 280; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "(último mensaje: gracias, después te digo)",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-096",
+      "name": "Santiago",
+      "scenario": "precio",
+      "product": "organizadores",
+      "qty": 60,
+      "total": "USD 410",
+      "date": "hace 12 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 60 organizadores. El total estimado es USD 410; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "gracias, hago números y te digo",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-097",
+      "name": "Milagros",
+      "scenario": "cantidad",
+      "product": "mochilas",
+      "qty": 60,
+      "total": "USD 410",
+      "date": "hace 1 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 60 mochilas. El total estimado es USD 410; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "quería probar primero",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-098",
+      "name": "Thiago",
+      "scenario": "plazo",
+      "product": "herramientas inalámbricas",
+      "qty": 60,
+      "total": "USD 410",
+      "date": "hace 2 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 60 herramientas inalámbricas. El total estimado es USD 410; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "lo voy viendo, no tengo apuro",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-099",
+      "name": "Julián",
+      "scenario": "decision",
+      "product": "accesorios para mascotas",
+      "qty": 60,
+      "total": "USD 410",
+      "date": "hace 3 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 60 accesorios para mascotas. El total estimado es USD 410; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "dejame que lo piense y vuelvo",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    },
+    {
+      "id": "sim-100",
+      "name": "Agustina",
+      "scenario": "silencio",
+      "product": "cámaras deportivas",
+      "qty": 60,
+      "total": "USD 410",
+      "date": "hace 4 días",
+      "turns": [
+        {
+          "from": "agent",
+          "text": "Te paso el detalle de 60 cámaras deportivas. El total estimado es USD 410; el plazo depende de la modalidad que vimos.",
+          "time": "11:08"
+        },
+        {
+          "from": "client",
+          "text": "(pidió información y quedó en silencio)",
+          "time": "11:14"
+        }
+      ],
+      "status": "pending",
+      "sentText": "",
+      "savedDraft": ""
+    }
+  ],
+  "training": {
+    "silencio": {
+      "instruction": "para casos como este \"hola Tomás, voy directo por los 12 lámparas de escritorio: qué te frena para avanzar, el precio, la cantidad o que no es el momento? con una opción me alcanza.\", que sean parecidos, yo te lo cambio asi \"hola Tomás, voy directo por los 12 lámparas de escritorio: qué te frena para avanzar, el precio, la cantidad o algo mas??\" hay que ser mas concretos, sin mensajes tan largos, le damos opciones para que conteste y de razones, pero no lo abrumamos",
+      "example": "hola {{nombre}}, voy directo por los {{cantidad}} {{producto}}: qué te frena para avanzar, el precio, la cantidad o algo más??",
+      "sourceChat": "sim-005",
+      "savedAt": 1794310895332
+    },
+    "precio": {
+      "instruction": "para casos donde el cliente ya dijo \"me quedó más de lo que tenía pensado\", y casos parecidos, buscamos decirle algo de lestilo \"lautaro, querés que ajustemos las cantidades, o de ultima vemos otras posibilidades para traer, que se ajusten a tu presupuesto?\"",
+      "example": "{{nombre}}, querés que ajustemos las cantidades, o de última vemos otras posibilidades para traer, que se ajusten a tu presupuesto?",
+      "sourceChat": "sim-006",
+      "savedAt": 1794311073145
+    }
+  },
+  "currentId": "sim-006",
+  "updatedAt": 1794311080388
+}
+
