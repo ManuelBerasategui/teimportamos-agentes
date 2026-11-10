@@ -62,11 +62,11 @@
     const firstNames = ["Lucía","Mateo","Sofía","Tomás","Valentina","Julián","Camila","Nicolás","Martina","Santiago","Micaela","Lautaro","Agustina","Facundo","Emilia","Bruno","Milagros","Franco","Julieta","Benjamín","Florencia","Damián","Malena","Thiago","Carolina"];
     const products = ["tazas térmicas","sets de mate","zapatillas urbanas","luces LED","organizadores","botellas deportivas","remeras básicas","mochilas","fundas para celular","juguetes didácticos","herramientas inalámbricas","auriculares","lámparas de escritorio","accesorios para mascotas","relojes digitales","vasos térmicos","cámaras deportivas","kits de manicura","parlantes bluetooth","cajas organizadoras"];
     const scenarios = [
-      {id:"precio",name:"Cotización · precio",color:"#fff2df",make:(n,p,q)=>`${n}, querés que ajustemos las cantidades o vemos otra alternativa de ${p} que se acerque a tu presupuesto?`,rule:"Si el cliente marca el precio, preguntarle si prefiere ajustar cantidades o revisar otra alternativa. No ofrecer ni prometer descuentos."},
-      {id:"cantidad",name:"Cotización · cantidad",color:"#e9f1ff",make:(n,p,q)=>`${n}, para los ${q} ${p}, qué cantidad te serviría para arrancar? reviso si hay una opción viable y te confirmo.`,rule:"Preguntar la cantidad que realmente necesita y revisar una opción antes de confirmar que se puede."},
+      {id:"precio",name:"Cotización · precio",color:"#fff2df",make:(n,p,q)=>`${n}, el precio te frena? Podemos revisar una cantidad menor o buscar otra alternativa de ${p} que se acerque a tu presupuesto.`,rule:"Si el cliente marca el precio, preguntarle si prefiere ajustar cantidades o revisar otra alternativa. No ofrecer ni prometer descuentos."},
+      {id:"cantidad",name:"Cotización · cantidad",color:"#e9f1ff",make:(n,p,q)=>`${n}, qué cantidad te serviría para arrancar con ${p}? Reviso si hay una opción viable y te confirmo.`,rule:"Preguntar la cantidad que realmente necesita y revisar una opción antes de confirmar que se puede."},
       {id:"plazo",name:"Cotización · plazo",color:"#f2eaff",make:(n,p,q)=>`${n}, el plazo de los ${q} ${p} es lo que te frena? decime para qué fecha los necesitás y reviso si llegamos antes de avanzar.`,rule:"Preguntar la fecha que necesita y verificar el plazo real antes de prometer que llega."},
       {id:"decision",name:"Decisión compartida",color:"#e9f7ed",make:(n,p,q)=>`${n}, pudiste compartir el resumen de los ${q} ${p}? si te falta un dato puntual para decidir, decime cuál y te lo paso.`,rule:"Ayudar a resolver la decisión con el dato que falta, sin presionar ni mandar un resumen genérico."},
-      {id:"silencio",name:"Cotización · visto sin respuesta",color:"#eef1ef",make:(n,p,q)=>`${n}, voy directo por los ${q} ${p}: qué te frena para avanzar, el precio, la cantidad o algo más?`,rule:"Retomar el producto cotizado con una pregunta breve y opciones claras; no abrumar ni usar un seguimiento genérico."},
+      {id:"silencio",name:"Cotización · visto sin respuesta",color:"#eef1ef",make:(n,p,q)=>`${n}, sobre la cotización de ${q} ${p}: qué te frena para avanzar, el precio, la cantidad o algo más?`,rule:"Retomar el producto cotizado con una pregunta breve y opciones claras; no abrumar ni usar un seguimiento genérico."},
       {id:"lista",name:"Lista de productos y precios",color:"#e8f5f2",make:(n,p,q)=>`${n}, de la lista que te pasé, qué producto te interesa? decime cuál y una cantidad aproximada, y vemos el próximo paso.`,rule:"Volver a la lista enviada, pedir qué producto le interesó y una cantidad aproximada para avanzar."},
       {id:"info",name:"Información de producto",color:"#f9edf0",make:(n,p,q)=>`${n}, de los productos que vimos, cuál te interesó para avanzar? si me decís el modelo y la cantidad, reviso el pedido.`,rule:"Mencionar el producto o las opciones ya conversadas y cerrar con una pregunta concreta que acerque al pedido."}
     ];
@@ -168,4 +168,5 @@
   </script>
 </body>
 </html>
+
 
