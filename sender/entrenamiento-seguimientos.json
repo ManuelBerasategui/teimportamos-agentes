@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 24532)
+Total output lines: 3385
+
 {
   "product": "TE.IMPORTAMOS.ARG sandbox",
   "mode": "offline-practice-only",
@@ -50,28 +53,23 @@
       "turns": [
         {
           "from": "client",
-          "text": "Quiero arrancar con luces LED para probar cómo se venden.",
-          "time": "10:01"
+          "text": "Me interesan luces LED. Para probar, quería empezar con pocas unidades.",
+          "time": "10:00"
         },
         {
           "from": "agent",
-          "text": "Te pasé el detalle por 12 unidades; el total queda en USD 280.",
+          "text": "Te pasé una opción por 12 unidades, con un total de USD 280. También puedo averiguar si hay una cantidad menor.",
           "time": "10:08"
         },
         {
-          "from": "agent",
-          "text": "El mínimo se me hace mucho para empezar.",
-          "time": "11:15"
-        },
-        {
           "from": "client",
-          "text": "Entiendo. Qué cantidad te serviría para la prueba? La reviso antes de confirmarte.",
-          "time": "11:22"
+          "text": "Para arrancar, necesitaría una cantidad menor.",
+          "time": "11:16"
         },
         {
           "from": "agent",
-          "text": "Dale. Decime con cuántas unidades de luces LED querías arrancar y reviso si hay una opción viable antes de confirmarte.",
-          "time": "12:14"
+          "text": "Qué cantidad te serviría para arrancar con luces LED? Reviso si hay una opción y te confirmo.",
+          "time": "11:23"
         }
       ],
       "status": "pending",
@@ -290,33 +288,23 @@
       "turns": [
         {
           "from": "client",
-          "text": "Me interesan botellas deportivas, pero primero quería probar con pocas unidades.",
+          "text": "Me interesan botellas deportivas. Para probar, quería empezar con pocas unidades.",
+          "time": "10:00"
+        },
+        {
+          "from": "agent",
+          "text": "Te pasé una opción por 24 unidades, con un total de USD 410. También puedo averiguar si hay una cantidad menor.",
           "time": "10:08"
         },
         {
-          "from": "agent",
-          "text": "Te averiguo el mínimo y te paso una opción con cantidades y total.",
-          "time": "10:15"
-        },
-        {
-          "from": "agent",
-          "text": "La cotización que te mandé es por 24 unidades, con un total de USD 410.",
-          "time": "11:22"
-        },
-        {
           "from": "client",
-          "text": "Yo necesitaba menos unidades.",
-          "time": "11:29"
+          "text": "No sé si voy a mover tantas al principio.",
+          "time": "11:16"
         },
         {
           "from": "agent",
-          "text": "Dale, reviso qué alternativa de cantidad se puede cotizar y te confirmo.",
-          "time": "12:36"
-        },
-        {
-          "from": "agent",
-          "text": "Te mandé el detalle de botellas deportivas por 24 unidades, con el total de USD 410. Si te falta un dato puntual, decime y lo reviso.",
-          "time": "12:14"
+          "text": "Qué cantidad te serviría para arrancar con botellas deportivas? Reviso si hay una opción y te confirmo.",
+          "time": "11:23"
         }
       ],
       "status": "pending",
@@ -535,28 +523,23 @@
       "turns": [
         {
           "from": "client",
-          "text": "Estoy viendo si pruebo fundas para celular con una cantidad chica.",
-          "time": "10:15"
+          "text": "Me interesan fundas para celular. Para probar, quería empezar con pocas unidades.",
+          "time": "10:00"
         },
         {
           "from": "agent",
-          "text": "Te compartí la cotización de 48 unidades, total USD 735.",
-          "time": "10:22"
-        },
-        {
-          "from": "agent",
-          "text": "Gracias, quería saber si podía empezar con menos.",
-          "time": "11:29"
+          "text": "Te pasé una opción por 48 unidades, con un total de USD 735. También puedo averiguar si hay una cantidad menor.",
+          "time": "10:08"
         },
         {
           "from": "client",
-          "text": "Lo reviso. Qué cantidad tenías en mente?",
-          "time": "11:36"
+          "text": "Prefería probar con menos unidades.",
+          "time": "11:16"
         },
         {
           "from": "agent",
-          "text": "Dale. Decime con cuántas unidades de fundas para celular querías arrancar y reviso si hay una opción viable antes de confirmarte.",
-          "time": "12:14"
+          "text": "Qué cantidad te serviría para arrancar con fundas para celular? Reviso si hay una opción y te confirmo.",
+          "time": "11:23"
         }
       ],
       "status": "pending",
@@ -775,28 +758,23 @@
       "turns": [
         {
           "from": "client",
-          "text": "Cuánto es el mínimo para pedir herramientas inalámbricas?",
-          "time": "10:22"
+          "text": "Me interesan herramientas inalámbricas. Para probar, quería empezar con pocas unidades.",
+          "time": "10:00"
         },
         {
           "from": "agent",
-          "text": "La propuesta que te mandé contempla 60 unidades por USD 890.",
-          "time": "10:29"
-        },
-        {
-          "from": "agent",
-          "text": "Con esa cantidad no sé si llego.",
-          "time": "11:36"
+          "text": "Te pasé una opción por 60 unidades, con un total de USD 890. También puedo averiguar si hay una cantidad menor.",
+          "time": "10:08"
         },
         {
           "from": "client",
-          "text": "Dale, decime con cuántas querías arrancar y reviso si hay una opción viable.",
-          "time": "11:43"
+          "text": "Con esa cantidad se me complica para empezar.",
+          "time": "11:16"
         },
         {
           "from": "agent",
-          "text": "Dale. Decime con cuántas unidades de herramientas inalámbricas querías arrancar y reviso si hay una opción viable antes de confirmarte.",
-          "time": "12:14"
+          "text": "Qué cantidad te serviría para arrancar con herramientas inalámbricas? Reviso si hay una opción y te confirmo.",
+          "time": "11:23"
         }
       ],
       "status": "pending",
@@ -1015,28 +993,23 @@
       "turns": [
         {
           "from": "client",
-          "text": "Quiero arrancar con lámparas de escritorio para probar cómo se venden.",
-          "time": "10:29"
+          "text": "Me interesan lámparas de escritorio. Para probar, quería empezar con pocas unidades.",
+          "time": "10:00"
         },
         {
           "from": "agent",
-          "text": "Te pasé el detalle por 12 unidades; el total queda en USD 1.120.",
-          "time": "10:36"
-        },
-        {
-          "from": "agent",
-          "text": "El mínimo se me hace mucho para empezar.",
-          "time": "11:43"
+          "text": "Te pasé una opción por 12 unidades, con un total de USD 1.120. También puedo averiguar si hay una cantidad menor.",
+          "time": "10:08"
         },
         {
           "from": "client",
-          "text": "Entiendo. Qué cantidad te serviría para la prueba? La reviso antes de confirmarte.",
-          "time": "11:50"
+          "text": "Para arrancar, necesitaría una cantidad menor.",
+          "time": "11:16"
         },
         {
           "from": "agent",
-          "text": "Dale. Decime con cuántas unidades de lámparas de escritorio querías arrancar y reviso si hay una opción viable antes de confirmarte.",
-          "time": "12:14"
+          "text": "Qué cantidad te serviría para arrancar con lámparas de escritorio? Reviso si hay una opción y te confirmo.",
+          "time": "11:23"
         }
       ],
       "status": "pending",
@@ -1255,33 +1228,23 @@
       "turns": [
         {
           "from": "client",
-          "text": "Me interesan vasos térmicos, pero primero quería probar con pocas unidades.",
-          "time": "10:36"
+          "text": "Me interesan vasos térmicos. Para probar, quería empezar con pocas unidades.",
+          "time": "10:00"
         },
         {
           "from": "agent",
-          "text": "Te averiguo el mínimo y te paso una opción con cantidades y total.",
-          "time": "10:43"
-        },
-        {
-          "from": "agent",
-          "text": "La cotización que te mandé es por 36 unidades, con un total de USD 410.",
-          "time": "11:50"
+          "text": "Te pasé una opción por 36 unidades, con un total de USD 410. También puedo averiguar si hay una cantidad menor.",
+          "time": "10:08"
         },
         {
           "from": "client",
-          "text": "Yo necesitaba menos unidades.",
-          "time": "11:57"
+          "text": "No sé si voy a mover tantas al principio.",
+          "time": "11:16"
         },
         {
           "from": "agent",
-          "text": "Dale, reviso qué alternativa de cantidad se puede cotizar y te confirmo.",
-          "time": "12:04"
-        },
-        {
-          "from": "agent",
-          "text": "Te mandé el detalle de vasos térmicos por 36 unidades, con el total de USD 410. Si te falta un dato puntual, decime y lo reviso.",
-          "time": "12:14"
+          "text": "Qué cantidad te serviría para arrancar con vasos térmicos? Reviso si hay una opción y te confirmo.",
+          "time": "11:23"
         }
       ],
       "status": "pending",
@@ -1423,650 +1386,7 @@
       "id": "sim-042",
       "name": "Florencia",
       "scenario": "info",
-      "product": "auriculares",
-      "qty": 48,
-      "total": "USD 560",
-      "date": "hace 6 días",
-      "turns": [
-        {
-          "from": "client",
-          "text": "Me gustó auriculares, quería entender mejor las opciones.",
-          "time": "10:41"
-        },
-        {
-          "from": "agent",
-          "text": "Te pasé la información de las opciones y cómo sería el pedido.",
-          "time": "10:48"
-        },
-        {
-          "from": "client",
-          "text": "Lo tengo que pensar.",
-          "time": "11:55"
-        },
-        {
-          "from": "agent",
-          "text": "Dale. De las opciones que vimos, cuál te interesó más?",
-          "time": "11:02"
-        }
-      ],
-      "status": "pending",
-      "sentText": "",
-      "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 6 días"
-    },
-    {
-      "id": "sim-043",
-      "name": "Sofía",
-      "scenario": "precio",
-      "product": "relojes digitales",
-      "qty": 48,
-      "total": "USD 560",
-      "date": "hace 7 días",
-      "turns": [
-        {
-          "from": "client",
-          "text": "Estoy comparando precios para relojes digitales. Qué total da por 48?",
-          "time": "10:42"
-        },
-        {
-          "from": "agent",
-          "text": "La cotización de 48 unidades queda en USD 560; te mandé el detalle.",
-          "time": "10:49"
-        },
-        {
-          "from": "client",
-          "text": "Gracias, lo tengo que revisar por el presupuesto.",
-          "time": "11:56"
-        },
-        {
-          "from": "agent",
-          "text": "Dale. Si el monto te frena, decime qué cantidad tenías en mente y la reviso.",
-          "time": "11:03"
-        }
-      ],
-      "status": "pending",
-      "sentText": "",
-      "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 7 días"
-    },
-    {
-      "id": "sim-044",
-      "name": "Santiago",
-      "scenario": "cantidad",
-      "product": "kits de manicura",
-      "qty": 48,
-      "total": "USD 560",
-      "date": "hace 8 días",
-      "turns": [
-        {
-          "from": "client",
-          "text": "Estoy viendo si pruebo kits de manicura con una cantidad chica.",
-          "time": "10:43"
-        },
-        {
-          "from": "agent",
-          "text": "Te compartí la cotización de 48 unidades, total USD 560.",
-          "time": "10:50"
-        },
-        {
-          "from": "agent",
-          "text": "Gracias, quería saber si podía empezar con menos.",
-          "time": "11:57"
-        },
-        {
-          "from": "client",
-          "text": "Lo reviso. Qué cantidad tenías en mente?",
-          "time": "11:04"
-        },
-        {
-          "from": "agent",
-          "text": "Dale. Decime con cuántas unidades de kits de manicura querías arrancar y reviso si hay una opción viable antes de confirmarte.",
-          "time": "12:14"
-        }
-      ],
-      "status": "pending",
-      "sentText": "",
-      "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 8 días"
-    },
-    {
-      "id": "sim-045",
-      "name": "Milagros",
-      "scenario": "plazo",
-      "product": "tazas térmicas",
-      "qty": 48,
-      "total": "USD 560",
-      "date": "hace 9 días",
-      "turns": [
-        {
-          "from": "client",
-          "text": "Necesito 48 tazas térmicas. Antes de avanzar, quería saber el plazo aproximado.",
-          "time": "10:44"
-        },
-        {
-          "from": "agent",
-          "text": "Te pasé la cotización por USD 560 y el plazo que corresponde a la modalidad que conversamos.",
-          "time": "10:51"
-        },
-        {
-          "from": "client",
-          "text": "Lo necesito para una fecha puntual.",
-          "time": "11:58"
-        },
-        {
-          "from": "agent",
-          "text": "Perfecto. Pasame la fecha y reviso el plazo real antes de confirmar nada.",
-          "time": "11:05"
-        }
-      ],
-      "status": "pending",
-      "sentText": "",
-      "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 9 días"
-    },
-    {
-      "id": "sim-046",
-      "name": "Carolina",
-      "scenario": "decision",
-      "product": "organizadores",
-      "qty": 60,
-      "total": "USD 735",
-      "date": "hace 10 días",
-      "turns": [
-        {
-          "from": "client",
-          "text": "Estoy mirando organizadores para el negocio con mi pareja.",
-          "time": "10:45"
-        },
-        {
-          "from": "agent",
-          "text": "La cotización por 60 unidades queda en USD 735; te mandé el detalle para compartirlo.",
-          "time": "10:52"
-        },
-        {
-          "from": "client",
-          "text": "Lo tengo que ver con ella.",
-          "time": "11:59"
-        },
-        {
-          "from": "agent",
-          "text": "Perfecto. Si necesitan aclarar algo puntual del pedido, decime y lo reviso.",
-          "time": "11:06"
-        }
-      ],
-      "status": "pending",
-      "sentText": "",
-      "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 10 días"
-    },
-    {
-      "id": "sim-047",
-      "name": "Camila",
-      "scenario": "silencio",
-      "product": "mochilas",
-      "qty": 60,
-      "total": "USD 735",
-      "date": "hace 11 días",
-      "turns": [
-        {
-          "from": "client",
-          "text": "Estoy interesado en mochilas para mi local. Serían 60.",
-          "time": "10:46"
-        },
-        {
-          "from": "agent",
-          "text": "Dale, te compartí la cotización de 60 unidades y el total de USD 735.",
-          "time": "10:53"
-        }
-      ],
-      "status": "pending",
-      "sentText": "",
-      "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 11 días"
-    },
-    {
-      "id": "sim-048",
-      "name": "Facundo",
-      "scenario": "lista",
-      "product": "herramientas inalámbricas",
-      "qty": 60,
-      "total": "USD 735",
-      "date": "hace 12 días",
-      "turns": [
-        {
-          "from": "client",
-          "text": "Estoy armando un pedido para mi local. Me pasás lista?",
-          "time": "10:47"
-        },
-        {
-          "from": "agent",
-          "text": "Ya te compartí la lista de productos y precios para que elijas.",
-          "time": "10:54"
-        },
-        {
-          "from": "client",
-          "text": "Gracias, después te digo.",
-          "time": "11:01"
-        },
-        {
-          "from": "agent",
-          "text": "Cuando la mires, decime qué producto te interesó y cuántas unidades pensabas.",
-          "time": "11:08"
-        }
-      ],
-      "status": "pending",
-      "sentText": "",
-      "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 12 días"
-    },
-    {
-      "id": "sim-049",
-      "name": "Florencia",
-      "scenario": "info",
-      "product": "accesorios para mascotas",
-      "qty": 60,
-      "total": "USD 735",
-      "date": "hace 1 días",
-      "turns": [
-        {
-          "from": "client",
-          "text": "Estoy mirando accesorios para mascotas. Me pasás más información y cómo sería para pedirlo?",
-          "time": "10:48"
-        },
-        {
-          "from": "agent",
-          "text": "Te cuento lo que vimos de accesorios para mascotas y cómo se arma el pedido. También te puedo revisar la cantidad que necesitás.",
-          "time": "10:55"
-        },
-        {
-          "from": "client",
-          "text": "Buenísimo, lo reviso.",
-          "time": "11:02"
-        },
-        {
-          "from": "agent",
-          "text": "Perfecto. Cuando quieras avanzar, decime qué modelo y cantidad te interesan.",
-          "time": "11:09"
-        }
-      ],
-      "status": "pending",
-      "sentText": "",
-      "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 1 días"
-    },
-    {
-      "id": "sim-050",
-      "name": "Sofía",
-      "scenario": "precio",
-      "product": "cámaras deportivas",
-      "qty": 60,
-      "total": "USD 735",
-      "date": "hace 2 días",
-      "turns": [
-        {
-          "from": "client",
-          "text": "Me interesan cámaras deportivas, serían unas 60 unidades.",
-          "time": "10:49"
-        },
-        {
-          "from": "agent",
-          "text": "Dale, te armé la cotización por USD 735 y te pasé el detalle.",
-          "time": "10:56"
-        },
-        {
-          "from": "client",
-          "text": "Me quedó más alto de lo que calculaba.",
-          "time": "11:03"
-        },
-        {
-          "from": "agent",
-          "text": "Entiendo. Si querés, reviso otra cantidad y vemos si se acerca a lo que pensabas.",
-          "time": "11:10"
-        }
-      ],
-      "status": "pending",
-      "sentText": "",
-      "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 2 días"
-    },
-    {
-      "id": "sim-051",
-      "name": "Micaela",
-      "scenario": "cantidad",
-      "product": "tazas térmicas",
-      "qty": 12,
-      "total": "USD 890",
-      "date": "hace 3 días",
-      "turns": [
-        {
-          "from": "client",
-          "text": "Cuánto es el mínimo para pedir tazas térmicas?",
-          "time": "10:50"
-        },
-        {
-          "from": "agent",
-          "text": "La propuesta que te mandé contempla 12 unidades por USD 890.",
-          "time": "10:57"
-        },
-        {
-          "from": "agent",
-          "text": "Con esa cantidad no sé si llego.",
-          "time": "11:04"
-        },
-        {
-          "from": "client",
-          "text": "Dale, decime con cuántas querías arrancar y reviso si hay una opción viable.",
-          "time": "11:11"
-        },
-        {
-          "from": "agent",
-          "text": "Dale. Decime con cuántas unidades de tazas térmicas querías arrancar y reviso si hay una opción viable antes de confirmarte.",
-          "time": "12:14"
-        }
-      ],
-      "status": "pending",
-      "sentText": "",
-      "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 3 días"
-    },
-    {
-      "id": "sim-052",
-      "name": "Franco",
-      "scenario": "plazo",
-      "product": "luces LED",
-      "qty": 12,
-      "total": "USD 890",
-      "date": "hace 4 días",
-      "turns": [
-        {
-          "from": "client",
-          "text": "Estoy viendo luces LED, me importa llegar antes de una fecha.",
-          "time": "10:51"
-        },
-        {
-          "from": "agent",
-          "text": "Te pasé el detalle por 12 unidades, total USD 890, con el plazo conversado.",
-          "time": "10:58"
-        },
-        {
-          "from": "client",
-          "text": "Gracias, lo voy viendo.",
-          "time": "11:05"
-        },
-        {
-          "from": "agent",
-          "text": "Si me decís la fecha, reviso si los tiempos encajan antes de que avances.",
-          "time": "11:12"
-        }
-      ],
-      "status": "pending",
-      "sentText": "",
-      "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 4 días"
-    },
-    {
-      "id": "sim-053",
-      "name": "Carolina",
-      "scenario": "decision",
-      "product": "remeras básicas",
-      "qty": 12,
-      "total": "USD 890",
-      "date": "hace 5 días",
-      "turns": [
-        {
-          "from": "client",
-          "text": "Me interesa remeras básicas, lo tengo que charlar con mi socio.",
-          "time": "10:52"
-        },
-        {
-          "from": "agent",
-          "text": "Te paso el resumen de 12 unidades: total USD 890, más los detalles de la cotización.",
-          "time": "10:59"
-        },
-        {
-          "from": "client",
-          "text": "Se lo mando hoy y te digo.",
-          "time": "11:06"
-        },
-        {
-          "from": "agent",
-          "text": "Dale. Si para decidir les falta un dato concreto, decime cuál y te lo paso.",
-          "time": "11:13"
-        }
-      ],
-      "status": "pending",
-      "sentText": "",
-      "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 5 días"
-    },
-    {
-      "id": "sim-054",
-      "name": "Camila",
-      "scenario": "silencio",
-      "product": "juguetes didácticos",
-      "qty": 12,
-      "total": "USD 890",
-      "date": "hace 6 días",
-      "turns": [
-        {
-          "from": "client",
-          "text": "Me pasás precio por 12 juguetes didácticos?",
-          "time": "10:53"
-        },
-        {
-          "from": "agent",
-          "text": "Sí, te envié la cotización completa por USD 890, con el detalle del pedido.",
-          "time": "10:00"
-        }
-      ],
-      "status": "pending",
-      "sentText": "",
-      "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 6 días"
-    },
-    {
-      "id": "sim-055",
-      "name": "Facundo",
-      "scenario": "lista",
-      "product": "lámparas de escritorio",
-      "qty": 12,
-      "total": "USD 890",
-      "date": "hace 7 días",
-      "turns": [
-        {
-          "from": "client",
-          "text": "Quiero ver qué opciones hay antes de elegir.",
-          "time": "10:54"
-        },
-        {
-          "from": "agent",
-          "text": "Te mandé la lista de productos y precios. Si me decís qué rubro buscás, te oriento.",
-          "time": "10:01"
-        },
-        {
-          "from": "client",
-          "text": "Me interesan varias cosas.",
-          "time": "11:08"
-        },
-        {
-          "from": "agent",
-          "text": "Dale, cuáles te llamaron la atención? Con una cantidad aproximada revisamos el pedido.",
-          "time": "11:15"
-        }
-      ],
-      "status": "pending",
-      "sentText": "",
-      "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 7 días"
-    },
-    {
-      "id": "sim-056",
-      "name": "Damián",
-      "scenario": "info",
-      "product": "cámaras deportivas",
-      "qty": 24,
-      "total": "USD 1.120",
-      "date": "hace 8 días",
-      "turns": [
-        {
-          "from": "client",
-          "text": "Estoy buscando cámaras deportivas, todavía estoy definiendo cuál.",
-          "time": "10:55"
-        },
-        {
-          "from": "agent",
-          "text": "Te pasé la información de las alternativas para que compares.",
-          "time": "10:02"
-        },
-        {
-          "from": "client",
-          "text": "Me interesa pero estoy viendo.",
-          "time": "11:09"
-        },
-        {
-          "from": "agent",
-          "text": "Dale. Cuál de las opciones querés que revisemos primero?",
-          "time": "11:16"
-        }
-      ],
-      "status": "pending",
-      "sentText": "",
-      "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 8 días"
-    },
-    {
-      "id": "sim-057",
-      "name": "Tomás",
-      "scenario": "precio",
-      "product": "cajas organizadoras",
-      "qty": 24,
-      "total": "USD 1.120",
-      "date": "hace 9 días",
-      "turns": [
-        {
-          "from": "client",
-          "text": "Hola, estoy buscando 24 cajas organizadoras para mi negocio. Me pasás el total?",
-          "time": "10:56"
-        },
-        {
-          "from": "agent",
-          "text": "Sí. Para 24 cajas organizadoras, la cotización que vimos queda en USD 1.120. Te mandé el detalle para que revises todo junto.",
-          "time": "10:03"
-        },
-        {
-          "from": "client",
-          "text": "Se me va un poco de lo que tenía pensado.",
-          "time": "11:10"
-        },
-        {
-          "from": "agent",
-          "text": "Entiendo. Si querés, reviso otra cantidad para ver si se acerca a tu presupuesto. Qué monto tenías en mente?",
-          "time": "11:17"
-        }
-      ],
-      "status": "pending",
-      "sentText": "",
-      "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 9 días"
-    },
-    {
-      "id": "sim-058",
-      "name": "Micaela",
-      "scenario": "cantidad",
-      "product": "zapatillas urbanas",
-      "qty": 24,
-      "total": "USD 1.120",
-      "date": "hace 10 días",
-      "turns": [
-        {
-          "from": "client",
-          "text": "Quiero arrancar con zapatillas urbanas para probar cómo se venden.",
-          "time": "10:57"
-        },
-        {
-          "from": "agent",
-          "text": "Te pasé el detalle por 24 unidades; el total queda en USD 1.120.",
-          "time": "10:04"
-        },
-        {
-          "from": "agent",
-          "text": "El mínimo se me hace mucho para empezar.",
-          "time": "11:11"
-        },
-        {
-          "from": "client",
-          "text": "Entiendo. Qué cantidad te serviría para la prueba? La reviso antes de confirmarte.",
-          "time": "11:18"
-        },
-        {
-          "from": "agent",
-          "text": "Dale. Decime con cuántas unidades de zapatillas urbanas querías arrancar y reviso si hay una opción viable antes de confirmarte.",
-          "time": "12:14"
-        }
-      ],
-      "status": "pending",
-      "sentText": "",
-      "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 10 días"
-    },
-    {
-      "id": "sim-059",
-      "name": "Franco",
-      "scenario": "plazo",
-      "product": "botellas deportivas",
-      "qty": 24,
-      "total": "USD 1.120",
-      "date": "hace 11 días",
-      "turns": [
-        {
-          "from": "client",
-          "text": "Quiero pedir botellas deportivas para una actividad que tengo más adelante.",
-          "time": "10:58"
-        },
-        {
-          "from": "agent",
-          "text": "Te mandé la cotización de 24 unidades por USD 1.120 con el plazo estimado.",
-          "time": "10:05"
-        },
-        {
-          "from": "client",
-          "text": "Tengo que confirmar cuándo lo necesito.",
-          "time": "11:12"
-        },
-        {
-          "from": "agent",
-          "text": "Dale. Cuando tengas la fecha, la revisamos contra el plazo real.",
-          "time": "11:19"
-        }
-      ],
-      "status": "pending",
-      "sentText": "",
-      "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 11 días"
-    },
-    {
-      "id": "sim-060",
-      "name": "Carolina",
-      "scenario": "decision",
-      "product": "fundas para celular",
-      "qty": 24,
-      "total": "USD 1.120",
-      "date": "hace 12 días",
-      "turns": [
-        {
-          "from": "client",
-          "text": "Me gustan fundas para celular; la decisión la vemos entre dos.",
-          "time": "10:59"
-        },
-        {
-          "from": "agent",
-          "text": "Te compartí el detalle por 24 unidades y total USD 1.120.",
-          "time": "10:06"
-        },
-        {
-          "from": "client",
-          "text": "Gracias, se lo paso y te aviso.",
-          "time": "11:13"
+      "product": "auri…4532 tokens truncated…13"
         },
         {
           "from": "agent",
@@ -2220,33 +1540,23 @@
       "turns": [
         {
           "from": "client",
-          "text": "Me interesan organizadores, pero primero quería probar con pocas unidades.",
-          "time": "10:04"
+          "text": "Me interesan organizadores. Para probar, quería empezar con pocas unidades.",
+          "time": "10:00"
         },
         {
           "from": "agent",
-          "text": "Te averiguo el mínimo y te paso una opción con cantidades y total.",
-          "time": "10:11"
-        },
-        {
-          "from": "agent",
-          "text": "La cotización que te mandé es por 36 unidades, con un total de USD 280.",
-          "time": "11:18"
+          "text": "Te pasé una opción por 36 unidades, con un total de USD 280. También puedo averiguar si hay una cantidad menor.",
+          "time": "10:08"
         },
         {
           "from": "client",
-          "text": "Yo necesitaba menos unidades.",
-          "time": "11:25"
+          "text": "No sé si voy a mover tantas al principio.",
+          "time": "11:16"
         },
         {
           "from": "agent",
-          "text": "Dale, reviso qué alternativa de cantidad se puede cotizar y te confirmo.",
-          "time": "12:32"
-        },
-        {
-          "from": "agent",
-          "text": "Te mandé el detalle de organizadores por 36 unidades, con el total de USD 280. Si te falta un dato puntual, decime y lo reviso.",
-          "time": "12:14"
+          "text": "Qué cantidad te serviría para arrancar con organizadores? Reviso si hay una opción y te confirmo.",
+          "time": "11:23"
         }
       ],
       "status": "pending",
@@ -2465,28 +1775,23 @@
       "turns": [
         {
           "from": "client",
-          "text": "Estoy viendo si pruebo mochilas con una cantidad chica.",
-          "time": "10:11"
+          "text": "Me interesan mochilas. Para probar, quería empezar con pocas unidades.",
+          "time": "10:00"
         },
         {
           "from": "agent",
-          "text": "Te compartí la cotización de 60 unidades, total USD 560.",
-          "time": "10:18"
-        },
-        {
-          "from": "agent",
-          "text": "Gracias, quería saber si podía empezar con menos.",
-          "time": "11:25"
+          "text": "Te pasé una opción por 60 unidades, con un total de USD 560. También puedo averiguar si hay una cantidad menor.",
+          "time": "10:08"
         },
         {
           "from": "client",
-          "text": "Lo reviso. Qué cantidad tenías en mente?",
-          "time": "11:32"
+          "text": "Prefería probar con menos unidades.",
+          "time": "11:16"
         },
         {
           "from": "agent",
-          "text": "Dale. Decime con cuántas unidades de mochilas querías arrancar y reviso si hay una opción viable antes de confirmarte.",
-          "time": "12:14"
+          "text": "Qué cantidad te serviría para arrancar con mochilas? Reviso si hay una opción y te confirmo.",
+          "time": "11:23"
         }
       ],
       "status": "pending",
@@ -2705,28 +2010,23 @@
       "turns": [
         {
           "from": "client",
-          "text": "Cuánto es el mínimo para pedir juguetes didácticos?",
-          "time": "10:18"
+          "text": "Me interesan juguetes didácticos. Para probar, quería empezar con pocas unidades.",
+          "time": "10:00"
         },
         {
           "from": "agent",
-          "text": "La propuesta que te mandé contempla 12 unidades por USD 735.",
-          "time": "10:25"
-        },
-        {
-          "from": "agent",
-          "text": "Con esa cantidad no sé si llego.",
-          "time": "11:32"
+          "text": "Te pasé una opción por 12 unidades, con un total de USD 735. También puedo averiguar si hay una cantidad menor.",
+          "time": "10:08"
         },
         {
           "from": "client",
-          "text": "Dale, decime con cuántas querías arrancar y reviso si hay una opción viable.",
-          "time": "11:39"
+          "text": "Con esa cantidad se me complica para empezar.",
+          "time": "11:16"
         },
         {
           "from": "agent",
-          "text": "Dale. Decime con cuántas unidades de juguetes didácticos querías arrancar y reviso si hay una opción viable antes de confirmarte.",
-          "time": "12:14"
+          "text": "Qué cantidad te serviría para arrancar con juguetes didácticos? Reviso si hay una opción y te confirmo.",
+          "time": "11:23"
         }
       ],
       "status": "pending",
@@ -2945,28 +2245,23 @@
       "turns": [
         {
           "from": "client",
-          "text": "Quiero arrancar con lámparas de escritorio para probar cómo se venden.",
-          "time": "10:25"
+          "text": "Me interesan lámparas de escritorio. Para probar, quería empezar con pocas unidades.",
+          "time": "10:00"
         },
         {
           "from": "agent",
-          "text": "Te pasé el detalle por 36 unidades; el total queda en USD 1.120.",
-          "time": "10:32"
-        },
-        {
-          "from": "agent",
-          "text": "El mínimo se me hace mucho para empezar.",
-          "time": "11:39"
+          "text": "Te pasé una opción por 36 unidades, con un total de USD 1.120. También puedo averiguar si hay una cantidad menor.",
+          "time": "10:08"
         },
         {
           "from": "client",
-          "text": "Entiendo. Qué cantidad te serviría para la prueba? La reviso antes de confirmarte.",
-          "time": "11:46"
+          "text": "Para arrancar, necesitaría una cantidad menor.",
+          "time": "11:16"
         },
         {
           "from": "agent",
-          "text": "Dale. Decime con cuántas unidades de lámparas de escritorio querías arrancar y reviso si hay una opción viable antes de confirmarte.",
-          "time": "12:14"
+          "text": "Qué cantidad te serviría para arrancar con lámparas de escritorio? Reviso si hay una opción y te confirmo.",
+          "time": "11:23"
         }
       ],
       "status": "pending",
@@ -3185,33 +2480,23 @@
       "turns": [
         {
           "from": "client",
-          "text": "Me interesan relojes digitales, pero primero quería probar con pocas unidades.",
-          "time": "10:32"
+          "text": "Me interesan relojes digitales. Para probar, quería empezar con pocas unidades.",
+          "time": "10:00"
         },
         {
           "from": "agent",
-          "text": "Te averiguo el mínimo y te paso una opción con cantidades y total.",
-          "time": "10:39"
-        },
-        {
-          "from": "agent",
-          "text": "La cotización que te mandé es por 48 unidades, con un total de USD 280.",
-          "time": "11:46"
+          "text": "Te pasé una opción por 48 unidades, con un total de USD 280. También puedo averiguar si hay una cantidad menor.",
+          "time": "10:08"
         },
         {
           "from": "client",
-          "text": "Yo necesitaba menos unidades.",
-          "time": "11:53"
+          "text": "No sé si voy a mover tantas al principio.",
+          "time": "11:16"
         },
         {
           "from": "agent",
-          "text": "Dale, reviso qué alternativa de cantidad se puede cotizar y te confirmo.",
-          "time": "12:00"
-        },
-        {
-          "from": "agent",
-          "text": "Te mandé el detalle de relojes digitales por 48 unidades, con el total de USD 280. Si te falta un dato puntual, decime y lo reviso.",
-          "time": "12:14"
+          "text": "Qué cantidad te serviría para arrancar con relojes digitales? Reviso si hay una opción y te confirmo.",
+          "time": "11:23"
         }
       ],
       "status": "pending",
@@ -3430,28 +2715,23 @@
       "turns": [
         {
           "from": "client",
-          "text": "Estoy viendo si pruebo cámaras deportivas con una cantidad chica.",
-          "time": "10:39"
+          "text": "Me interesan cámaras deportivas. Para probar, quería empezar con pocas unidades.",
+          "time": "10:00"
         },
         {
           "from": "agent",
-          "text": "Te compartí la cotización de 60 unidades, total USD 410.",
-          "time": "10:46"
-        },
-        {
-          "from": "agent",
-          "text": "Gracias, quería saber si podía empezar con menos.",
-          "time": "11:53"
+          "text": "Te pasé una opción por 60 unidades, con un total de USD 410. También puedo averiguar si hay una cantidad menor.",
+          "time": "10:08"
         },
         {
           "from": "client",
-          "text": "Lo reviso. Qué cantidad tenías en mente?",
-          "time": "11:00"
+          "text": "Prefería probar con menos unidades.",
+          "time": "11:16"
         },
         {
           "from": "agent",
-          "text": "Dale. Decime con cuántas unidades de cámaras deportivas querías arrancar y reviso si hay una opción viable antes de confirmarte.",
-          "time": "12:14"
+          "text": "Qué cantidad te serviría para arrancar con cámaras deportivas? Reviso si hay una opción y te confirmo.",
+          "time": "11:23"
         }
       ],
       "status": "pending",
@@ -3463,7 +2743,7 @@
   "training": {
     "silencio": {
       "instruction": "para casos como este \"hola Tomás, voy directo por los 12 lámparas de escritorio: qué te frena para avanzar, el precio, la cantidad o que no es el momento? con una opción me alcanza.\", que sean parecidos, yo te lo cambio asi \"hola Tomás, voy directo por los 12 lámparas de escritorio: qué te frena para avanzar, el precio, la cantidad o algo mas??\" hay que ser mas concretos, sin mensajes tan largos, le damos opciones para que conteste y de razones, pero no lo abrumamos",
-      "example": "hola {{nombre}}, voy directo por los {{cantidad}} {{producto}}: qué te frena para avanzar, el precio, la cantidad o algo más??",
+      "example": "{{nombre}}, sobre la cotización de {{cantidad}} {{producto}}: qué te frena para avanzar, el precio, la cantidad o algo más?",
       "sourceChat": "sim-005",
       "savedAt": 1794310895332
     },
@@ -3477,3 +2757,4 @@
   "currentId": "sim-006",
   "updatedAt": 1794311080388
 }
+
