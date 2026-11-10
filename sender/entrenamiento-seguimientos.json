@@ -37,7 +37,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 1 días"
+      "seenNote": "Visto · sin respuesta hace 1 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de tazas térmicas desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-002",
@@ -72,7 +77,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 2 días"
+      "seenNote": "Visto · sin respuesta hace 2 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de luces LED desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-003",
@@ -90,7 +100,7 @@
         },
         {
           "from": "agent",
-          "text": "Te mandé la cotización de 12 unidades por USD 280 con el plazo estimado.",
+          "text": "La cotización queda en USD 280. Las remeras de Argentina se despachan durante la semana.",
           "time": "10:09"
         },
         {
@@ -100,14 +110,19 @@
         },
         {
           "from": "agent",
-          "text": "Dale. Cuando tengas la fecha, la revisamos contra el plazo real.",
+          "text": "Para qué fecha lo necesitás? Con eso confirmo si ese plazo te sirve antes de avanzar.",
           "time": "11:23"
         }
       ],
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 3 días"
+      "seenNote": "Visto · sin respuesta hace 3 días",
+      "delivery": {
+        "mode": "ropa de Argentina",
+        "timeframe": "despacho durante la semana",
+        "message": "las remeras de Argentina se despachan durante la semana"
+      }
     },
     {
       "id": "sim-004",
@@ -142,7 +157,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 4 días"
+      "seenNote": "Visto · sin respuesta hace 4 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de juguetes didácticos desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-005",
@@ -167,7 +187,12 @@
       "status": "simulated",
       "sentText": "hola Tomás, voy directo por los 12 lámparas de escritorio: qué te frena para avanzar, el precio, la cantidad o algo más??",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 5 días"
+      "seenNote": "Visto · sin respuesta hace 5 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de lámparas de escritorio desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-006",
@@ -202,7 +227,12 @@
       "status": "simulated",
       "sentText": "Lautaro, querés que ajustemos las cantidades, o de última vemos otras posibilidades para traer, que se ajusten a tu presupuesto?",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 6 días"
+      "seenNote": "Visto · sin respuesta hace 6 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de cámaras deportivas desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-007",
@@ -237,7 +267,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 7 días"
+      "seenNote": "Visto · sin respuesta hace 7 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de cajas organizadoras desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-008",
@@ -272,7 +307,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 8 días"
+      "seenNote": "Visto · sin respuesta hace 8 días",
+      "delivery": {
+        "mode": "importación desde Brasil",
+        "timeframe": "aprox. 10 días",
+        "message": "las zapatillas urbanas importadas desde Brasil tardan aprox. 10 días"
+      }
     },
     {
       "id": "sim-009",
@@ -307,7 +347,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 9 días"
+      "seenNote": "Visto · sin respuesta hace 9 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de botellas deportivas desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-010",
@@ -325,7 +370,7 @@
         },
         {
           "from": "agent",
-          "text": "La propuesta por 24 unidades queda en USD 410; también te pasé el plazo de esa modalidad.",
+          "text": "La cotización queda en USD 410. La importación de fundas para celular desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido.",
           "time": "10:16"
         },
         {
@@ -335,14 +380,19 @@
         },
         {
           "from": "agent",
-          "text": "Entiendo. Para qué fecha los necesitás? Lo verifico y te digo si tiene sentido avanzar.",
+          "text": "Para qué fecha lo necesitás? Con eso confirmo si ese plazo te sirve antes de avanzar.",
           "time": "11:30"
         }
       ],
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 10 días"
+      "seenNote": "Visto · sin respuesta hace 10 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de fundas para celular desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-011",
@@ -377,7 +427,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 11 días"
+      "seenNote": "Visto · sin respuesta hace 11 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de lámparas de escritorio desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-012",
@@ -402,7 +457,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 12 días"
+      "seenNote": "Visto · sin respuesta hace 12 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de vasos térmicos desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-013",
@@ -437,7 +497,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 1 días"
+      "seenNote": "Visto · sin respuesta hace 1 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de parlantes bluetooth desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-014",
@@ -472,7 +537,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 2 días"
+      "seenNote": "Visto · sin respuesta hace 2 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de sets de mate desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-015",
@@ -507,7 +577,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 3 días"
+      "seenNote": "Visto · sin respuesta hace 3 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de organizadores desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-016",
@@ -542,7 +617,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 4 días"
+      "seenNote": "Visto · sin respuesta hace 4 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de fundas para celular desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-017",
@@ -560,7 +640,7 @@
         },
         {
           "from": "agent",
-          "text": "Te pasé la cotización por USD 735 y el plazo que corresponde a la modalidad que conversamos.",
+          "text": "La cotización queda en USD 735. La importación de auriculares desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido.",
           "time": "10:23"
         },
         {
@@ -570,14 +650,19 @@
         },
         {
           "from": "agent",
-          "text": "Perfecto. Pasame la fecha y reviso el plazo real antes de confirmar nada.",
+          "text": "Para qué fecha lo necesitás? Con eso confirmo si ese plazo te sirve antes de avanzar.",
           "time": "11:37"
         }
       ],
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 5 días"
+      "seenNote": "Visto · sin respuesta hace 5 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de auriculares desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-018",
@@ -612,7 +697,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 6 días"
+      "seenNote": "Visto · sin respuesta hace 6 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de relojes digitales desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-019",
@@ -637,7 +727,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 7 días"
+      "seenNote": "Visto · sin respuesta hace 7 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de kits de manicura desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-020",
@@ -672,7 +767,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 8 días"
+      "seenNote": "Visto · sin respuesta hace 8 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de tazas térmicas desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-021",
@@ -707,7 +807,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 9 días"
+      "seenNote": "Visto · sin respuesta hace 9 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de organizadores desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-022",
@@ -742,7 +847,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 10 días"
+      "seenNote": "Visto · sin respuesta hace 10 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de mochilas desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-023",
@@ -777,7 +887,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 11 días"
+      "seenNote": "Visto · sin respuesta hace 11 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de herramientas inalámbricas desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-024",
@@ -795,7 +910,7 @@
         },
         {
           "from": "agent",
-          "text": "Te pasé el detalle por 60 unidades, total USD 890, con el plazo conversado.",
+          "text": "La cotización queda en USD 890. La importación de accesorios para mascotas desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido.",
           "time": "10:30"
         },
         {
@@ -805,14 +920,19 @@
         },
         {
           "from": "agent",
-          "text": "Si me decís la fecha, reviso si los tiempos encajan antes de que avances.",
+          "text": "Para qué fecha lo necesitás? Con eso confirmo si ese plazo te sirve antes de avanzar.",
           "time": "11:44"
         }
       ],
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 12 días"
+      "seenNote": "Visto · sin respuesta hace 12 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de accesorios para mascotas desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-025",
@@ -847,7 +967,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 1 días"
+      "seenNote": "Visto · sin respuesta hace 1 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de cámaras deportivas desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-026",
@@ -872,7 +997,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 2 días"
+      "seenNote": "Visto · sin respuesta hace 2 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de tazas térmicas desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-027",
@@ -907,7 +1037,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 3 días"
+      "seenNote": "Visto · sin respuesta hace 3 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de luces LED desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-028",
@@ -942,7 +1077,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 4 días"
+      "seenNote": "Visto · sin respuesta hace 4 días",
+      "delivery": {
+        "mode": "ropa de Argentina",
+        "timeframe": "despacho durante la semana",
+        "message": "las remeras de Argentina se despachan durante la semana"
+      }
     },
     {
       "id": "sim-029",
@@ -977,7 +1117,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 5 días"
+      "seenNote": "Visto · sin respuesta hace 5 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de juguetes didácticos desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-030",
@@ -1012,7 +1157,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 6 días"
+      "seenNote": "Visto · sin respuesta hace 6 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de lámparas de escritorio desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-031",
@@ -1030,7 +1180,7 @@
         },
         {
           "from": "agent",
-          "text": "Te mandé la cotización de 24 unidades por USD 280 con el plazo estimado.",
+          "text": "La cotización queda en USD 280. La importación de cámaras deportivas desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido.",
           "time": "10:37"
         },
         {
@@ -1040,14 +1190,19 @@
         },
         {
           "from": "agent",
-          "text": "Dale. Cuando tengas la fecha, la revisamos contra el plazo real.",
+          "text": "Para qué fecha lo necesitás? Con eso confirmo si ese plazo te sirve antes de avanzar.",
           "time": "11:51"
         }
       ],
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 7 días"
+      "seenNote": "Visto · sin respuesta hace 7 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de cámaras deportivas desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-032",
@@ -1082,7 +1237,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 8 días"
+      "seenNote": "Visto · sin respuesta hace 8 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de cajas organizadoras desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-033",
@@ -1107,7 +1267,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 9 días"
+      "seenNote": "Visto · sin respuesta hace 9 días",
+      "delivery": {
+        "mode": "importación desde Brasil",
+        "timeframe": "aprox. 10 días",
+        "message": "las zapatillas urbanas importadas desde Brasil tardan aprox. 10 días"
+      }
     },
     {
       "id": "sim-034",
@@ -1142,7 +1307,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 10 días"
+      "seenNote": "Visto · sin respuesta hace 10 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de botellas deportivas desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-035",
@@ -1177,7 +1347,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 11 días"
+      "seenNote": "Visto · sin respuesta hace 11 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de fundas para celular desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-036",
@@ -1212,7 +1387,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 12 días"
+      "seenNote": "Visto · sin respuesta hace 12 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de lámparas de escritorio desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-037",
@@ -1247,7 +1427,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 1 días"
+      "seenNote": "Visto · sin respuesta hace 1 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de vasos térmicos desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-038",
@@ -1265,7 +1450,7 @@
         },
         {
           "from": "agent",
-          "text": "La propuesta por 36 unidades queda en USD 410; también te pasé el plazo de esa modalidad.",
+          "text": "La cotización queda en USD 410. La importación de parlantes bluetooth desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido.",
           "time": "10:44"
         },
         {
@@ -1275,14 +1460,19 @@
         },
         {
           "from": "agent",
-          "text": "Entiendo. Para qué fecha los necesitás? Lo verifico y te digo si tiene sentido avanzar.",
+          "text": "Para qué fecha lo necesitás? Con eso confirmo si ese plazo te sirve antes de avanzar.",
           "time": "11:58"
         }
       ],
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 2 días"
+      "seenNote": "Visto · sin respuesta hace 2 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de parlantes bluetooth desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-039",
@@ -1317,7 +1507,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 3 días"
+      "seenNote": "Visto · sin respuesta hace 3 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de sets de mate desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-040",
@@ -1342,7 +1537,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 4 días"
+      "seenNote": "Visto · sin respuesta hace 4 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de organizadores desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-041",
@@ -1377,7 +1577,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 5 días"
+      "seenNote": "Visto · sin respuesta hace 5 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de fundas para celular desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-042",
@@ -1412,7 +1617,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 6 días"
+      "seenNote": "Visto · sin respuesta hace 6 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de auriculares desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-043",
@@ -1447,7 +1657,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 7 días"
+      "seenNote": "Visto · sin respuesta hace 7 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de relojes digitales desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-044",
@@ -1482,7 +1697,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 8 días"
+      "seenNote": "Visto · sin respuesta hace 8 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de kits de manicura desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-045",
@@ -1500,7 +1720,7 @@
         },
         {
           "from": "agent",
-          "text": "Te pasé la cotización por USD 560 y el plazo que corresponde a la modalidad que conversamos.",
+          "text": "La cotización queda en USD 560. La importación de tazas térmicas desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido.",
           "time": "10:51"
         },
         {
@@ -1510,14 +1730,19 @@
         },
         {
           "from": "agent",
-          "text": "Perfecto. Pasame la fecha y reviso el plazo real antes de confirmar nada.",
+          "text": "Para qué fecha lo necesitás? Con eso confirmo si ese plazo te sirve antes de avanzar.",
           "time": "11:05"
         }
       ],
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 9 días"
+      "seenNote": "Visto · sin respuesta hace 9 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de tazas térmicas desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-046",
@@ -1552,7 +1777,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 10 días"
+      "seenNote": "Visto · sin respuesta hace 10 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de organizadores desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-047",
@@ -1577,7 +1807,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 11 días"
+      "seenNote": "Visto · sin respuesta hace 11 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de mochilas desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-048",
@@ -1612,7 +1847,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 12 días"
+      "seenNote": "Visto · sin respuesta hace 12 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de herramientas inalámbricas desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-049",
@@ -1647,7 +1887,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 1 días"
+      "seenNote": "Visto · sin respuesta hace 1 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de accesorios para mascotas desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-050",
@@ -1682,7 +1927,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 2 días"
+      "seenNote": "Visto · sin respuesta hace 2 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de cámaras deportivas desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-051",
@@ -1717,7 +1967,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 3 días"
+      "seenNote": "Visto · sin respuesta hace 3 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de tazas térmicas desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-052",
@@ -1735,7 +1990,7 @@
         },
         {
           "from": "agent",
-          "text": "Te pasé el detalle por 12 unidades, total USD 890, con el plazo conversado.",
+          "text": "La cotización queda en USD 890. La importación de luces LED desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido.",
           "time": "10:58"
         },
         {
@@ -1745,14 +2000,19 @@
         },
         {
           "from": "agent",
-          "text": "Si me decís la fecha, reviso si los tiempos encajan antes de que avances.",
+          "text": "Para qué fecha lo necesitás? Con eso confirmo si ese plazo te sirve antes de avanzar.",
           "time": "11:12"
         }
       ],
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 4 días"
+      "seenNote": "Visto · sin respuesta hace 4 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de luces LED desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-053",
@@ -1787,7 +2047,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 5 días"
+      "seenNote": "Visto · sin respuesta hace 5 días",
+      "delivery": {
+        "mode": "ropa de Argentina",
+        "timeframe": "despacho durante la semana",
+        "message": "las remeras de Argentina se despachan durante la semana"
+      }
     },
     {
       "id": "sim-054",
@@ -1812,7 +2077,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 6 días"
+      "seenNote": "Visto · sin respuesta hace 6 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de juguetes didácticos desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-055",
@@ -1847,7 +2117,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 7 días"
+      "seenNote": "Visto · sin respuesta hace 7 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de lámparas de escritorio desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-056",
@@ -1882,7 +2157,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 8 días"
+      "seenNote": "Visto · sin respuesta hace 8 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de cámaras deportivas desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-057",
@@ -1917,7 +2197,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 9 días"
+      "seenNote": "Visto · sin respuesta hace 9 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de cajas organizadoras desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-058",
@@ -1952,7 +2237,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 10 días"
+      "seenNote": "Visto · sin respuesta hace 10 días",
+      "delivery": {
+        "mode": "importación desde Brasil",
+        "timeframe": "aprox. 10 días",
+        "message": "las zapatillas urbanas importadas desde Brasil tardan aprox. 10 días"
+      }
     },
     {
       "id": "sim-059",
@@ -1970,7 +2260,7 @@
         },
         {
           "from": "agent",
-          "text": "Te mandé la cotización de 24 unidades por USD 1.120 con el plazo estimado.",
+          "text": "La cotización queda en USD 1.120. La importación de botellas deportivas desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido.",
           "time": "10:05"
         },
         {
@@ -1980,14 +2270,19 @@
         },
         {
           "from": "agent",
-          "text": "Dale. Cuando tengas la fecha, la revisamos contra el plazo real.",
+          "text": "Para qué fecha lo necesitás? Con eso confirmo si ese plazo te sirve antes de avanzar.",
           "time": "11:19"
         }
       ],
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 11 días"
+      "seenNote": "Visto · sin respuesta hace 11 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de botellas deportivas desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-060",
@@ -2022,7 +2317,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 12 días"
+      "seenNote": "Visto · sin respuesta hace 12 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de fundas para celular desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-061",
@@ -2047,7 +2347,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 1 días"
+      "seenNote": "Visto · sin respuesta hace 1 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de lámparas de escritorio desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-062",
@@ -2082,7 +2387,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 2 días"
+      "seenNote": "Visto · sin respuesta hace 2 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de vasos térmicos desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-063",
@@ -2117,7 +2427,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 3 días"
+      "seenNote": "Visto · sin respuesta hace 3 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de parlantes bluetooth desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-064",
@@ -2152,7 +2467,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 4 días"
+      "seenNote": "Visto · sin respuesta hace 4 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de sets de mate desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-065",
@@ -2187,7 +2507,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 5 días"
+      "seenNote": "Visto · sin respuesta hace 5 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de organizadores desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-066",
@@ -2205,7 +2530,7 @@
         },
         {
           "from": "agent",
-          "text": "La propuesta por 48 unidades queda en USD 410; también te pasé el plazo de esa modalidad.",
+          "text": "La cotización queda en USD 410. La importación de fundas para celular desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido.",
           "time": "10:12"
         },
         {
@@ -2215,14 +2540,19 @@
         },
         {
           "from": "agent",
-          "text": "Entiendo. Para qué fecha los necesitás? Lo verifico y te digo si tiene sentido avanzar.",
+          "text": "Para qué fecha lo necesitás? Con eso confirmo si ese plazo te sirve antes de avanzar.",
           "time": "11:26"
         }
       ],
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 6 días"
+      "seenNote": "Visto · sin respuesta hace 6 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de fundas para celular desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-067",
@@ -2257,7 +2587,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 7 días"
+      "seenNote": "Visto · sin respuesta hace 7 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de auriculares desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-068",
@@ -2282,7 +2617,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 8 días"
+      "seenNote": "Visto · sin respuesta hace 8 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de relojes digitales desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-069",
@@ -2317,7 +2657,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 9 días"
+      "seenNote": "Visto · sin respuesta hace 9 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de kits de manicura desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-070",
@@ -2352,7 +2697,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 10 días"
+      "seenNote": "Visto · sin respuesta hace 10 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de tazas térmicas desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-071",
@@ -2387,7 +2737,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 11 días"
+      "seenNote": "Visto · sin respuesta hace 11 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de organizadores desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-072",
@@ -2422,7 +2777,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 12 días"
+      "seenNote": "Visto · sin respuesta hace 12 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de mochilas desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-073",
@@ -2440,7 +2800,7 @@
         },
         {
           "from": "agent",
-          "text": "Te pasé la cotización por USD 560 y el plazo que corresponde a la modalidad que conversamos.",
+          "text": "La cotización queda en USD 560. La importación de herramientas inalámbricas desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido.",
           "time": "10:19"
         },
         {
@@ -2450,14 +2810,19 @@
         },
         {
           "from": "agent",
-          "text": "Perfecto. Pasame la fecha y reviso el plazo real antes de confirmar nada.",
+          "text": "Para qué fecha lo necesitás? Con eso confirmo si ese plazo te sirve antes de avanzar.",
           "time": "11:33"
         }
       ],
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 1 días"
+      "seenNote": "Visto · sin respuesta hace 1 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de herramientas inalámbricas desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-074",
@@ -2492,7 +2857,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 2 días"
+      "seenNote": "Visto · sin respuesta hace 2 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de accesorios para mascotas desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-075",
@@ -2517,7 +2887,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 3 días"
+      "seenNote": "Visto · sin respuesta hace 3 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de cámaras deportivas desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-076",
@@ -2552,7 +2927,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 4 días"
+      "seenNote": "Visto · sin respuesta hace 4 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de tazas térmicas desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-077",
@@ -2587,7 +2967,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 5 días"
+      "seenNote": "Visto · sin respuesta hace 5 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de luces LED desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-078",
@@ -2622,7 +3007,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 6 días"
+      "seenNote": "Visto · sin respuesta hace 6 días",
+      "delivery": {
+        "mode": "ropa de Argentina",
+        "timeframe": "despacho durante la semana",
+        "message": "las remeras de Argentina se despachan durante la semana"
+      }
     },
     {
       "id": "sim-079",
@@ -2657,7 +3047,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 7 días"
+      "seenNote": "Visto · sin respuesta hace 7 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de juguetes didácticos desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-080",
@@ -2675,7 +3070,7 @@
         },
         {
           "from": "agent",
-          "text": "Te pasé el detalle por 12 unidades, total USD 735, con el plazo conversado.",
+          "text": "La cotización queda en USD 735. La importación de lámparas de escritorio desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido.",
           "time": "10:26"
         },
         {
@@ -2685,14 +3080,19 @@
         },
         {
           "from": "agent",
-          "text": "Si me decís la fecha, reviso si los tiempos encajan antes de que avances.",
+          "text": "Para qué fecha lo necesitás? Con eso confirmo si ese plazo te sirve antes de avanzar.",
           "time": "11:40"
         }
       ],
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 8 días"
+      "seenNote": "Visto · sin respuesta hace 8 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de lámparas de escritorio desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-081",
@@ -2727,7 +3127,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 9 días"
+      "seenNote": "Visto · sin respuesta hace 9 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de cámaras deportivas desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-082",
@@ -2752,7 +3157,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 10 días"
+      "seenNote": "Visto · sin respuesta hace 10 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de cajas organizadoras desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-083",
@@ -2787,7 +3197,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 11 días"
+      "seenNote": "Visto · sin respuesta hace 11 días",
+      "delivery": {
+        "mode": "importación desde Brasil",
+        "timeframe": "aprox. 10 días",
+        "message": "las zapatillas urbanas importadas desde Brasil tardan aprox. 10 días"
+      }
     },
     {
       "id": "sim-084",
@@ -2822,7 +3237,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 12 días"
+      "seenNote": "Visto · sin respuesta hace 12 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de botellas deportivas desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-085",
@@ -2857,7 +3277,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 1 días"
+      "seenNote": "Visto · sin respuesta hace 1 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de fundas para celular desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-086",
@@ -2892,7 +3317,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 2 días"
+      "seenNote": "Visto · sin respuesta hace 2 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de lámparas de escritorio desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-087",
@@ -2910,7 +3340,7 @@
         },
         {
           "from": "agent",
-          "text": "Te mandé la cotización de 36 unidades por USD 1.120 con el plazo estimado.",
+          "text": "La cotización queda en USD 1.120. La importación de vasos térmicos desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido.",
           "time": "10:33"
         },
         {
@@ -2920,14 +3350,19 @@
         },
         {
           "from": "agent",
-          "text": "Dale. Cuando tengas la fecha, la revisamos contra el plazo real.",
+          "text": "Para qué fecha lo necesitás? Con eso confirmo si ese plazo te sirve antes de avanzar.",
           "time": "11:47"
         }
       ],
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 3 días"
+      "seenNote": "Visto · sin respuesta hace 3 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de vasos térmicos desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-088",
@@ -2962,7 +3397,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 4 días"
+      "seenNote": "Visto · sin respuesta hace 4 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de parlantes bluetooth desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-089",
@@ -2987,7 +3427,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 5 días"
+      "seenNote": "Visto · sin respuesta hace 5 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de sets de mate desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-090",
@@ -3022,7 +3467,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 6 días"
+      "seenNote": "Visto · sin respuesta hace 6 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de organizadores desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-091",
@@ -3057,7 +3507,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 7 días"
+      "seenNote": "Visto · sin respuesta hace 7 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de fundas para celular desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-092",
@@ -3092,7 +3547,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 8 días"
+      "seenNote": "Visto · sin respuesta hace 8 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de auriculares desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-093",
@@ -3127,7 +3587,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 9 días"
+      "seenNote": "Visto · sin respuesta hace 9 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de relojes digitales desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-094",
@@ -3145,7 +3610,7 @@
         },
         {
           "from": "agent",
-          "text": "La propuesta por 48 unidades queda en USD 280; también te pasé el plazo de esa modalidad.",
+          "text": "La cotización queda en USD 280. La importación de kits de manicura desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido.",
           "time": "10:40"
         },
         {
@@ -3155,14 +3620,19 @@
         },
         {
           "from": "agent",
-          "text": "Entiendo. Para qué fecha los necesitás? Lo verifico y te digo si tiene sentido avanzar.",
+          "text": "Para qué fecha lo necesitás? Con eso confirmo si ese plazo te sirve antes de avanzar.",
           "time": "11:54"
         }
       ],
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 10 días"
+      "seenNote": "Visto · sin respuesta hace 10 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de kits de manicura desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-095",
@@ -3197,7 +3667,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 11 días"
+      "seenNote": "Visto · sin respuesta hace 11 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de tazas térmicas desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-096",
@@ -3222,7 +3697,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 12 días"
+      "seenNote": "Visto · sin respuesta hace 12 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de organizadores desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-097",
@@ -3257,7 +3737,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 1 días"
+      "seenNote": "Visto · sin respuesta hace 1 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de mochilas desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-098",
@@ -3292,7 +3777,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 2 días"
+      "seenNote": "Visto · sin respuesta hace 2 días",
+      "delivery": {
+        "mode": "China por avión",
+        "timeframe": "15 a 20 días aprox. una vez despachado el pedido",
+        "message": "la importación de herramientas inalámbricas desde China por avión tarda aprox. 15 a 20 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-099",
@@ -3327,7 +3817,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 3 días"
+      "seenNote": "Visto · sin respuesta hace 3 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de accesorios para mascotas desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     },
     {
       "id": "sim-100",
@@ -3362,7 +3857,12 @@
       "status": "pending",
       "sentText": "",
       "savedDraft": "",
-      "seenNote": "Visto · sin respuesta hace 4 días"
+      "seenNote": "Visto · sin respuesta hace 4 días",
+      "delivery": {
+        "mode": "China por barco",
+        "timeframe": "40 a 60 días aprox. una vez despachado el pedido",
+        "message": "la importación de cámaras deportivas desde China por barco tarda aprox. 40 a 60 días una vez despachado el pedido"
+      }
     }
   ],
   "training": {
@@ -3385,10 +3885,10 @@
       "savedAt": 1794319467818
     },
     "plazo": {
-      "instruction": "Si el freno es el tiempo, preguntar la fecha concreta en que necesita el producto y verificar el plazo real antes de asegurar que llega.",
-      "example": "{{nombre}}, ¿para qué fecha necesitás {{cantidad}} unidades de {{producto}}? Verifico si llegamos antes de avanzar.",
-      "sourceChat": "sim-003",
-      "savedAt": 1794319467818
+      "instruction": "Usar el plazo concreto del contexto: China por avión, 15 a 20 días aprox. una vez despachado; zapatillas de Brasil, aprox. 10 días; ropa de Argentina, se despacha durante la semana; China por barco, 40 a 60 días aprox. una vez despachado. No decir que depende de la modalidad ni inventar una ruta. Cerrar preguntando para qué fecha lo necesita.",
+      "example": "{{nombre}}, {{detalle_plazo}}. ¿Para qué fecha lo necesitás?",
+      "sourceChat": "sim-010",
+      "savedAt": 1794321944535
     },
     "decision": {
       "instruction": "Si comparte la decisión con un socio, pareja o equipo, preguntar si pudieron revisar la propuesta y ofrecer pasar el dato puntual que falte. Sin apurar ni usar frases vacías.",
@@ -3407,8 +3907,14 @@
       "example": "{{nombre}}, de los modelos de {{producto}} que vimos, ¿cuál te interesa? Con el modelo y la cantidad te preparo el siguiente paso.",
       "sourceChat": "sim-007",
       "savedAt": 1794319467818
+    },
+    "estilo": {
+      "instruction": "Español rioplatense, breve y concreto; usar el producto y contexto conversados, hacer una pregunta útil y proponer un próximo paso. Nunca copiar datos de otro chat ni inventar precio, descuento, disponibilidad, origen, transporte o plazo.",
+      "example": "",
+      "sourceChat": "sim-010",
+      "savedAt": 1794321944535
     }
   },
   "currentId": "sim-006",
-  "updatedAt": 1794319486562
+  "updatedAt": 1794321984675
 }
