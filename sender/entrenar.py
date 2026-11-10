@@ -13,15 +13,15 @@ Uso:  python entrenar.py                 -> muestra lo que aprendió (reglas, pu
       python entrenar.py --pautas-seg    -> muestra las pautas de seguimientos cargadas;  --pautas-seg --borrar las saca
 Por la noche (4 AM) entrena solo con tus charlas reales: contesta sin ver tu respuesta, se compara y de los errores salen reglas
 nuevas; una regla solo se queda si mejora el puntaje."""
-import json, sys, time
+import json, re, sys, time
 from datetime import datetime
 from enviar import api
 
 # Situaciones del sandbox de seguimientos (sender/sandbox.html)
 SITUACIONES_SANDBOX = {"precio": "le parecio caro", "cantidad": "quiere arrancar con menos unidades", "plazo": "lo frena el plazo",
                        "decision": "lo decide con otra persona", "silencio": "vio la cotizacion y no contesto",
-                       "lista": "le pasamos lista de precios y no eligio", "info": "le pasamos info de productos y no avanzo"}
-VARIABLES = {"{{nombre}}": "[nombre]", "{{producto}}": "[producto]", "{{cantidad}}": "[cantidad]", "{{total}}": "[total]"}
+                       "lista": "le pasamos lista de precios y no eligio", "info": "le pasamos info de productos y no avanzo",
+                       "estilo": "estilo general (vale para todas)"}
 
 
 def pautas_desde_sandbox(ruta):
@@ -36,13 +36,13 @@ def pautas_desde_sandbox(ruta):
         sys.exit("Ese archivo no es un entrenamiento exportado del sandbox (falta 'training').")
     pautas = []
     for sit, r in d["training"].items():
-        if not isinstance(r, dict) or sit not in SITUACIONES_SANDBOX:
+        if not isinstance(r, dict):
             continue
         pauta, ej = str(r.get("instruction") or "").strip(), str(r.get("example") or "").strip()
-        for k, v in VARIABLES.items():
-            ej = ej.replace(k, v)
+        ej = re.sub(r"\{\{\s*([a-z_]+)\s*\}\}", lambda m: "[" + m.group(1).replace("_", " ") + "]", ej)   # {{producto}} -> [producto]
         if len(pauta) >= 12:
-            pautas.append({"situacion": SITUACIONES_SANDBOX[sit], "pauta": pauta, "ejemplo": ej})
+            pautas.append({"situacion": SITUACIONES_SANDBOX.get(sit, sit.replace("_", " ")), "pauta": pauta, "ejemplo": ej})
+    pautas.sort(key=lambda p: p["situacion"] != SITUACIONES_SANDBOX["estilo"])   # el estilo general va primero
     if not pautas:
         sys.exit("El archivo no trae pautas con instrucción escrita.")
     return pautas
