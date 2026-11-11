@@ -136,7 +136,7 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
     if (!lote.history && n.clienteNuevo) ctx?.waitUntil(alertasRapidas(env).catch(() => {}));
     return Response.json({ ok: true, guardados: n.mensajes });
   }
-  if (p.startsWith("/enviar/") && p !== "/enviar/lista" && !p.startsWith("/enviar/seg-externos") && p !== "/enviar/pautas-seg" && p !== "/enviar/hecho" && p !== "/enviar/no") { const r = await rutaAutoresp(env, req, p, url, iaJSON, h); if (r) return r; }
+  if (p.startsWith("/enviar/") && p !== "/enviar/lista" && !p.startsWith("/enviar/seg-externos") && p !== "/enviar/seg-registrar" && p !== "/enviar/pautas-seg" && p !== "/enviar/hecho" && p !== "/enviar/no") { const r = await rutaAutoresp(env, req, p, url, iaJSON, h); if (r) return r; }
   // Vista previa autenticada para el sender. Puede refrescar borradores, pero no envía ni marca chats como enviados.
   if (p === "/seguimientos" && req.method === "GET") {
     const lim = Math.min(Math.max(+url.searchParams.get("limite") || 20, 1), 20);
@@ -146,6 +146,13 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
     return Response.json({ ok: true, lista });
   }
   // Programita de la PC: lista de seguimientos disponibles, sin enviarlos ni marcarlos aquí.
+  if (p === "/enviar/seg-registrar" && req.method === "POST") {   // seguimientos mandados a mano (fuera del panel): cuentan para el objetivo del día
+    const b = await req.json().catch(() => ({})), ts = +b.ts || Date.now();
+    await env.DB.prepare("CREATE TABLE IF NOT EXISTS w_seg_log (id TEXT PRIMARY KEY, conv TEXT, ts INTEGER, toque INTEGER, situacion TEXT, quien TEXT, texto TEXT)").run();
+    const convs = (Array.isArray(b.convs) ? b.convs : []).map((c) => String(c).replace(/\D/g, "")).filter((c) => c.length >= 8);
+    if (convs.length) await env.DB.batch(convs.map((c) => env.DB.prepare("INSERT OR IGNORE INTO w_seg_log (id, conv, ts, toque, situacion, quien, texto) VALUES (?,?,?,0,'','dueno',?)").bind(`man:${c}:${new Date(ts - 3 * 3600e3).toISOString().slice(0, 10)}`, c, ts, String(b.nota || "").slice(0, 200))));
+    return Response.json({ ok: true, registrados: convs.length });
+  }
   if (p === "/enviar/seg-externos") return Response.json({ ok: true, ...(await segExternos(env, Math.min(+url.searchParams.get("limite") || 40, 80))) });
   if (p === "/enviar/seg-externos-guardar" && req.method === "POST") return Response.json({ ok: true, ...(await guardarSegExternos(env, (await req.json().catch(() => ({}))).mensajes)) });
   // Pautas de seguimiento del dueño (GET las muestra; POST {pautas:[{situacion, pauta, ejemplo}]} las reemplaza; [] las borra)
