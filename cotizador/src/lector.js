@@ -139,7 +139,7 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
     if (!lote.history && n.clienteNuevo) ctx?.waitUntil(alertasRapidas(env).catch(() => {}));
     return Response.json({ ok: true, guardados: n.mensajes });
   }
-  if (p.startsWith("/enviar/") && p !== "/enviar/lista" && !p.startsWith("/enviar/seg-externos") && p !== "/enviar/seg-registrar" && p !== "/enviar/pautas-seg" && p !== "/enviar/hecho" && p !== "/enviar/no") { const r = await rutaAutoresp(env, req, p, url, iaJSON, h); if (r) return r; }
+  if (p.startsWith("/enviar/") && p !== "/enviar/lista" && !p.startsWith("/enviar/seg-externos") && p !== "/enviar/seg-registrar" && p !== "/enviar/prospectos" && p !== "/enviar/pautas-seg" && p !== "/enviar/hecho" && p !== "/enviar/no") { const r = await rutaAutoresp(env, req, p, url, iaJSON, h); if (r) return r; }
   // Vista previa autenticada para el sender. Puede refrescar borradores, pero no envía ni marca chats como enviados.
   if (p === "/seguimientos" && req.method === "GET") {
     const lim = Math.min(Math.max(+url.searchParams.get("limite") || 20, 1), 20);
@@ -149,6 +149,7 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
     return Response.json({ ok: true, lista });
   }
   // Programita de la PC: lista de seguimientos disponibles, sin enviarlos ni marcarlos aquí.
+  if (p === "/enviar/prospectos" && req.method === "POST") return Response.json({ ok: true, ...(await mensajesProspeccion(env, iaJSON, (await req.json().catch(() => ({}))).negocios)) });
   if (p === "/enviar/seg-registrar" && req.method === "POST") {   // seguimientos mandados a mano (fuera del panel): cuentan para el objetivo del día
     const b = await req.json().catch(() => ({})), ts = +b.ts || Date.now();
     await env.DB.prepare("CREATE TABLE IF NOT EXISTS w_seg_log (id TEXT PRIMARY KEY, conv TEXT, ts INTEGER, toque INTEGER, situacion TEXT, quien TEXT, texto TEXT)").run();
@@ -1203,6 +1204,18 @@ Respondé SOLO JSON: {"mensajes":[{"n":1,"situacion":2,"seguir":true,"dueno":fal
   }
   const ok = lista.filter((s) => !(vigente(cache[s.conv], s, ahora) && cache[s.conv].seguir === false) && !esperaFecha(cache[s.conv], ahora)).map((s) => conDetalle(s, cache[s.conv]));
   return limite ? ok.slice(0, limite) : ok;
+}
+
+// Prospección: un primer mensaje distinto para cada negocio, pensado para su rubro (lo manda prospectar.py desde la PC, 10 a 15 por día)
+export async function mensajesProspeccion(env, iaJSON, negocios) {
+  const l = (Array.isArray(negocios) ? negocios : []).slice(0, 10).map((n, i) => ({ i: i + 1, negocio: String(n.negocio || "").slice(0, 80), rubro: String(n.rubro || "").slice(0, 80), ciudad: String(n.ciudad || "").slice(0, 60), nota: String(n.nota || "").slice(0, 200) }));
+  if (!l.length || !iaJSON) return { mensajes: [] };
+  const r = await iaJSON(env, `Escribís el PRIMER mensaje de WhatsApp de "Te Importamos" (Rosario, Argentina) a comercios que todavía no nos conocen. Hacemos importaciones desde China para comercios y revendedores: conseguimos el proveedor, negociamos, nos encargamos de aduana y envío, y le llega a su local; mostramos los costos reales. También tenemos compras grupales (cupos) para traer poca cantidad a precio de mayorista.
+Cada mensaje: distinto para cada negocio, pensado para SU rubro (nombrá 1 o 2 tipos de producto que ese rubro suele vender y que conviene traer de China), corto (2 a 4 líneas), tono de persona por WhatsApp, rioplatense, voseo, minúsculas naturales, sin ¿ ni ¡, sin emojis, sin "estimado", sin promesas de ganancia, sin precios ni descuentos inventados. Presentate en una línea ("soy manuel de te importamos"). Terminá con UNA pregunta fácil de contestar. Agregá al final, natural y corto, que si no le interesa nos avise y no le escribimos más.
+NEGOCIOS:
+${l.map((n) => `#${n.i} ${n.negocio || "(sin nombre)"} · rubro: ${n.rubro || "?"}${n.ciudad ? " · " + n.ciudad : ""}${n.nota ? " · nota: " + n.nota : ""}`).join("\n")}
+Respondé SOLO JSON: {"mensajes":[{"n":1,"mensaje":"..."}]}`, { prioridad: true }).catch(() => null);
+  return { mensajes: (r?.mensajes || []).map((x) => ({ n: +x.n, mensaje: String(x.mensaje || "").replace(/[¿¡]/g, "").replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, "").replace(/ {2,}/g, " ").trim().slice(0, 700) })).filter((x) => x.n && x.mensaje) };
 }
 
 // Seguimientos escritos desde afuera (otra IA, ej. Claude con el token del lector) cuando la IA del worker no tiene cupo:

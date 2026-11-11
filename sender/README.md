@@ -68,3 +68,9 @@ El panel ya arma solo la cotización cuando un cliente manda un link de **Alibab
 - Links de 1688, fotos o productos sin link no se cotizan solos: ahí se le pide "peso, cantidad y precio FOB".
 - Es la parte menos probada (adjuntar el PDF en WhatsApp Web). La primera vez corré con `VENTANA=visible` y mirá. Si falla, deja la cotización en "Para vos" y el PDF en esta carpeta.
 - La búsqueda de proveedores se ofrece a $5.000 (informe).
+
+## Prospección (prospectar.py)
+1. Completá `prospectos.csv` (Excel): telefono, negocio, rubro, ciudad, nota. Si no existe, el programa la crea vacía.
+2. Doble clic en `prospectar_prueba.bat`: la IA escribe un mensaje distinto por negocio según el rubro y lo guarda en la planilla. Revisalo y corregí lo que quieras.
+3. Cerrá `responder.py` y doble clic en `prospectar.bat`: manda hasta 15 por día (PROSP_POR_DIA), de 10 a 19 h, con 4 a 9 minutos entre uno y otro. No hace falta agendar los números. Saltea los que no tienen WhatsApp y los que ya tienen charla con nosotros, y marca todo en la columna estado.
+Otro número: `PROSP_PERFIL=perfil_prospeccion` en el .env abre otra sesión de WhatsApp Web (escaneás el QR con ese número la primera vez).
