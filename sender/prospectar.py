@@ -12,9 +12,9 @@ from enviar import api, parar, AQUI, os
 from responder import escribir, dormir, pausado, igual_a_lo_escrito, borrar_caja, debug_pantalla, CAJA, VENTANA
 
 PLANILLA = AQUI / os.environ.get("PROSP_ARCHIVO", "prospectos.csv")
-POR_DIA = int(os.environ.get("PROSP_POR_DIA", "15"))                 # tope por día (WhatsApp penaliza los envíos masivos a desconocidos)
-PAUSA_MIN = int(os.environ.get("PROSP_PAUSA_MIN", "240"))            # segundos entre un mensaje y el siguiente (4 a 9 minutos)
-PAUSA_MAX = int(os.environ.get("PROSP_PAUSA_MAX", "540"))
+POR_DIA = int(os.environ.get("PROSP_POR_DIA", "20"))                 # tope por día (WhatsApp penaliza los envíos masivos a desconocidos)
+PAUSA_MIN = int(os.environ.get("PROSP_PAUSA_MIN", "240"))            # segundos entre un mensaje y el siguiente (4 a 8 minutos: 20 en unas 2 horas)
+PAUSA_MAX = int(os.environ.get("PROSP_PAUSA_MAX", "480"))
 H_DESDE, H_HASTA = int(os.environ.get("PROSP_HORA_DESDE", "10")), int(os.environ.get("PROSP_HORA_HASTA", "19"))   # horario comercial
 PERFIL = AQUI / os.environ.get("PROSP_PERFIL", "perfil")             # otra carpeta = otra sesión de WhatsApp (otro número)
 COLS = ["telefono", "negocio", "rubro", "ciudad", "nota", "mensaje", "estado"]
@@ -29,6 +29,7 @@ def leer():
     for r in filas:
         r["telefono"] = "".join(ch for ch in r.get("telefono", "") if ch.isdigit())
         for c in COLS: r.setdefault(c, "")
+        if r["estado"] in ("ya hablamos", "sin whatsapp"): r["estado"] = ""   # marcas de la primera versión (fallaba al detectar el chat): se reintentan
     return filas
 
 def guardar(filas):
@@ -53,7 +54,7 @@ def armar_mensajes(filas):
 
 def chat_con_historia(pg):
     """True si ya hay mensajes en ese chat (es alguien con quien ya hablamos: no se le manda prospección)."""
-    try: return pg.evaluate("() => document.querySelectorAll('#main [data-id]').length") > 0
+    try: return pg.evaluate("() => document.querySelectorAll('#main .message-in, #main .message-out, #main [data-icon=tail-in], #main [data-icon=tail-out]').length") > 0
     except Exception: return False
 
 def main():
@@ -86,10 +87,10 @@ def main():
                 pg.goto(f"https://web.whatsapp.com/send?phone={r['telefono']}")
                 try: pg.wait_for_selector(CAJA, timeout=45000)
                 except PWTimeout:
-                    r["estado"] = "sin whatsapp"; guardar(filas); print("  Ese número no tiene WhatsApp. Lo marco y sigo."); continue
+                    r["estado"] = "sin whatsapp (v2)"; guardar(filas); print("  Ese número no tiene WhatsApp. Lo marco y sigo."); continue
                 if not dormir(random.uniform(3, 6)): return
                 if chat_con_historia(pg):
-                    r["estado"] = "ya hablamos"; guardar(filas); print("  Ya hay mensajes con este número: no le mando prospección."); continue
+                    r["estado"] = "ya hablamos (v2)"; guardar(filas); print("  Ya hay mensajes con este número: no le mando prospección."); continue
                 caja = pg.locator(CAJA).first
                 if caja.inner_text().strip(): borrar_caja(pg)
                 if not escribir(pg, caja, r["mensaje"]): return
