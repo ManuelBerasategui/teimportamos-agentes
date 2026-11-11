@@ -68,7 +68,7 @@ const decirBotones = (env, chat, texto, botones = []) => env.__captura ? (env.__
 
 // Quién es cada chat: los que conectaron Telegram en el panel (telegram_chat:<nombre>) y el chat de alertas (telegram_chat)
 async function chatsConocidos(env) {
-  const l = ((await env.DB.prepare("SELECT k, v FROM kv WHERE k='telegram_chat' OR k LIKE 'telegram_chat:%'").all()).results || []);
+  const l = ((await env.DB.prepare("SELECT k, v FROM kv WHERE k>='telegram_chat' AND k<'telegram_chat;'").all()).results || []);
   const m = {};
   for (const x of l) if (x.v) m[String(x.v)] = x.k === "telegram_chat" ? (m[String(x.v)] || "Manuel") : x.k.slice(14);
   if (env.TELEGRAM_CHAT && !m[String(env.TELEGRAM_CHAT)]) m[String(env.TELEGRAM_CHAT)] = "Manuel";

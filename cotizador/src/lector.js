@@ -74,6 +74,9 @@ export async function prepararLector(env) {
   await env.DB.prepare("ALTER TABLE w_hito ADD COLUMN oculto INTEGER DEFAULT 0").run().catch(() => {});
   // Índice parcial solo de chats privados (sin grupos ni historial): las métricas leían toda la tabla w_msg y descartaban casi todo
   await env.DB.prepare("CREATE INDEX IF NOT EXISTS w_msg_priv ON w_msg(ts) WHERE grupo=0 AND hist=0").run().catch(() => {});
+  // Índices para no recorrer tablas enteras (D1 gratis: 5 millones de filas leídas por día)
+  for (const q of ["CREATE INDEX IF NOT EXISTS w_hito_conv ON w_hito(conv, tipo, ts)", "CREATE INDEX IF NOT EXISTS w_conv_cierre ON w_conv(cierre_ts) WHERE cierre_ts IS NOT NULL",
+    "CREATE INDEX IF NOT EXISTS w_conv_nota ON w_conv(nota_ts) WHERE nota IS NOT NULL AND nota<>''"]) await env.DB.prepare(q).run().catch(() => {});
   tablasLector = true;
 }
 
@@ -1026,7 +1029,7 @@ async function candidatosSeguimiento(env, ahora = Date.now()) {
     for (const v of await todas(`SELECT conv, MAX(ts) ts FROM w_hito WHERE tipo='venta' AND COALESCE(oculto,0)=0 AND conv IN (${q}) GROUP BY conv`, ...parte)) ventas.set(v.conv, v.ts);
     for (const h of await todas(`SELECT conv, ts, dato FROM w_hito WHERE tipo='cotizacion' AND ts>=? AND conv IN (${q}) ORDER BY ts`, desde, ...parte)) cotTxt.set(h.conv, h.dato || "");
     for (const t of await todas(`SELECT tel FROM tareas WHERE estado='abierta' AND tipo IN ('cotizacion','promesa','comprobante') AND tel IN (${q})`, ...parte).catch(() => [])) deuda.add(t.tel);
-    for (const m of await todas(`SELECT conv, yo, texto, ts FROM w_msg WHERE ts>=? AND conv IN (${q}) ORDER BY ts`, desde - 86400e3, ...parte)) { if (!msgs.has(m.conv)) msgs.set(m.conv, []); msgs.get(m.conv).push(m); }
+    for (const m of await todas(`SELECT conv, yo, texto, ts FROM w_msg INDEXED BY w_msg_conv WHERE conv IN (${q}) AND ts>=? ORDER BY ts`, ...parte, desde - 86400e3)) { if (!msgs.has(m.conv)) msgs.set(m.conv, []); msgs.get(m.conv).push(m); }
   }
   const lista = [];
   for (const f of filas) {
@@ -1195,7 +1198,7 @@ Respondé SOLO JSON: {"mensajes":[{"n":1,"situacion":2,"seguir":true,"dueno":fal
     }
     const vivos = new Set(lista.map((s) => s.conv));
     for (const c of Object.keys(cache)) if (!vivos.has(c)) delete cache[c];      // solo se guarda lo que sigue en la lista
-    await env.DB.prepare("DELETE FROM kv WHERE k LIKE 'seg_ia:%'").run().catch(() => {});
+    await env.DB.prepare("DELETE FROM kv WHERE k>='seg_ia:' AND k<'seg_ia;'").run().catch(() => {});
     await kvPut(env, CLAVE_SEG_IA, JSON.stringify(cache));
   }
   const ok = lista.filter((s) => !(vigente(cache[s.conv], s, ahora) && cache[s.conv].seguir === false) && !esperaFecha(cache[s.conv], ahora)).map((s) => conDetalle(s, cache[s.conv]));

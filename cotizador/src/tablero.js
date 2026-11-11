@@ -267,7 +267,9 @@ export async function equipoDias(env, dias = 31) {
 // Dispositivos sin dueño (para asignarlos una vez)
 export async function dispositivos(env) {
   await cargarMapaEquipo(env);
-  const ms = await todas(env, "SELECT autor, COUNT(*) n, MAX(ts) ult FROM w_msg WHERE ts>=? AND grupo=0 AND yo=1 AND hist=0 GROUP BY autor", Date.now() - 30 * DIA);
+  // Pesado (30 días de mensajes): se recalcula cada 6 h y se guarda
+  let ms = null; try { const c = JSON.parse((await kvGet(env, "disp_cache")) || "null"); if (c && Date.now() - c.ts < 6 * 3600e3) ms = c.ms; } catch {}
+  if (!ms) { ms = await todas(env, "SELECT autor, COUNT(*) n, MAX(ts) ult FROM w_msg INDEXED BY w_msg_priv WHERE ts>=? AND grupo=0 AND yo=1 AND hist=0 GROUP BY autor", Date.now() - 30 * DIA).catch(() => todas(env, "SELECT autor, COUNT(*) n, MAX(ts) ult FROM w_msg WHERE ts>=? AND grupo=0 AND yo=1 AND hist=0 GROUP BY autor", Date.now() - 30 * DIA)); await kvPut(env, "disp_cache", JSON.stringify({ ts: Date.now(), ms })); }
   const out = {};
   for (const m of ms) {
     const d = (String(m.autor || "").match(/:(\d+)/) || [])[1]; if (d === undefined) continue;
