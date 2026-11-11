@@ -60,9 +60,9 @@ export async function cronTablero(env) {
   // Cuidado con el cupo gratis de D1 (5 millones de filas leídas por día): todo lo pesado corre espaciado.
   const horaAR = new Date(Date.now() - AR).getUTCHours();
   const segAct = +((await kvGet(env, "tab_segs_ts")) || 0);
-  if (horaAR >= 8 && horaAR < 24 && Date.now() - segAct > 20 * 60e3) await refrescarSegs(env).catch((e) => console.log("segs", e?.message || e));
+  if (horaAR >= 8 && horaAR < 24 && Date.now() - segAct > 120 * 60e3) await refrescarSegs(env).catch((e) => console.log("segs", e?.message || e));
   const ult = +((await kvGet(env, "tab_ult")) || 0);
-  if (Date.now() - ult < 15 * 60e3) return;
+  if (Date.now() - ult < 60 * 60e3) return;   // equipo y objetivos: una vez por hora alcanza
   if (horaAR >= 8 && Date.now() - +((await kvGet(env, "obj_ts")) || 0) > 60 * 60e3) { await calcularSeguimientosDia(env, diaAR()).catch((e) => console.log("obj", e?.message || e)); await kvPut(env, "obj_ts", Date.now()); }
   const ayerO = diaAR(Date.now() - DIA);
   if (!(await kvGet(env, "objfin:" + ayerO))) { await calcularSeguimientosDia(env, ayerO).catch(() => {}); await kvPut(env, "objfin:" + ayerO, 1); }
@@ -267,8 +267,8 @@ export async function equipoDias(env, dias = 31) {
 // Dispositivos sin dueño (para asignarlos una vez)
 export async function dispositivos(env) {
   await cargarMapaEquipo(env);
-  // Pesado (30 días de mensajes): se recalcula cada 6 h y se guarda
-  let ms = null; try { const c = JSON.parse((await kvGet(env, "disp_cache")) || "null"); if (c && Date.now() - c.ts < 6 * 3600e3) ms = c.ms; } catch {}
+  // Pesado (30 días de mensajes): se recalcula una vez por día y se guarda
+  let ms = null; try { const c = JSON.parse((await kvGet(env, "disp_cache")) || "null"); if (c && Date.now() - c.ts < 24 * 3600e3) ms = c.ms; } catch {}
   if (!ms) { ms = await todas(env, "SELECT autor, COUNT(*) n, MAX(ts) ult FROM w_msg INDEXED BY w_msg_priv WHERE ts>=? AND grupo=0 AND yo=1 AND hist=0 GROUP BY autor", Date.now() - 30 * DIA).catch(() => todas(env, "SELECT autor, COUNT(*) n, MAX(ts) ult FROM w_msg WHERE ts>=? AND grupo=0 AND yo=1 AND hist=0 GROUP BY autor", Date.now() - 30 * DIA)); await kvPut(env, "disp_cache", JSON.stringify({ ts: Date.now(), ms })); }
   const out = {};
   for (const m of ms) {
