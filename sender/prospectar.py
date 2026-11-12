@@ -110,7 +110,7 @@ def main():
         return
     modo_revisar = "--revisar" in sys.argv
     pend = [r for r in filas if r["telefono"] and r["mensaje"] and not r["estado"]]
-    if not pend and not modo_revisar: sys.exit("No hay negocios pendientes con mensaje. Corré primero: prospectar.bat --prueba")
+    if not pend and not modo_revisar and "--todo" not in sys.argv: sys.exit("No hay negocios pendientes con mensaje. Corré primero: prospectar.bat --prueba")
     from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
     args = {"minimizada": ["--start-minimized", "--window-size=1280,800"], "oculta": ["--window-position=-32000,-32000", "--window-size=1280,800"]}.get(VENTANA, ["--start-maximized"])
     with sync_playwright() as p:
@@ -119,7 +119,10 @@ def main():
         pg.goto("https://web.whatsapp.com")
         print("Esperando WhatsApp Web (si pide QR, escanealo con el celular)...")
         pg.wait_for_selector("#pane-side", timeout=180000)
-        if modo_revisar: revisar(filas, pg, PWTimeout); ctx.close(); return
+        if modo_revisar or "--todo" in sys.argv: revisar(filas, pg, PWTimeout)   # --todo: primero mira las respuestas y después manda los nuevos
+        if modo_revisar: ctx.close(); return
+        if not pend: print("No quedan negocios nuevos en la planilla para mandar."); ctx.close(); return
+        print(f"\nAhora mando los mensajes nuevos (hasta {POR_DIA} por día).")
         for r in pend:
             if parar() or pausado(): print("Frenado (STOP o PAUSA)."); break
             if enviados_hoy(filas) >= POR_DIA: print(f"Llegué al tope de {POR_DIA} por hoy. Mañana sigo con los que quedan."); break
