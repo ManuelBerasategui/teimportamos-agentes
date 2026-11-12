@@ -55,7 +55,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid color-mix(in srgb,var(
 @media (max-width:560px){.viejo{display:none}nav button{padding:6px 9px;font-size:13px}}
 </style></head><body>
 <header><div class="hw"><div class="logo"><i></i>TE <span>IMPORTAMOS</span></div>
-<nav id="tabs"><button data-v="hoy" class="on">Hoy</button><button data-v="chats">Chats y ventas</button><button data-v="num">Números</button><button data-v="links">Links</button><button data-v="ag">Agente</button></nav>
+<nav id="tabs"><button data-v="hoy" class="on">Hoy</button><button data-v="chats">Chats y ventas</button><button data-v="num">Números</button><button data-v="prosp">Prospección</button><button data-v="links">Links</button><button data-v="ag">Agente</button></nav>
 <a class="viejo" href="/panel/viejo">panel viejo</a></div></header>
 <main>
 <section id="v-hoy"><div class="est" id="estado"></div><div class="card" id="objetivos"><div class="top"><b>Objetivos de hoy</b><button class="b" id="objEdit" style="margin-left:auto">Editar</button></div><div id="objBody" class="mu">Cargando…</div></div><div class="card" id="consejo"><b>Lo que dicen los datos</b><div class="mu" id="consTxt">Cargando…</div><div class="acc"><button class="b" id="consBtn">Actualizar análisis</button></div></div><div class="eq" id="equipoHoy"></div><div id="lista"><div class="vacio">Cargando…</div></div></section>
@@ -71,6 +71,12 @@ input:focus,select:focus,textarea:focus{outline:2px solid color-mix(in srgb,var(
  <h2>Chats contestados por persona</h2><div class="tw" id="tEq"></div>
  <h2>Por día (últimos 31)</h2><div class="tw" id="tDias"></div>
  <h2>Dispositivos</h2><p class="mu">Cada vez que alguien vincula de nuevo el WhatsApp aparece un dispositivo nuevo. Asignalo una vez y se recalcula todo el historial.</p><div id="disp"></div>
+</section>
+<section id="v-prosp" hidden>
+ <p class="mu">Lo que manda y lee el prospector (PROSPECCION.bat) desde cada compu. Se actualiza cada vez que el programa manda o revisa respuestas.</p>
+ <div class="eq" id="pRes"></div>
+ <div class="fila" style="margin-top:12px"><div class="seg" id="pFil"><button data-f="hoy" class="on">Para hoy</button><button data-f="resp">Respondieron</button><button data-f="caliente">Calientes</button><button data-f="todos">Todos</button></div><input id="pQ" placeholder="Buscar negocio, rubro o número"></div>
+ <div id="pLista"></div>
 </section>
 <section id="v-links" hidden>
  <p class="mu">Creá un link para cada historia, anuncio, bio o campaña. Cuando alguien escribe desde ese link, el chat queda marcado con su origen y lo ves en Números.</p>
@@ -105,7 +111,7 @@ function ver(v) {
   [].forEach.call(document.querySelectorAll("#tabs button"), function (x) { x.classList.toggle("on", x.dataset.v === v); });
   [].forEach.call(document.querySelectorAll("main section"), function (s) { s.hidden = s.id !== "v-" + v; });
   history.replaceState(null, "", "#" + v);
-  if (v === "hoy") cargarHoy(); if (v === "chats") { buscar(); cargarVentas(); } if (v === "num") cargarNum(); if (v === "links") cargarLinks(); if (v === "ag") cargarAg();
+  if (v === "hoy") cargarHoy(); if (v === "chats") { buscar(); cargarVentas(); } if (v === "num") cargarNum(); if (v === "links") cargarLinks(); if (v === "prosp") cargarProsp(); if (v === "ag") cargarAg();
 }
 
 // ---- Lo que dicen los datos (el agente lo arma una vez por día; se puede actualizar)
@@ -274,8 +280,46 @@ function cargarNum() {
 }
 $("#disp").addEventListener("change", function (e) { var i = e.target.closest("[data-disp]"); if (!i) return; api("asignar", { disp: i.dataset.disp, persona: i.value }).then(function () { toast("Guardado. Se recalcula el historial en las próximas horas"); }); });
 
+// ---- Prospección
+var PROSP = null, PFIL = "hoy";
+var TEMP = { caliente: ["Caliente", "var(--bad)"], neutro: ["Neutro", "var(--warn)"], frio: ["Frío", "var(--mu)"] };
+function cargarProsp() { api("prospectos").then(function (d) { PROSP = d; pintarProsp(); }); }
+function pintarProsp() {
+  if (!PROSP) return; var r = PROSP.resumen, hoy = r.hoy, q = $("#pQ").value.trim().toLowerCase();
+  $("#pRes").innerHTML = [["Mensajes enviados", r.enviados], ["Respondieron", r.respondieron], ["Calientes", r.caliente], ["Para recontactar hoy", r.paraHoy], ["Sin WhatsApp", r.sinWhatsapp]]
+    .map(function (x) { return '<div class="card"><div class="kp">' + x[0] + "</div><b>" + x[1] + "</b></div>"; }).join("");
+  var l = PROSP.prospectos.filter(function (p) {
+    if (q && (p.negocio + " " + p.rubro + " " + p.tel + " " + (p.ciudad || "")).toLowerCase().indexOf(q) < 0) return false;
+    if (PFIL === "hoy") return p.recontacto && p.recontacto <= hoy && p.temperatura !== "frio";
+    if (PFIL === "resp") return !!p.respuesta; if (PFIL === "caliente") return p.temperatura === "caliente"; return true;
+  });
+  if (PFIL === "hoy") l.sort(function (a, b) { return (a.recontacto || "").localeCompare(b.recontacto || ""); });
+  $("#pLista").innerHTML = l.slice(0, 300).map(function (p) {
+    var t = TEMP[p.temperatura];
+    return '<div class="card" data-cat style="--k:' + (t ? t[1] : "var(--li)") + '"><div class="top"><span class="tel" data-tel="' + esc(p.tel) + '">' + esc(telFmt(p.tel)) + "</span><b>" + esc(p.negocio) + "</b>" +
+      (t ? '<span class="tag">' + t[0] + "</span>" : "") + '<span class="mu">' + esc([p.rubro, p.ciudad, p.quien].filter(Boolean).join(" · ")) + "</span></div>" +
+      '<div class="mu">' + esc(p.estado || "") + (p.recontacto ? " · recontactar el " + esc(p.recontacto.split("-").reverse().join("/")) : "") + "</div>" +
+      (p.respuesta ? '<div class="que">Respondió: ' + esc(p.respuesta) + "</div>" : "") +
+      (p.le_contestamos ? '<div class="ult">Le contestamos: ' + esc(p.le_contestamos) + "</div>" : "") +
+      (p.proximo_mensaje ? '<div class="borr" data-copiar="' + esc(p.proximo_mensaje) + '" title="Tocá para copiar">' + esc(p.proximo_mensaje) + "</div>" : "") +
+      (p.nota ? '<div class="nota">' + esc(p.nota) + "</div>" : "") +
+      '<div class="acc"><select data-ptemp="' + esc(p.tel) + '" style="width:auto"><option value="">Temperatura</option><option value="caliente"' + (p.temperatura === "caliente" ? " selected" : "") + '>Caliente</option><option value="neutro"' + (p.temperatura === "neutro" ? " selected" : "") + '>Neutro</option><option value="frio"' + (p.temperatura === "frio" ? " selected" : "") + ">Frío</option></select>" +
+      '<input type="date" data-pfecha="' + esc(p.tel) + '" value="' + esc(p.recontacto || "") + '" style="width:auto">' +
+      '<button class="b" data-pnota="' + esc(p.tel) + '">Nota</button>' + (p.recontacto ? '<button class="b v" data-phecho="' + esc(p.tel) + '">Ya le escribí</button>' : "") + "</div></div>";
+  }).join("") || '<div class="vacio">' + (PFIL === "hoy" ? "Nadie para recontactar hoy." : "No hay prospectos con ese filtro.") + "</div>";
+}
+$("#pFil").addEventListener("click", function (e) { var b = e.target.closest("button"); if (!b) return; PFIL = b.dataset.f; [].forEach.call($("#pFil").children, function (x) { x.classList.toggle("on", x === b); }); pintarProsp(); });
+$("#pQ").addEventListener("input", pintarProsp);
+function editarP(d, msg) { api("prospectos", d).then(function () { toast(msg); cargarProsp(); }); }
+$("#pLista").addEventListener("change", function (e) { var t = e.target;
+  if (t.dataset.ptemp) editarP({ tel: t.dataset.ptemp, temperatura: t.value }, "Temperatura guardada");
+  if (t.dataset.pfecha) editarP({ tel: t.dataset.pfecha, recontacto: t.value }, "Fecha guardada"); });
+$("#pLista").addEventListener("click", function (e) {
+  var h = e.target.closest("[data-phecho]"); if (h) return editarP({ tel: h.dataset.phecho, hecho: true }, "Listo");
+  var n = e.target.closest("[data-pnota]"); if (n) { var v = prompt("Nota para este negocio:"); if (v != null) editarP({ tel: n.dataset.pnota, nota: v }, "Nota guardada"); } });
+
 // ---- Links
-function copiar(t) { (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () { toast("Link copiado"); }).catch(function () { prompt("Copiá el link:", t); }); }
+function copiar(t) { (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () { toast("Copiado"); }).catch(function () { prompt("Copiá:", t); }); }
 function cargarLinks() {
   api("links").then(function (d) {
     var c = d.canales || {}; $("#lCan").innerHTML = Object.keys(c).map(function (k) { return '<option value="' + k + '">' + esc(c[k]) + "</option>"; }).join("");

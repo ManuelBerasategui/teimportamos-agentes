@@ -37,6 +37,15 @@ def guardar(filas):
     with open(PLANILLA, "w", newline="", encoding="utf-8-sig") as f:
         w = csv.DictWriter(f, fieldnames=COLS, delimiter=";", extrasaction="ignore"); w.writeheader(); w.writerows(filas)
 
+QUIEN = os.environ.get("PROSP_QUIEN") or os.environ.get("COMPUTERNAME", "pc")
+
+def sincronizar(filas):
+    """Sube al panel (pestaña Prospección) las filas que ya tienen estado. Si falla, no frena nada."""
+    l = [{k: r.get(k, "") for k in COLS} for r in filas if r.get("estado")]
+    try:
+        for i in range(0, len(l), 200): api("/enviar/prospectos-sync", {"filas": l[i:i + 200], "quien": QUIEN})
+    except Exception as e: print(f"(No pude actualizar el panel: {str(e).splitlines()[0]}. Sigo igual.)")
+
 def enviados_hoy(filas):
     hoy = datetime.now().strftime("%d/%m")
     return sum(1 for r in filas if r["estado"].startswith("enviado " + hoy))
@@ -153,7 +162,8 @@ def main():
         pg.goto("https://web.whatsapp.com")
         print("Esperando WhatsApp Web (si pide QR, escanealo con el celular)...")
         pg.wait_for_selector("#pane-side", timeout=180000)
-        if modo_revisar: revisar(filas, pg, PWTimeout); ctx.close(); return
+        sincronizar(filas)
+        if modo_revisar: revisar(filas, pg, PWTimeout); sincronizar(filas); ctx.close(); return
         if "--todo" in sys.argv: bucle(filas, pg, PWTimeout); ctx.close(); return
         for r in pend:
             if parar() or pausado(): print("Frenado (STOP o PAUSA)."); break
@@ -190,6 +200,7 @@ def mandar_uno(pg, r, filas, PWTimeout):
         if pg.locator(CAJA).first.inner_text().strip(): print("  No se envió (la caja sigue con texto)."); return
         r["estado"] = f"enviado {datetime.now():%d/%m %H:%M}"; guardar(filas)
         print(f"  Enviado ✅  ({enviados_hoy(filas)}/{POR_DIA} hoy)")
+        sincronizar([r])
     except Exception as e:
         debug_pantalla(pg, f"prospecto {r['telefono']}: {e}"); print(f"  Falló ({str(e).splitlines()[0]}). Sigo con el próximo.")
 
@@ -203,7 +214,7 @@ def bucle(filas, pg, PWTimeout):
         if parar() or pausado(): print("Frenado (STOP o PAUSA)."); return
         if not esperar_horario(): return
         if time.time() - ult > REVISAR_CADA:
-            revisar(filas, pg, PWTimeout, solo_recientes=True); ult = time.time()
+            revisar(filas, pg, PWTimeout, solo_recientes=True); sincronizar(filas); ult = time.time()
         pend = [r for r in filas if r["telefono"] and r["mensaje"] and not r["estado"]]
         if pend and enviados_hoy(filas) < POR_DIA:
             mandar_uno(pg, pend[0], filas, PWTimeout)

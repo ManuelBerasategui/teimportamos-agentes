@@ -6,6 +6,7 @@
 // No manda mensajes a nadie. Solo lee y guarda en D1.
 import { seguimientos, nombreDisp, cargarMapaEquipo, esBotTexto } from "./lector.js";
 import { esCierre } from "./cierre.js";
+import { listarProspectos, editarProspecto } from "./prospeccion.js";
 import { estadoIA } from "./ia-alterna.js";
 
 const AR = 3 * 3600e3, DIA = 86400e3;
@@ -475,6 +476,7 @@ export async function apiTablero(env, req, url, quien, iaJSON) {
   const body = req.method === "POST" ? await req.json().catch(() => ({})) : {};
   await prepararTablero(env);
   if (r === "hoy") return json(await hoy(env, url.searchParams.get("liviano") === "1"));
+  if (r === "prospectos") return json(req.method === "POST" ? await editarProspecto(env, body, quien) : await listarProspectos(env));
   if (r === "consejo") {
     const k = "consejo:" + diaAR();
     if (req.method !== "POST") { const v = await kvGet(env, k); if (v) return json(JSON.parse(v)); if (url.searchParams.get("generar") !== "1") return json({ texto: "", ts: 0 }); }

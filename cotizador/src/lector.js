@@ -1,3 +1,4 @@
+import { syncProspectos } from "./prospeccion.js";
 import { rutaAutoresp } from "./autoresp.js";
 import { esCierre } from "./cierre.js";
 // ============================================================================
@@ -139,7 +140,7 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
     if (!lote.history && n.clienteNuevo) ctx?.waitUntil(alertasRapidas(env).catch(() => {}));
     return Response.json({ ok: true, guardados: n.mensajes });
   }
-  if (p.startsWith("/enviar/") && p !== "/enviar/lista" && !p.startsWith("/enviar/seg-externos") && p !== "/enviar/seg-registrar" && p !== "/enviar/prospectos" && p !== "/enviar/prospecto-respuesta" && p !== "/enviar/pautas-seg" && p !== "/enviar/hecho" && p !== "/enviar/no") { const r = await rutaAutoresp(env, req, p, url, iaJSON, h); if (r) return r; }
+  if (p.startsWith("/enviar/") && p !== "/enviar/lista" && !p.startsWith("/enviar/seg-externos") && p !== "/enviar/seg-registrar" && p !== "/enviar/prospectos" && p !== "/enviar/prospecto-respuesta" && p !== "/enviar/prospectos-sync" && p !== "/enviar/pautas-seg" && p !== "/enviar/hecho" && p !== "/enviar/no") { const r = await rutaAutoresp(env, req, p, url, iaJSON, h); if (r) return r; }
   // Vista previa autenticada para el sender. Puede refrescar borradores, pero no envía ni marca chats como enviados.
   if (p === "/seguimientos" && req.method === "GET") {
     const lim = Math.min(Math.max(+url.searchParams.get("limite") || 20, 1), 20);
@@ -149,6 +150,7 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
     return Response.json({ ok: true, lista });
   }
   // Programita de la PC: lista de seguimientos disponibles, sin enviarlos ni marcarlos aquí.
+  if (p === "/enviar/prospectos-sync" && req.method === "POST") { const b = await req.json().catch(() => ({})); return Response.json({ ok: true, ...(await syncProspectos(env, b.filas, b.quien)) }); }
   if (p === "/enviar/prospecto-respuesta" && req.method === "POST") { const b = await req.json().catch(() => ({})); return Response.json({ ok: true, ...(await respuestasProspeccion(env, iaJSON, b.chats, b.hoy)) }); }
   if (p === "/enviar/prospectos" && req.method === "POST") return Response.json({ ok: true, ...(await mensajesProspeccion(env, iaJSON, (await req.json().catch(() => ({}))).negocios)) });
   if (p === "/enviar/seg-registrar" && req.method === "POST") {   // seguimientos mandados a mano (fuera del panel): cuentan para el objetivo del día
