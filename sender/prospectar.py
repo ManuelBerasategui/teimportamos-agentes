@@ -17,7 +17,7 @@ PAUSA_MIN = int(os.environ.get("PROSP_PAUSA_MIN", "240"))            # segundos 
 PAUSA_MAX = int(os.environ.get("PROSP_PAUSA_MAX", "480"))
 H_DESDE, H_HASTA = int(os.environ.get("PROSP_HORA_DESDE", "10")), int(os.environ.get("PROSP_HORA_HASTA", "19"))   # horario comercial
 PERFIL = AQUI / os.environ.get("PROSP_PERFIL", "perfil")             # otra carpeta = otra sesión de WhatsApp (otro número)
-COLS = ["telefono", "negocio", "rubro", "ciudad", "nota", "mensaje", "estado"]
+COLS = ["telefono", "negocio", "rubro", "ciudad", "nota", "mensaje", "estado", "respuesta", "temperatura", "recontacto", "proximo_mensaje", "revisado"]
 
 def leer():
     if not PLANILLA.exists():
@@ -57,6 +57,48 @@ def chat_con_historia(pg):
     try: return pg.evaluate("() => document.querySelectorAll('#main .message-in, #main .message-out, #main [data-icon=tail-in], #main [data-icon=tail-out]').length") > 0
     except Exception: return False
 
+JS_CHARLA = """() => [...document.querySelectorAll('#main .message-in, #main .message-out')].slice(-12).map(m => {
+  const c = m.querySelector('.copyable-text'), t = m.querySelector('.selectable-text');
+  return { yo: m.classList.contains('message-out'), cuando: (c && c.getAttribute('data-pre-plain-text') || '').replace(/\\].*$/, '').replace('[', ''), texto: t ? t.innerText : (m.querySelector('img') ? '(foto)' : '(audio o archivo)') };
+})"""
+
+def revisar(filas, pg, PWTimeout):
+    """Entra SOLO a los chats de los negocios de la planilla a los que ya les mandamos, lee la charla y (si hay IA) arma estado, fecha de recontacto y próximo mensaje."""
+    lista = [r for r in filas if r["estado"].startswith("enviado")]
+    print(f"Reviso {len(lista)} chats de la planilla (no entro a ningún otro chat).")
+    cambios = []
+    for r in lista:
+        if parar(): break
+        try:
+            pg.goto(f"https://web.whatsapp.com/send?phone={r['telefono']}")
+            pg.wait_for_selector(CAJA, timeout=45000)
+            if not dormir(random.uniform(3, 5)): return
+            charla = pg.evaluate(JS_CHARLA)
+        except PWTimeout: continue
+        except Exception as e: print(f"  {r['negocio']}: no pude leer ({str(e).splitlines()[0]})"); continue
+        resp = [m for m in charla if not m["yo"]]
+        if not resp: continue
+        ult = " | ".join(m["texto"] for m in resp[-3:])[:400]
+        if ult == r["respuesta"]: continue
+        r["respuesta"], r["revisado"] = ult, datetime.now().strftime("%d/%m %H:%M")
+        print(f"\n{r['negocio']} (+{r['telefono']}) respondió: {ult}")
+        cambios.append((r, charla)); guardar(filas)
+    for i in range(0, len(cambios), 8):
+        parte = cambios[i:i + 8]
+        try: res = api("/enviar/prospecto-respuesta", {"hoy": datetime.now().strftime("%Y-%m-%d"), "chats": [{"negocio": r["negocio"], "rubro": r["rubro"], "charla": c} for r, c in parte]}).get("chats", [])
+        except Exception as e: print(f"\nNo pude pedirle a la IA el estado y el próximo mensaje ({e}). Las respuestas quedaron guardadas igual."); break
+        for x in res:
+            if 1 <= x.get("n", 0) <= len(parte):
+                r = parte[x["n"] - 1][0]
+                r["temperatura"], r["recontacto"], r["proximo_mensaje"] = x.get("temperatura", ""), x.get("recontacto", ""), x.get("proximo_mensaje", "")
+                print(f"  {r['negocio']}: {r['temperatura']} · recontacto {r['recontacto'] or '-'}\n    {r['proximo_mensaje']}")
+        guardar(filas)
+    hoy = datetime.now().strftime("%Y-%m-%d")
+    toca = [r for r in filas if r["recontacto"] and r["recontacto"] <= hoy]
+    print(f"\nListo. {len(cambios)} respuestas nuevas. Para recontactar hoy o atrasados: {len(toca)}")
+    for r in toca: print(f"  - {r['negocio']} (+{r['telefono']}) [{r['temperatura']}]: {r['proximo_mensaje']}")
+    print(f"\nTodo quedó en {PLANILLA.name} (columnas respuesta, temperatura, recontacto y proximo_mensaje).")
+
 def main():
     filas = leer()
     if "--prueba" in sys.argv:
@@ -66,8 +108,9 @@ def main():
         for r in pend[:30]: print(f"\n- {r['negocio'] or '?'} ({r['rubro'] or '?'}) +{r['telefono']}\n  {r['mensaje'] or '(sin mensaje)'}")
         print(f"\nLos mensajes quedaron guardados en {PLANILLA.name}: abrila con Excel, corregí lo que quieras y después corré prospectar.bat sin --prueba.")
         return
+    modo_revisar = "--revisar" in sys.argv
     pend = [r for r in filas if r["telefono"] and r["mensaje"] and not r["estado"]]
-    if not pend: sys.exit("No hay negocios pendientes con mensaje. Corré primero: prospectar.bat --prueba")
+    if not pend and not modo_revisar: sys.exit("No hay negocios pendientes con mensaje. Corré primero: prospectar.bat --prueba")
     from playwright.sync_api import sync_playwright, TimeoutError as PWTimeout
     args = {"minimizada": ["--start-minimized", "--window-size=1280,800"], "oculta": ["--window-position=-32000,-32000", "--window-size=1280,800"]}.get(VENTANA, ["--start-maximized"])
     with sync_playwright() as p:
@@ -76,6 +119,7 @@ def main():
         pg.goto("https://web.whatsapp.com")
         print("Esperando WhatsApp Web (si pide QR, escanealo con el celular)...")
         pg.wait_for_selector("#pane-side", timeout=180000)
+        if modo_revisar: revisar(filas, pg, PWTimeout); ctx.close(); return
         for r in pend:
             if parar() or pausado(): print("Frenado (STOP o PAUSA)."); break
             if enviados_hoy(filas) >= POR_DIA: print(f"Llegué al tope de {POR_DIA} por hoy. Mañana sigo con los que quedan."); break

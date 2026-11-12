@@ -139,7 +139,7 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
     if (!lote.history && n.clienteNuevo) ctx?.waitUntil(alertasRapidas(env).catch(() => {}));
     return Response.json({ ok: true, guardados: n.mensajes });
   }
-  if (p.startsWith("/enviar/") && p !== "/enviar/lista" && !p.startsWith("/enviar/seg-externos") && p !== "/enviar/seg-registrar" && p !== "/enviar/prospectos" && p !== "/enviar/pautas-seg" && p !== "/enviar/hecho" && p !== "/enviar/no") { const r = await rutaAutoresp(env, req, p, url, iaJSON, h); if (r) return r; }
+  if (p.startsWith("/enviar/") && p !== "/enviar/lista" && !p.startsWith("/enviar/seg-externos") && p !== "/enviar/seg-registrar" && p !== "/enviar/prospectos" && p !== "/enviar/prospecto-respuesta" && p !== "/enviar/pautas-seg" && p !== "/enviar/hecho" && p !== "/enviar/no") { const r = await rutaAutoresp(env, req, p, url, iaJSON, h); if (r) return r; }
   // Vista previa autenticada para el sender. Puede refrescar borradores, pero no envía ni marca chats como enviados.
   if (p === "/seguimientos" && req.method === "GET") {
     const lim = Math.min(Math.max(+url.searchParams.get("limite") || 20, 1), 20);
@@ -149,6 +149,7 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
     return Response.json({ ok: true, lista });
   }
   // Programita de la PC: lista de seguimientos disponibles, sin enviarlos ni marcarlos aquí.
+  if (p === "/enviar/prospecto-respuesta" && req.method === "POST") { const b = await req.json().catch(() => ({})); return Response.json({ ok: true, ...(await respuestasProspeccion(env, iaJSON, b.chats, b.hoy)) }); }
   if (p === "/enviar/prospectos" && req.method === "POST") return Response.json({ ok: true, ...(await mensajesProspeccion(env, iaJSON, (await req.json().catch(() => ({}))).negocios)) });
   if (p === "/enviar/seg-registrar" && req.method === "POST") {   // seguimientos mandados a mano (fuera del panel): cuentan para el objetivo del día
     const b = await req.json().catch(() => ({})), ts = +b.ts || Date.now();
@@ -1216,6 +1217,23 @@ NEGOCIOS:
 ${l.map((n) => `#${n.i} ${n.negocio || "(sin nombre)"} · rubro: ${n.rubro || "?"}${n.ciudad ? " · " + n.ciudad : ""}${n.nota ? " · nota: " + n.nota : ""}`).join("\n")}
 Respondé SOLO JSON: {"mensajes":[{"n":1,"mensaje":"..."}]}`, { prioridad: true }).catch(() => null);
   return { mensajes: (r?.mensajes || []).map((x) => ({ n: +x.n, mensaje: String(x.mensaje || "").replace(/[¿¡]/g, "").replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, "").replace(/ {2,}/g, " ").trim().slice(0, 700) })).filter((x) => x.n && x.mensaje) };
+}
+
+// Prospección: lee lo que contestó cada negocio y arma temperatura, fecha de recontacto y el próximo mensaje
+export async function respuestasProspeccion(env, iaJSON, chats, hoy) {
+  const l = (Array.isArray(chats) ? chats : []).slice(0, 8);
+  if (!l.length || !iaJSON) return { chats: [] };
+  const r = await iaJSON(env, `Somos "Te Importamos" (Rosario): importamos de China a pedido para comercios. Le escribimos a estos negocios para ofrecerles el servicio y algunos contestaron. Hoy es ${String(hoy || "").slice(0, 10)}.
+Para cada uno decidí:
+- "temperatura": "caliente" (quiere avanzar, pide precio o cotización, da producto/cantidad), "neutro" (curioso, "después vemos", "pasame info", pide tiempo) o "frio" (no le interesa, ya importa, pidió que no le escribamos).
+- "recontacto": fecha AAAA-MM-DD. Si dijo una fecha ("el 14 te digo", "la semana que viene", "el lunes"), usá esa fecha calculada desde hoy. Caliente sin fecha: mañana. Neutro sin fecha: en 4 días. Frío: "" (no se recontacta).
+- "proximo_mensaje": el mensaje para ese día (vacío si es frío). Retomá lo que dijo, corto, rioplatense, voseo, sin ¿ ni ¡, sin emojis, una sola pregunta. Ej: "hola, cómo va? me habías dicho que para hoy tenían una respuesta, pudieron ver lo de la importación?". No inventes precios ni promesas.
+CHATS:
+${l.map((c, i) => `#${i + 1} ${String(c.negocio || "").slice(0, 60)} (${String(c.rubro || "").slice(0, 40)})\n${(Array.isArray(c.charla) ? c.charla : []).slice(-12).map((m) => `${m.cuando || ""} ${m.yo ? "Nosotros" : "Ellos"}: ${String(m.texto || "").replace(/\s+/g, " ").slice(0, 300)}`).join("\n")}`).join("\n\n")}
+Respondé SOLO JSON: {"chats":[{"n":1,"temperatura":"neutro","recontacto":"AAAA-MM-DD","proximo_mensaje":"..."}]}`, { prioridad: true }).catch(() => null);
+  const ok = (t) => (["caliente", "neutro", "frio"].includes(t) ? t : "neutro");
+  return { chats: (r?.chats || []).map((x) => ({ n: +x.n, temperatura: ok(String(x.temperatura || "").toLowerCase().replace("í", "i")), recontacto: /^\d{4}-\d{2}-\d{2}$/.test(String(x.recontacto || "")) ? x.recontacto : "",
+    proximo_mensaje: String(x.proximo_mensaje || "").replace(/[¿¡]/g, "").replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, "").replace(/ {2,}/g, " ").trim().slice(0, 600) })).filter((x) => x.n) };
 }
 
 // Seguimientos escritos desde afuera (otra IA, ej. Claude con el token del lector) cuando la IA del worker no tiene cupo:
