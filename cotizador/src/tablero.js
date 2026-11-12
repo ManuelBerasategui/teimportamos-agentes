@@ -352,7 +352,7 @@ export async function objetivos(env) {
     todas(env, "SELECT clave, valor FROM obj_dia WHERE dia=? AND clave LIKE 'seg:%'", hoyD),
     env.DB.prepare("SELECT COUNT(*) n FROM ig_stories_pub WHERE ts>=? AND ts<?").bind(d0, d0 + DIA).first().catch(() => null),
     env.DB.prepare("SELECT COUNT(*) n FROM ig_posts WHERE ts>=? AND COALESCE(tipo,'')<>'STORY'").bind(sem).first().catch(() => null),
-    env.DB.prepare("SELECT COUNT(*) n FROM tt_posts WHERE ts>=?").bind(sem).first().catch(() => null)]);
+    Promise.resolve(null)]);   // TikTok ya no se cuenta aparte: los videos son los mismos que en Instagram
   const [igL, ttL] = await Promise.all([kvGet(env, "ig_sync_ts"), kvGet(env, "tt_ultimo")]);
   let ttLeido = 0; try { ttLeido = JSON.parse(ttL || "{}").ts || 0; } catch {}
   const s = Object.fromEntries(seg.map((x) => [x.clave.slice(4), x.valor]));
