@@ -148,9 +148,16 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
   if (p === "/seguimientos" && req.method === "GET") {
     const lim = Math.min(Math.max(+url.searchParams.get("limite") || 20, 1), 20);
     if (url.searchParams.get("refrescar") === "1") await revisarSeguimientos(env, iaJSON, { limite: 0, tope: lim, forzar: true });
-    const lista = (await seguimientos(env)).filter((s) => /^\d{8,15}$/.test(String(s.conv)) && s.borrador).slice(0, lim)
+    // Mismo criterio que el panel: revisado por la IA, con mensaje y "llamalo vos" solo si hay monto alto, negociación o pedido de llamada (perfil A/B solo no alcanza)
+    const conDueno = (s) => !!s.dueno && (Number(s.situacion) === 8 || !!s.llamada || (s.presup_usd || 0) > 1000);
+    const soloListos = url.searchParams.get("listos") === "1";
+    const lista = (await seguimientos(env)).filter((s) => /^\d{8,15}$/.test(String(s.conv)) && s.borrador && (!soloListos || (s.revisado && !conDueno(s)))).map((s) => ({ ...s, dueno: conDueno(s) })).slice(0, lim)
       .map((s) => ({ conv: s.conv, nombre: s.nombre, producto: s.producto, cantidad: s.cantidad, total: s.total, tipo: s.tipo, toque: s.toque, situacion: s.situacion, revisado: s.revisado, dueno: s.dueno, llamada: s.llamada, reaccion: s.reaccion, dias_cot: s.dias_cot, borrador: s.borrador }));
-    return Response.json({ ok: true, lista });
+    // Cuántos seguimientos van hoy (lo que muestra el panel en Objetivos) y el objetivo, para que la PC frene al llegar
+    const hoyAR = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+    const hechos = (await env.DB.prepare("SELECT valor FROM obj_dia WHERE dia=? AND clave='seg:total'").bind(hoyAR).first().catch(() => null))?.valor || 0;
+    let objetivo = 50; try { objetivo = +JSON.parse((await kvGet(env, "objetivos")) || "{}").seg_max || 50; } catch {}
+    return Response.json({ ok: true, lista, hechos_hoy: hechos, objetivo });
   }
   // Programita de la PC: lista de seguimientos disponibles, sin enviarlos ni marcarlos aquí.
   if (p === "/enviar/prospectos-sync" && req.method === "POST") { const b = await req.json().catch(() => ({})); return Response.json({ ok: true, ...(await syncProspectos(env, b.filas, b.quien)) }); }

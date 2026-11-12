@@ -188,7 +188,7 @@ def mandar_seguimiento(pg, saltados):
     """Manda un seguimiento revisado del Worker, usando su borrador personalizado."""
     from playwright.sync_api import TimeoutError as PWTimeout
     try:
-        lista = [x for x in api("/seguimientos?limite=20").get("lista", []) if x.get("conv") not in saltados and x.get("revisado") and x.get("borrador") and not x.get("dueno")]
+        lista = [x for x in api("/seguimientos?limite=20&listos=1").get("lista", []) if x.get("conv") not in saltados and x.get("revisado") and x.get("borrador") and not x.get("dueno")]
     except Exception as e:
         print(f"  No pude traer los seguimientos ({e})."); return False
     for s in lista:
@@ -348,6 +348,12 @@ def main():
         if VENTANA != "visible": print("La ventana del agente queda fuera de la pantalla: para usar WhatsApp vos, usá la app de escritorio o el celular.")
         pg.wait_for_selector('#pane-side', timeout=180000)
         enviados = 0; fallidas = set(); seg_enviados = 0; seg_saltados = set(); chats_saltados = set()   # los que fallaron se reintentan en la próxima corrida
+        SEG_TOPE = SEG_MAX
+        if solo_seguimientos:   # seguimientos.bat: manda hasta llegar al objetivo del día del panel (ej. 50) y se cierra
+            try:
+                info = api("/seguimientos?limite=1&listos=1"); SEG_TOPE = max(0, int(info.get("objetivo", 50)) - int(info.get("hechos_hoy", 0)))
+                print(f"Seguimientos de hoy: {info.get('hechos_hoy', 0)} de {info.get('objetivo', 50)}. Mando hasta {SEG_TOPE} y me cierro.")
+            except Exception as e: print(f"No pude ver cuántos van hoy ({e}). Mando hasta {SEG_TOPE}.")
         try:
             while not parar():
                 if not esperar_si_pausado(): break
@@ -413,10 +419,11 @@ def main():
                 if not lista:
                     if solo_seguimientos: QUEDAN = 0   # modo solo seguimientos (seguimientos.bat): no espera a que se contesten los chats, eso lo hacés vos
                     if QUEDAN: print(f"{datetime.now():%H:%M} · quedan {QUEDAN} chat(s) sin contestar (los está atendiendo otra PC o es el tope por hora). Espero antes de los seguimientos.")
-                    if (SEGUIMIENTOS or solo_seguimientos) and not QUEDAN and seg_enviados < SEG_MAX and mandar_seguimiento(pg, seg_saltados):
+                    if (SEGUIMIENTOS or solo_seguimientos) and not QUEDAN and seg_enviados < SEG_TOPE and mandar_seguimiento(pg, seg_saltados):
                         seg_enviados += 1
                         if not dormir(random.randint(PAUSA_MIN, PAUSA_MAX)): break
                         continue
+                    if solo_seguimientos: print(f"\nListo: mandé {seg_enviados} seguimientos" + (" (llegué al objetivo del día)." if seg_enviados >= SEG_TOPE else ". No quedan más listos en el panel por ahora (los que dicen 'llamalo vos' los hacés vos).")); break
                     if not seguir: print("No quedan chats para contestar."); break
                     print(f"{datetime.now():%H:%M} · nada para contestar" + (" ni seguimientos" if SEGUIMIENTOS else "") + ". Vuelvo a mirar en 2 minutos.")
                     if not dormir(120): break
