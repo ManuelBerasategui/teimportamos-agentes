@@ -273,7 +273,8 @@ function cargarNum() {
     var P = Object.keys(per), D = Object.keys(dias).sort().reverse();
     $("#tDias").innerHTML = D.length ? tabla(["Día"].concat(P), D.map(function (x) { return [x.slice(5)].concat(P.map(function (p) { return dias[x][p] || 0; })); })) : '<div class="mu">Sin datos todavía.</div>';
     $("#disp").innerHTML = (d.dispositivos || []).map(function (x) {
-      return '<div class="card"><div class="fila"><div><b>Dispositivo ' + esc(x.disp) + '</b><div class="mu">' + x.mensajes + " mensajes en 30 días · último " + new Date(x.ult).toLocaleDateString("es-AR") + '</div></div><input data-disp="' + esc(x.disp) + '" value="' + esc(x.persona || "") + '" placeholder="¿De quién es?"></div></div>';
+      return '<div class="card"><div class="fila"><div><b>Dispositivo ' + esc(x.disp) + '</b><div class="mu">' + x.mensajes + " mensajes en 30 días · último " + new Date(x.ult).toLocaleDateString("es-AR") + '</div></div><input data-disp="' + esc(x.disp) + '" value="' + esc(x.persona || "") + '" placeholder="¿De quién es?"></div>' +
+        (x.ejemplos && x.ejemplos.length ? '<div class="mu" style="margin-top:6px">Últimos mensajes de este dispositivo:</div>' + x.ejemplos.map(function (m) { return '<div class="ult">' + new Date(m.ts).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) + " · a " + esc(m.a) + ": " + esc(m.texto) + "</div>"; }).join("") : "") + "</div>";
     }).join("");
   });
 }

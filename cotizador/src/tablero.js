@@ -280,6 +280,10 @@ export async function dispositivos(env) {
     const d = (String(m.autor || "").match(/:(\d+)/) || [])[1]; if (d === undefined) continue;
     const o = out[d] || (out[d] = { disp: d, persona: nombreDisp(m.autor), mensajes: 0, ult: 0 }); o.mensajes += m.n; o.ult = Math.max(o.ult, m.ult);
   }
+  // Para los que no tienen dueño: los últimos mensajes que mandó ese dispositivo (a quién y qué), así se reconoce quién es
+  for (const o of Object.values(out)) if (!o.persona && Date.now() - o.ult < 7 * DIA)
+    o.ejemplos = (await todas(env, "SELECT m.texto, m.ts, m.conv, m.autor, c.nombre FROM w_msg m INDEXED BY w_msg_priv LEFT JOIN w_conv c ON c.conv=m.conv WHERE m.ts>=? AND m.grupo=0 AND m.yo=1 AND m.hist=0 AND m.autor LIKE ? ORDER BY m.ts DESC LIMIT 20", o.ult - 2 * DIA, "%:" + o.disp + "%").catch(() => []))
+      .filter((m) => (String(m.autor || "").match(/:(\d+)/) || [])[1] === o.disp && m.texto && !/^\(archivo\)/.test(m.texto)).slice(0, 5).map((m) => ({ texto: String(m.texto || "").slice(0, 160), ts: m.ts, a: m.nombre || m.conv }));
   return Object.values(out).sort((a, b) => b.ult - a.ult);
 }
 export async function asignarDispositivo(env, disp, persona) {
