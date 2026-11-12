@@ -1227,12 +1227,14 @@ export async function respuestasProspeccion(env, iaJSON, chats, hoy) {
 Para cada uno decidí:
 - "temperatura": "caliente" (quiere avanzar, pide precio o cotización, da producto/cantidad), "neutro" (curioso, "después vemos", "pasame info", pide tiempo) o "frio" (no le interesa, ya importa, pidió que no le escribamos).
 - "recontacto": fecha AAAA-MM-DD. Si dijo una fecha ("el 14 te digo", "la semana que viene", "el lunes"), usá esa fecha calculada desde hoy. Caliente sin fecha: mañana. Neutro sin fecha: en 4 días. Frío: "" (no se recontacta).
-- "proximo_mensaje": el mensaje para ese día (vacío si es frío). Retomá lo que dijo, corto, rioplatense, voseo, sin ¿ ni ¡, sin emojis, una sola pregunta. Ej: "hola, cómo va? me habías dicho que para hoy tenían una respuesta, pudieron ver lo de la importación?". No inventes precios ni promesas.
+- "responder": si el ÚLTIMO mensaje de la charla es de Ellos, la respuesta para mandarle AHORA. Si pregunta precio o cómo es, explicá breve (buscamos el fabricante, compramos, importamos, aduana y envío, y le pasamos el costo final puesto acá) y pedile producto (link de Alibaba o foto) y cantidad para cotizarle. Si dice que no le interesa, agradecé en una línea. Si solo dice "ok", "gracias" o un emoji, o si el último mensaje es Nuestro, "" (no se contesta). Si pide algo que no sabés (precio exacto, plazo de un producto puntual, llamada), decí que se lo confirmamos enseguida.
+- "proximo_mensaje": el mensaje para el día de recontacto (vacío si es frío). Retomá lo que dijo, corto, rioplatense, voseo, sin ¿ ni ¡, sin emojis, una sola pregunta. Ej: "hola, cómo va? me habías dicho que para hoy tenían una respuesta, pudieron ver lo de la importación?". No inventes precios ni promesas.
 CHATS:
 ${l.map((c, i) => `#${i + 1} ${String(c.negocio || "").slice(0, 60)} (${String(c.rubro || "").slice(0, 40)})\n${(Array.isArray(c.charla) ? c.charla : []).slice(-12).map((m) => `${m.cuando || ""} ${m.yo ? "Nosotros" : "Ellos"}: ${String(m.texto || "").replace(/\s+/g, " ").slice(0, 300)}`).join("\n")}`).join("\n\n")}
-Respondé SOLO JSON: {"chats":[{"n":1,"temperatura":"neutro","recontacto":"AAAA-MM-DD","proximo_mensaje":"..."}]}`, { prioridad: true }).catch(() => null);
+Respondé SOLO JSON: {"chats":[{"n":1,"temperatura":"neutro","recontacto":"AAAA-MM-DD","responder":"...","proximo_mensaje":"..."}]}`, { prioridad: true }).catch(() => null);
   const ok = (t) => (["caliente", "neutro", "frio"].includes(t) ? t : "neutro");
-  return { chats: (r?.chats || []).map((x) => ({ n: +x.n, temperatura: ok(String(x.temperatura || "").toLowerCase().replace("í", "i")), recontacto: /^\d{4}-\d{2}-\d{2}$/.test(String(x.recontacto || "")) ? x.recontacto : "",
+  const limpiar = (t) => String(t || "").replace(/[¿¡]/g, "").replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, "").replace(/ {2,}/g, " ").trim().slice(0, 600);
+  return { chats: (r?.chats || []).map((x) => ({ n: +x.n, responder: limpiar(x.responder), temperatura: ok(String(x.temperatura || "").toLowerCase().replace("í", "i")), recontacto: /^\d{4}-\d{2}-\d{2}$/.test(String(x.recontacto || "")) ? x.recontacto : "",
     proximo_mensaje: String(x.proximo_mensaje || "").replace(/[¿¡]/g, "").replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, "").replace(/ {2,}/g, " ").trim().slice(0, 600) })).filter((x) => x.n) };
 }
 

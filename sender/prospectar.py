@@ -17,7 +17,8 @@ PAUSA_MIN = int(os.environ.get("PROSP_PAUSA_MIN", "240"))            # segundos 
 PAUSA_MAX = int(os.environ.get("PROSP_PAUSA_MAX", "480"))
 H_DESDE, H_HASTA = int(os.environ.get("PROSP_HORA_DESDE", "10")), int(os.environ.get("PROSP_HORA_HASTA", "19"))   # horario comercial
 PERFIL = AQUI / os.environ.get("PROSP_PERFIL", "perfil")             # otra carpeta = otra sesión de WhatsApp (otro número)
-COLS = ["telefono", "negocio", "rubro", "ciudad", "nota", "mensaje", "estado", "respuesta", "temperatura", "recontacto", "proximo_mensaje", "revisado"]
+COLS = ["telefono", "negocio", "rubro", "ciudad", "nota", "mensaje", "estado", "respuesta", "temperatura", "recontacto", "proximo_mensaje", "revisado", "le_contestamos"]
+AUTORESP = os.environ.get("PROSP_AUTORESP", "1") == "1"   # contestar solo a los que respondieron (0 = solo mostrar la respuesta sugerida)
 
 def leer():
     if not PLANILLA.exists():
@@ -62,6 +63,26 @@ JS_CHARLA = """() => [...document.querySelectorAll('#main .message-in, #main .me
   return { yo: m.classList.contains('message-out'), cuando: (c && c.getAttribute('data-pre-plain-text') || '').replace(/\\].*$/, '').replace('[', ''), texto: t ? t.innerText : (m.querySelector('img') ? '(foto)' : '(audio o archivo)') };
 })"""
 
+def contestar(pg, r, texto, PWTimeout):
+    """Le contesta a un negocio de la planilla (solo si su último mensaje sigue siendo de ellos)."""
+    if parar() or pausado(): return False
+    try:
+        pg.goto(f"https://web.whatsapp.com/send?phone={r['telefono']}")
+        pg.wait_for_selector(CAJA, timeout=45000)
+        if not dormir(random.uniform(3, 5)): return False
+        charla = pg.evaluate(JS_CHARLA)
+        if not charla or charla[-1]["yo"]: return False
+        caja = pg.locator(CAJA).first
+        if caja.inner_text().strip(): borrar_caja(pg)
+        if not escribir(pg, caja, texto): return False
+        time.sleep(random.uniform(1, 2))
+        if not igual_a_lo_escrito(pg, texto): borrar_caja(pg); return False
+        caja.press("Enter"); time.sleep(3)
+        dormir(random.uniform(20, 60))
+        return not pg.locator(CAJA).first.inner_text().strip()
+    except Exception as e:
+        print(f"  No pude contestarle a {r['negocio']} ({str(e).splitlines()[0]})"); return False
+
 def revisar(filas, pg, PWTimeout):
     """Entra SOLO a los chats de los negocios de la planilla a los que ya les mandamos, lee la charla y (si hay IA) arma estado, fecha de recontacto y próximo mensaje."""
     lista = [r for r in filas if r["estado"].startswith("enviado")]
@@ -82,16 +103,20 @@ def revisar(filas, pg, PWTimeout):
         if ult == r["respuesta"]: continue
         r["respuesta"], r["revisado"] = ult, datetime.now().strftime("%d/%m %H:%M")
         print(f"\n{r['negocio']} (+{r['telefono']}) respondió: {ult}")
-        cambios.append((r, charla)); guardar(filas)
+        cambios.append((r, charla, not charla[-1]["yo"])); guardar(filas)
     for i in range(0, len(cambios), 8):
         parte = cambios[i:i + 8]
-        try: res = api("/enviar/prospecto-respuesta", {"hoy": datetime.now().strftime("%Y-%m-%d"), "chats": [{"negocio": r["negocio"], "rubro": r["rubro"], "charla": c} for r, c in parte]}).get("chats", [])
+        try: res = api("/enviar/prospecto-respuesta", {"hoy": datetime.now().strftime("%Y-%m-%d"), "chats": [{"negocio": r["negocio"], "rubro": r["rubro"], "charla": c} for r, c, _ in parte]}).get("chats", [])
         except Exception as e: print(f"\nNo pude pedirle a la IA el estado y el próximo mensaje ({e}). Las respuestas quedaron guardadas igual."); break
         for x in res:
             if 1 <= x.get("n", 0) <= len(parte):
-                r = parte[x["n"] - 1][0]
+                r, _, espera = parte[x["n"] - 1]
                 r["temperatura"], r["recontacto"], r["proximo_mensaje"] = x.get("temperatura", ""), x.get("recontacto", ""), x.get("proximo_mensaje", "")
                 print(f"  {r['negocio']}: {r['temperatura']} · recontacto {r['recontacto'] or '-'}\n    {r['proximo_mensaje']}")
+                txt = x.get("responder", "").strip()
+                if espera and txt:
+                    if not AUTORESP: print(f"    Respuesta sugerida (no la mando, PROSP_AUTORESP=0): {txt}"); continue
+                    if contestar(pg, r, txt, PWTimeout): r["le_contestamos"] = f"{datetime.now():%d/%m %H:%M}: {txt}"[:500]; print(f"    Le contesté: {txt}")
         guardar(filas)
     hoy = datetime.now().strftime("%Y-%m-%d")
     toca = [r for r in filas if r["recontacto"] and r["recontacto"] <= hoy]
