@@ -411,8 +411,9 @@ def main():
                 lista = [x for x in lista if x["conv"] not in chats_saltados]
                 if not lista and QUEDAN <= len(chats_saltados): QUEDAN = 0   # solo quedan los que fallaron en esta corrida
                 if not lista:
+                    if solo_seguimientos: QUEDAN = 0   # modo solo seguimientos (seguimientos.bat): no espera a que se contesten los chats, eso lo hacés vos
                     if QUEDAN: print(f"{datetime.now():%H:%M} · quedan {QUEDAN} chat(s) sin contestar (los está atendiendo otra PC o es el tope por hora). Espero antes de los seguimientos.")
-                    if SEGUIMIENTOS and not QUEDAN and seg_enviados < SEG_MAX and mandar_seguimiento(pg, seg_saltados):
+                    if (SEGUIMIENTOS or solo_seguimientos) and not QUEDAN and seg_enviados < SEG_MAX and mandar_seguimiento(pg, seg_saltados):
                         seg_enviados += 1
                         if not dormir(random.randint(PAUSA_MIN, PAUSA_MAX)): break
                         continue
