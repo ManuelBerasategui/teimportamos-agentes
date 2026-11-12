@@ -50,7 +50,7 @@ const ESTILO = CANAL === "whatsapp" ? ESTILO_WHATSAPP : ESTILO_DM;
 // =====================================================================
 
 import { rutasMetricas } from "./metricas.js";
-import { syncCompleto, syncDMs, prepararSync, conTope } from "./sync.js";
+import { syncCompleto, syncDMs, prepararSync, conTope, syncHistorias } from "./sync.js";
 import { FORMATOS_INICIALES } from "./formatos-iniciales.js";
 import { publicarPendientes, servirParaInstagram } from "./publicar.js";
 
@@ -289,6 +289,7 @@ export default {
         const r = await vuelta(env, { forzarPrueba: true });
         return texto(`MODO PRUEBA (no se publicó nada)\nComentarios leídos en esta vuelta: ${r.sinResponder} (responde de a ${CONFIG.porVuelta} cada 30 min)\n${r.error ? "\n❌ " + r.error + "\n" : ""}\n` + r.respuestas.map((x) => `${x.usuario}: "${x.comentario}"\n  → [${x.tipo}] ${x.respuesta}`).join("\n\n"));
       }
+      if (url.pathname === "/historias") return new Response(JSON.stringify({ historias: await syncHistorias(env, igApi(env)) }), { headers: { "content-type": "application/json" } });
       if (url.pathname === "/sync") return new Response(JSON.stringify(await syncCompleto(env, igApi(env), iaImagen, FORMATOS_INICIALES)), { headers: { "content-type": "application/json; charset=utf-8" } });
       if (url.pathname === "/sync-dms") { await prepararSync(env); return new Response(JSON.stringify(await syncDMs(env, conTope(igApi(env), 25))), { headers: { "content-type": "application/json; charset=utf-8" } }); }
       if (url.pathname.startsWith("/metricas")) {   // Fase 1: diagnóstico, solo lectura

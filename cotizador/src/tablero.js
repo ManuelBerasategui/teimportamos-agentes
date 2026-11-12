@@ -499,7 +499,10 @@ export async function apiTablero(env, req, url, quien, iaJSON) {
       const o = {}; for (const k of Object.keys(OBJ_DEF)) if (body[k] != null && body[k] !== "") o[k] = Math.max(0, Math.min(500, +body[k] || 0));
       await kvPut(env, "objetivos", JSON.stringify(o));
     }
-    if (url.searchParams.get("recalcular") === "1") { await calcularSeguimientosDia(env, diaAR()); await kvPut(env, "obj_ts", Date.now()); }
+    if (url.searchParams.get("recalcular") === "1") {
+      await calcularSeguimientosDia(env, diaAR()); await kvPut(env, "obj_ts", Date.now());
+      if (env.IG?.fetch) await env.IG.fetch(new Request(`https://instagram/historias?clave=${encodeURIComponent(env.VERIFY_TOKEN || "")}`)).catch(() => {});   // historias de Instagram solo cuando lo pedís (o 1 vez por día a las 23)
+    }
     return json(await objetivos(env));
   }
   return json({ error: "ruta desconocida" });
