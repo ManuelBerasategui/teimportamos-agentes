@@ -184,6 +184,8 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
     const b = await req.json().catch(() => ({}));
     await env.DB.prepare(p === "/enviar/hecho" ? "UPDATE w_conv SET seg_visto=? WHERE conv=?" : "UPDATE w_conv SET seg_no=? WHERE conv=?").bind(Date.now(), String(b.conv || "")).run();
     if (p === "/enviar/hecho") await logSeg(env, String(b.conv || ""), "auto");
+    // Sacarlo ya de la lista del panel (Hoy > seguimientos), sin esperar a que se recalcule
+    try { const v = await kvGet(env, "tab_segs"); if (v) { const l = JSON.parse(v); const f = l.filter((x) => String(x.conv) !== String(b.conv || "")); if (f.length !== l.length) await kvPut(env, "tab_segs", JSON.stringify(f)); } } catch {}
     return Response.json({ ok: true });
   }
   return new Response("no existe", { status: 404 });
