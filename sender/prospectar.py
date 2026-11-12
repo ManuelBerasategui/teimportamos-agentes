@@ -12,9 +12,9 @@ from enviar import api, parar, AQUI, os
 from responder import escribir, dormir, pausado, igual_a_lo_escrito, borrar_caja, debug_pantalla, CAJA, VENTANA
 
 PLANILLA = AQUI / os.environ.get("PROSP_ARCHIVO", "prospectos.csv")
-POR_DIA = int(os.environ.get("PROSP_POR_DIA", "20"))                 # tope por día (WhatsApp penaliza los envíos masivos a desconocidos)
-PAUSA_MIN = int(os.environ.get("PROSP_PAUSA_MIN", "240"))            # segundos entre un mensaje y el siguiente (4 a 8 minutos: 20 en unas 2 horas)
-PAUSA_MAX = int(os.environ.get("PROSP_PAUSA_MAX", "480"))
+POR_DIA = int(os.environ.get("PROSP_POR_DIA", "30"))                 # tope por día (WhatsApp penaliza los envíos masivos a desconocidos)
+PAUSA_MIN = int(os.environ.get("PROSP_PAUSA_MIN", "240"))            # segundos entre un mensaje y el siguiente (4 a 6 minutos, unos 5: 30 en 2 horas y media)
+PAUSA_MAX = int(os.environ.get("PROSP_PAUSA_MAX", "360"))
 H_DESDE, H_HASTA = int(os.environ.get("PROSP_HORA_DESDE", "10")), int(os.environ.get("PROSP_HORA_HASTA", "19"))   # horario comercial
 PERFIL = AQUI / os.environ.get("PROSP_PERFIL", "perfil")             # otra carpeta = otra sesión de WhatsApp (otro número)
 COLS = ["telefono", "negocio", "rubro", "ciudad", "nota", "mensaje", "estado", "respuesta", "temperatura", "recontacto", "proximo_mensaje", "revisado", "le_contestamos"]
