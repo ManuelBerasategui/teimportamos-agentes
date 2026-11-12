@@ -228,7 +228,7 @@ export async function syncCompleto(env, igBase, iaImagen, iniciales = {}) {
   try { out.cuenta = !!(await syncCuenta(env, ig)); } catch (e) { out.cuenta = e.message; }
   try { out.posts = await syncPosts(env, ig, iniciales); } catch (e) { out.posts = e.message; }
   try { out.dms = await syncDMs(env, ig); } catch (e) { out.dms = e.message; }
-  if (new Date(Date.now() - 3 * 3600e3).getUTCHours() === 23) { try { out.historias = await syncHistorias(env, ig); } catch (e) { out.historias = e.message; } }   // una vez por día, ~23:17 (las historias duran 24 h)
+  try { out.historias = await syncHistorias(env, ig); } catch (e) { out.historias = e.message; }   // en cada vuelta (cada 2 h): una sola llamada a Instagram y pocas filas; así el panel las muestra en el día, no recién a la noche
   try { out.clasificados = await clasificar(env, ig, iaImagen); } catch (e) { out.clasificados = e.message; }
   out.consultas = ig.usadas();
   await kvPut(env, "ig_sync_ts", Date.now());
