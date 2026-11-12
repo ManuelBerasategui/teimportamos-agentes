@@ -116,6 +116,7 @@ cargarConsejo();
 
 // ---- Objetivos (se cuentan solos: historias desde Instagram, seguimientos desde el lector)
 var OBJ = null;
+function haceT(t) { if (!t) return "nunca"; var h = Math.round((Date.now() - t) / 36e5); return h < 1 ? "hace minutos" : h < 48 ? "hace " + h + " h" : "hace " + Math.round(h / 24) + " días"; }
 function barra(v, meta) { var p = meta ? Math.min(100, Math.round(v / meta * 100)) : 0; return '<div class="barra"><i class="' + (v >= meta ? "ok" : "") + '" style="width:' + p + '%"></i></div>'; }
 function cargarObj(recalc) {
   api("objetivos" + (recalc ? "?recalcular=1" : "")).then(function (d) {
@@ -123,7 +124,9 @@ function cargarObj(recalc) {
     $("#objBody").className = ""; $("#objBody").innerHTML = '<div class="obj">' +
       '<div><div class="kp"><span>Historias de Instagram</span></div><b>' + d.historias + " / " + o.historias + "</b>" + barra(d.historias, o.historias) + "</div>" +
       '<div><div class="kp"><span>Seguimientos</span></div><b>' + d.seguimientos + " / " + o.seg_min + "–" + o.seg_max + "</b>" + barra(d.seguimientos, o.seg_min) + (por ? '<div class="mu">' + por + "</div>" : "") + "</div>" +
-      '<div><div class="kp"><span>Videos de la semana</span></div><b>IG ' + d.videosIG + " · TikTok " + d.videosTT + " / " + o.videos_semana + "</b>" + barra(Math.min(d.videosIG, d.videosTT), o.videos_semana) + "</div></div>" +
+      '<div><div class="kp"><span>Videos de la semana (dom a sáb)</span></div>' +
+        '<div class="mu" style="margin-top:2px">Instagram <b style="font-size:16px">' + d.videosIG + " / " + o.videos_semana + "</b> · leído " + haceT(d.igLeido) + "</div>" + barra(d.videosIG, o.videos_semana) +
+        '<div class="mu" style="margin-top:6px">TikTok <b style="font-size:16px">' + d.videosTT + " / " + o.videos_semana + "</b> · leído " + haceT(d.ttLeido) + "</div>" + barra(d.videosTT, o.videos_semana) + "</div></div>" +
       '<div class="mu" style="margin-top:6px">Seguimientos actualizados ' + (d.actualizado ? new Date(d.actualizado).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) : "—") + ' · se cuentan solos cada hora (historias: 1 vez por día a las 23) · <a href="#" id="objRec">actualizar ahora</a></div>';
     $("#objRec").onclick = function (e) { e.preventDefault(); $("#objBody").className = "mu"; cargarObj(true); };
   }).catch(function () {});

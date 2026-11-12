@@ -348,9 +348,11 @@ export async function objetivos(env) {
     env.DB.prepare("SELECT COUNT(*) n FROM ig_stories_pub WHERE ts>=? AND ts<?").bind(d0, d0 + DIA).first().catch(() => null),
     env.DB.prepare("SELECT COUNT(*) n FROM ig_posts WHERE ts>=? AND COALESCE(tipo,'')<>'STORY'").bind(sem).first().catch(() => null),
     env.DB.prepare("SELECT COUNT(*) n FROM tt_posts WHERE ts>=?").bind(sem).first().catch(() => null)]);
+  const [igL, ttL] = await Promise.all([kvGet(env, "ig_sync_ts"), kvGet(env, "tt_ultimo")]);
+  let ttLeido = 0; try { ttLeido = JSON.parse(ttL || "{}").ts || 0; } catch {}
   const s = Object.fromEntries(seg.map((x) => [x.clave.slice(4), x.valor]));
   const segTotal = s.total || 0; delete s.total;
-  return { obj, historias: hist?.n || 0, seguimientos: segTotal, seguimientosPor: s, videosIG: ig?.n || 0, videosTT: tt?.n || 0, actualizado: +((await kvGet(env, "obj_ts")) || 0) };
+  return { obj, historias: hist?.n || 0, seguimientos: segTotal, seguimientosPor: s, videosIG: ig?.n || 0, videosTT: tt?.n || 0, igLeido: +(igL || 0), ttLeido, actualizado: +((await kvGet(env, "obj_ts")) || 0) };
 }
 
 // ---------------------------------------------------------------------------
