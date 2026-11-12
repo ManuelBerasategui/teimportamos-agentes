@@ -201,8 +201,12 @@ def mandar_seguimiento(pg, saltados):
             try: pg.wait_for_selector(CAJA, timeout=45000)
             except PWTimeout: print("  No abrió el chat (¿número sin WhatsApp?). Lo salteo."); saltados.add(s["conv"]); continue
             if not dormir(random.uniform(2, 4)): return False
-            if ultimo_del_cliente(pg) is not False:
-                print("  No pude confirmar que nuestro mensaje sea el último: no mando seguimiento."); saltados.add(s["conv"]); continue
+            ult = ultimo_del_cliente(pg)
+            if ult is None:   # la charla todavía no cargó (WhatsApp Web recién vinculado no trae el historial): espero un poco y vuelvo a mirar
+                dormir(4); ult = ultimo_del_cliente(pg)
+            if ult is True:
+                print("  El cliente escribió después de nuestro último mensaje: no mando seguimiento (hay que contestarle)."); saltados.add(s["conv"]); continue
+            if ult is None: print("  No se ve la charla en WhatsApp Web (no sincronizó el historial). Según el panel el último mensaje es nuestro: mando igual.")
             caja = pg.locator(CAJA).first
             if caja.inner_text().strip(): print("  La caja ya tenía texto. Lo salteo."); saltados.add(s["conv"]); continue
             if not escribir(pg, caja, texto): return False
