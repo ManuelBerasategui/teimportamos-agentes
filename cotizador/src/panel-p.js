@@ -132,7 +132,7 @@ function cargarObj(recalc) {
       '<div><div class="kp"><span>Seguimientos</span></div><b>' + d.seguimientos + " / " + o.seg_min + "–" + o.seg_max + "</b>" + barra(d.seguimientos, o.seg_min) + (por ? '<div class="mu">' + por + "</div>" : "") + "</div>" +
       '<div><div class="kp"><span>Videos de la semana (dom a sáb)</span></div>' +
         '<b>' + d.videosIG + " / " + o.videos_semana + '</b><div class="mu" style="margin-top:2px">Se cuentan los de Instagram (los mismos van a TikTok) · leído ' + haceT(d.igLeido) + "</div>" + barra(d.videosIG, o.videos_semana) + "</div></div>" +
-      '<div class="mu" style="margin-top:6px">Seguimientos actualizados ' + (d.actualizado ? new Date(d.actualizado).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) : "—") + ' · se cuentan solos cada hora (historias: 1 vez por día a las 23) · <a href="#" id="objRec">actualizar ahora</a></div>';
+      '<div class="mu" style="margin-top:6px">Seguimientos actualizados ' + (d.actualizado ? new Date(d.actualizado).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }) : "—") + ' · se cuentan solos cada hora (historias: 1 vez por día a las 23) · <a href="#" id="objRec">actualizar ahora</a>' + (d.igHist ? '<br>Historias: ' + esc(d.igHist) : '') + '</div>';
     $("#objRec").onclick = function (e) { e.preventDefault(); $("#objBody").className = "mu"; cargarObj(true); };
   }).catch(function () {});
 }

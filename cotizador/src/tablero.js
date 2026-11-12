@@ -507,11 +507,14 @@ export async function apiTablero(env, req, url, quien, iaJSON) {
       const o = {}; for (const k of Object.keys(OBJ_DEF)) if (body[k] != null && body[k] !== "") o[k] = Math.max(0, Math.min(500, +body[k] || 0));
       await kvPut(env, "objetivos", JSON.stringify(o));
     }
+    let igHist = null;
     if (url.searchParams.get("recalcular") === "1") {
       await calcularSeguimientosDia(env, diaAR()); await kvPut(env, "obj_ts", Date.now());
-      if (env.IG?.fetch) await env.IG.fetch(new Request(`https://instagram/historias?clave=${encodeURIComponent(env.VERIFY_TOKEN || "")}`)).catch(() => {});   // historias de Instagram solo cuando lo pedís (o 1 vez por día a las 23)
+      // historias de Instagram solo cuando lo pedís (o 1 vez por día a las 23); el resultado se muestra en el panel para ver si Instagram respondió
+      if (!env.IG?.fetch) igHist = "el panel no está conectado al worker de Instagram";
+      else igHist = await env.IG.fetch(new Request(`https://instagram/historias?clave=${encodeURIComponent(env.VERIFY_TOKEN || "")}`)).then(async (r) => { const t = await r.text(); try { const j = JSON.parse(t); return j.error ? "error: " + j.error : "Instagram devolvió " + j.historias + " historias activas"; } catch { return "error " + r.status + ": " + t.slice(0, 120); } }).catch((e) => "error: " + e.message);
     }
-    return json(await objetivos(env));
+    return json({ ...(await objetivos(env)), igHist });
   }
   return json({ error: "ruta desconocida" });
 }
