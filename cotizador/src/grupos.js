@@ -12,6 +12,7 @@
 // NUNCA manda nada a WhatsApp: solo propone textos.
 // ============================================================================
 
+import { esquemaAlDia, marcarEsquema } from "./esquema.js";
 const AR = 3 * 3600e3;
 const diaAR = (ts = Date.now()) => new Date(ts - AR).toISOString().slice(0, 10);
 const fecha = (ts) => new Date(ts - AR).toISOString().slice(5, 10).split("-").reverse().join("/");
@@ -22,6 +23,7 @@ const RE_PROHIBIDO = /\bvap\w*|elf ?bar|\bignite\b|\bpods?\b|r[eé]plica|falsifi
 let listo = false;
 export async function prepararGrupos(env) {
   if (listo || !env.DB) return;
+  if (await esquemaAlDia(env, "grupos", prepararGrupos)) { listo = true; return; }
   await env.DB.batch([
     env.DB.prepare("CREATE TABLE IF NOT EXISTS g_estilo (id TEXT PRIMARY KEY, ts INTEGER, texto TEXT, fuente TEXT)"),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS g_estilo_ts ON g_estilo(ts)"),
@@ -30,6 +32,7 @@ export async function prepararGrupos(env) {
     env.DB.prepare("CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT, exp INTEGER)"),
   ]);
   listo = true;
+  await marcarEsquema(env, "grupos", prepararGrupos);
 }
 const kvGet = async (env, k) => (await env.DB.prepare("SELECT v FROM kv WHERE k=?").bind(k).first())?.v ?? null;
 const kvPut = (env, k, v) => env.DB.prepare("INSERT INTO kv (k,v,exp) VALUES (?,?,NULL) ON CONFLICT(k) DO UPDATE SET v=excluded.v, exp=NULL").bind(k, String(v)).run();

@@ -985,7 +985,15 @@ async function alertaRiesgo(env, de, e, motivo, forzar = false) {
 // Supervisor: cada pocas horas relee los chats que quedaron en silencio y juzga de quién fue la culpa
 async function supervisarChats(env, conIA = true) {
   const ahora = Date.now(), lote = [];
-  for (const k of (await env.ESTADO.list({ prefix: "v3:" })).keys) {
+  // Solo se miran los chats con un mensaje en las últimas 30 h (lo máximo que revisa el supervisor). Salen del índice "chats" con UNA consulta.
+  // Antes se leían todos los chats guardados uno por uno, cada 5 minutos: unas 100.000 llamadas a D1 por día (el 40% del total).
+  let claves;
+  try {
+    if (!env.DB) throw new Error("sin D1");
+    await prepararTablas(env);
+    claves = ((await env.DB.prepare("SELECT tel FROM chats WHERE cuando > ?").bind(ahora - 31 * 3600e3).all()).results || []).map((r) => ({ name: "v3:" + r.tel }));
+  } catch { claves = (await env.ESTADO.list({ prefix: "v3:" })).keys; }
+  for (const k of claves) {
     const tel = k.name.slice(3);
     if (esAdmin(env, tel)) continue;
     const e = JSON.parse((await env.ESTADO.get(k.name)) || "null");

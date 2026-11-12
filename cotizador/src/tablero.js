@@ -8,6 +8,7 @@ import { seguimientos, nombreDisp, cargarMapaEquipo, esBotTexto } from "./lector
 import { esCierre } from "./cierre.js";
 import { listarProspectos, editarProspecto } from "./prospeccion.js";
 import { estadoIA } from "./ia-alterna.js";
+import { esquemaAlDia, marcarEsquema, columnaYaEsta } from "./esquema.js";
 
 const AR = 3 * 3600e3, DIA = 86400e3;
 export const diaAR = (ts = Date.now()) => new Date(ts - AR).toISOString().slice(0, 10);
@@ -22,6 +23,7 @@ const RE_NO_VENDEMOS = /vap|elf ?bar|\bpods?\b/i;
 let listo = false;
 export async function prepararTablero(env) {
   if (listo) return;
+  if (await esquemaAlDia(env, "tablero", prepararTablero)) { listo = true; return; }
   await env.DB.batch([
     env.DB.prepare("CREATE TABLE IF NOT EXISTS eq_dia (dia TEXT, persona TEXT, chats INTEGER, mensajes INTEGER, act INTEGER, PRIMARY KEY (dia, persona))"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS ventas (id TEXT PRIMARY KEY, ts INTEGER, conv TEXT, nombre TEXT, producto TEXT, monto REAL, moneda TEXT, ganancia REAL, linea TEXT, quien TEXT, nota TEXT)"),
@@ -29,8 +31,10 @@ export async function prepararTablero(env) {
     env.DB.prepare("CREATE TABLE IF NOT EXISTS origenes (codigo TEXT PRIMARY KEY, nombre TEXT, canal TEXT, creado INTEGER, quien TEXT)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT, exp INTEGER)"),
   ]);
-  for (const col of ["origen_cod TEXT", "cierre_ts INTEGER", "nota TEXT", "nota_ts INTEGER", "nota_para TEXT", "nota_quien TEXT"]) await env.DB.prepare("ALTER TABLE w_conv ADD COLUMN " + col).run().catch(() => {});
+  let completo = true;
+  for (const col of ["origen_cod TEXT", "cierre_ts INTEGER", "nota TEXT", "nota_ts INTEGER", "nota_para TEXT", "nota_quien TEXT"]) await env.DB.prepare("ALTER TABLE w_conv ADD COLUMN " + col).run().catch((e) => { if (!columnaYaEsta(e)) completo = false; });
   listo = true;
+  if (completo) await marcarEsquema(env, "tablero", prepararTablero);   // si w_conv todavía no existía, se reintenta en el próximo arranque
 }
 const kvGet = async (env, k) => (await env.DB.prepare("SELECT v FROM kv WHERE k=?").bind(k).first().catch(() => null))?.v ?? null;
 const kvPut = (env, k, v) => env.DB.prepare("INSERT OR REPLACE INTO kv (k, v) VALUES (?, ?)").bind(k, String(v)).run();

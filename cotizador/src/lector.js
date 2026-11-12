@@ -1,6 +1,7 @@
 import { syncProspectos } from "./prospeccion.js";
 import { rutaAutoresp } from "./autoresp.js";
 import { esCierre } from "./cierre.js";
+import { esquemaAlDia, marcarEsquema } from "./esquema.js";
 // ============================================================================
 // LECTOR 805 — análisis de solo lectura del WhatsApp Business +54 9 341 805-1515
 // ----------------------------------------------------------------------------
@@ -46,6 +47,7 @@ const fechaHora = (ts) => new Date(ts - AR).toISOString().slice(5, 16).replace("
 let tablasLector = false;
 export async function prepararLector(env) {
   if (tablasLector || !env.DB) return;
+  if (await esquemaAlDia(env, "lector", prepararLector)) { tablasLector = true; return; }
   await env.DB.batch([
     env.DB.prepare("CREATE TABLE IF NOT EXISTS w_msg (id TEXT PRIMARY KEY, conv TEXT, grupo INTEGER, yo INTEGER, autor TEXT, autor_nombre TEXT, tipo TEXT, texto TEXT, ts INTEGER, hist INTEGER)"),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS w_msg_conv ON w_msg(conv, ts)"),
@@ -79,6 +81,7 @@ export async function prepararLector(env) {
   for (const q of ["CREATE INDEX IF NOT EXISTS w_hito_conv ON w_hito(conv, tipo, ts)", "CREATE INDEX IF NOT EXISTS w_conv_cierre ON w_conv(cierre_ts) WHERE cierre_ts IS NOT NULL",
     "CREATE INDEX IF NOT EXISTS w_conv_nota ON w_conv(nota_ts) WHERE nota IS NOT NULL AND nota<>''"]) await env.DB.prepare(q).run().catch(() => {});
   tablasLector = true;
+  await marcarEsquema(env, "lector", prepararLector);
 }
 
 // Corre la consulta usando el índice w_msg_priv; si el índice todavía no existe, corre la consulta normal (misma respuesta, más lenta)
