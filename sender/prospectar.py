@@ -6,7 +6,7 @@ La planilla (prospectos.csv, se abre con Excel) lleva estas columnas: telefono, 
   - mensaje: si está vacío lo escribe la IA en --prueba; si lo escribís o corregís vos, se manda tal cual.
   - estado: lo completa el programa (enviado DD/MM HH:MM, sin whatsapp, ya hablamos). Las filas con estado no se vuelven a mandar.
 Antes de usarlo cerrá responder.py (usan la misma ventana de WhatsApp). Para frenarlo: Ctrl+C, o un archivo STOP o PAUSA en esta carpeta."""
-import csv, random, sys, time
+import csv, random, re, sys, time
 from datetime import datetime
 from enviar import api, parar, AQUI, os
 from responder import escribir, dormir, pausado, igual_a_lo_escrito, borrar_caja, debug_pantalla, CAJA, VENTANA
@@ -83,9 +83,18 @@ def contestar(pg, r, texto, PWTimeout):
     except Exception as e:
         print(f"  No pude contestarle a {r['negocio']} ({str(e).splitlines()[0]})"); return False
 
-def revisar(filas, pg, PWTimeout):
+def reciente(r, dias=10):
+    m = re.match(r"enviado (\d{2})/(\d{2})", r["estado"])
+    if not m: return False
+    hoy = datetime.now()
+    try: f = datetime(hoy.year, int(m.group(2)), int(m.group(1)))
+    except ValueError: return False
+    if f > hoy: f = f.replace(year=hoy.year - 1)
+    return (hoy - f).days <= dias
+
+def revisar(filas, pg, PWTimeout, solo_recientes=False):
     """Entra SOLO a los chats de los negocios de la planilla a los que ya les mandamos, lee la charla y (si hay IA) arma estado, fecha de recontacto y próximo mensaje."""
-    lista = [r for r in filas if r["estado"].startswith("enviado")]
+    lista = [r for r in filas if r["estado"].startswith("enviado") and r["temperatura"] != "frio" and (not solo_recientes or reciente(r) or r["temperatura"] in ("caliente", "neutro"))]
     print(f"Reviso {len(lista)} chats de la planilla (no entro a ningún otro chat).")
     cambios = []
     for r in lista:
@@ -144,40 +153,65 @@ def main():
         pg.goto("https://web.whatsapp.com")
         print("Esperando WhatsApp Web (si pide QR, escanealo con el celular)...")
         pg.wait_for_selector("#pane-side", timeout=180000)
-        if modo_revisar or "--todo" in sys.argv: revisar(filas, pg, PWTimeout)   # --todo: primero mira las respuestas y después manda los nuevos
-        if modo_revisar: ctx.close(); return
-        if not pend: print("No quedan negocios nuevos en la planilla para mandar."); ctx.close(); return
-        print(f"\nAhora mando los mensajes nuevos (hasta {POR_DIA} por día).")
+        if modo_revisar: revisar(filas, pg, PWTimeout); ctx.close(); return
+        if "--todo" in sys.argv: bucle(filas, pg, PWTimeout); ctx.close(); return
         for r in pend:
             if parar() or pausado(): print("Frenado (STOP o PAUSA)."); break
             if enviados_hoy(filas) >= POR_DIA: print(f"Llegué al tope de {POR_DIA} por hoy. Mañana sigo con los que quedan."); break
-            while not (H_DESDE <= datetime.now().hour < H_HASTA):
-                print(f"{datetime.now():%H:%M} · fuera del horario comercial ({H_DESDE} a {H_HASTA} h): espero.")
-                if not dormir(600): return
-            print(f"\n{datetime.now():%H:%M} · {r['negocio'] or '?'} (+{r['telefono']})\n  {r['mensaje']}")
-            try:
-                pg.goto(f"https://web.whatsapp.com/send?phone={r['telefono']}")
-                try: pg.wait_for_selector(CAJA, timeout=45000)
-                except PWTimeout:
-                    r["estado"] = "sin whatsapp (v2)"; guardar(filas); print("  Ese número no tiene WhatsApp. Lo marco y sigo."); continue
-                if not dormir(random.uniform(3, 6)): return
-                if chat_con_historia(pg):
-                    r["estado"] = "ya hablamos (v2)"; guardar(filas); print("  Ya hay mensajes con este número: no le mando prospección."); continue
-                caja = pg.locator(CAJA).first
-                if caja.inner_text().strip(): borrar_caja(pg)
-                if not escribir(pg, caja, r["mensaje"]): return
-                time.sleep(random.uniform(1, 2.5))
-                if not igual_a_lo_escrito(pg, r["mensaje"]): borrar_caja(pg); print("  Alguien tocó la ventana mientras escribía: no lo mando."); continue
-                caja.press("Enter"); time.sleep(3)
-                if pg.locator(CAJA).first.inner_text().strip(): print("  No se envió (la caja sigue con texto)."); continue
-                r["estado"] = f"enviado {datetime.now():%d/%m %H:%M}"; guardar(filas)
-                print(f"  Enviado ✅  ({enviados_hoy(filas)}/{POR_DIA} hoy)")
-            except Exception as e:
-                debug_pantalla(pg, f"prospecto {r['telefono']}: {e}"); print(f"  Falló ({str(e).splitlines()[0]}). Sigo con el próximo."); continue
+            if not esperar_horario(): return
+            mandar_uno(pg, r, filas, PWTimeout)
             espera = random.uniform(PAUSA_MIN, PAUSA_MAX)
             print(f"  Próximo en {espera / 60:.0f} minutos.")
             if not dormir(espera): break
         ctx.close()
+
+def esperar_horario():
+    while not (H_DESDE <= datetime.now().hour < H_HASTA):
+        print(f"{datetime.now():%H:%M} · fuera del horario comercial ({H_DESDE} a {H_HASTA} h): espero.")
+        if not dormir(600): return False
+    return True
+
+def mandar_uno(pg, r, filas, PWTimeout):
+    print(f"\n{datetime.now():%H:%M} · {r['negocio'] or '?'} (+{r['telefono']})\n  {r['mensaje']}")
+    try:
+        pg.goto(f"https://web.whatsapp.com/send?phone={r['telefono']}")
+        try: pg.wait_for_selector(CAJA, timeout=45000)
+        except PWTimeout:
+            r["estado"] = "sin whatsapp (v2)"; guardar(filas); print("  Ese número no tiene WhatsApp. Lo marco y sigo."); return
+        if not dormir(random.uniform(3, 6)): return
+        if chat_con_historia(pg):
+            r["estado"] = "ya hablamos (v2)"; guardar(filas); print("  Ya hay mensajes con este número: no le mando prospección."); return
+        caja = pg.locator(CAJA).first
+        if caja.inner_text().strip(): borrar_caja(pg)
+        if not escribir(pg, caja, r["mensaje"]): return
+        time.sleep(random.uniform(1, 2.5))
+        if not igual_a_lo_escrito(pg, r["mensaje"]): borrar_caja(pg); print("  Alguien tocó la ventana mientras escribía: no lo mando."); return
+        caja.press("Enter"); time.sleep(3)
+        if pg.locator(CAJA).first.inner_text().strip(): print("  No se envió (la caja sigue con texto)."); return
+        r["estado"] = f"enviado {datetime.now():%d/%m %H:%M}"; guardar(filas)
+        print(f"  Enviado ✅  ({enviados_hoy(filas)}/{POR_DIA} hoy)")
+    except Exception as e:
+        debug_pantalla(pg, f"prospecto {r['telefono']}: {e}"); print(f"  Falló ({str(e).splitlines()[0]}). Sigo con el próximo.")
+
+REVISAR_CADA = int(os.environ.get("PROSP_REVISAR_MIN", "40")) * 60   # cada cuánto mira (y contesta) las respuestas
+
+def bucle(filas, pg, PWTimeout):
+    """Modo todo-en-uno: corre hasta que lo frenes. Cada 40 min mira quién contestó y le responde; entre medio manda prospección nueva (tope por día)."""
+    ult = 0
+    print(f"Modo automático: prospecta (hasta {POR_DIA} por día) y contesta a los que responden, de {H_DESDE} a {H_HASTA} h. Para frenarlo: cerrá esta ventana o pausar.bat.")
+    while True:
+        if parar() or pausado(): print("Frenado (STOP o PAUSA)."); return
+        if not esperar_horario(): return
+        if time.time() - ult > REVISAR_CADA:
+            revisar(filas, pg, PWTimeout, solo_recientes=True); ult = time.time()
+        pend = [r for r in filas if r["telefono"] and r["mensaje"] and not r["estado"]]
+        if pend and enviados_hoy(filas) < POR_DIA:
+            mandar_uno(pg, pend[0], filas, PWTimeout)
+            espera = random.uniform(PAUSA_MIN, PAUSA_MAX)
+        else:
+            espera = 600
+            print(f"{datetime.now():%H:%M} · " + ("Tope de hoy cumplido" if pend else "No quedan negocios nuevos en la planilla") + ": sigo atento a las respuestas.")
+        if not dormir(espera): return
 
 if __name__ == "__main__":
     main()
