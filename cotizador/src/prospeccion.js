@@ -24,14 +24,14 @@ export async function syncProspectos(env, filas, quien) {
   await tabla(env);
   const l = (Array.isArray(filas) ? filas : []).map((f) => ({ ...f, tel: String(f.telefono || f.tel || "").replace(/\D/g, "") })).filter((f) => f.tel.length >= 8 && f.estado).slice(0, 400);
   const ahora = Date.now();
-  const stmts = l.map((f) => env.DB.prepare(`INSERT INTO prospectos (tel, negocio, rubro, ciudad, estado, enviado_ts, respuesta, temperatura, recontacto, proximo_mensaje, le_contestamos, quien, act_ts)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(tel) DO UPDATE SET negocio=excluded.negocio, rubro=excluded.rubro, ciudad=excluded.ciudad, estado=excluded.estado,
+  const stmts = l.map((f) => env.DB.prepare(`INSERT INTO prospectos (tel, negocio, rubro, ciudad, estado, enviado_ts, respuesta, temperatura, recontacto, proximo_mensaje, le_contestamos, quien, act_ts, nota)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(tel) DO UPDATE SET negocio=excluded.negocio, rubro=excluded.rubro, ciudad=excluded.ciudad, estado=excluded.estado,
       enviado_ts=COALESCE(excluded.enviado_ts, prospectos.enviado_ts), respuesta=COALESCE(NULLIF(excluded.respuesta,''), prospectos.respuesta),
             -- temperatura/fecha/próximo mensaje: solo se pisan cuando llega una respuesta nueva (así no se pierde lo que se editó en el panel)
-      temperatura=CASE WHEN excluded.respuesta<>'' AND excluded.respuesta IS NOT prospectos.respuesta THEN excluded.temperatura ELSE COALESCE(prospectos.temperatura, NULLIF(excluded.temperatura,'')) END, recontacto=CASE WHEN excluded.respuesta<>'' AND excluded.respuesta IS NOT prospectos.respuesta THEN excluded.recontacto ELSE COALESCE(prospectos.recontacto, NULLIF(excluded.recontacto,'')) END, proximo_mensaje=CASE WHEN excluded.respuesta<>'' AND excluded.respuesta IS NOT prospectos.respuesta THEN excluded.proximo_mensaje ELSE COALESCE(prospectos.proximo_mensaje, NULLIF(excluded.proximo_mensaje,'')) END, le_contestamos=COALESCE(NULLIF(excluded.le_contestamos,''), prospectos.le_contestamos),
+      temperatura=CASE WHEN excluded.respuesta<>'' AND excluded.respuesta IS NOT prospectos.respuesta THEN excluded.temperatura ELSE COALESCE(prospectos.temperatura, NULLIF(excluded.temperatura,'')) END, recontacto=CASE WHEN excluded.respuesta<>'' AND excluded.respuesta IS NOT prospectos.respuesta THEN excluded.recontacto ELSE COALESCE(prospectos.recontacto, NULLIF(excluded.recontacto,'')) END, proximo_mensaje=CASE WHEN excluded.respuesta<>'' AND excluded.respuesta IS NOT prospectos.respuesta THEN excluded.proximo_mensaje ELSE COALESCE(prospectos.proximo_mensaje, NULLIF(excluded.proximo_mensaje,'')) END, le_contestamos=COALESCE(NULLIF(excluded.le_contestamos,''), prospectos.le_contestamos), nota=CASE WHEN excluded.respuesta<>'' AND excluded.respuesta IS NOT prospectos.respuesta AND excluded.nota<>'' THEN excluded.nota ELSE COALESCE(NULLIF(prospectos.nota,''), NULLIF(excluded.nota,'')) END,
       quien=excluded.quien, act_ts=CASE WHEN prospectos.estado IS excluded.estado AND COALESCE(prospectos.respuesta,'') = COALESCE(NULLIF(excluded.respuesta,''), prospectos.respuesta, '') THEN prospectos.act_ts ELSE excluded.act_ts END`)
     .bind(f.tel, corto(f.negocio, 120), corto(f.rubro, 80), corto(f.ciudad, 80), corto(f.estado, 60), tsEnviado(f.estado, ahora), corto(f.respuesta), corto(f.temperatura, 20),
-      corto(f.recontacto, 10), corto(f.proximo_mensaje), corto(f.le_contestamos), corto(quien, 40), ahora));
+      corto(f.recontacto, 10), corto(f.proximo_mensaje), corto(f.le_contestamos), corto(quien, 40), ahora, corto(f.nota, 300)));
   for (let i = 0; i < stmts.length; i += 50) await env.DB.batch(stmts.slice(i, i + 50));
   return { guardados: stmts.length };
 }
@@ -41,13 +41,22 @@ export async function listarProspectos(env) {
   const filas = (await env.DB.prepare("SELECT * FROM prospectos ORDER BY act_ts DESC LIMIT 1000").all()).results || [];
   const hoy = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
   const r = { total: filas.length, enviados: 0, respondieron: 0, caliente: 0, neutro: 0, frio: 0, paraHoy: 0, sinWhatsapp: 0, hoy };
+  const sinResp = [];
   for (const f of filas) {
+    // Enviado y sin respuesta: se completa solo (recontacto a los 3 días del envío, nota y próximo mensaje). Lo editado a mano no se toca.
+    if (String(f.estado).startsWith("enviado") && !f.respuesta && f.enviado_ts && !f.recontacto && !f.nota && !f.le_contestamos) {
+      f.recontacto = new Date(f.enviado_ts - 3 * 3600e3 + 3 * 864e5).toISOString().slice(0, 10);
+      f.nota = "Sin respuesta todavía. Si no contesta, segundo mensaje en la fecha.";
+      f.proximo_mensaje = f.proximo_mensaje || `hola, cómo va? te había escrito por lo de importar desde China para ${f.rubro ? "productos de " + String(f.rubro).toLowerCase() : "el negocio"}, pudiste verlo?`;
+      sinResp.push(f);
+    }
     if (String(f.estado).startsWith("enviado")) r.enviados++;
     if (/sin whatsapp/.test(f.estado || "")) r.sinWhatsapp++;
     if (f.respuesta) r.respondieron++;
     if (r[f.temperatura] != null) r[f.temperatura]++;
     if (f.recontacto && f.recontacto <= hoy && f.temperatura !== "frio") r.paraHoy++;
   }
+  for (let i = 0; i < sinResp.length; i += 50) await env.DB.batch(sinResp.slice(i, i + 50).map((f) => env.DB.prepare("UPDATE prospectos SET recontacto=?, nota=?, proximo_mensaje=? WHERE tel=? AND COALESCE(recontacto,'')='' AND COALESCE(nota,'')=''").bind(f.recontacto, f.nota, f.proximo_mensaje, f.tel))).catch(() => {});
   return { resumen: r, prospectos: filas };
 }
 

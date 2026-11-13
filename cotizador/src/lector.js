@@ -1280,11 +1280,44 @@ Para cada uno decidí:
 - "proximo_mensaje": el mensaje para el día de recontacto (vacío si es frío). Retomá lo que dijo, corto, rioplatense, voseo, sin ¿ ni ¡, sin emojis, una sola pregunta. Ej: "hola, cómo va? me habías dicho que para hoy tenían una respuesta, pudieron ver lo de la importación?". No inventes precios ni promesas.
 CHATS:
 ${l.map((c, i) => `#${i + 1} ${String(c.negocio || "").slice(0, 60)} (${String(c.rubro || "").slice(0, 40)})\n${(Array.isArray(c.charla) ? c.charla : []).slice(-12).map((m) => `${m.cuando || ""} ${m.yo ? "Nosotros" : "Ellos"}: ${String(m.texto || "").replace(/\s+/g, " ").slice(0, 300)}`).join("\n")}`).join("\n\n")}
-Respondé SOLO JSON: {"chats":[{"n":1,"temperatura":"neutro","recontacto":"AAAA-MM-DD","responder":"...","proximo_mensaje":"..."}]}`, { prioridad: true }).catch(() => null);
+- "nota": una línea para el equipo con lo que dijo y qué hay que hacer (ej. "pidió precio de vasos térmicos x100, falta link").
+Respondé SOLO JSON: {"chats":[{"n":1,"temperatura":"neutro","recontacto":"AAAA-MM-DD","responder":"...","proximo_mensaje":"...","nota":"..."}]}`, { prioridad: true }).catch(() => null);
+  // Sin IA (sin cupo): se clasifica con reglas simples para que igual queden temperatura, fecha, nota y próximo mensaje
+  const base = r?.chats?.length ? r : { chats: l.map((c, i) => ({ n: i + 1, ...prospectoSinIA(c, hoy) })) };
   const ok = (t) => (["caliente", "neutro", "frio"].includes(t) ? t : "neutro");
   const limpiar = (t) => String(t || "").replace(/[¿¡]/g, "").replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, "").replace(/ {2,}/g, " ").trim().slice(0, 600);
-  return { chats: (r?.chats || []).map((x) => ({ n: +x.n, responder: limpiar(x.responder), temperatura: ok(String(x.temperatura || "").toLowerCase().replace("í", "i")), recontacto: /^\d{4}-\d{2}-\d{2}$/.test(String(x.recontacto || "")) ? x.recontacto : "",
+  return { chats: (base.chats || []).map((x) => ({ n: +x.n, nota: limpiar(x.nota).slice(0, 300), responder: limpiar(x.responder), temperatura: ok(String(x.temperatura || "").toLowerCase().replace("í", "i")), recontacto: /^\d{4}-\d{2}-\d{2}$/.test(String(x.recontacto || "")) ? x.recontacto : "",
     proximo_mensaje: String(x.proximo_mensaje || "").replace(/[¿¡]/g, "").replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, "").replace(/ {2,}/g, " ").trim().slice(0, 600) })).filter((x) => x.n) };
+}
+
+export function prospectoSinIA(c, hoy) {
+  const charla = Array.isArray(c?.charla) ? c.charla : [], ellos = charla.filter((m) => !m.yo);
+  const txt = ellos.slice(-3).map((m) => String(m.texto || "")).join(" ").toLowerCase(), ult = charla[charla.length - 1];
+  const d0 = /^\d{4}-\d{2}-\d{2}$/.test(String(hoy || "").slice(0, 10)) ? new Date(String(hoy).slice(0, 10) + "T12:00:00Z") : new Date(Date.now() - 3 * 3600e3);
+  const mas = (n) => new Date(d0.getTime() + n * 864e5).toISOString().slice(0, 10);
+  let temp = "neutro";
+  if (/no (me|nos) interesa|no gracias|no, gracias|ya importamos|ya importo|ya tenemos proveedor|no nos escrib|no me escrib|no molest|dar de baja|borr(a|á)me/.test(txt)) temp = "frio";
+  else if (/precio|cu[aá]nto|cotiz|presupuesto|me interesa|nos interesa|quiero|cantidad|unidades|m[ií]nimo|link|alibaba/.test(txt)) temp = "caliente";
+  let fecha = temp === "caliente" ? mas(1) : temp === "neutro" ? mas(4) : "";
+  const dias = ["domingo", "lunes", "martes", "mi[eé]rcoles", "jueves", "viernes", "s[aá]bado"];
+  if (temp !== "frio") {
+    if (/pasado mañana/.test(txt)) fecha = mas(2); else if (/mañana/.test(txt)) fecha = mas(1);
+    else if (/semana que viene|pr[oó]xima semana/.test(txt)) fecha = mas(7);
+    else if (/fin de mes|principio de mes|mes que viene/.test(txt)) fecha = mas(14);
+    else { const i = dias.findIndex((d) => new RegExp(`\\b${d}\\b`).test(txt)); if (i >= 0) fecha = mas(((i - d0.getUTCDay() + 7) % 7) || 7);
+      else { const m = txt.match(/\bel (\d{1,2})\b/); if (m && +m[1] >= 1 && +m[1] <= 31) { let t = new Date(Date.UTC(d0.getUTCFullYear(), d0.getUTCMonth(), +m[1], 12)); if (t <= d0) t = new Date(Date.UTC(d0.getUTCFullYear(), d0.getUTCMonth() + 1, +m[1], 12)); fecha = t.toISOString().slice(0, 10); } } }
+  }
+  const soloOk = /^[\s.!👍🙏😊🙂👌]*(ok|oka|okey|dale|gracias|graciass|genial|perfecto|listo|joya|👍|🙏)?[\s.!👍🙏😊🙂👌]*$/i.test(String(ellos[ellos.length - 1]?.texto || ""));
+  const pideInfo = /info|c[oó]mo (es|funciona|trabajan)|de qu[eé] se trata|qu[eé] hacen|expl/.test(txt);
+  let responder = "";
+  if (ult && !ult.yo && !soloOk) responder = temp === "frio" ? "Dale, gracias por responder. Cualquier cosa estamos por acá."
+    : temp === "caliente" || pideInfo ? "Buenísimo. Nosotros buscamos el fabricante en China, compramos, importamos y nos encargamos de aduana y envío, y te pasamos el costo final puesto acá. Pasame el producto (link de Alibaba o una foto) y la cantidad que querés y te lo cotizo."
+    : "";
+  const dijo = String(ellos[ellos.length - 1]?.texto || "").replace(/\s+/g, " ").slice(0, 120);
+  const nota = `${temp === "caliente" ? "Interesado" : temp === "frio" ? "No le interesa" : "Respondió, a seguir"}: "${dijo}"${temp === "caliente" ? " · pedirle producto y cantidad" : ""} (sin IA)`;
+  const proximo_mensaje = temp === "frio" ? "" : temp === "caliente" ? "hola, cómo va? pudiste ver qué producto y qué cantidad querías traer? así te armo la cotización"
+    : "hola, cómo va? te escribo por lo de importar desde China, pudieron verlo?";
+  return { temperatura: temp, recontacto: fecha, responder, proximo_mensaje, nota };
 }
 
 // Seguimientos escritos desde afuera (otra IA, ej. Claude con el token del lector) cuando la IA del worker no tiene cupo:

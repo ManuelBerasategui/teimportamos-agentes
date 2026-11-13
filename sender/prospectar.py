@@ -41,7 +41,7 @@ QUIEN = os.environ.get("PROSP_QUIEN") or os.environ.get("COMPUTERNAME", "pc")
 
 def sincronizar(filas):
     """Sube al panel (pestaña Prospección) las filas que ya tienen estado. Si falla, no frena nada."""
-    l = [{k: r.get(k, "") for k in COLS} for r in filas if r.get("estado")]
+    l = [{**{k: r.get(k, "") for k in COLS}, "nota": r.get("_nota", "")} for r in filas if r.get("estado")]  # la nota de la planilla es info del negocio; al panel va la nota del análisis
     try:
         for i in range(0, len(l), 200): api("/enviar/prospectos-sync", {"filas": l[i:i + 200], "quien": QUIEN})
     except Exception as e: print(f"(No pude actualizar el panel: {str(e).splitlines()[0]}. Sigo igual.)")
@@ -129,13 +129,14 @@ def revisar(filas, pg, PWTimeout, solo_recientes=False):
         for x in res:
             if 1 <= x.get("n", 0) <= len(parte):
                 r, _, espera = parte[x["n"] - 1]
-                r["temperatura"], r["recontacto"], r["proximo_mensaje"] = x.get("temperatura", ""), x.get("recontacto", ""), x.get("proximo_mensaje", "")
+                r["temperatura"], r["recontacto"], r["proximo_mensaje"], r["_nota"] = x.get("temperatura", ""), x.get("recontacto", ""), x.get("proximo_mensaje", ""), x.get("nota", "") or r.get("_nota", "")
                 print(f"  {r['negocio']}: {r['temperatura']} · recontacto {r['recontacto'] or '-'}\n    {r['proximo_mensaje']}")
                 txt = x.get("responder", "").strip()
                 if espera and txt:
                     if not AUTORESP: print(f"    Respuesta sugerida (no la mando, PROSP_AUTORESP=0): {txt}"); continue
                     if contestar(pg, r, txt, PWTimeout): r["le_contestamos"] = f"{datetime.now():%d/%m %H:%M}: {txt}"[:500]; print(f"    Le contesté: {txt}")
         guardar(filas)
+    sincronizar(filas)
     hoy = datetime.now().strftime("%Y-%m-%d")
     toca = [r for r in filas if r["recontacto"] and r["recontacto"] <= hoy]
     print(f"\nListo. {len(cambios)} respuestas nuevas. Para recontactar hoy o atrasados: {len(toca)}")
