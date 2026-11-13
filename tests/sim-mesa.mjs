@@ -75,6 +75,15 @@ chk("texto de hechos con todas las secciones", /EMBUDO 7 DÍAS/.test(txt) && /VE
 chk("virales de otras cuentas y guiones propios llegan al agente de Redes", hh.redes.virales.length === 1 && hh.redes.virales[0].veces === 20 && /VIRALES DE OTRAS CUENTAS/.test(txt) && /DICE: Compré doscientos termos/.test(txt) && /GUION: Vendí cien tarjetas/.test(txt));
 chk("métricas medibles", M.medir(hh, "ventas_7d") === 1 && M.medir(hh, "seg_resp_A_pct") === 50 && M.medir(hh, "inventada") === null);
 
+// Ventas: un cliente viejo que manda un comprobante (saldo) NO es una venta nueva; "No fue venta" saca la señal de las cuentas
+conv("5493410000020", { nombre: "ClienteViejo", perfil: "B", producto: "perfumes", etapa: "vendido", primer: h(90), cli: h(1), yo: h(1), ult_yo: 1 });
+hito("5493410000020", "venta", h(70)); hito("5493410000020", "comprobante", h(1));
+conv("5493410000022", { nombre: "ViejoSinHistoria", perfil: "C", producto: "parlantes", etapa: "consulta", primer: h(120), cli: h(2), yo: h(2), ult_yo: 1 });
+hito("5493410000022", "comprobante", h(2));
+const hv = await M.hechos(env);
+chk("pagos de clientes anteriores no cuentan como venta nueva", hv.embudo.v7.ventas === 1 && hv.embudo.v7.ventas_confirmadas === 0 && !hv.ventas.detectadas_sin_cargar.some((v) => /Viejo/.test(v.nombre)) && hv.ventas.movimientos_clientes_anteriores.length === 2 && /SIN CONFIRMAR/.test(M.textoHechos(hv, ["embudo"])) && /NO son ventas nuevas/.test(M.textoHechos(hv, ["embudo"])));
+chk("chats esperando respuesta: total y con pregunta, por separado", hv.esperando_total >= hv.pendientes.length && /CHATS ESPERANDO RESPUESTA NUESTRA/.test(M.textoHechos(hv, ["whatsapp"])));
+
 // 2) Corrida completa con IA simulada
 const prompts = [];
 const ia = async (_e, p) => {
@@ -121,11 +130,17 @@ const q2 = await M.preguntarMesa(env, ia, "qué grabo?", "redes");
 chk("se puede hablar con un agente solo (con su manual y sin asteriscos)", q2.agente === "redes" && q2.respuesta === "El reel de NFC trajo 2 chats." && q2.seguir.length === 1 && /CRITERIO DE CONTENIDO/.test(prompts.at(-1)) && !/CRITERIO DE VENTAS POR CHAT/.test(prompts.at(-1)) && db.prepare("SELECT agente FROM mesa_chat ORDER BY id DESC LIMIT 1").get().agente === "redes");
 chk("consultas a la base: solo lectura y solo los tipos conocidos", (await M.ejecutarConsulta(env, { tipo: "borrar_todo", q: "x" })) === null && /Caro/.test(await M.ejecutarConsulta(env, { tipo: "clientes_producto", q: "viales" })) && /Dani.*motivo: caro/.test(await M.ejecutarConsulta(env, { tipo: "perdidos" })) && /otro\.importador.*20x seguidores/.test(await M.ejecutarConsulta(env, { tipo: "virales", q: "termos" })) && /TikTok.*GUION: Vendí cien/.test(await M.ejecutarConsulta(env, { tipo: "videos" })) && /cuanto salen 100 nfc/.test(await M.ejecutarConsulta(env, { tipo: "buscar_mensajes", q: "nfc" })));
 
+chk("consultas nuevas: lista de pendientes con número y ventas separadas", /\+5493410000001 · Beto/.test(await M.ejecutarConsulta(env, { tipo: "pendientes" })) && /DETECTADAS SIN CONFIRMAR.*Caro/.test(await M.ejecutarConsulta(env, { tipo: "ventas" })) && /PAGOS DE CLIENTES ANTERIORES.*ClienteViejo/.test(await M.ejecutarConsulta(env, { tipo: "ventas" })));
+const ideas = db.prepare("SELECT * FROM mesa_ideas ORDER BY ts").all();
+chk("las ideas de cada corrida quedan guardadas sin repetirse", ideas.length === 2 && ideas.some((i) => i.agente === "redes" && /otro reel de NFC/.test(i.texto)) && ideas.every((i) => i.estado === "nueva"));
+
 // 5) Estado para el panel y API
 const est = await M.estadoMesa(env);
 chk("estado: informes, hipótesis, hechos resumidos y última corrida", est.informes.integrador && est.hipotesis.length === 3 && est.hechos.embudo.nuevos === 6 && est.ultima.motivo === "panel" && est.informes.debate.datos.turnos.length === 4 && est.virales.lista.length === 1 && est.virales.fuentes.hashtags.length > 3 && est.chat.at(-1).agente === "redes");
 const api = async (m, b) => (await M.apiMesa(env, { method: m, json: async () => { throw new Error("cuerpo ya leído"); } }, new URL("https://x/panel/p/api/mesa"), ia, b)).json();   // como en apiTablero: el cuerpo llega leído
 chk("API: descartar una hipótesis", (await api("POST", { accion: "hipotesis", id: hips[0].id, estado: "descartada" })).ok && db.prepare("SELECT estado FROM mesa_hip WHERE id=?").get(hips[0].id).estado === "descartada");
+chk("API: marcar ideas y los agentes lo leen en la corrida siguiente", (await api("POST", { accion: "idea", id: ideas[0].id, estado: "descartada", nota: "ya lo hago" })).ok && (await api("POST", { accion: "idea", id: ideas[1].id, estado: "util" })).ok && /IDEAS QUE MANUEL DESCARTÓ.*motivo: ya lo hago/.test(M.textoHechos(await M.hechos(env))) && /IDEAS QUE MANUEL MARCÓ COMO ÚTILES/.test(M.textoHechos(await M.hechos(env))) && (await M.estadoMesa(env)).ideas.length === 1);
+chk("API: No fue venta saca la señal", (await api("POST", { accion: "venta_no", conv: "5493410000004" })).ok && !(await M.hechos(env)).ventas.detectadas_sin_cargar.some((v) => v.nombre === "Caro") && (await api("POST", { accion: "venta_no", conv: "x'; DROP" })).error);
 chk("API: elegir hashtags y cuentas de los virales y pedir una lectura", (await api("POST", { accion: "fuentes", hashtags: "#importar, alibaba alibaba", perfiles: "@otro.importador" })).fuentes.hashtags.join() === "importar,alibaba" && JSON.parse(db.prepare("SELECT v FROM kv WHERE k='virales_fuentes'").get().v).perfiles[0] === "otro.importador" && (await api("POST", { accion: "virales_leer" })).ok && (await M.estadoMesa(env)).virales.leyendo === true);
 chk("API: tendencias de Mercado Libre desde la PC", (await M.guardarML(env, { items: [{ palabra: "tarjetas nfc", puesto: 1, resultados: 1200, precio_min: 3000, precio_max: 9000, vendidos: "+500 vendidos", top: [{ titulo: "Tarjeta NFC", precio: 3500, vendidos: "+500" }] }] })).guardadas === 1 && /MERCADO LIBRE \(leído/.test(M.textoHechos(await M.hechos(env), ["productos"])));
 
@@ -134,8 +149,10 @@ kv.clear(); db.exec("DELETE FROM kv WHERE k LIKE 'mesa_%'"); env.__captura.lengt
 const ar = (hh2, mm) => { const d = new Date(); d.setUTCHours(hh2 + 3, mm, 0, 0); return d.getTime(); };
 await M.cronMesa(env, ia, ar(6, 10)); chk("06:10 corre", env.__captura.length === 1 && /arranque del día/.test(env.__captura[0]));
 await M.cronMesa(env, ia, ar(9, 10)); chk("09:10 no repite", env.__captura.length === 1);
-await M.cronMesa(env, ia, ar(20, 30)); chk("20:30 cierra el día", env.__captura.length === 2 && /cierre del día/.test(env.__captura[1]));
-await M.cronMesa(env, ia, ar(22, 30)); chk("no hay tercera", env.__captura.length === 2);
+await M.cronMesa(env, ia, ar(13, 30)); chk("13:30 corrida de mediodía", env.__captura.length === 2 && /mediodía/.test(env.__captura[1]));
+await M.cronMesa(env, ia, ar(15, 30)); chk("15:30 no repite", env.__captura.length === 2);
+await M.cronMesa(env, ia, ar(20, 30)); chk("20:30 cierra el día", env.__captura.length === 3 && /cierre del día/.test(env.__captura[2]));
+await M.cronMesa(env, ia, ar(22, 30)); chk("no hay cuarta", env.__captura.length === 3);
 
 // 7) Seguimientos A/B: plan fijo por cliente, la PC lo ve y el log lo guarda
 chk("plan por último dígito", L.plantillaSeg("5493410000002") === "A" && L.plantillaSeg("5493410000001") === "B");
@@ -143,7 +160,7 @@ chk("borradores distintos por plan", /alternativa/.test(L.borradorBase({ nombre:
 
 // 8) El panel tiene la pestaña Mesa y su JS compila
 const { PANEL_P } = await import(dir + "/panel-p.js");
-chk("pestaña Mesa", PANEL_P.includes('data-v="mesa"') && PANEL_P.includes('id="v-mesa"') && PANEL_P.includes('id="mesaCorrer"') && PANEL_P.includes('id="mesaEnv"') && PANEL_P.includes('id="mesaQuien"') && PANEL_P.includes('id="mesaDebate"') && PANEL_P.includes('id="mesaVir"') && !PANEL_P.includes('data-v="ag"'));
+chk("pestaña Mesa", PANEL_P.includes('data-v="mesa"') && PANEL_P.includes('id="v-mesa"') && PANEL_P.includes('id="mesaCorrer"') && PANEL_P.includes('id="mesaEnv"') && PANEL_P.includes('id="mesaQuien"') && PANEL_P.includes('id="mesaDebate"') && PANEL_P.includes('id="mesaVir"') && PANEL_P.includes('id="mesaIdeas"') && PANEL_P.includes('id="mesaVentas"') && !PANEL_P.includes('data-v="ag"'));
 chk("la pestaña Agentes es la primera y la que abre por defecto", /<nav id="tabs"><button data-v="mesa" class="on">Agentes/.test(PANEL_P) && PANEL_P.includes('|| "mesa"'));
 new Function(PANEL_P.match(/<script>([\s\S]*)<\/script>/)[1]);   // el JS del panel compila
 console.log(`\nsim-mesa: ${ok} ok, ${mal} fallas`); if (mal) throw new Error("simulations failed");

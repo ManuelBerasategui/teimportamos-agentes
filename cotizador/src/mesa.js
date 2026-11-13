@@ -35,7 +35,9 @@ export async function prepararMesa(env) {
     env.DB.prepare("CREATE TABLE IF NOT EXISTS w_seg_log (id TEXT PRIMARY KEY, conv TEXT, ts INTEGER, toque INTEGER, situacion TEXT, quien TEXT, texto TEXT)"),
   ]);
   await env.DB.prepare("ALTER TABLE w_seg_log ADD COLUMN plantilla TEXT").run().catch(() => {});
-  await env.DB.prepare("ALTER TABLE mesa_chat ADD COLUMN agente TEXT").run().catch(() => {});   // con quién fue la charla: mesa, whatsapp, redes o productos   // plan A/B de cada seguimiento (lo escribe logSeg)
+  await env.DB.prepare("ALTER TABLE mesa_chat ADD COLUMN agente TEXT").run().catch(() => {});
+  // Ideas que los agentes van dejando en cada corrida. estado: nueva | util | hecha | descartada (lo marca el dueño y los agentes aprenden de eso)
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS mesa_ideas (id TEXT PRIMARY KEY, ts INTEGER, dia TEXT, agente TEXT, texto TEXT, estado TEXT DEFAULT 'nueva', nota TEXT)").run().catch(() => {});   // con quién fue la charla: mesa, whatsapp, redes o productos   // plan A/B de cada seguimiento (lo escribe logSeg)
   listo = true;
 }
 
@@ -50,6 +52,7 @@ export const METRICAS = {
   resp_humana_p50_min: { que: "mediana de minutos hasta la primera respuesta humana", f: (h) => h.respuesta.p50 },
   resp_mas_1h_pct: { que: "% de primeras respuestas humanas que tardaron más de 1 hora", f: (h) => h.respuesta.mas_1h_pct },
   preguntas_sin_responder: { que: "preguntas de clientes sin responder hace más de 24 h", f: (h) => h.pendientes.length },
+  ventas_confirmadas_7d: { que: "ventas cargadas con el botón Vendido en 7 días", f: (h) => h.embudo.v7.ventas_confirmadas },
   cotizados_sin_resp_48h_pct: { que: "% de cotizaciones sin respuesta del cliente a las 48 h (7 días)", f: (h) => h.cotizaciones.sin_resp_pct },
   seg_resp_48h_pct: { que: "% de seguimientos que el cliente contestó en 48 h (14 días)", f: (h) => h.seguimientos.total.resp_pct },
   seg_resp_A_pct: { que: "% de respuesta de los seguimientos plan A (14 días)", f: (h) => h.seguimientos.A.resp_pct },
@@ -66,9 +69,9 @@ export async function hechos(env, { dias = 14 } = {}) {
   await prepararMesa(env);
   const ahora = Date.now(), hoy = diaAR(ahora);
   const s7 = ahora - 7 * DIA, s14 = ahora - 14 * DIA, s30 = ahora - 30 * DIA, desde = ahora - Math.max(14, dias) * DIA;
-  const [convs, hitos, ventasCargadas, segLog, msgs7, grupos, ig, tt, prospectos, eq, mem, mlRaw, refs, vir] = await Promise.all([
+  const [convs, hitos, ventasCargadas, segLog, msgs7, grupos, ig, tt, prospectos, eq, mem, mlRaw, refs, vir, hitosVenta, ideasPrev] = await Promise.all([
     todas(env, "SELECT conv, nombre, primer_ts, ult_ts, ult_yo, ult_cliente_ts, ult_yo_ts, ult_texto, perfil, presup_usd, producto, etapa, motivo, origen, cierre_ts, puntaje FROM w_conv WHERE grupo=0 AND COALESCE(prov,0)=0 AND COALESCE(archivado,0)=0 AND (primer_ts>=? OR ult_ts>=?)", s30, s30),
-    todas(env, "SELECT conv, tipo, ts, dato FROM w_hito WHERE ts>=? AND tipo IN ('cotizacion','venta','comprobante')", s30),
+    todas(env, "SELECT conv, tipo, ts, dato FROM w_hito WHERE ts>=? AND tipo='cotizacion'", s30 - 45 * DIA),
     todas(env, "SELECT ts, conv, nombre, producto, monto, moneda, ganancia, linea FROM ventas WHERE ts>=? ORDER BY ts DESC", s30),
     todas(env, "SELECT conv, ts, toque, situacion, quien, texto, plantilla FROM w_seg_log WHERE ts>=?", s14),
     todas(env, "SELECT conv, yo, texto, ts FROM w_msg INDEXED BY w_msg_priv WHERE ts>=? AND grupo=0 AND hist=0 ORDER BY conv, ts LIMIT 12000", s7),
@@ -81,23 +84,46 @@ export async function hechos(env, { dias = 14 } = {}) {
     kvGet(env, "ml_tendencias"),
     todas(env, "SELECT ts, link, nicho, que_pasa, por_que FROM ig_refs WHERE que_pasa<>'' ORDER BY ts DESC LIMIT 12"),
     todas(env, "SELECT id, ts, autor, link, texto, vistas, compartidos, guardados, seguidores, fuente, guion FROM virales WHERE ts>=? ORDER BY vistas DESC LIMIT 14", ahora - 45 * DIA),   // lo lee el worker buscador (virales.js); si la tabla no existe todavía, queda vacío
+    todas(env, "SELECT conv, tipo, ts, dato FROM w_hito WHERE (tipo IN ('venta','comprobante') AND COALESCE(oculto,0)=0) OR tipo='no_venta' ORDER BY ts"),   // todas las señales de pago de la historia: hacen falta para saber cuál es la PRIMERA de cada cliente
+    todas(env, "SELECT agente, texto, estado, nota FROM mesa_ideas ORDER BY ts DESC LIMIT 60"),
   ]);
   const porConv = Object.fromEntries(convs.map((c) => [c.conv, c]));
   const activo = (c) => !["perdido", "vendido", "no_cliente"].includes(c.etapa);
 
   // --- Embudo por ventana: chats nuevos, cotizados (hito), ventas (cargadas + hito venta/comprobante + etapa vendido), perdidos con motivo
-  const cotPorConv = {}; for (const x of hitos) if (x.tipo === "cotizacion") cotPorConv[x.conv] = Math.min(cotPorConv[x.conv] || Infinity, x.ts);
+  const cotPorConv = {}, cotTodas = {};
+  for (const x of hitos) { (cotTodas[x.conv] || (cotTodas[x.conv] = [])).push(x.ts); if (x.ts >= s30) cotPorConv[x.conv] = Math.min(cotPorConv[x.conv] || Infinity, x.ts); }
   const ventaTs = {};
-  for (const x of hitos) if (x.tipo !== "cotizacion") ventaTs[x.conv] = Math.min(ventaTs[x.conv] || Infinity, x.ts);
+  // VENTAS. Un pago o comprobante en el chat NO alcanza para decir "venta nueva": los clientes que ya compraron siguen
+  // pagando saldos y mandando comprobantes semanas después. Regla:
+  //   - venta confirmada = la que el equipo cargó con el botón Vendido;
+  //   - venta detectada (sin confirmar) = la PRIMERA señal de pago de la historia de ese cliente, y solo si venía de un chat
+  //     nuevo o de una cotización de los 45 días anteriores;
+  //   - cualquier otra señal de pago = movimiento de un cliente anterior (se informa aparte, no entra al embudo).
+  const cargada = new Set(ventasCargadas.filter((v) => v.conv).map((v) => v.conv));
+  const primeraSenal = {}, movimientos = [];
+  const noVenta = {}; for (const x of hitosVenta) if (x.tipo === "no_venta") noVenta[x.conv] = x.ts;   // el dueño dijo "no fue venta": lo anterior a esa marca no cuenta
+  const senales = hitosVenta.filter((x) => x.tipo !== "no_venta" && !(noVenta[x.conv] >= x.ts));
+  for (const x of senales) { if (!(x.conv in primeraSenal)) primeraSenal[x.conv] = { ts: x.ts, dato: x.dato }; }
+  for (const c of convs) if (c.etapa === "vendido" && c.cierre_ts && !(c.conv in primeraSenal) && !(noVenta[c.conv] >= c.cierre_ts)) primeraSenal[c.conv] = { ts: c.cierre_ts, dato: "marcado vendido" };
+  const evidencia = {};
+  for (const [conv, x] of Object.entries(primeraSenal)) {
+    if (cargada.has(conv) || x.ts < s30) continue;
+    const c = porConv[conv]; if (!c) continue;
+    const viene = c.primer_ts >= x.ts - 45 * DIA || (cotTodas[conv] || []).some((t) => t <= x.ts && t >= x.ts - 45 * DIA);
+    if (viene) { ventaTs[conv] = x.ts; evidencia[conv] = corto(x.dato, 120); }
+  }
+  for (const x of senales) if (x.ts >= s14 && !ventaTs[x.conv] && !cargada.has(x.conv) && porConv[x.conv] && !movimientos.some((m) => m.conv === x.conv)) movimientos.push({ conv: x.conv, fecha: fecha(x.ts), nombre: porConv[x.conv].nombre || "sin nombre", primera: primeraSenal[x.conv] ? fecha(primeraSenal[x.conv].ts) : "-", dato: corto(x.dato, 90) });
   for (const v of ventasCargadas) if (v.conv) ventaTs[v.conv] = Math.min(ventaTs[v.conv] || Infinity, v.ts);
-  for (const c of convs) if (c.etapa === "vendido" && !ventaTs[c.conv]) ventaTs[c.conv] = c.cierre_ts || c.ult_ts;
+
   const ventana = (a, b) => {
     const nuevos = convs.filter((c) => c.primer_ts >= a && c.primer_ts < b);
     const cot = Object.entries(cotPorConv).filter(([, ts]) => ts >= a && ts < b).map(([c]) => c);
     const ven = Object.entries(ventaTs).filter(([, ts]) => ts >= a && ts < b).map(([c]) => c);
     const perd = convs.filter((c) => c.etapa === "perdido" && (c.cierre_ts || c.ult_ts) >= a && (c.cierre_ts || c.ult_ts) < b);
     const motivos = {}; for (const p of perd) motivos[p.motivo || "sin motivo"] = (motivos[p.motivo || "sin motivo"] || 0) + 1;
-    return { nuevos: nuevos.length, cotizados: cot.length, ventas: ven.length, perdidos: perd.length, motivos, cot_pct: pct(cot.length, nuevos.length), venta_pct: pct(ven.length, cot.length) };
+    const sueltas = ventasCargadas.filter((v) => !v.conv && v.ts >= a && v.ts < b).length;   // ventas cargadas sin chat
+    return { nuevos: nuevos.length, cotizados: cot.length, ventas: ven.length + sueltas, ventas_confirmadas: ven.filter((c) => cargada.has(c)).length + sueltas, perdidos: perd.length, motivos, cot_pct: pct(cot.length, nuevos.length), venta_pct: pct(ven.length, cot.length) };
   };
   const embudo = { v7: ventana(s7, ahora + H), v7ant: ventana(s14, s7), v30: ventana(s30, ahora + H), por_dia: [] };
   for (let i = 13; i >= 0; i--) { const d0 = inicioDia(diaAR(ahora - i * DIA)); embudo.por_dia.push({ dia: diaAR(d0 + H).slice(5), ...ventana(d0, d0 + DIA) }); }
@@ -121,9 +147,11 @@ export async function hechos(env, { dias = 14 } = {}) {
   }
   const respuesta = { n: primeras.length, p50: mediana(primeras), p90: percentil(primeras, 0.9), mas_1h_pct: pct(primeras.filter((x) => x > 60).length, primeras.length), mas_12h: primeras.filter((x) => x > 720).length, todas_p50: mediana(delays) };
   const pendientes = convs.filter((c) => activo(c) && c.ult_yo === 0 && c.ult_cliente_ts && ahora - c.ult_cliente_ts > 24 * H && ahora - c.ult_cliente_ts < 10 * DIA && RE_PREGUNTA.test(c.ult_texto || ""))
-    .sort((a, b) => (b.perfil === "A" || b.perfil === "B") - (a.perfil === "A" || a.perfil === "B") || b.ult_cliente_ts - a.ult_cliente_ts).slice(0, 15)
+    .sort((a, b) => (b.perfil === "A" || b.perfil === "B") - (a.perfil === "A" || a.perfil === "B") || b.ult_cliente_ts - a.ult_cliente_ts).slice(0, 60)
     .map((c) => ({ conv: c.conv, nombre: c.nombre || "sin nombre", perfil: c.perfil || "?", producto: corto(c.producto, 40), horas: Math.round((ahora - c.ult_cliente_ts) / H), texto: corto(c.ult_texto, 120) }));
 
+  // Todos los chats donde el último mensaje es del cliente (con o sin pregunta), entre 24 h y 10 días: incluye "gracias", "ok" y saludos
+  const esperando = convs.filter((c) => activo(c) && c.ult_yo === 0 && c.ult_cliente_ts && ahora - c.ult_cliente_ts > 24 * H && ahora - c.ult_cliente_ts < 10 * DIA).length;
   // --- Cotizaciones de los últimos 7 días: ¿el cliente contestó algo en 48 h?
   const cliTs = {}; for (const m of msgs7) if (!m.yo) (cliTs[m.conv] || (cliTs[m.conv] = [])).push(m.ts);
   const cot7 = Object.entries(cotPorConv).filter(([, ts]) => ts >= s7).map(([conv, ts]) => ({ conv, ts, resp: (cliTs[conv] || []).some((t) => t > ts && t - ts < 48 * H), c: porConv[conv] }));
@@ -182,12 +210,14 @@ export async function hechos(env, { dias = 14 } = {}) {
 
   // --- Ventas con detalle (30 días) y las que están en el chat pero no cargadas
   const ventas = { cargadas: ventasCargadas.map((v) => ({ fecha: fecha(v.ts), nombre: v.nombre, producto: corto(v.producto, 40), monto: v.monto, moneda: v.moneda, ganancia: v.ganancia, linea: v.linea })),
-    detectadas_sin_cargar: Object.entries(ventaTs).filter(([conv]) => !ventasCargadas.some((v) => v.conv === conv) && porConv[conv]).map(([conv, ts]) => ({ fecha: fecha(ts), conv, nombre: porConv[conv].nombre || "sin nombre", producto: corto(porConv[conv].producto, 40), perfil: porConv[conv].perfil || "?", usd: porConv[conv].presup_usd || null })).slice(0, 12) };
+    movimientos_clientes_anteriores: movimientos.slice(0, 12),
+    detectadas_sin_cargar: Object.entries(ventaTs).filter(([conv]) => !cargada.has(conv) && porConv[conv]).map(([conv, ts]) => ({ fecha: fecha(ts), conv, evidencia: evidencia[conv] || "", nombre: porConv[conv].nombre || "sin nombre", producto: corto(porConv[conv].producto, 40), perfil: porConv[conv].perfil || "?", usd: porConv[conv].presup_usd || null })).slice(0, 12) };
 
   // --- Equipo (7 días)
   const equipo = {}; for (const e of eq) { const o = equipo[e.persona] || (equipo[e.persona] = { chats: 0, mensajes: 0 }); o.chats += e.chats; o.mensajes += e.mensajes; }
   let ml = null; try { ml = mlRaw ? JSON.parse(mlRaw) : null; } catch {}
-  return { hoy, generado: ahora, embudo, perfiles, respuesta, pendientes, cotizaciones, seguimientos, prospeccion, productos, cupos: cuposR, redes, ventas, equipo, memoria: mem.map((m) => ({ tipo: m.tipo, texto: corto(m.texto, 160) })), ml, convs_30d: convs.length };
+  const ideas = { utiles: ideasPrev.filter((i) => i.estado === "util" || i.estado === "hecha").slice(0, 8).map((i) => corto(i.texto, 140)), descartadas: ideasPrev.filter((i) => i.estado === "descartada").slice(0, 10).map((i) => corto(i.texto, 110) + (i.nota ? ` (motivo: ${corto(i.nota, 80)})` : "")), abiertas: ideasPrev.filter((i) => i.estado === "nueva").slice(0, 12).map((i) => corto(i.texto, 110)) };
+  return { hoy, generado: ahora, ideas, esperando_total: esperando, embudo, perfiles, respuesta, pendientes, cotizaciones, seguimientos, prospeccion, productos, cupos: cuposR, redes, ventas, equipo, memoria: mem.map((m) => ({ tipo: m.tipo, texto: corto(m.texto, 160) })), ml, convs_30d: convs.length };
 }
 
 // Muestras de charlas reales (para que el agente de WhatsApp lea cómo hablamos, no solo los números)
@@ -212,18 +242,20 @@ export function textoHechos(h, partes = ["embudo", "whatsapp", "redes", "product
   const L = [];
   const e = h.embudo;
   if (partes.includes("embudo")) {
-    L.push(`EMBUDO 7 DÍAS: ${e.v7.nuevos} chats nuevos → ${e.v7.cotizados} cotizados (${e.v7.cot_pct}%) → ${e.v7.ventas} ventas (${e.v7.venta_pct}% de los cotizados) · perdidos ${e.v7.perdidos} ${JSON.stringify(e.v7.motivos)}`);
+    L.push(`EMBUDO 7 DÍAS: ${e.v7.nuevos} chats nuevos → ${e.v7.cotizados} cotizados (${e.v7.cot_pct}%) → ${e.v7.ventas} ventas (${e.v7.ventas_confirmadas ?? 0} CONFIRMADAS con el botón Vendido + ${e.v7.ventas - (e.v7.ventas_confirmadas ?? 0)} detectadas en el chat SIN CONFIRMAR; ${e.v7.venta_pct}% de los cotizados) · perdidos ${e.v7.perdidos} ${JSON.stringify(e.v7.motivos)}`);
     L.push(`7 DÍAS ANTERIORES: ${e.v7ant.nuevos} nuevos → ${e.v7ant.cotizados} cotizados → ${e.v7ant.ventas} ventas · 30 DÍAS: ${e.v30.nuevos} → ${e.v30.cotizados} → ${e.v30.ventas}`);
     L.push(`POR DÍA (nuevos/cotizados/ventas): ${e.por_dia.map((d) => `${d.dia} ${d.nuevos}/${d.cotizados}/${d.ventas}`).join(" · ")}`);
     L.push(`PERFILES chats nuevos 7d: ${JSON.stringify(h.perfiles.v7)} (A+B = ${h.perfiles.ab_pct}%) · 7d anteriores: ${JSON.stringify(h.perfiles.v7ant)}`);
     L.push(`VENTAS 30d cargadas: ${h.ventas.cargadas.map((v) => `${v.fecha} ${v.nombre} ${v.producto} ${v.moneda} ${n0(v.monto)} (${v.linea})`).join(" · ") || "ninguna"}`);
-    L.push(`VENTAS detectadas en el chat y NO cargadas: ${h.ventas.detectadas_sin_cargar.map((v) => `${v.fecha} ${v.nombre} (+${v.conv}) ${v.producto} perfil ${v.perfil}${v.usd ? " ~USD " + v.usd : ""}`).join(" · ") || "ninguna"}`);
+    L.push(`VENTAS DETECTADAS EN EL CHAT, SIN CONFIRMAR (primera señal de pago de un cliente nuevo o recién cotizado; son POSIBLES ventas: no las des por hechas, pedile a Manuel que las confirme o las descarte en el panel): ${h.ventas.detectadas_sin_cargar.map((v) => `${v.fecha} ${v.nombre} (+${v.conv}) ${v.producto} perfil ${v.perfil}${v.usd ? " ~USD " + v.usd : ""}${v.evidencia ? ` · señal: "${v.evidencia}"` : ""}`).join(" · ") || "ninguna"}`);
+    if (h.ventas.movimientos_clientes_anteriores?.length) L.push(`PAGOS O COMPROBANTES DE CLIENTES QUE YA HABÍAN COMPRADO ANTES (saldos, envíos, recompras sin confirmar: NO son ventas nuevas y NO cuentan en el embudo): ${h.ventas.movimientos_clientes_anteriores.map((m) => `${m.fecha} ${m.nombre} (+${m.conv}), su primera compra fue el ${m.primera}`).join(" · ")}`);
     L.push(`EQUIPO 7d (chats contestados): ${JSON.stringify(h.equipo)}`);
   }
   if (partes.includes("whatsapp")) {
     const r = h.respuesta;
     L.push(`VELOCIDAD HUMANA 7d (sin contar el bot): mediana primera respuesta ${r.p50 ?? "-"} min · p90 ${r.p90 ?? "-"} min · ${r.mas_1h_pct}% tardó más de 1 h · ${r.mas_12h} esperaron más de 12 h (${r.n} charlas)`);
-    L.push(`PREGUNTAS SIN RESPONDER hace más de 24 h (${h.pendientes.length}): ${h.pendientes.map((p) => `${p.nombre} (+${p.conv}) perfil ${p.perfil} · ${p.producto} · hace ${p.horas} h: "${p.texto}"`).join(" | ") || "ninguna"}`);
+    L.push(`CHATS ESPERANDO RESPUESTA NUESTRA (último mensaje del cliente hace entre 24 h y 10 días): ${h.esperando_total ?? "-"} en total, de los cuales ${h.pendientes.length} tienen una pregunta o pedido concreto. El resto son cierres ("gracias", "ok", "dale") o saludos: no los cuentes como pendientes. Usá SOLO estos dos números, no otros.`);
+    L.push(`PREGUNTAS SIN RESPONDER hace más de 24 h (${h.pendientes.length}; primero perfil A y B): ${h.pendientes.slice(0, 18).map((p) => `${p.nombre} (+${p.conv}) perfil ${p.perfil} · ${p.producto} · hace ${p.horas} h: "${p.texto}"`).join(" | ") || "ninguna"}`);
     const c = h.cotizaciones;
     L.push(`COTIZACIONES 7d: ${c.n} · sin respuesta del cliente a las 48 h: ${c.sin_resp} (${c.sin_resp_pct}%) · por perfil ${JSON.stringify(c.por_perfil)}`);
     L.push(`COTIZADOS SIN RESPUESTA (los más recientes): ${c.sin_resp_lista.map((x) => `${x.nombre} (+${x.conv}) ${x.perfil} · ${x.producto}${x.usd ? " ~USD " + x.usd : ""} · hace ${x.hace_dias} d`).join(" | ") || "-"}`);
@@ -248,6 +280,9 @@ export function textoHechos(h, partes = ["embudo", "whatsapp", "redes", "product
     if (h.ml?.items?.length) L.push(`MERCADO LIBRE (leído desde la PC el ${fecha(h.ml.ts)}): ${h.ml.items.slice(0, 25).map((t) => `${t.palabra}${t.puesto ? " #" + t.puesto : ""}${t.resultados ? " · " + n0(t.resultados) + " publicaciones" : ""}${t.precio_min ? " · $" + n0(t.precio_min) + "-" + n0(t.precio_max) : ""}${t.vendidos ? " · top vende " + t.vendidos : ""}`).join(" | ")}`);
     else L.push("MERCADO LIBRE: sin datos todavía (corre tendencias_ml.bat en la PC para tenerlos)");
   }
+  if (h.ideas?.utiles?.length) L.push(`IDEAS QUE MANUEL MARCÓ COMO ÚTILES O YA HIZO (más en esa línea): ${h.ideas.utiles.join(" | ")}`);
+  if (h.ideas?.descartadas?.length) L.push(`IDEAS QUE MANUEL DESCARTÓ (no las repitas ni parecidas): ${h.ideas.descartadas.join(" | ")}`);
+  if (h.ideas?.abiertas?.length) L.push(`IDEAS YA PROPUESTAS QUE TODAVÍA NO MIRÓ (no las repitas igual: proponé otras o mejoralas con un dato nuevo): ${h.ideas.abiertas.join(" | ")}`);
   if (h.memoria.length) L.push(`MEMORIA (decisiones y aprendizajes guardados): ${h.memoria.map((m) => `[${m.tipo}] ${m.texto}`).join(" · ")}`);
   return L.join("\n");
 }
@@ -293,7 +328,7 @@ export const MANUAL = {
 - Lista de corte: lo que se pide mucho y nunca cierra consume tiempo de cotización. Decí cuáles dejar de cotizar.
 - Para cada producto decí la vía: cupo en grupos, por encargo, stock propio con entrega inmediata o publicarlo en Mercado Libre.`,
 };
-const SALIDA = `Respondé SOLO JSON: {"resumen":"2 o 3 líneas con lo más importante","hallazgos":[{"titulo":"corto","detalle":"qué pasa y por qué importa para vender","evidencia":"nombres, números o cifras exactas"}],"hipotesis":[{"texto":"qué creemos","accion":"qué hacer esta semana y quién (Manuel, Sender, agente, Buko)","metrica":"nombre de la lista","meta":número,"dias":7}],"ideas":["acciones concretas sueltas, máximo 5"],"para_manuel":["cosas que solo él puede decidir o hacer, máximo 3"]}`;
+const SALIDA = `Respondé SOLO JSON: {"resumen":"2 o 3 líneas con lo más importante","hallazgos":[{"titulo":"corto","detalle":"qué pasa y por qué importa para vender","evidencia":"nombres, números o cifras exactas"}],"hipotesis":[{"texto":"qué creemos","accion":"qué hacer esta semana y quién (Manuel, Sender, agente, Buko)","metrica":"nombre de la lista","meta":número,"dias":7}],"ideas":["máximo 5 ideas NUEVAS para vender más, cada una concreta y completa en una oración: qué hacer, con qué producto o cliente, y el dato que la respalda"],"para_manuel":["cosas que solo él puede decidir o hacer, máximo 3"]}`;
 
 const PROMPTS = {
   whatsapp: (h, muestras) => `Sos el AGENTE DE WHATSAPP de la mesa de ${NEGOCIO}
@@ -329,10 +364,19 @@ CUPOS: ${h.cupos.lista.map((c) => `${c.fecha} "${c.texto}" → ${c.relacionadas}
 ${SALIDA}`,
 };
 
+const normIdea = (t) => String(t || "").toLowerCase().replace(/[^a-z0-9áéíóúñ ]/g, "").replace(/\s+/g, " ").trim().slice(0, 45);
+async function guardarIdeas(env, dia, agente, lista) {
+  const ya = new Set((await todas(env, "SELECT texto FROM mesa_ideas ORDER BY ts DESC LIMIT 120")).map((x) => normIdea(x.texto)));
+  const ops = [];
+  for (const t of lista) { const k = normIdea(t); if (k.length < 12 || ya.has(k)) continue; ya.add(k); ops.push(env.DB.prepare("INSERT INTO mesa_ideas (id, ts, dia, agente, texto, estado) VALUES (?,?,?,?,?,'nueva')").bind(`i:${Date.now()}:${agente}:${ops.length}:${Math.random().toString(36).slice(2, 6)}`, Date.now(), dia, agente, corto(t, 300))); }
+  if (ops.length) await env.DB.batch(ops);
+  return ops.length;
+}
 async function correrAgente(env, iaJSON, nombre, h, extra, opts) {
   const prompt = PROMPTS[nombre](h, extra);
   const r = await iaJSON(env, prompt, opts).catch(() => null);
   const datos = r && typeof r === "object" ? { resumen: corto(r.resumen, 600), hallazgos: (r.hallazgos || []).slice(0, 7).map((x) => ({ titulo: corto(x.titulo, 90), detalle: corto(x.detalle, 500), evidencia: corto(x.evidencia, 300) })), hipotesis: (r.hipotesis || []).filter((x) => METRICAS[x.metrica]).slice(0, 2).map((x) => ({ texto: corto(x.texto, 240), accion: corto(x.accion, 240), metrica: x.metrica, meta: +x.meta, dias: Math.min(30, Math.max(3, +x.dias || 7)) })), ideas: (r.ideas || []).slice(0, 5).map((x) => corto(x, 240)), para_manuel: (r.para_manuel || []).slice(0, 3).map((x) => corto(x, 240)) } : null;
+  if (datos?.ideas?.length) await guardarIdeas(env, h.hoy, nombre, datos.ideas).catch(() => {});
   const texto = datos ? [datos.resumen, ...datos.hallazgos.map((x) => `- ${x.titulo}: ${x.detalle} (${x.evidencia})`)].join("\n") : "La IA no respondió (sin cupo). Se reintenta en la próxima corrida.";
   await env.DB.prepare("INSERT INTO mesa_informes (id, ts, dia, agente, datos, texto) VALUES (?,?,?,?,?,?)").bind(`${nombre}:${Date.now()}`, Date.now(), h.hoy, nombre, JSON.stringify(datos || {}), texto).run().catch(() => {});
   return datos;
@@ -472,22 +516,26 @@ export async function correrMesa(env, iaJSON, { forzar = false, profundo = false
     const n = +((await kvGet(env, "mesa_corridas:" + hoy)) || 0) + 1;
     await kvPut(env, "mesa_corridas:" + hoy, n);
     await kvPut(env, "mesa_ult", JSON.stringify({ ts: Date.now(), dia: hoy, motivo, corrida: n }));
-    const cab = `Mesa · ${motivo === "cron" ? (n === 1 ? "arranque del día" : "cierre del día") : "corrida pedida"} ${hoy.slice(5).split("-").reverse().join("/")}\n`;
+    const hAR = new Date(ahora - AR).getUTCHours();
+    const cab = `Mesa · ${motivo === "cron" ? (hAR < 12 ? "arranque del día" : hAR < 19 ? "mediodía" : "cierre del día") : "corrida pedida"} ${hoy.slice(5).split("-").reverse().join("/")}\n`;
     await avisarTelegram(env, cab + integrador.mensaje + (cerradas.length ? "\n\nHipótesis cerradas: " + cerradas.map((c) => `${c.estado} "${corto(c.texto, 60)}"`).join("; ") : ""), avisar);
   }
   return { ok: !!integrador, informes, debate, integrador, cerradas, hechos: h };
 }
 
-// Cron (cada minuto): 06:10 AR arranca el día (después de que vuelve el cupo de Gemini a las 05:00), 20:30 cierra el día.
-// Si la IA no respondió, se reintenta cada hora hasta las 23. Domingo a la mañana es la corrida profunda (30 días).
+// Cron (cada minuto): tres corridas por día, una por tramo: 06:10 AR arranca el día (después de que vuelve el cupo de Gemini
+// a las 05:00), 13:30 mediodía y 20:30 cierre. Si la IA no respondió, se reintenta cada hora dentro del tramo. Domingo a la mañana es la corrida profunda (30 días).
 export async function cronMesa(env, iaJSON, ts = Date.now(), avisar = null) {
   if (!env.DB || env.MESA === "0") return;
   const d = new Date(ts - AR), h = d.getUTCHours(), m = d.getUTCMinutes(), hoy = diaAR(ts);
   if (!(m === 10 || m === 30)) return;
   const corridas = +((await kvGet(env, "mesa_corridas:" + hoy)) || 0);
-  const toca = (h >= 6 && h < 20 && corridas < 1 && m === 10) || (h >= 20 && h < 24 && corridas < 2 && m === 30);
+  const tramo = h >= 6 && h < 13 ? "m" : h >= 13 && h < 20 ? "t" : h >= 20 ? "n" : "";
+  if (!tramo || m !== (tramo === "m" ? 10 : 30)) return;
+  const toca = !(await kvGet(env, `mesa_tramo:${hoy}:${tramo}`));
   if (!toca) return;
-  await correrMesa(env, iaJSON, { profundo: d.getUTCDay() === 0 && corridas === 0, motivo: "cron", avisar, ahora: ts });
+  const r = await correrMesa(env, iaJSON, { profundo: d.getUTCDay() === 0 && corridas === 0, motivo: "cron", avisar, ahora: ts });
+  if (r?.ok) await env.DB.prepare("INSERT OR REPLACE INTO kv (k, v, exp) VALUES (?, '1', ?)").bind(`mesa_tramo:${hoy}:${tramo}`, ts + 3 * DIA).run().catch(() => kvPut(env, `mesa_tramo:${hoy}:${tramo}`, 1));
 }
 
 // ---------------------------------------------------------------------------
@@ -500,12 +548,13 @@ export async function estadoMesa(env) {
   const porAgente = {}; for (const x of ult) if (!porAgente[x.agente]) { let datos = {}; try { datos = JSON.parse(x.datos || "{}"); } catch {} porAgente[x.agente] = { ts: x.ts, dia: x.dia, datos, texto: x.texto }; }
   const hip = await todas(env, "SELECT * FROM mesa_hip ORDER BY CASE estado WHEN 'activa' THEN 0 ELSE 1 END, ts DESC LIMIT 30");
   const chat = (await todas(env, "SELECT ts, rol, texto, agente FROM mesa_chat ORDER BY id DESC LIMIT 40")).reverse();
-  let hechosR = null; try { const h = JSON.parse((await kvGet(env, "mesa_hechos")) || "null"); if (h) hechosR = { generado: h.generado, embudo: h.embudo.v7, embudo_ant: h.embudo.v7ant, perfiles: h.perfiles, respuesta: h.respuesta, pendientes: h.pendientes.length, cotizaciones: { n: h.cotizaciones.n, sin_resp_pct: h.cotizaciones.sin_resp_pct }, seguimientos: h.seguimientos, prospeccion: h.prospeccion, cupos: h.cupos, consultas_por_video: h.redes.consultas_por_video, ventas_sin_cargar: h.ventas.detectadas_sin_cargar, ml: !!h.ml }; } catch {}
+  let hechosR = null; try { const h = JSON.parse((await kvGet(env, "mesa_hechos")) || "null"); if (h) hechosR = { generado: h.generado, embudo: h.embudo.v7, embudo_ant: h.embudo.v7ant, perfiles: h.perfiles, respuesta: h.respuesta, pendientes: h.pendientes.length, esperando_total: h.esperando_total ?? null, movimientos: h.ventas.movimientos_clientes_anteriores || [], cotizaciones: { n: h.cotizaciones.n, sin_resp_pct: h.cotizaciones.sin_resp_pct }, seguimientos: h.seguimientos, prospeccion: h.prospeccion, cupos: h.cupos, consultas_por_video: h.redes.consultas_por_video, ventas_sin_cargar: h.ventas.detectadas_sin_cargar, ml: !!h.ml }; } catch {}
   let ult2 = null; try { ult2 = JSON.parse((await kvGet(env, "mesa_ult")) || "null"); } catch {}
   const virales = await todas(env, "SELECT ts, autor, link, texto, vistas, compartidos, guardados, seguidores, fuente, guion FROM virales WHERE ts>=? ORDER BY vistas DESC LIMIT 12", Date.now() - 45 * DIA);
   let fuentes = null, virUlt = null; try { fuentes = JSON.parse((await kvGet(env, "virales_fuentes")) || "null"); virUlt = JSON.parse((await kvGet(env, "vir_ultimo")) || "null"); } catch {}
   const virPedido = !!(await kvGet(env, "vir_forzar")) || !!(await kvGet(env, "vir_run"));
-  return { informes: porAgente, hipotesis: hip, chat, hechos: hechosR, ultima: ult2, virales: { lista: virales.map((v) => ({ ...v, texto: corto(v.texto, 160), guion: corto(v.guion, 500) })), fuentes: fuentes || FUENTES_DEF, ultimo: virUlt, leyendo: virPedido }, metricas: Object.fromEntries(Object.entries(METRICAS).map(([k, v]) => [k, v.que])) };
+  const ideas = await todas(env, "SELECT id, ts, agente, texto, estado FROM mesa_ideas WHERE estado IN ('nueva','util') ORDER BY CASE estado WHEN 'nueva' THEN 0 ELSE 1 END, ts DESC LIMIT 30");
+  return { informes: porAgente, ideas, hipotesis: hip, chat, hechos: hechosR, ultima: ult2, virales: { lista: virales.map((v) => ({ ...v, texto: corto(v.texto, 160), guion: corto(v.guion, 500) })), fuentes: fuentes || FUENTES_DEF, ultimo: virUlt, leyendo: virPedido }, metricas: Object.fromEntries(Object.entries(METRICAS).map(([k, v]) => [k, v.que])) };
 }
 // ---------------------------------------------------------------------------
 // CHARLA: Manuel le habla a la mesa entera o a un agente. Suele escribir corto, así que cada pregunta tiene dos pasos:
@@ -520,6 +569,8 @@ export const CONSULTAS = {
   cupos: "cada vez que publicamos un cupo u oferta de un producto en los grupos en 90 días, con las consultas privadas y las ventas de ese producto en las 72 h siguientes (sirve para comparar el mismo cupo en fechas distintas). q = el producto",
   videos: "nuestros videos de 60 días con vistas, guardados, compartidos, guion transcripto y chats nuevos en las 48 h siguientes. q vacío",
   virales: "videos virales de otras cuentas leídos en 45 días, con lo que dicen. q = palabra para filtrar o vacío",
+  pendientes: "la lista completa de chats que esperan respuesta nuestra (último mensaje del cliente hace más de 24 h), con número, perfil, producto y qué dijo. q vacío, o 'todos' para incluir también los que solo dijeron gracias u ok",
+  ventas: "las ventas de 30 días: confirmadas (cargadas), detectadas en el chat sin confirmar con su señal, y pagos de clientes anteriores. q vacío",
 };
 export async function ejecutarConsulta(env, c, ahora = Date.now()) {
   const tipo = String(c?.tipo || ""), q = corto(c?.q, 60).toLowerCase().replace(/[%_]/g, ""), like = "%" + q + "%";
@@ -573,6 +624,14 @@ export async function ejecutarConsulta(env, c, ahora = Date.now()) {
   } else if (tipo === "virales") {
     const r = await todas(env, `SELECT ts, autor, link, texto, vistas, compartidos, guardados, seguidores, guion FROM virales WHERE ts>=? ${q.length >= 3 ? "AND (lower(texto) LIKE ? OR lower(COALESCE(guion,'')) LIKE ?)" : ""} ORDER BY vistas DESC LIMIT 15`, ...(q.length >= 3 ? [ahora - 45 * DIA, like, like] : [ahora - 45 * DIA]));
     out = r.map((v) => `${fecha(v.ts)} @${v.autor} ${n0(v.vistas)} vistas${v.seguidores ? ` (${Math.round(v.vistas / v.seguidores)}x seguidores)` : ""} · "${corto(v.texto, 140)}"${v.guion ? " · DICE: " + corto(v.guion, 400) : ""} · ${v.link}`).join("\n") || "todavía no hay virales leídos";
+  } else if (tipo === "pendientes") {
+    const r = await todas(env, "SELECT conv, nombre, perfil, producto, etapa, ult_cliente_ts, ult_texto FROM w_conv WHERE grupo=0 AND COALESCE(prov,0)=0 AND COALESCE(archivado,0)=0 AND ult_yo=0 AND ult_cliente_ts>=? AND ult_cliente_ts<? AND COALESCE(etapa,'') NOT IN ('perdido','vendido','no_cliente') ORDER BY ult_cliente_ts DESC LIMIT 200", ahora - 10 * DIA, ahora - 24 * H);
+    const con = r.filter((c) => RE_PREGUNTA.test(c.ult_texto || "")), l = (q === "todos" ? r : con).sort((a, b) => (b.perfil === "A" || b.perfil === "B") - (a.perfil === "A" || a.perfil === "B") || b.ult_cliente_ts - a.ult_cliente_ts);
+    out = `${r.length} chats con el último mensaje del cliente hace entre 24 h y 10 días; ${con.length} con una pregunta o pedido concreto. Lista (${q === "todos" ? "todos" : "los que tienen pregunta"}; primero perfil A y B):\n` + l.slice(0, 70).map((c) => `+${c.conv} · ${c.nombre || "sin nombre"} · perfil ${c.perfil || "?"} · ${corto(c.producto, 40) || "sin producto"} · hace ${Math.round((ahora - c.ult_cliente_ts) / H)} h · "${corto(c.ult_texto, 90)}"`).join("\n");
+    return `CONSULTA pendientes:\n${out.slice(0, 9000)}`;
+  } else if (tipo === "ventas") {
+    const h = await hechos(env);
+    out = `CONFIRMADAS (cargadas con el botón Vendido, 30 días): ${h.ventas.cargadas.map((v) => `${v.fecha} ${v.nombre} · ${v.producto} · ${v.moneda} ${n0(v.monto)}`).join(" | ") || "ninguna"}\nDETECTADAS SIN CONFIRMAR (posibles): ${h.ventas.detectadas_sin_cargar.map((v) => `${v.fecha} ${v.nombre} (+${v.conv}) ${v.producto}${v.evidencia ? ` · señal: "${v.evidencia}"` : ""}`).join(" | ") || "ninguna"}\nPAGOS DE CLIENTES ANTERIORES (no son ventas nuevas): ${(h.ventas.movimientos_clientes_anteriores || []).map((m) => `${m.fecha} ${m.nombre} (+${m.conv}), primera compra ${m.primera}`).join(" | ") || "ninguno"}\nEMBUDO 7 días: ${h.embudo.v7.ventas_confirmadas} confirmadas, ${h.embudo.v7.ventas - h.embudo.v7.ventas_confirmadas} sin confirmar`;
   } else return null;
   return `CONSULTA ${tipo}${q ? ` "${q}"` : ""}:\n${out.slice(0, 4500)}`;
 }
@@ -613,6 +672,8 @@ Respondé SOLO JSON: {"entendi":"","consultas":[{"tipo":"","q":""}],"partes":["e
   // Paso 2: contestar
   const r = await iaJSON(env, `CHARLA CON MANUEL. ${Q.rol} Negocio: ${NEGOCIO}
 Manuel te habla desde el panel. Tenés los informes de hoy, las hipótesis con su avance medido, los hechos y los datos que se buscaron en la base para esta pregunta.
+SI PIDE UNA LISTA (cuáles son, pasame los números, quiénes): dale la lista COMPLETA, un renglón por cada uno con su número de teléfono, sin resumir ni dar "algunos ejemplos"; después, en dos líneas, qué haría con eso. Si pide dos cosas, contestá las dos por separado.
+Las ventas "sin confirmar" son posibles ventas: nunca las cuentes como hechas; decí que falta que él las confirme.
 CÓMO CONTESTAR: primero la respuesta directa en 1 o 2 líneas; después la evidencia (números, nombres, fechas de los datos de abajo); después qué harías y quién. Contestá también las sub-preguntas de "LO QUE ENTENDIMOS" aunque él no las haya escrito. Si te falta un dato para afirmar algo, decí cuál y cómo medirlo. Si no estás de acuerdo con lo que plantea, decilo con el dato. Texto plano, sin asteriscos ni títulos con numerales.
 Si te pide que cambies algo (una decisión, una regla, dejar de hacer algo), guardalo en "guardar" como decisión. Si propone probar algo medible, ponelo en "hipotesis" (métrica de la lista, meta numérica). Si te corrige un análisis, guardá la corrección como aprendizaje y no repitas el error.
 ${MANUAL.comun}
@@ -623,8 +684,8 @@ HECHOS:
 ${textoHechos(h, partes)}
 ${datos.length ? "DATOS BUSCADOS PARA ESTA PREGUNTA:\n" + datos.join("\n\n") + "\n" : ""}${charla ? "CHARLA RECIENTE:\n" + charla + "\n" : ""}LO QUE ENTENDIMOS DE SU MENSAJE: ${entendi || "(tomalo literal)"}
 MANUEL: ${q}
-Respondé SOLO JSON: {"respuesta":"texto","guardar":[{"tipo":"decision|preferencia|aprendizaje","texto":"máximo 250 caracteres"}],"hipotesis":[{"texto":"","accion":"","metrica":"","meta":número,"dias":7}],"seguir":["hasta 2 preguntas cortas que le convendría hacerte después"]}`, { prioridad: true }).catch(() => null);
-  const respuesta = r?.respuesta ? corto(String(r.respuesta).replace(/\*\*/g, ""), 3500) : "No pude responder ahora (la IA no tiene cupo). Probá en un rato.";
+Respondé SOLO JSON: {"respuesta":"texto, con saltos de línea (\\n) entre ideas y un renglón por elemento en las listas","guardar":[{"tipo":"decision|preferencia|aprendizaje","texto":"máximo 250 caracteres"}],"hipotesis":[{"texto":"","accion":"","metrica":"","meta":número,"dias":7}],"seguir":["hasta 2 preguntas cortas que le convendría hacerte después"]}`, { prioridad: true }).catch(() => null);
+  const respuesta = r?.respuesta ? String(r.respuesta).replace(/\*\*/g, "").replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim().slice(0, 9000) : "No pude responder ahora (la IA no tiene cupo). Probá en un rato.";
   await env.DB.batch([env.DB.prepare("INSERT INTO mesa_chat (ts, rol, texto, agente) VALUES (?,?,?,?)").bind(Date.now(), "u", q, A), env.DB.prepare("INSERT INTO mesa_chat (ts, rol, texto, agente) VALUES (?,?,?,?)").bind(Date.now() + 1, "a", respuesta, A)]);
   for (const g of (r?.guardar || []).slice(0, 3)) if (g?.texto) await env.DB.prepare("INSERT INTO ag_mem (ts, tipo, texto) VALUES (?,?,?)").bind(Date.now(), ["decision", "preferencia", "aprendizaje"].includes(g.tipo) ? g.tipo : "aprendizaje", corto(g.texto, 250)).run().catch(() => {});
   if (r?.hipotesis?.length) await crearHipotesis(env, h, "manuel", r.hipotesis);
@@ -645,6 +706,9 @@ export async function apiMesa(env, req, url, iaJSON, body = null) {
     const f = { hashtags: lim(b.hashtags), perfiles: lim(b.perfiles) };
     await kvPut(env, "virales_fuentes", JSON.stringify(f)); return json({ ok: true, fuentes: f });
   }
+  if (b.accion === "idea" && b.id && ["util", "hecha", "descartada", "nueva"].includes(b.estado)) { await env.DB.prepare("UPDATE mesa_ideas SET estado=?, nota=? WHERE id=?").bind(b.estado, corto(b.nota, 200) || null, String(b.id)).run(); return json({ ok: true }); }
+  // "No fue venta": la señal de pago de ese chat deja de contarse (misma marca que usa el panel viejo)
+  if (b.accion === "venta_no" && /^\d{8,16}$/.test(String(b.conv || ""))) { await env.DB.batch([env.DB.prepare("UPDATE w_hito SET oculto=1 WHERE conv=? AND tipo IN ('venta','comprobante')").bind(String(b.conv)), env.DB.prepare("INSERT OR REPLACE INTO w_hito (id, conv, tipo, ts, dato) VALUES (?,?,'no_venta',?,'el dueño marcó que no fue venta')").bind("nv:" + b.conv, String(b.conv), Date.now())]); await env.DB.prepare("DELETE FROM kv WHERE k='mesa_hechos'").run().catch(() => {}); return json({ ok: true }); }
   if (b.accion === "virales_leer") { await kvPut(env, "vir_forzar", Date.now()); return json({ ok: true }); }
   if (b.accion === "hipotesis" && b.id && ["descartada", "activa"].includes(b.estado)) { await env.DB.prepare("UPDATE mesa_hip SET estado=? WHERE id=?").bind(b.estado, String(b.id)).run(); return json({ ok: true }); }
   return json({ error: "acción desconocida" });
@@ -656,3 +720,6 @@ export async function guardarML(env, b) {
   await kvPut(env, "ml_tendencias", JSON.stringify({ ts: Date.now(), items }));
   return { ok: true, guardadas: items.length };
 }
+
+// Diagnóstico (solo lectura, con el token del lector): los hechos tal como los ven los agentes y el último estado
+export async function diagMesa(env) { const h = await hechos(env); return { texto: textoHechos(h), hechos: h, estado: await estadoMesa(env) }; }

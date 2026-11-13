@@ -98,14 +98,16 @@ input:focus,select:focus,textarea:focus{outline:2px solid color-mix(in srgb,var(
   <div class="chips" id="mesaSug"></div>
   <div class="fila"><textarea id="mesaQ" rows="2" placeholder="Ej: qué pasa que no estamos cerrando?"></textarea></div><button class="b p" id="mesaEnv">Preguntar</button>
  </div>
+ <h2>Ideas de los agentes <span class="n" id="mesaIdeasN">0</span></h2><p class="mu">Las dejan solos en cada corrida (06:10, 13:30 y 20:30). Marcá las que te sirven y las que no: en la corrida siguiente proponen más de las primeras y dejan de repetir las segundas.</p><div id="mesaIdeas"></div>
  <div class="card" id="mesaLectura"><div class="top"><b>Lectura de hoy</b><button class="b" id="mesaCorrer" style="margin-left:auto">Correr ahora</button></div><div class="cons mu" id="mesaLecTxt">Todavía no corrió.</div><div id="mesaDec"></div><div id="mesaRumbo"></div></div>
  <h2>La discusión entre los agentes</h2><p class="mu">Antes de decidir, cada agente le contesta a los otros con sus datos y un crítico ataca la conclusión más floja.</p><div class="card" id="mesaDebate"><div class="mu">Todavía no hubo discusión.</div></div>
- <h2>Hipótesis en curso <span class="n" id="mesaHipN">0</span></h2><p class="mu">Cada una tiene una métrica, el valor de arranque, el de hoy y la meta. El código las cierra solo: cumplida o fallida. Eso es lo que la mesa aprende.</p><div class="tw" id="mesaHip"></div>
+ <h2>Hipótesis en curso <span class="n" id="mesaHipN">0</span></h2><p class="mu">Una hipótesis es una apuesta: "si hacemos X, el número Y pasa de tanto a tanto antes de tal fecha". No tenés que tocarlas: en cada corrida el código vuelve a medir el número y, cuando llega a la meta o vence el plazo, la cierra sola como cumplida o fallida y los agentes lo recuerdan. Descartá solo la que te parezca mal planteada.</p><div class="tw" id="mesaHip"></div>
  <h2>Lo que vio cada agente</h2><div id="mesaAg"></div>
  <h2>Lo que se está pegando en otras cuentas</h2><p class="mu">Se lee solo todos los lunes (TikTok, por hashtag y por cuenta). El agente de Redes lo cruza con lo que publicamos.</p>
  <div class="card"><div class="fila"><input id="virHash" placeholder="Hashtags separados por coma"><input id="virPerf" placeholder="Cuentas a seguir (sin @), separadas por coma"></div><div class="acc"><button class="b" id="virGuardar">Guardar fuentes</button><button class="b" id="virLeer">Leer ahora</button><span class="mu" id="virEst"></span></div></div>
  <div class="vir" id="mesaVir"></div>
- <h2>Números de la última corrida</h2><div class="eq" id="mesaNum"></div>
+ <h2>Posibles ventas para confirmar <span class="n" id="mesaVentasN">0</span></h2><p class="mu">El sistema vio una señal de pago en estos chats. No las cuenta como venta segura hasta que vos digas. "Sí, fue venta" la carga; "No fue venta" la saca de las cuentas.</p><div id="mesaVentas"></div>
+ <h2>Números de la última corrida</h2><p class="mu">Son los datos que el código midió y que leyeron los agentes. Arriba el embudo (cuántos entran, a cuántos se cotiza, cuántos compran); después dónde se traba cada etapa.</p><div class="eq" id="mesaNum"></div>
 </section>
 </main>
 <div class="modal" id="mod"><div class="card" id="modC"></div></div><div class="toast" id="toast"></div>
@@ -362,7 +364,7 @@ function fechaHoraM(ts) { return ts ? new Date(ts).toLocaleString("es-AR", { day
 function pintarMesa(d) {
   var est = [], u = d.ultima;
   est.push('<span class="pill ' + (u ? "ok" : "warn") + '">' + (u ? "Última corrida " + fechaHoraM(u.ts) + " (" + esc(u.motivo) + ")" : "Todavía no corrió") + "</span>");
-  est.push('<span class="pill">Corre sola 06:10 y 20:30 · te avisa por WhatsApp</span>');
+  est.push('<span class="pill">Corre sola 06:10, 13:30 y 20:30 · te avisa por WhatsApp</span>');
   var vr = d.virales || {}, vu = vr.ultimo;
   est.push('<span class="pill ' + ((vr.lista || []).length ? "ok" : "warn") + '">Virales de otros: ' + ((vr.lista || []).length ? (vr.lista.length + " guardados · leído " + fechaHoraM(vu && vu.ts)) : (vr.leyendo ? "leyendo…" : "sin lectura todavía")) + "</span>");
   $("#mesaEst").innerHTML = est.join("");
@@ -370,6 +372,13 @@ function pintarMesa(d) {
   $("#mesaLecTxt").className = dt.lectura ? "cons" : "cons mu"; $("#mesaLecTxt").textContent = dt.lectura || "Todavía no hay lectura. Tocá Correr ahora.";
   $("#mesaDec").innerHTML = (dt.decisiones || []).map(function (x, i) { return '<div class="nota"><b>' + (i + 1) + ". " + esc(x.que) + '</b> <span class="mu">(' + esc(x.quien) + ')</span><div class="mu">' + esc(x.por_que) + "</div></div>"; }).join("");
   $("#mesaRumbo").innerHTML = dt.cambio_rumbo ? '<div class="nota" style="background:color-mix(in srgb,var(--bad) 12%,var(--card))"><b>Cambio de rumbo:</b> ' + esc(dt.cambio_rumbo) + "</div>" : "";
+  var ids = d.ideas || [], NOMI = { whatsapp: "WhatsApp", redes: "Redes", productos: "Productos" };
+  $("#mesaIdeasN").textContent = ids.filter(function (i) { return i.estado === "nueva"; }).length;
+  $("#mesaIdeas").innerHTML = ids.map(function (i) { return '<div class="card" data-idea="' + esc(i.id) + '"><div class="top"><span class="tag">' + esc(NOMI[i.agente] || i.agente) + '</span><span class="mu">' + fechaHoraM(i.ts) + "</span>" + (i.estado === "util" ? '<span class="tag" style="color:var(--ok)">me sirve</span>' : "") + '</div><div class="que">' + esc(i.texto) + '</div><div class="acc">' + (i.estado === "util" ? "" : '<button class="b v" data-e="util">Me sirve</button>') + '<button class="b" data-e="hecha">Ya lo hice</button><button class="b x" data-e="descartada">No sirve</button><button class="b" data-e="preguntar">Preguntarle más</button></div></div>'; }).join("") || '<div class="mu">Todavía no hay ideas. Aparecen después de la próxima corrida.</div>';
+  var vs = (d.hechos && d.hechos.ventas_sin_cargar) || [];
+  $("#mesaVentasN").textContent = vs.length;
+  $("#mesaVentas").innerHTML = vs.map(function (v) { return '<div class="card" data-conv="' + esc(v.conv) + '"><div class="top"><span class="tel" data-tel="' + esc(v.conv) + '">' + telFmt(v.conv) + "</span><b>" + esc(v.nombre) + '</b><span class="mu">' + esc(v.producto || "") + " · " + esc(v.fecha) + "</span>" + (v.usd ? '<span class="tag">~USD ' + plata(v.usd) + "</span>" : "") + "</div>" + (v.evidencia ? '<div class="ult">Señal: "' + esc(v.evidencia) + '"</div>' : "") + '<div class="acc"><button class="b v" data-a="vendido">Sí, fue venta</button><button class="b x" data-ventano="1">No fue venta</button></div></div>'; }).join("") +
+    ((d.hechos && d.hechos.movimientos || []).length ? '<div class="mu" style="margin-top:6px">Pagos de clientes que ya habían comprado (no se cuentan como venta nueva): ' + d.hechos.movimientos.map(function (m) { return esc(m.nombre) + " " + esc(m.fecha); }).join(" · ") + "</div>" : "") || '<div class="mu">Ninguna señal de pago nueva.</div>';
   var db = d.informes.debate, dd = (db && db.datos) || {}, NOM = { whatsapp: "WhatsApp", redes: "Redes", productos: "Productos", critico: "Crítico", todos: "todos" }, COL = { whatsapp: "var(--c-consulta)", redes: "var(--c-venta)", productos: "var(--c-cotizar)", critico: "var(--bad)" };
   var lista3 = function (t, l) { return (l || []).length ? "<div><b>" + t + "</b><ul>" + l.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul></div>" : ""; };
   $("#mesaDebate").innerHTML = (dd.turnos || []).length ? '<div class="mu">' + fechaHoraM(db.ts) + "</div>" + dd.turnos.map(function (t) { return '<div class="turno" style="--k:' + (COL[t.agente] || "var(--mu)") + '"><div class="av">' + esc(NOM[t.agente] || t.agente) + (t.a && t.a !== "todos" ? '<div class="mu" style="font-weight:500;text-transform:none">a ' + esc(NOM[t.a] || t.a) + "</div>" : "") + '</div><div class="tx">' + esc(t.texto) + "</div></div>"; }).join("") +
@@ -393,18 +402,19 @@ function pintarMesa(d) {
       ((x.para_manuel || []).length ? '<div class="mu"><b>Para Manuel:</b><ul>' + x.para_manuel.map(function (i) { return "<li>" + esc(i) + "</li>"; }).join("") + "</ul></div>" : "") + "</details>";
   }).join("");
   var h = d.hechos, kp = function (t, v, s) { return '<div class="card"><div class="kp">' + t + "</div><b>" + v + "</b>" + (s ? '<div class="mu">' + s + "</div>" : "") + "</div>"; };
+  var conf = h && h.embudo.ventas_confirmadas != null ? h.embudo.ventas_confirmadas : null;
   $("#mesaNum").innerHTML = h ? [
-    kp("Embudo 7 días", h.embudo.nuevos + " → " + h.embudo.cotizados + " → " + h.embudo.ventas, "chats nuevos → cotizados → ventas · 7 días antes: " + h.embudo_ant.nuevos + " → " + h.embudo_ant.cotizados + " → " + h.embudo_ant.ventas),
-    kp("Perfil A+B entre los nuevos", h.perfiles.ab_pct + "%", esc(JSON.stringify(h.perfiles.v7))),
-    kp("Primera respuesta humana", (h.respuesta.p50 == null ? "-" : h.respuesta.p50 + " min"), h.respuesta.mas_1h_pct + "% tardó más de 1 h · " + h.respuesta.mas_12h + " más de 12 h"),
-    kp("Preguntas sin responder", h.pendientes, "hace más de 24 h"),
-    kp("Cotizaciones sin respuesta", h.cotizaciones.sin_resp_pct + "%", "de " + h.cotizaciones.n + " en 7 días (48 h)"),
-    kp("Seguimientos 14 días", h.seguimientos.total.resp_pct + "% responden", "A: " + h.seguimientos.A.n + " env, " + h.seguimientos.A.resp_pct + "% · B: " + h.seguimientos.B.n + " env, " + h.seguimientos.B.resp_pct + "% · compras " + h.seguimientos.total.compro),
-    kp("Prospección 7 días", h.prospeccion.resp_pct + "% responden", h.prospeccion.enviados_7d + " enviados · " + h.prospeccion.calientes_7d + " calientes"),
-    kp("Consultas por video", h.consultas_por_video == null ? "-" : h.consultas_por_video, "atribuidas en 48 h, sobre la base diaria"),
-    kp("Cupos: consultas en 72 h", h.cupos.promedio_consultas == null ? "-" : h.cupos.promedio_consultas, (h.cupos.lista || []).length + " cupos en 14 días"),
-    kp("Ventas sin cargar", (h.ventas_sin_cargar || []).length, esc((h.ventas_sin_cargar || []).map(function (v) { return v.nombre; }).join(", "))),
-    kp("Mercado Libre", h.ml ? "con datos" : "sin datos", h.ml ? "" : "correr tendencias_ml.bat en la PC"),
+    kp("Embudo de 7 días", h.embudo.nuevos + " → " + h.embudo.cotizados + " → " + h.embudo.ventas, "chats nuevos → cotizados → ventas" + (conf != null ? " (" + conf + " confirmadas, " + (h.embudo.ventas - conf) + " sin confirmar)" : "") + ". Semana anterior: " + h.embudo_ant.nuevos + " → " + h.embudo_ant.cotizados + " → " + h.embudo_ant.ventas),
+    kp("Clientes buenos entre los nuevos", h.perfiles.ab_pct + "%", "de cada 100 chats nuevos, cuántos son perfil A (revende, USD 1.000+) o B (negocio). Detalle: " + esc(JSON.stringify(h.perfiles.v7))),
+    kp("Cuánto tardamos en contestar", (h.respuesta.p50 == null ? "-" : h.respuesta.p50 + " min"), "tiempo típico hasta la primera respuesta de una persona (no el bot). " + h.respuesta.mas_1h_pct + "% esperó más de 1 h y " + h.respuesta.mas_12h + " más de 12 h"),
+    kp("Preguntas sin responder", h.pendientes, "clientes que preguntaron algo hace más de 24 h" + (h.esperando_total != null ? ". En total hay " + h.esperando_total + " chats donde el último mensaje es del cliente, pero el resto son gracias, ok o saludos" : "")),
+    kp("Cotizaciones que quedaron en nada", h.cotizaciones.sin_resp_pct + "%", "de " + h.cotizaciones.n + " cotizaciones de la semana, las que el cliente no contestó en 48 h"),
+    kp("Seguimientos que contestan", h.seguimientos.total.resp_pct + "%", "en 14 días. Plan A (oferta concreta): " + h.seguimientos.A.n + " enviados, contesta " + h.seguimientos.A.resp_pct + "%. Plan B (entender su negocio): " + h.seguimientos.B.n + " enviados, contesta " + h.seguimientos.B.resp_pct + "%. Compraron después: " + h.seguimientos.total.compro),
+    kp("Prospección que contesta", h.prospeccion.resp_pct + "%", h.prospeccion.enviados_7d + " mensajes en frío en 7 días · " + h.prospeccion.calientes_7d + " interesados"),
+    kp("Chats que trae cada video", h.consultas_por_video == null ? "-" : h.consultas_por_video, "chats nuevos en las 48 h después de publicar, por encima de lo que entra un día normal"),
+    kp("Consultas que trae cada cupo", h.cupos.promedio_consultas == null ? "-" : h.cupos.promedio_consultas, "consultas por ese producto en las 72 h después de publicarlo en los grupos · " + (h.cupos.lista || []).length + " cupos en 14 días"),
+    kp("Posibles ventas sin confirmar", (h.ventas_sin_cargar || []).length, esc((h.ventas_sin_cargar || []).map(function (v) { return v.nombre; }).join(", ")) || "confirmalas o descartalas arriba"),
+    kp("Mercado Libre", h.ml ? "con datos" : "sin datos", h.ml ? "tendencias leídas desde tu PC" : "abrí tendencias_ml.bat en la PC"),
   ].join("") : '<div class="mu">Corré la mesa para ver los números.</div>';
   if (!MESA_OCUPADA) { MESA_HILO = d.chat || []; pintarMesaHilo(); }
 }
@@ -435,6 +445,11 @@ $("#mesaEnv").onclick = preguntarMesa;
 $("#mesaQ").addEventListener("keydown", function (e) { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); preguntarMesa(); } });
 $("#virGuardar").onclick = function () { api("mesa", { accion: "fuentes", hashtags: $("#virHash").value, perfiles: $("#virPerf").value }).then(function (r) { toast(r.ok ? "Fuentes guardadas" : "No pude guardar"); }); };
 $("#virLeer").onclick = function () { api("mesa", { accion: "fuentes", hashtags: $("#virHash").value, perfiles: $("#virPerf").value }).then(function () { return api("mesa", { accion: "virales_leer" }); }).then(function () { toast("Lectura pedida: tarda unos minutos"); $("#virEst").textContent = "Leyendo… tarda unos minutos, recargá después."; }); };
+$("#mesaIdeas").addEventListener("click", function (e) { var b = e.target.closest("[data-e]"); if (!b) return; var card = b.closest("[data-idea]"), est = b.dataset.e;
+  if (est === "preguntar") { $("#mesaQ").value = "Desarrollame esta idea con datos y decime cómo la hago paso a paso: " + card.querySelector(".que").textContent; window.scrollTo(0, 0); preguntarMesa(); return; }
+  var nota = est === "descartada" ? (prompt("Por qué no sirve? (opcional, así no la repiten)") || "") : "";
+  api("mesa", { accion: "idea", id: card.dataset.idea, estado: est, nota: nota }).then(function () { toast(est === "util" ? "Anotado: más de estas" : est === "hecha" ? "Anotado como hecho" : "Descartada"); if (est === "util") cargarMesa(); else card.remove(); }); });
+$("#mesaVentas").addEventListener("click", function (e) { var b = e.target.closest("[data-ventano]"); if (!b) return; var card = b.closest("[data-conv]"); api("mesa", { accion: "venta_no", conv: card.dataset.conv }).then(function () { card.remove(); toast("Listo, no se cuenta como venta"); }); });
 $("#mesaHip").addEventListener("click", function (e) { var b = e.target.closest("[data-hip]"); if (!b) return; api("mesa", { accion: "hipotesis", id: b.dataset.hip, estado: "descartada" }).then(function () { toast("Descartada"); cargarMesa(); }); });
 
 var INI = (location.hash || "").slice(1); if (INI === "ag") INI = "mesa";

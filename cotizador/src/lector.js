@@ -121,6 +121,7 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
   // el puente marca el mensaje como "media" y sigue.
   if (p === "/whatsapp-web-webhook/media") return new Response("no guardamos archivos", { status: 402 });
   // TikTok Studio leído desde la PC (sender/tiktok_studio.py): gratis, con los datos de dueño de la cuenta
+  if (p === "/mesa-diag") { const { diagMesa } = await import("./mesa.js"); return Response.json(await diagMesa(env)); }
   if (p === "/ml-tendencias" && req.method === "POST") { const { guardarML } = await import("./mesa.js"); return Response.json(await guardarML(env, await req.json().catch(() => ({})))); }
   if (p === "/tiktok-pendientes") { const { tiktokSinGuion } = await import("./tablero.js"); return Response.json(await tiktokSinGuion(env)); }
   if (p === "/tiktok-transcribir" && req.method === "POST") { const { transcribirTikTok } = await import("./tablero.js"); return Response.json(await transcribirTikTok(env, req.headers.get("x-video-id"), await req.arrayBuffer())); }
