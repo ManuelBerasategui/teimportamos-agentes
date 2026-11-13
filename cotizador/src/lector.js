@@ -124,6 +124,7 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
   if (p === "/whatsapp-web-webhook/media") return new Response("no guardamos archivos", { status: 402 });
   // TikTok Studio leído desde la PC (sender/tiktok_studio.py): gratis, con los datos de dueño de la cuenta
   if (p === "/ali-config") { const { configCalc } = await import("./autocot.js"); return Response.json(await configCalc(env, { forzar: true })); }
+  if (p === "/ali-agregar" && req.method === "POST") { const { apiAutocot } = await import("./autocot.js"); const b = await req.json().catch(() => ({})); return apiAutocot(env, req, url, iaJSON, { accion: "links", texto: b.link, cantidad: b.cantidad }); }
   if (p === "/ali-pendientes") return Response.json(await pendientesPC(env, +url.searchParams.get("limite") || 8));
   if (p === "/ali-leido" && req.method === "POST") return Response.json(await linkLeido(env, iaJSON, await req.json().catch(() => ({}))));
   if (p === "/ali-latido" && req.method === "POST") return Response.json(await latidoPC(env, await req.json().catch(() => ({}))));

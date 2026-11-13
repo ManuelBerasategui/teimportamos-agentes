@@ -86,6 +86,15 @@ def una_vez(ver=False):
     from playwright.sync_api import sync_playwright
     try: links = api("/ali-pendientes?limite=8").get("links", [])
     except Exception as e: print("No pude pedir la cola:", e); return None
+    if not links and ver and sys.stdin and sys.stdin.isatty():
+        # Con la ventana a la vista y la cola vacía: se puede pegar un link acá mismo para probar
+        print("No hay links en la cola. Pegá acá un link de Alibaba y apretá Enter (o Enter solo para salir):")
+        l = input("> ").strip()
+        if not l: return 0
+        q = input("Cantidad que quiere el cliente (Enter si no sabés): ").strip()
+        r = api("/ali-agregar", {"link": l, "cantidad": q})
+        if r.get("error"): print(r["error"]); return 0
+        links = api("/ali-pendientes?limite=8").get("links", [])
     if not links: print(time.strftime("%H:%M"), "· no hay links para leer."); api("/ali-latido", {"estado": "leyendo", "detalle": "cola vacía"}); return 0
     hechos = 0
     with sync_playwright() as p:
