@@ -106,7 +106,7 @@ chk("guarda la decisión del dueño y su hipótesis", db.prepare("SELECT 1 FROM 
 // 5) Estado para el panel y API
 const est = await M.estadoMesa(env);
 chk("estado: informes, hipótesis, hechos resumidos y última corrida", est.informes.integrador && est.hipotesis.length === 3 && est.hechos.embudo.nuevos === 6 && est.ultima.motivo === "panel");
-const api = async (m, b) => (await M.apiMesa(env, { method: m, json: async () => b }, new URL("https://x/panel/p/api/mesa"), ia)).json();
+const api = async (m, b) => (await M.apiMesa(env, { method: m, json: async () => { throw new Error("cuerpo ya leído"); } }, new URL("https://x/panel/p/api/mesa"), ia, b)).json();   // como en apiTablero: el cuerpo llega leído
 chk("API: descartar una hipótesis", (await api("POST", { accion: "hipotesis", id: hips[0].id, estado: "descartada" })).ok && db.prepare("SELECT estado FROM mesa_hip WHERE id=?").get(hips[0].id).estado === "descartada");
 chk("API: tendencias de Mercado Libre desde la PC", (await M.guardarML(env, { items: [{ palabra: "tarjetas nfc", puesto: 1, resultados: 1200, precio_min: 3000, precio_max: 9000, vendidos: "+500 vendidos", top: [{ titulo: "Tarjeta NFC", precio: 3500, vendidos: "+500" }] }] })).guardadas === 1 && /MERCADO LIBRE \(leído/.test(M.textoHechos(await M.hechos(env), ["productos"])));
 

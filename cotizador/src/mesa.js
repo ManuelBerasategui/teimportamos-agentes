@@ -449,14 +449,14 @@ Respondé SOLO JSON: {"respuesta":"texto","guardar":[{"tipo":"decision|preferenc
   if (r?.hipotesis?.length) await crearHipotesis(env, h, "manuel", r.hipotesis);
   return { respuesta };
 }
-export async function apiMesa(env, req, url, iaJSON) {
+export async function apiMesa(env, req, url, iaJSON, body = null) {
   await prepararMesa(env);
   const json = (d) => Response.json(d, { headers: { "Cache-Control": "no-store" } });
   if (req.method !== "POST") {
     if (url.searchParams.get("hechos") === "1") return json(await hechos(env));
     return json(await estadoMesa(env));
   }
-  const b = await req.json().catch(() => ({}));
+  const b = body || (await req.json().catch(() => ({})));   // apiTablero ya leyó el cuerpo: lo recibe por parámetro
   if (b.accion === "correr") { if (!iaJSON) return json({ error: "sin IA" }); const r = await correrMesa(env, iaJSON, { forzar: true, profundo: !!b.profundo, motivo: "panel" }); return json({ ok: r.ok, integrador: r.integrador, cerradas: r.cerradas, sin_ia: !r.ok }); }
   if (b.accion === "preguntar") { if (!iaJSON) return json({ error: "sin IA" }); return json(await preguntarMesa(env, iaJSON, b.pregunta)); }
   if (b.accion === "hipotesis" && b.id && ["descartada", "activa"].includes(b.estado)) { await env.DB.prepare("UPDATE mesa_hip SET estado=? WHERE id=?").bind(b.estado, String(b.id)).run(); return json({ ok: true }); }
