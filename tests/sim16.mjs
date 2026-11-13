@@ -1,6 +1,7 @@
 // Auditoría de cotizaciones por IA (capturas/PDF) + pendientes desde el 805 + alertas agrupadas
 import { DatabaseSync } from "node:sqlite";
 import fs from "fs";
+for (const f of fs.readdirSync("src")) fs.copyFileSync("src/" + f, "/tmp/" + f);   // el lector importa otros módulos (autocot, esquema...): van todos
 fs.copyFileSync("src/lector.js", "/tmp/lector16.js");
 const L = await import("/tmp/lector16.js");
 const db = new DatabaseSync(":memory:");
