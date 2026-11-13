@@ -75,3 +75,7 @@ El panel ya arma solo la cotización cuando un cliente manda un link de **Alibab
 3. Cerrá `responder.py` y doble clic en `prospectar.bat`: manda hasta 20 por día (PROSP_POR_DIA), de 10 a 19 h, con 4 a 8 minutos entre uno y otro. No hace falta agendar los números. Saltea los que no tienen WhatsApp y los que ya tienen charla con nosotros, y marca todo en la columna estado.
 Otro número: `PROSP_PERFIL=perfil_prospeccion` en el .env abre otra sesión de WhatsApp Web (escaneás el QR con ese número la primera vez).
 Respuestas: doble clic en `revisar_respuestas.bat` (una vez por día). Entra SOLO a los chats de los negocios de la planilla a los que ya se les mandó, guarda lo que contestaron y (si hay IA) la temperatura (caliente/neutro/frío), la fecha de recontacto y el próximo mensaje. Al final lista los que toca recontactar hoy.
+
+## Tendencias de Mercado Libre (tendencias_ml.py)
+
+Lee páginas públicas de Mercado Libre (no hace falta cuenta) y le manda a la mesa de agentes qué se está buscando y cómo están las publicaciones. Abrir `tendencias_ml.bat` (queda leyendo una vez por día) o `python tendencias_ml.py` para una lectura. Si Mercado Libre pide verificación: `python tendencias_ml.py --ver` y resolverla en la ventana. Lo leído queda en `ml_debug.json` por si hay que ajustar el programa.

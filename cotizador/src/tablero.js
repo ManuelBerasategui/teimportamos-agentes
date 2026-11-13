@@ -506,6 +506,7 @@ export async function apiTablero(env, req, url, quien, iaJSON) {
     return json(await todas(env, "SELECT conv, nombre, producto, etapa, ult_ts, ult_texto, presup_usd FROM w_conv WHERE grupo=0 AND COALESCE(prov,0)=0 AND (lower(COALESCE(nombre,'')) LIKE ? OR conv LIKE ? OR lower(COALESCE(producto,'')) LIKE ?) ORDER BY ult_ts DESC LIMIT 40", q, q, q));
   }
   if (r === "lineas") return json({ lineas: LINEAS });
+  if (r === "mesa") { const { apiMesa } = await import("./mesa.js"); return apiMesa(env, req, url, iaJSON); }
   if (r === "objetivos") {
     if (req.method === "POST") {
       const o = {}; for (const k of Object.keys(OBJ_DEF)) if (body[k] != null && body[k] !== "") o[k] = Math.max(0, Math.min(500, +body[k] || 0));

@@ -11,6 +11,7 @@ import { apiTablero, cronTablero } from "./tablero.js";
 import { PANEL_P } from "./panel-p.js";
 import { rutaTelegram, apiAsistente, cronAsistente } from "./asistente.js";
 import { preguntarAgente, charlaAgente } from "./agente.js";
+import { cronMesa } from "./mesa.js";
 import { apiGrupos, cronGrupos } from "./grupos.js";
 import { simularRedactar } from "./autoresp.js";
 import { cronEntrenador } from "./entrenador.js";
@@ -3534,6 +3535,7 @@ export default {
       if (env.DB && env.TELEGRAM_ASISTENTE === "1") await cronAsistente(env, evento.scheduledTime || Date.now(), iaJSON).catch((e) => console.log("Error asistente:", e?.stack || e));
       if (env.DB) await cronGrupos(env, iaJSON, evento.scheduledTime || Date.now(), BASE_URL).catch((e) => console.log("Error grupos:", e?.stack || e));
       if (env.DB) await cronRedes(env, iaJSON, evento.scheduledTime || Date.now(), BASE_URL, T).catch((e) => console.log("Error redes:", e?.stack || e));
+      if (env.DB) await cronMesa(env, iaJSON, evento.scheduledTime || Date.now(), avisarAdmins).catch((e) => console.log("Error mesa:", e?.stack || e));
     })());
   },
   async fetch(req, envBase, ctx) {

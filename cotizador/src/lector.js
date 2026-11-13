@@ -121,6 +121,7 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
   // el puente marca el mensaje como "media" y sigue.
   if (p === "/whatsapp-web-webhook/media") return new Response("no guardamos archivos", { status: 402 });
   // TikTok Studio leído desde la PC (sender/tiktok_studio.py): gratis, con los datos de dueño de la cuenta
+  if (p === "/ml-tendencias" && req.method === "POST") { const { guardarML } = await import("./mesa.js"); return Response.json(await guardarML(env, await req.json().catch(() => ({})))); }
   if (p === "/tiktok-pendientes") { const { tiktokSinGuion } = await import("./tablero.js"); return Response.json(await tiktokSinGuion(env)); }
   if (p === "/tiktok-transcribir" && req.method === "POST") { const { transcribirTikTok } = await import("./tablero.js"); return Response.json(await transcribirTikTok(env, req.headers.get("x-video-id"), await req.arrayBuffer())); }
   if (p === "/tiktok-studio" && req.method === "POST") { const { guardarStudio } = await import("./tablero.js"); return Response.json(await guardarStudio(env, await req.json().catch(() => ({})))); }
@@ -1005,13 +1006,18 @@ function queMandamos(m) {
   return "";
 }
 // Registro de cada seguimiento enviado (toque, situación) para medir: respondió a las 48 h / 7 días, avanzó o compró
+let segLogListo = false;
 async function logSeg(env, conv, quien) {
   if (!conv) return;
-  await env.DB.prepare("CREATE TABLE IF NOT EXISTS w_seg_log (id TEXT PRIMARY KEY, conv TEXT, ts INTEGER, toque INTEGER, situacion TEXT, quien TEXT, texto TEXT)").run().catch(() => {});
+  if (!segLogListo) {
+    await env.DB.prepare("CREATE TABLE IF NOT EXISTS w_seg_log (id TEXT PRIMARY KEY, conv TEXT, ts INTEGER, toque INTEGER, situacion TEXT, quien TEXT, texto TEXT)").run().catch(() => {});
+    await env.DB.prepare("ALTER TABLE w_seg_log ADD COLUMN plantilla TEXT").run().catch(() => {});
+    segLogListo = true;
+  }
   const cache = await cacheSegIA(env).catch(() => ({})), c = cache[conv] || {};
   const f = await env.DB.prepare("SELECT seg_situacion FROM w_conv WHERE conv=?").bind(conv).first().catch(() => null);
-  await env.DB.prepare("INSERT OR REPLACE INTO w_seg_log (id, conv, ts, toque, situacion, quien, texto) VALUES (?,?,?,?,?,?,?)")
-    .bind(`${conv}:${Date.now()}`, conv, Date.now(), c.toque || 0, String(c.situacion || f?.seg_situacion || ""), quien, String(c.mensaje || "").slice(0, 500)).run().catch(() => {});
+  await env.DB.prepare("INSERT OR REPLACE INTO w_seg_log (id, conv, ts, toque, situacion, quien, texto, plantilla) VALUES (?,?,?,?,?,?,?,?)")
+    .bind(`${conv}:${Date.now()}`, conv, Date.now(), c.toque || 0, String(c.situacion || f?.seg_situacion || ""), quien, String(c.mensaje || "").slice(0, 500), plantillaSeg(conv)).run().catch(() => {});
 }
 // Reporte: por situación, cuántos seguimientos, cuántos respondieron en 48 h y cuántos compraron después
 export async function reporteSeguimientos(env, dias = 30) {
@@ -1144,15 +1150,24 @@ export async function seguimientosAuto805(env) {
 function conDetalle(s, c) {
   const ok = vigente(c, s);
   return { ...s, producto: (ok && c.producto) || s.producto, cantidad: (ok && c.cantidad) || "", total: (ok && c.total) || "", borrador: (ok && c.mensaje) || borradorBase(s), revisado: !!ok,
-    situacion: ok ? Number(c.situacion) || 0 : 0, sit_texto: ok ? SITUACIONES[c.situacion] || "" : "", dueno: vaAlDueno(s, ok ? c : null), llamada: (ok && c.llamada) || "" };
+    situacion: ok ? Number(c.situacion) || 0 : 0, sit_texto: ok ? SITUACIONES[c.situacion] || "" : "", dueno: vaAlDueno(s, ok ? c : null), llamada: (ok && c.llamada) || "", plantilla: plantillaSeg(s.conv) };
 }
 // Mensaje de base cuando la IA todavía no revisó el chat (así el botón nunca abre el WhatsApp vacío)
+// Plan de seguimiento A/B (se mide por separado en la mesa): A = oferta concreta, B = entender el negocio y ayudar.
+// Fijo por cliente (último dígito del número), así cada cliente recibe siempre el mismo plan y la comparación es limpia.
+export const plantillaSeg = (conv) => (parseInt(String(conv || "").replace(/\D/g, "").slice(-1) || "0", 10) % 2 === 0 ? "A" : "B");
 export function borradorBase(s) {
   const n = /\p{L}/u.test(String(s.nombre || "")) ? " " + String(s.nombre).trim().split(/\s+/)[0].toLowerCase() : "";
   const que = s.producto ? "lo de " + s.producto : "lo que te pasé";
-  if ((s.toque || 1) >= 3) return "buenas" + n + ", cerramos " + que + " por ahora? qué te frenó más: 1) el precio total 2) la cantidad 3) el plazo 4) no es el momento 5) otra cosa. con un número me alcanza";
-  if ((s.toque || 1) === 2) return "buenas" + n + ", para avanzar con " + que + ", te sirve que revise una cantidad menor y te pase el total para comparar?";
-  return "buenas" + n + ", te escribo por " + que + ": qué te frena más, el precio total o la cantidad? si es la cantidad, puedo revisar otra opción y pasarte el total para comparar.";
+  const t = s.toque || 1, plan = plantillaSeg(s.conv);
+  if (plan === "A") {
+    if (t >= 3) return "buenas" + n + ", lo dejo acá para no molestarte. si en algún momento querés retomar " + que + ", el precio que te pasé te lo sostengo hasta fin de mes";
+    if (t === 2) return "buenas" + n + ", esta semana mando un pedido a china. si entrás con " + que + " ahora el flete se comparte y te queda más barato por unidad. te paso el total con la cantidad que quieras?";
+    return "buenas" + n + ", te paso una alternativa por " + que + ": si querés arrancar con menos unidades te armo el total puesto en argentina hoy mismo. con cuántas te gustaría probar?";
+  }
+  if (t >= 3) return "buenas" + n + ", cerramos " + que + " por ahora? qué te frenó más: 1) el precio total 2) la cantidad 3) el plazo 4) no es el momento 5) otra cosa. con un número me alcanza";
+  if (t === 2) return "buenas" + n + ", para que te sirva " + que + ": a cuánto lo venderías vos? con eso te digo si el margen cierra y con qué cantidad conviene arrancar";
+  return "buenas" + n + ", una consulta para pasarte algo útil: " + que + " es para revender o para tu negocio? según eso te armo la cantidad que más te conviene";
 }
 // Una línea corta y útil: a quién, qué le cotizamos (cantidad y monto), cuándo y qué contestó
 export function lineaSeguimiento(s) {
@@ -1185,16 +1200,22 @@ PASO 1: leé TODA la charla y elegí UNA situación:
 8 negociación activa con monto alto → dueno true
 PASO 2: "seguir" false si ya compró, dijo que no o que lo deja, pidió que no le escriban, es proveedor o no es cliente, ya tiene un pedido en curso, le dijimos que eso no lo traemos, o NO tenés nada nuevo y real para aportar.
 "dueno" true (lo maneja el dueño, no sale solo) si hay negociación sobre costos/flete/aduana/condiciones de pago, pide llamada, factura o referencias, se enojó o reclama, o es un pedido grande o raro. En ese caso "llamada": 2 líneas con qué falta y qué decirle por teléfono.
-PASO 3, el mensaje (va el número de toque de cada cliente):
-- toque 1: retomá algo concreto de esta charla y preguntá directamente si el precio total o la cantidad lo frenan. Ofrecé revisar otra cantidad y pasarle el total para comparar. Cerrá con un próximo paso fácil.
-- toque 2: preguntá qué lo frena, el precio total o la cantidad. Podés ofrecer revisar otra cantidad y comparar el total; no prometas descuentos, rebajas ni un resultado de precio. Nunca "lo pensaste?".
+PASO 3, el mensaje. Cada cliente tiene un PLAN (A o B, va indicado) y un número de toque. Seguí el plan al pie de la letra: se mide cuál cierra más.
+PLAN A (oferta concreta, el mensaje TRAE algo):
+- toque 1: retomá producto y cantidad y ofrecé una alternativa concreta que ya esté en la charla (otra cantidad con su total si lo tenés, arrancar con menos, o entrar en el pedido que sale esta semana para compartir flete). Cerrá con el próximo paso fácil (con la seña del 30% lo pido).
+- toque 2: algo nuevo y real: fecha del próximo pedido, qué incluye el total (flete, aduana, honorarios), o el precio por otra cantidad si está en la charla. Una pregunta cerrada.
+- toque 3: cierre amable: lo dejo acá, si retoma le sostengo el precio hasta fin de mes. Sin opciones numeradas.
+PLAN B (entender su negocio y ayudar, el mensaje PREGUNTA algo útil):
+- toque 1: UNA sola pregunta sobre su negocio (es para revender o para su negocio, a cuánto lo vende hoy) y ofrecé armarle la cantidad que le conviene.
+- toque 2: un dato útil para su decisión (margen estimado si en la charla hay precio de reventa, qué incluye el total, plazo real) y una pregunta.
 - toque 3: cierre con opciones numeradas: "qué te frenó? 1) el precio total 2) la cantidad 3) el plazo 4) no es el momento 5) otra cosa". No hay cuarto.
+En los dos planes: si la situación es 1 (le debemos una respuesta), el mensaje ES la respuesta, nada más. En los dos planes no prometas descuentos, rebajas ni un resultado de precio que no esté en la charla. Nunca "qué te frena?" a secas como mensaje entero. Nunca "lo pensaste?".
 Estructura: 1) algo concreto de ESTA charla (producto, cantidad, algo que dijo) 2) el aporte nuevo 3) UNA sola pregunta fácil de contestar con una palabra o un número.
 ${criterio}Estilo: rioplatense, voseo, minúsculas naturales, SIN ¿ ni ¡, sin emojis, 2 a 4 líneas cortas, como una persona por WhatsApp. Prohibido: "estimado", "le escribo para", "seguimiento", "quedo atento", "estamos a disposición", "último mensajito", "te quedó alguna duda?" a secas, repetir un mensaje que ya le mandamos.
 Nunca inventes precios, descuentos, stock, fechas ni casos: usá solo lo que está en la charla o en la cotización. Si falta el total y hace falta, no lo pongas.
 "producto", "cantidad" y "total": lo que le cotizamos según la charla (ej. "zapatillas Vans", "20 pares", "USD 640 total"). Si no se ve, "".
 CLIENTES:
-${tanda.map((s, j) => `#${j + 1} ${s.nombre || "sin nombre"} · producto: ${s.producto || "?"} · le mandamos ${{ precio: "precio", info: "info", archivo: "un archivo (precios o fotos)" }[s.tipo] || "una cotización"} hace ${s.dias_cot} días · ${s.reaccion} · TOQUE ${s.toque} de 3${s.presup_usd ? " · aprox USD " + s.presup_usd : ""}${s.perfil ? " · perfil " + s.perfil : ""}${s.cot_dato ? " · cotización: " + String(s.cot_dato).replace(/\s+/g, " ").slice(0, 240) : ""}
+${tanda.map((s, j) => `#${j + 1} ${s.nombre || "sin nombre"} · producto: ${s.producto || "?"} · le mandamos ${{ precio: "precio", info: "info", archivo: "un archivo (precios o fotos)" }[s.tipo] || "una cotización"} hace ${s.dias_cot} días · ${s.reaccion} · PLAN ${plantillaSeg(s.conv)} · TOQUE ${s.toque} de 3${s.presup_usd ? " · aprox USD " + s.presup_usd : ""}${s.perfil ? " · perfil " + s.perfil : ""}${s.cot_dato ? " · cotización: " + String(s.cot_dato).replace(/\s+/g, " ").slice(0, 240) : ""}
 ${charlas[j].map((m) => (m.yo ? "Nosotros: " : "Cliente: ") + String(m.texto).replace(/\s+/g, " ").slice(0, 300)).join("\n") || "(sin mensajes guardados)"}`).join("\n\n")}
 Respondé SOLO JSON: {"mensajes":[{"n":1,"situacion":2,"seguir":true,"dueno":false,"llamada":"","no_antes":"","motivo":"si seguir es false, por qué","producto":"","cantidad":"","total":"","mensaje":"..."}]}`).catch(() => null);
       // Los que la IA no devolvió quedan revisados igual (siguen en la lista, sin mensaje): no se re-preguntan en cada carga

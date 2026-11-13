@@ -5,3 +5,5 @@ node_modules/
 
 sender/perfil_tiktok/
 sender/tiktok_debug.json
+sender/perfil_ml/
+sender/ml_debug.json

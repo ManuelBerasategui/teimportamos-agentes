@@ -55,7 +55,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid color-mix(in srgb,var(
 @media (max-width:560px){.viejo{display:none}nav button{padding:6px 9px;font-size:13px}}
 </style></head><body>
 <header><div class="hw"><div class="logo"><i></i>TE <span>IMPORTAMOS</span></div>
-<nav id="tabs"><button data-v="hoy" class="on">Hoy</button><button data-v="chats">Chats y ventas</button><button data-v="num">Números</button><button data-v="prosp">Prospección</button><button data-v="links">Links</button><button data-v="ag">Agente</button></nav>
+<nav id="tabs"><button data-v="hoy" class="on">Hoy</button><button data-v="chats">Chats y ventas</button><button data-v="num">Números</button><button data-v="prosp">Prospección</button><button data-v="links">Links</button><button data-v="mesa">Mesa</button><button data-v="ag">Agente</button></nav>
 <a class="viejo" href="/panel/viejo">panel viejo</a></div></header>
 <main>
 <section id="v-hoy"><div class="est" id="estado"></div><div class="card" id="objetivos"><div class="top"><b>Objetivos de hoy</b><button class="b" id="objEdit" style="margin-left:auto">Editar</button></div><div id="objBody" class="mu">Cargando…</div></div><div class="card" id="consejo"><b>Lo que dicen los datos</b><div class="mu" id="consTxt">Cargando…</div><div class="acc"><button class="b" id="consBtn">Actualizar análisis</button></div></div><div class="eq" id="equipoHoy"></div><div id="lista"><div class="vacio">Cargando…</div></div></section>
@@ -84,6 +84,16 @@ input:focus,select:focus,textarea:focus{outline:2px solid color-mix(in srgb,var(
  <input id="lTxt" placeholder="Mensaje que le aparece escrito al cliente (opcional)"><div class="acc"><button class="b p" id="lCrear">Crear link</button></div><div id="lNuevo"></div></div>
  <div id="lLista"></div>
 </section>
+<section id="v-mesa" hidden>
+ <div class="est" id="mesaEst"></div>
+ <div class="card" id="mesaLectura"><div class="top"><b>Lectura de hoy</b><button class="b" id="mesaCorrer" style="margin-left:auto">Correr ahora</button></div><div class="cons mu" id="mesaLecTxt">Todavía no corrió.</div><div id="mesaDec"></div><div id="mesaRumbo"></div></div>
+ <h2>Hipótesis en curso <span class="n" id="mesaHipN">0</span></h2><p class="mu">Cada una tiene una métrica, el valor de arranque, el de hoy y la meta. El código las cierra solo: cumplida o fallida. Eso es lo que la mesa aprende.</p><div class="tw" id="mesaHip"></div>
+ <h2>Lo que vio cada agente</h2><div id="mesaAg"></div>
+ <h2>Números de la última corrida</h2><div class="eq" id="mesaNum"></div>
+ <h2>Hablá con la mesa</h2><p class="mu">Corregila, pedile que profundice o que pruebe algo. Lo que decidas queda guardado.</p>
+ <div class="hilo" id="mesaHilo"></div>
+ <div class="fila"><textarea id="mesaQ" rows="2" placeholder="Ej: los cupos de esta semana no vendieron nada, qué cambió respecto a la vez anterior?"></textarea></div><button class="b p" id="mesaEnv">Preguntar</button>
+</section>
 <section id="v-ag" hidden>
  <p class="mu">Preguntale lo que quieras del negocio. Ve los números reales: chats, cotizaciones, ventas cargadas, equipo, redes.</p>
  <div class="hilo" id="hilo"></div>
@@ -111,7 +121,7 @@ function ver(v) {
   [].forEach.call(document.querySelectorAll("#tabs button"), function (x) { x.classList.toggle("on", x.dataset.v === v); });
   [].forEach.call(document.querySelectorAll("main section"), function (s) { s.hidden = s.id !== "v-" + v; });
   history.replaceState(null, "", "#" + v);
-  if (v === "hoy") cargarHoy(); if (v === "chats") { buscar(); cargarVentas(); } if (v === "num") cargarNum(); if (v === "links") cargarLinks(); if (v === "prosp") cargarProsp(); if (v === "ag") cargarAg();
+  if (v === "hoy") cargarHoy(); if (v === "chats") { buscar(); cargarVentas(); } if (v === "num") cargarNum(); if (v === "links") cargarLinks(); if (v === "prosp") cargarProsp(); if (v === "ag") cargarAg(); if (v === "mesa") cargarMesa();
 }
 
 // ---- Lo que dicen los datos (el agente lo arma una vez por día; se puede actualizar)
@@ -348,6 +358,64 @@ $("#agEnv").onclick = function () {
     .then(function (r) { HILO[HILO.length - 1] = { rol: "a", texto: r.respuesta || r.error || "No pude responder ahora." }; pintarHilo(HILO); })
     .catch(function () { HILO[HILO.length - 1] = { rol: "a", texto: "No pude responder ahora. Probá de nuevo." }; pintarHilo(HILO); });
 };
+
+
+// ---- Mesa de agentes
+var MESA = null, MESA_HILO = [];
+function cargarMesa() { api("mesa").then(function (d) { MESA = d; pintarMesa(d); }).catch(function () {}); }
+function fechaHoraM(ts) { return ts ? new Date(ts).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "-"; }
+function pintarMesa(d) {
+  var est = [], u = d.ultima;
+  est.push('<span class="pill ' + (u ? "ok" : "warn") + '">' + (u ? "Última corrida " + fechaHoraM(u.ts) + " (" + esc(u.motivo) + ")" : "Todavía no corrió") + "</span>");
+  est.push('<span class="pill">Corre sola 06:10 y 20:30 · te avisa por WhatsApp</span>');
+  $("#mesaEst").innerHTML = est.join("");
+  var it = d.informes.integrador, dt = (it && it.datos) || {};
+  $("#mesaLecTxt").className = dt.lectura ? "cons" : "cons mu"; $("#mesaLecTxt").textContent = dt.lectura || "Todavía no hay lectura. Tocá Correr ahora.";
+  $("#mesaDec").innerHTML = (dt.decisiones || []).map(function (x, i) { return '<div class="nota"><b>' + (i + 1) + ". " + esc(x.que) + '</b> <span class="mu">(' + esc(x.quien) + ')</span><div class="mu">' + esc(x.por_que) + "</div></div>"; }).join("");
+  $("#mesaRumbo").innerHTML = dt.cambio_rumbo ? '<div class="nota" style="background:color-mix(in srgb,var(--bad) 12%,var(--card))"><b>Cambio de rumbo:</b> ' + esc(dt.cambio_rumbo) + "</div>" : "";
+  var hip = d.hipotesis || [], act = hip.filter(function (h) { return h.estado === "activa"; });
+  $("#mesaHipN").textContent = act.length;
+  var est2 = { activa: "en curso", cumplida: "cumplida", fallida: "fallida", descartada: "descartada" };
+  $("#mesaHip").innerHTML = hip.length ? "<table><tr><th>Hipótesis</th><th>Acción</th><th>Métrica</th><th>Base</th><th>Hoy</th><th>Meta</th><th>Vence</th><th>Estado</th><th></th></tr>" + hip.map(function (h) {
+    return '<tr><td style="white-space:normal;min-width:180px">' + esc(h.texto) + '<div class="mu">' + esc(h.agente) + " · " + esc(h.dia) + '</div></td><td style="white-space:normal;min-width:160px">' + esc(h.accion) + "</td><td>" + esc((d.metricas || {})[h.metrica] || h.metrica) + "</td><td>" + (h.base == null ? "-" : h.base) + "</td><td>" + (h.actual == null ? "-" : h.actual) + "</td><td>" + h.meta + "</td><td>" + esc(h.vence) + "</td><td>" + (est2[h.estado] || esc(h.estado)) + (h.resultado ? '<div class="mu">' + esc(h.resultado) + "</div>" : "") + "</td><td>" + (h.estado === "activa" ? '<button class="b x" data-hip="' + esc(h.id) + '">Descartar</button>' : "") + "</td></tr>";
+  }).join("") + "</table>" : '<div class="mu">Todavía no hay hipótesis.</div>';
+  var nombres = { whatsapp: "Agente de WhatsApp", redes: "Agente de Redes", productos: "Agente de Productos" };
+  $("#mesaAg").innerHTML = ["whatsapp", "redes", "productos"].map(function (k) {
+    var inf = d.informes[k]; if (!inf) return '<div class="card"><b>' + nombres[k] + '</b><div class="mu">Sin informe todavía.</div></div>';
+    var x = inf.datos || {};
+    return '<details class="card"><summary><b>' + nombres[k] + '</b> <span class="mu">' + fechaHoraM(inf.ts) + '</span><div class="que">' + esc(x.resumen || inf.texto || "") + "</div></summary>" +
+      (x.hallazgos || []).map(function (h) { return '<div class="nota"><b>' + esc(h.titulo) + "</b>: " + esc(h.detalle) + ' <span class="mu">' + esc(h.evidencia) + "</span></div>"; }).join("") +
+      ((x.ideas || []).length ? '<div class="mu" style="margin-top:8px"><b>Ideas:</b><ul>' + x.ideas.map(function (i) { return "<li>" + esc(i) + "</li>"; }).join("") + "</ul></div>" : "") +
+      ((x.para_manuel || []).length ? '<div class="mu"><b>Para Manuel:</b><ul>' + x.para_manuel.map(function (i) { return "<li>" + esc(i) + "</li>"; }).join("") + "</ul></div>" : "") + "</details>";
+  }).join("");
+  var h = d.hechos, kp = function (t, v, s) { return '<div class="card"><div class="kp">' + t + "</div><b>" + v + "</b>" + (s ? '<div class="mu">' + s + "</div>" : "") + "</div>"; };
+  $("#mesaNum").innerHTML = h ? [
+    kp("Embudo 7 días", h.embudo.nuevos + " → " + h.embudo.cotizados + " → " + h.embudo.ventas, "chats nuevos → cotizados → ventas · 7 días antes: " + h.embudo_ant.nuevos + " → " + h.embudo_ant.cotizados + " → " + h.embudo_ant.ventas),
+    kp("Perfil A+B entre los nuevos", h.perfiles.ab_pct + "%", esc(JSON.stringify(h.perfiles.v7))),
+    kp("Primera respuesta humana", (h.respuesta.p50 == null ? "-" : h.respuesta.p50 + " min"), h.respuesta.mas_1h_pct + "% tardó más de 1 h · " + h.respuesta.mas_12h + " más de 12 h"),
+    kp("Preguntas sin responder", h.pendientes, "hace más de 24 h"),
+    kp("Cotizaciones sin respuesta", h.cotizaciones.sin_resp_pct + "%", "de " + h.cotizaciones.n + " en 7 días (48 h)"),
+    kp("Seguimientos 14 días", h.seguimientos.total.resp_pct + "% responden", "A: " + h.seguimientos.A.n + " env, " + h.seguimientos.A.resp_pct + "% · B: " + h.seguimientos.B.n + " env, " + h.seguimientos.B.resp_pct + "% · compras " + h.seguimientos.total.compro),
+    kp("Prospección 7 días", h.prospeccion.resp_pct + "% responden", h.prospeccion.enviados_7d + " enviados · " + h.prospeccion.calientes_7d + " calientes"),
+    kp("Consultas por video", h.consultas_por_video == null ? "-" : h.consultas_por_video, "atribuidas en 48 h, sobre la base diaria"),
+    kp("Cupos: consultas en 72 h", h.cupos.promedio_consultas == null ? "-" : h.cupos.promedio_consultas, (h.cupos.lista || []).length + " cupos en 14 días"),
+    kp("Ventas sin cargar", (h.ventas_sin_cargar || []).length, esc((h.ventas_sin_cargar || []).map(function (v) { return v.nombre; }).join(", "))),
+    kp("Mercado Libre", h.ml ? "con datos" : "sin datos", h.ml ? "" : "correr tendencias_ml.bat en la PC"),
+  ].join("") : '<div class="mu">Corré la mesa para ver los números.</div>';
+  MESA_HILO = d.chat || []; pintarMesaHilo();
+}
+function pintarMesaHilo() { $("#mesaHilo").innerHTML = MESA_HILO.map(function (m) { return '<div class="msg ' + (m.rol === "u" ? "u" : "a") + '">' + esc(m.texto) + "</div>"; }).join(""); }
+$("#mesaCorrer").onclick = function () {
+  var b = $("#mesaCorrer"); b.disabled = true; b.textContent = "Corriendo (1 a 2 min)…";
+  api("mesa", { accion: "correr" }).then(function (r) { b.disabled = false; b.textContent = "Correr ahora"; toast(r.sin_ia ? "La IA no respondió (sin cupo)" : "Listo"); cargarMesa(); }).catch(function () { b.disabled = false; b.textContent = "Correr ahora"; toast("No pude correrla"); });
+};
+$("#mesaEnv").onclick = function () {
+  var q = $("#mesaQ").value.trim(); if (!q) return; $("#mesaQ").value = "";
+  MESA_HILO.push({ rol: "u", texto: q }, { rol: "a", texto: "Pensando…" }); pintarMesaHilo();
+  api("mesa", { accion: "preguntar", pregunta: q }).then(function (r) { MESA_HILO[MESA_HILO.length - 1] = { rol: "a", texto: r.respuesta || r.error || "No pude responder ahora." }; pintarMesaHilo(); cargarMesa(); })
+    .catch(function () { MESA_HILO[MESA_HILO.length - 1] = { rol: "a", texto: "No pude responder ahora. Probá de nuevo." }; pintarMesaHilo(); });
+};
+$("#mesaHip").addEventListener("click", function (e) { var b = e.target.closest("[data-hip]"); if (!b) return; api("mesa", { accion: "hipotesis", id: b.dataset.hip, estado: "descartada" }).then(function () { toast("Descartada"); cargarMesa(); }); });
 
 ver((location.hash || "#hoy").slice(1) || "hoy");
 setInterval(function () { if (!document.hidden && document.hasFocus() && !$("#v-hoy").hidden && !$("#mod").classList.contains("on")) cargarHoy(true); }, 30000);

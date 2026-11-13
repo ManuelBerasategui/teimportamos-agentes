@@ -48,12 +48,13 @@ const por = Object.fromEntries(l.map((x) => [x.nombre, x]));
 chk("toque 1 y toque 2 entran", por.Ana?.toque === 1 && por.Beto?.toque === 2);
 chk("con 3 toques sin respuesta no hay cuarto", !por.Caro);
 chk("el prompt clasifica situaciones y lee la charla", /PASO 1/.test(prompts[0]) && /pendiente nuestro/.test(prompts[0]) && /TOQUE 1 de 3/.test(prompts[0]));
-chk("no promete descuentos y ofrece revisar otra cantidad", /no prometas descuentos/.test(prompts[0]) && !/50% off en nuestros honorarios/.test(prompts[0]) && /revise una cantidad menor/.test(L.borradorBase({ nombre: "Ana", toque: 2 })));
+chk("no promete descuentos y ofrece revisar otra cantidad", /no prometas descuentos/.test(prompts[0]) && !/50% off en nuestros honorarios/.test(prompts[0]) && /a cuánto lo venderías/.test(L.borradorBase({ nombre: "Ana", toque: 2, conv: "5493410000001" })) && /arrancar con menos/.test(L.borradorBase({ nombre: "Ana", toque: 1, conv: "5493410000002" })));
+chk("plan A/B fijo por cliente: par A, impar B, y el prompt lo indica", L.plantillaSeg("5493410000002") === "A" && L.plantillaSeg("5493410000001") === "B" && /PLAN A \(oferta concreta/.test(prompts[0]) && /PLAN B \(entender/.test(prompts[0]) && /· PLAN [AB] · TOQUE 1 de 3/.test(prompts[0]));
 chk("al mensaje se le sacan ¿ ¡ y emojis", por.Ana && !/[¿¡🙌]/u.test(por.Ana.borrador));
 chk("situación guardada en w_conv", db.prepare("SELECT seg_situacion s FROM w_conv WHERE conv='5493410000001'").get().s === "2");
 chk("perfil A pasa al dueño con tarea de llamada", por.Dani?.dueno && !!db.prepare("SELECT 1 FROM tareas WHERE tel='5493410000004' AND tipo='llamar'").get());
 chk("pidió fecha futura: no aparece antes", !por.Eli);
-chk("borrador de respaldo sin emojis ni ¿ y toque 3 con opciones", !/[¿¡🙌]/u.test(L.borradorBase({ nombre: "Ana", toque: 1 })) && /1\) el precio total/.test(L.borradorBase({ toque: 3 })));
+chk("borrador de respaldo sin emojis ni ¿ y toque 3 con opciones", !/[¿¡🙌]/u.test(L.borradorBase({ nombre: "Ana", toque: 1 })) && /1\) el precio total/.test(L.borradorBase({ toque: 3, conv: "5493410000001" })) && /sostengo hasta fin de mes/.test(L.borradorBase({ toque: 3, conv: "5493410000002" })));
 // Envío automático: nada hasta 10 buenos; después solo situaciones simples sin dueño
 chk("sin 10 buenos el programa de la PC no manda nada", (await L.seguimientosAuto805(env)).length === 0);
 const api = (r, b) => L.apiLector(env, new Request("https://x/panel/api/805/" + r, { method: "POST", body: JSON.stringify(b) }), new URL("https://x/panel/api/805/" + r), null).then((x) => x.json());
