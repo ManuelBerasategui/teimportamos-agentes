@@ -145,7 +145,8 @@ export async function hechos(env, { dias = 14 } = {}) {
       if (esperando !== null) { const d = (m.ts - esperando) / 6e4; delays.push(d); if (!primera) { primeras.push(d); primera = true; } esperando = null; }
     }
   }
-  const respuesta = { n: primeras.length, p50: mediana(primeras), p90: percentil(primeras, 0.9), mas_1h_pct: pct(primeras.filter((x) => x > 60).length, primeras.length), mas_12h: primeras.filter((x) => x > 720).length, todas_p50: mediana(delays) };
+  const red0 = (x) => (x == null ? null : Math.round(x));
+  const respuesta = { n: primeras.length, p50: red0(mediana(primeras)), p90: red0(percentil(primeras, 0.9)), mas_1h_pct: pct(primeras.filter((x) => x > 60).length, primeras.length), mas_12h: primeras.filter((x) => x > 720).length, todas_p50: red0(mediana(delays)) };
   const pendientes = convs.filter((c) => activo(c) && c.ult_yo === 0 && c.ult_cliente_ts && ahora - c.ult_cliente_ts > 24 * H && ahora - c.ult_cliente_ts < 10 * DIA && RE_PREGUNTA.test(c.ult_texto || ""))
     .sort((a, b) => (b.perfil === "A" || b.perfil === "B") - (a.perfil === "A" || a.perfil === "B") || b.ult_cliente_ts - a.ult_cliente_ts).slice(0, 60)
     .map((c) => ({ conv: c.conv, nombre: c.nombre || "sin nombre", perfil: c.perfil || "?", producto: corto(c.producto, 40), horas: Math.round((ahora - c.ult_cliente_ts) / H), texto: corto(c.ult_texto, 120) }));
@@ -277,7 +278,7 @@ export function textoHechos(h, partes = ["embudo", "whatsapp", "redes", "product
   }
   if (partes.includes("productos")) {
     L.push(`PRODUCTOS PEDIDOS 30d (consultas / cotizados / ventas / perdidos / de perfil A o B): ${h.productos.map((p) => `${p.ejemplo}: ${p.n}/${p.cotizados}/${p.ventas}/${p.perdidos}/${p.ab}`).join(" · ") || "-"}`);
-    if (h.ml?.items?.length) L.push(`MERCADO LIBRE (leído desde la PC el ${fecha(h.ml.ts)}): ${h.ml.items.slice(0, 25).map((t) => `${t.palabra}${t.puesto ? " #" + t.puesto : ""}${t.resultados ? " · " + n0(t.resultados) + " publicaciones" : ""}${t.precio_min ? " · $" + n0(t.precio_min) + "-" + n0(t.precio_max) : ""}${t.vendidos ? " · top vende " + t.vendidos : ""}`).join(" | ")}`);
+    if (h.ml?.items?.length) L.push(`MERCADO LIBRE (leído desde la PC el ${fecha(h.ml.ts)}): ${h.ml.items.slice(0, 32).map((t) => `${t.palabra}${t.categoria && t.categoria !== "general" ? " [" + t.categoria + "]" : ""}${t.tipo ? " (" + t.tipo + ")" : ""}${t.resultados ? " · " + n0(t.resultados) + " publicaciones" : ""}${t.precio_min ? " · $" + n0(t.precio_min) + "-" + n0(t.precio_max) : ""}${t.vendidos ? " · top vende " + t.vendidos : ""}`).join(" | ")}`);
     else L.push("MERCADO LIBRE: sin datos todavía (corre tendencias_ml.bat en la PC para tenerlos)");
   }
   if (h.ideas?.utiles?.length) L.push(`IDEAS QUE MANUEL MARCÓ COMO ÚTILES O YA HIZO (más en esa línea): ${h.ideas.utiles.join(" | ")}`);
@@ -716,7 +717,7 @@ export async function apiMesa(env, req, url, iaJSON, body = null) {
 // Tendencias de Mercado Libre leídas desde la PC (sender/tendencias_ml.py)
 export async function guardarML(env, b) {
   await prepararMesa(env);
-  const items = (Array.isArray(b?.items) ? b.items : []).slice(0, 80).map((t) => ({ palabra: corto(t.palabra, 60), puesto: +t.puesto || null, resultados: +t.resultados || null, precio_min: +t.precio_min || null, precio_max: +t.precio_max || null, vendidos: corto(t.vendidos, 30), top: (Array.isArray(t.top) ? t.top : []).slice(0, 5).map((x) => ({ titulo: corto(x.titulo, 80), precio: +x.precio || null, vendidos: corto(x.vendidos, 30) })) })).filter((t) => t.palabra);
+  const items = (Array.isArray(b?.items) ? b.items : []).slice(0, 80).map((t) => ({ palabra: corto(t.palabra, 60), categoria: corto(t.categoria, 40), tipo: corto(t.tipo, 30), puesto: +t.puesto || null, resultados: +t.resultados || null, precio_min: +t.precio_min || null, precio_max: +t.precio_max || null, vendidos: corto(t.vendidos, 30), top: (Array.isArray(t.top) ? t.top : []).slice(0, 5).map((x) => ({ titulo: corto(x.titulo, 80), precio: +x.precio || null, vendidos: corto(x.vendidos, 30) })) })).filter((t) => t.palabra);
   await kvPut(env, "ml_tendencias", JSON.stringify({ ts: Date.now(), items }));
   return { ok: true, guardadas: items.length };
 }
