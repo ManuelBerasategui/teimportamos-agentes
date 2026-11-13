@@ -1,4 +1,5 @@
 import { syncProspectos } from "./prospeccion.js";
+import { opsLinks, pendientesPC, linkLeido, latidoPC, ESQUEMA_AUTOCOT } from "./autocot.js";
 import { rutaAutoresp } from "./autoresp.js";
 import { esCierre } from "./cierre.js";
 import { esquemaAlDia, marcarEsquema } from "./esquema.js";
@@ -49,6 +50,7 @@ export async function prepararLector(env) {
   if (tablasLector || !env.DB) return;
   if (await esquemaAlDia(env, "lector", prepararLector)) { tablasLector = true; return; }
   await env.DB.batch([
+    ...ESQUEMA_AUTOCOT.map((q) => env.DB.prepare(q)),   // cola de links de Alibaba y cotizaciones automáticas (autocot.js)
     env.DB.prepare("CREATE TABLE IF NOT EXISTS w_msg (id TEXT PRIMARY KEY, conv TEXT, grupo INTEGER, yo INTEGER, autor TEXT, autor_nombre TEXT, tipo TEXT, texto TEXT, ts INTEGER, hist INTEGER)"),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS w_msg_conv ON w_msg(conv, ts)"),
     env.DB.prepare("CREATE INDEX IF NOT EXISTS w_msg_ts ON w_msg(ts)"),
@@ -121,6 +123,10 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
   // el puente marca el mensaje como "media" y sigue.
   if (p === "/whatsapp-web-webhook/media") return new Response("no guardamos archivos", { status: 402 });
   // TikTok Studio leído desde la PC (sender/tiktok_studio.py): gratis, con los datos de dueño de la cuenta
+  if (p === "/ali-config") { const { configCalc } = await import("./autocot.js"); return Response.json(await configCalc(env, { forzar: true })); }
+  if (p === "/ali-pendientes") return Response.json(await pendientesPC(env, +url.searchParams.get("limite") || 8));
+  if (p === "/ali-leido" && req.method === "POST") return Response.json(await linkLeido(env, iaJSON, await req.json().catch(() => ({}))));
+  if (p === "/ali-latido" && req.method === "POST") return Response.json(await latidoPC(env, await req.json().catch(() => ({}))));
   if (p === "/mesa-diag") { const { diagMesa } = await import("./mesa.js"); return Response.json(await diagMesa(env)); }
   if (p === "/ml-tendencias" && req.method === "POST") { const { guardarML } = await import("./mesa.js"); return Response.json(await guardarML(env, await req.json().catch(() => ({})))); }
   if (p === "/tiktok-pendientes") { const { tiktokSinGuion } = await import("./tablero.js"); return Response.json(await tiktokSinGuion(env)); }
@@ -245,6 +251,7 @@ async function guardarLote(env, lote) {
     if (esAuto) { c.botTs = Math.max(c.botTs, ts); /* el aviso del bot no cuenta como respuesta nuestra, pero se anota: el cliente sigue esperando a una persona */ } else if (yo) c.ultYoTs = Math.max(c.ultYoTs, ts); else c.ultCli = Math.max(c.ultCli, ts);
     convs.set(conv, c);
     // Hitos exactos (solo chats individuales)
+    if (!grupo && !yo && /alibaba\.com/i.test(texto || "")) ops.push(...opsLinks(env, conv, texto, ts));   // links de Alibaba: a la cola del cotizador automático
     if (!grupo) {
       if (yo && esCotizacion(texto)) ops.push(env.DB.prepare("INSERT OR IGNORE INTO w_hito (id,conv,tipo,ts,dato) VALUES (?,?,?,?,?)").bind("c:" + m.external_id, conv, "cotizacion", ts, String(texto).slice(0, 300)));
       const pago = (!yo && (/^\((image|document)\)/.test(texto) || tipo === "image" || tipo === "document") && RE_PAGO_CLIENTE.test(texto)) || (!yo && RE_PAGO_CLIENTE.test(texto) && /comprobante/i.test(texto)) || (yo && RE_PAGO_NOSOTROS.test(texto));

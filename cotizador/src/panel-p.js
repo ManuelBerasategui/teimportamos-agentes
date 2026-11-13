@@ -61,13 +61,26 @@ input:focus,select:focus,textarea:focus{outline:2px solid color-mix(in srgb,var(
 @media (max-width:560px){.viejo{display:none}nav button{padding:6px 9px;font-size:13px}}
 </style></head><body>
 <header><div class="hw"><div class="logo"><i></i>TE <span>IMPORTAMOS</span></div>
-<nav id="tabs"><button data-v="mesa" class="on">Agentes</button><button data-v="hoy">Hoy</button><button data-v="chats">Chats y ventas</button><button data-v="num">Números</button><button data-v="prosp">Prospección</button><button data-v="links">Links</button></nav>
+<nav id="tabs"><button data-v="mesa" class="on">Agentes</button><button data-v="hoy">Hoy</button><button data-v="chats">Chats y ventas</button><button data-v="cot">Cotizar</button><button data-v="num">Números</button><button data-v="prosp">Prospección</button><button data-v="links">Links</button></nav>
 <a class="viejo" href="/panel/viejo">panel viejo</a></div></header>
 <main>
 <section id="v-hoy" hidden><div class="est" id="estado"></div><div class="card" id="objetivos"><div class="top"><b>Objetivos de hoy</b><button class="b" id="objEdit" style="margin-left:auto">Editar</button></div><div id="objBody" class="mu">Cargando…</div></div><div class="card" id="consejo"><b>Lo que dicen los datos</b><div class="mu" id="consTxt">Cargando…</div><div class="acc"><button class="b" id="consBtn">Actualizar análisis</button></div></div><div class="eq" id="equipoHoy"></div><div id="lista"><div class="vacio">Cargando…</div></div></section>
 <section id="v-chats" hidden>
  <div class="fila"><input id="q" placeholder="Buscar chat por nombre, número o producto"><button class="b p" id="ventaSuelta">Registrar venta sin chat</button></div>
  <div id="res"></div><h2>Ventas registradas</h2><div id="ventas"></div>
+</section>
+<section id="v-cot" hidden>
+ <div class="est" id="cotEst"></div>
+ <div class="card"><div class="top"><b>Cuánto queda puesto en Argentina</b><span class="mu">La misma cuenta de la calculadora de la web, con los valores que tenés cargados en el admin.</span></div>
+  <div id="cotFilas"></div>
+  <div class="acc"><button class="b" id="cotMas">+ Otro producto</button><div class="seg" id="cotVia"><button data-via="" class="on">Automático</button><button data-via="aereo">Avión</button><button data-via="maritimo">Barco</button></div></div>
+  <div id="cotRes" class="mu" style="margin-top:10px">Cargá cantidad, precio FOB por unidad y peso por unidad.</div>
+ </div>
+ <div class="card"><div class="top"><b>Leer links de Alibaba</b></div><p class="mu">Los links que mandan los clientes por WhatsApp entran solos. Acá podés pegar otros. Los lee tu PC (cotizar_links.bat): Alibaba no deja leerlos desde internet sin pasar su verificación.</p>
+  <div class="fila"><textarea id="cotLinks" rows="2" placeholder="Pegá uno o varios links de Alibaba"></textarea><input id="cotCant" type="number" placeholder="Cantidad (opcional)"></div><button class="b p" id="cotLeer">Poner en la cola</button>
+ </div>
+ <h2>Cotizaciones automáticas <span class="n" id="cotN">0</span></h2><div id="cotLista"></div>
+ <h2>Links esperando lectura <span class="n" id="cotColaN">0</span></h2><div id="cotCola"></div>
 </section>
 <section id="v-num" hidden>
  <div class="seg" id="per"><button data-p="dia">Día</button><button data-p="semana" class="on">Semana</button><button data-p="mes">Mes</button></div>
@@ -131,7 +144,7 @@ function ver(v) {
   [].forEach.call(document.querySelectorAll("#tabs button"), function (x) { x.classList.toggle("on", x.dataset.v === v); });
   [].forEach.call(document.querySelectorAll("main section"), function (s) { s.hidden = s.id !== "v-" + v; });
   history.replaceState(null, "", "#" + v);
-  if (v === "hoy") cargarHoy(); if (v === "chats") { buscar(); cargarVentas(); } if (v === "num") cargarNum(); if (v === "links") cargarLinks(); if (v === "prosp") cargarProsp(); if (v === "mesa") cargarMesa();
+  if (v === "hoy") cargarHoy(); if (v === "chats") { buscar(); cargarVentas(); } if (v === "num") cargarNum(); if (v === "links") cargarLinks(); if (v === "prosp") cargarProsp(); if (v === "mesa") cargarMesa(); if (v === "cot") cargarCot();
 }
 
 // ---- Lo que dicen los datos (el agente lo arma una vez por día; se puede actualizar)
@@ -356,6 +369,58 @@ $("#lCrear").onclick = function () {
     $("#lNom").value = ""; $("#lTxt").value = ""; cargarLinks();
   });
 };
+
+// ---- Cotizar (misma cuenta que la calculadora de la web)
+var COT_IT = [{ nombre: "", cantidad: "", fob: "", peso: "", volumen: "" }], COT_VIA = "", COT_T = null;
+function usd(n) { return "USD " + (+n || 0).toLocaleString("es-AR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
+function cotFilaHtml(i, n, pref) { return '<div class="fila" data-n="' + n + '" style="grid-template-columns:2fr 1fr 1fr 1fr 1fr"><input data-k="nombre" placeholder="Producto" value="' + esc(i.nombre || "") + '"><input data-k="cantidad" type="number" placeholder="Cantidad" value="' + (i.cantidad || "") + '"><input data-k="fob" type="number" step="0.01" placeholder="FOB USD c/u" value="' + (i.fob || "") + '"><input data-k="peso" type="number" step="0.001" placeholder="Peso kg c/u" value="' + (i.peso || "") + '"><input data-k="volumen" type="number" step="0.001" placeholder="m³ total (barco)" value="' + (i.volumen || "") + '"></div>'; }
+function cotResHtml(c) {
+  if (!c) return "";
+  if (!c.ok) return '<div class="nota"><b>Falta:</b> ' + esc((c.falta || []).join("; ")) + "</div>";
+  return '<div class="eq">' + c.items.map(function (i) { return '<div class="card"><div class="kp">' + esc(i.nombre || "Producto") + " · " + i.cantidad + " u</div><b>" + usd(i.unitario) + '</b><span class="mu">cada uno puesto' + (c.dolar ? " (~$" + plata(i.unitario * c.dolar) + ")" : "") + " · FOB " + usd(i.fob) + (i.veces ? " · x" + i.veces : "") + "</span></div>"; }).join("") +
+    '<div class="card"><div class="kp">Total puesto · ' + (c.via === "maritimo" ? "barco" : "avión") + "</div><b>" + usd(c.total) + '</b><span class="mu">' + (c.totalArs ? "~$" + plata(c.totalArs) + " · " : "") + esc(c.plazo || "") + " · seña " + usd(c.sena) + "</span></div></div>" +
+    '<div class="mu" style="margin-top:6px">Mercadería ' + usd(c.fob) + " + flete " + usd(c.flete) + " (" + c.kg + " kg" + (c.m3 ? ", " + c.m3 + " m³" : "") + ") + manejo " + usd(c.handling) + " + impuestos " + c.impuestosPct + "% " + usd(c.impuestos) + " + honorarios " + usd(c.honorarios) + " + despachante " + usd(c.despachante) + (c.gastosFijos ? " + gastos fijos de barco " + usd(c.gastosFijos) : "") + "</div>" +
+    (c.aviso ? '<div class="nota">' + esc(c.aviso) + "</div>" : "") + ((c.avisos || []).length ? '<div class="nota">' + esc(c.avisos.join("; ")) + "</div>" : "") +
+    '<div class="acc"><button class="b" data-copiar="' + esc(c.texto || "") + '">Copiar resumen</button></div>';
+}
+function cotPintarFilas() { $("#cotFilas").innerHTML = COT_IT.map(function (i, n) { return cotFilaHtml(i, n); }).join(""); }
+function cotCalcular() {
+  var its = COT_IT.filter(function (i) { return +i.cantidad > 0; });
+  if (!its.length) { $("#cotRes").className = "mu"; $("#cotRes").textContent = "Cargá cantidad, precio FOB por unidad y peso por unidad."; return; }
+  api("cotizar", { accion: "calcular", items: its, via: COT_VIA }).then(function (c) { $("#cotRes").className = ""; $("#cotRes").innerHTML = cotResHtml(c); });
+}
+$("#cotFilas").addEventListener("input", function (e) { var k = e.target.dataset.k; if (!k) return; COT_IT[e.target.closest("[data-n]").dataset.n][k] = e.target.value; clearTimeout(COT_T); COT_T = setTimeout(cotCalcular, 450); });
+$("#cotMas").onclick = function () { COT_IT.push({ nombre: "", cantidad: "", fob: "", peso: "", volumen: "" }); cotPintarFilas(); };
+$("#cotVia").addEventListener("click", function (e) { var b = e.target.closest("button"); if (!b) return; COT_VIA = b.dataset.via; [].forEach.call($("#cotVia").children, function (x) { x.classList.toggle("on", x === b); }); cotCalcular(); });
+$("#cotLeer").onclick = function () { api("cotizar", { accion: "links", texto: $("#cotLinks").value, cantidad: $("#cotCant").value }).then(function (r) { if (r.error) return toast(r.error); $("#cotLinks").value = ""; toast(r.anotados + " link(s) en la cola"); cargarCot(); }); };
+var COT_D = null;
+function cargarCot() {
+  if (!$("#cotFilas").children.length) cotPintarFilas();
+  api("cotizar").then(function (d) {
+    COT_D = d; var c = d.cfg || {}, pc = d.pc, est = [];
+    est.push('<span class="pill ' + (c.origen === "web" ? "ok" : "warn") + '">Valores: ' + (c.origen === "web" ? "los de tu web" : "de respaldo (no pude leer la web)") + " · flete " + c.fleteKg + " USD/kg · impuestos " + c.impuestosPct + "% · honorarios " + c.honorariosPct + "% (mín " + c.honorariosMin + ", tope " + c.honorariosTope + ") · dólar " + (c.dolar || "-") + "</span>");
+    var fresco = pc && Date.now() - pc.ts < 20 * 60e3;
+    est.push('<span class="pill ' + (fresco && pc.estado === "leyendo" ? "ok" : "warn") + '">Lector de la PC: ' + (pc ? esc(pc.estado) + " · " + haceT(pc.ts) + (pc.detalle ? " · " + esc(pc.detalle) : "") : "nunca se conectó (abrí cotizar_links.bat)") + "</span>");
+    $("#cotEst").innerHTML = est.join("");
+    $("#cotN").textContent = (d.lista || []).length;
+    $("#cotLista").innerHTML = (d.lista || []).map(function (x) {
+      var cab = '<div class="top">' + (x.conv ? '<span class="tel" data-tel="' + esc(x.conv) + '">' + telFmt(x.conv) + "</span>" : '<span class="tag">pegado a mano</span>') + (x.nombre ? "<b>" + esc(x.nombre) + "</b>" : "") + '<span class="mu">' + fechaHoraM(x.ts) + "</span>" + (x.estado === "lista" ? '<span class="tag" style="color:var(--ok)">lista</span>' : '<span class="tag" style="color:var(--warn)">falta un dato</span>') + "</div>";
+      var cuerpo = x.estado === "lista" ? cotResHtml(Object.assign({ texto: x.texto }, x.detalle)) : '<div class="nota"><b>Falta:</b> ' + esc(x.falta || "") + "</div>";
+      var edit = '<details style="margin-top:8px"><summary class="mu">Corregir o completar datos</summary>' + (x.items || []).map(function (i, n) { return cotFilaHtml(i, n) + (i.link ? '<div class="link"><a href="' + esc(i.link) + '" target="_blank" rel="noopener">' + esc(i.link.slice(0, 90)) + "</a>" + ((i.tramos || []).length ? " · precios: " + i.tramos.map(function (t) { return t.desde + "+ USD " + t.precio; }).join(", ") : "") + "</div>" : ""); }).join("") + '<div class="acc"><button class="b p" data-cotok="' + esc(x.id) + '">Recalcular</button><button class="b x" data-cotdel="' + esc(x.id) + '">Borrar</button></div></details>';
+      return '<div class="card" data-cot="' + esc(x.id) + '">' + cab + cuerpo + edit + "</div>";
+    }).join("") || '<div class="mu">Todavía no hay ninguna. Aparecen solas cuando un cliente manda un link de Alibaba y tu PC lo lee.</div>';
+    $("#cotColaN").textContent = (d.cola || []).length;
+    $("#cotCola").innerHTML = (d.cola || []).map(function (q) { return '<div class="card"><div class="top">' + (q.conv ? '<span class="tel" data-tel="' + esc(q.conv) + '">' + telFmt(q.conv) + "</span>" : '<span class="tag">pegado a mano</span>') + '<span class="mu">' + fechaHoraM(q.ts) + " · " + (q.estado === "fallo" ? "no se pudo leer" : q.intentos ? q.intentos + " intento(s)" : "esperando a la PC") + (q.error ? " · " + esc(q.error) : "") + '</span></div><div class="link"><a href="' + esc(q.link) + '" target="_blank" rel="noopener">' + esc(q.link.slice(0, 110)) + '</a></div><div class="acc">' + (q.estado === "fallo" ? '<button class="b" data-cotre="' + esc(q.clave) + '">Reintentar</button>' : "") + '<button class="b x" data-cotq="' + esc(q.clave) + '">Quitar</button></div></div>'; }).join("") || '<div class="mu">Ningún link esperando.</div>';
+  });
+}
+$("#cotLista").addEventListener("click", function (e) {
+  var ok = e.target.closest("[data-cotok]"), del = e.target.closest("[data-cotdel]");
+  if (del) { if (confirm("¿Borrar esta cotización?")) api("cotizar", { accion: "borrar", id: del.dataset.cotdel }).then(cargarCot); return; }
+  if (!ok) return; var card = ok.closest("[data-cot]"), items = [];
+  [].forEach.call(card.querySelectorAll("details [data-n]"), function (f) { var o = {}; [].forEach.call(f.querySelectorAll("[data-k]"), function (i) { o[i.dataset.k] = i.value; }); items.push(o); });
+  api("cotizar", { accion: "completar", id: ok.dataset.cotok, items: items }).then(function (r) { toast(r.ok ? "Recalculada" : "Todavía falta un dato"); cargarCot(); });
+});
+$("#cotCola").addEventListener("click", function (e) { var q = e.target.closest("[data-cotq]"), re = e.target.closest("[data-cotre]"); if (q) api("cotizar", { accion: "quitar_link", clave: q.dataset.cotq }).then(cargarCot); if (re) api("cotizar", { accion: "reintentar", clave: re.dataset.cotre }).then(cargarCot); });
 
 // ---- Mesa de agentes
 var MESA = null, MESA_HILO = [];
