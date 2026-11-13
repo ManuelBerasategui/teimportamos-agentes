@@ -57,6 +57,7 @@ export const METRICAS = {
   seg_resp_48h_pct: { que: "% de seguimientos que el cliente contestó en 48 h (14 días)", f: (h) => h.seguimientos.total.resp_pct },
   seg_resp_A_pct: { que: "% de respuesta de los seguimientos plan A (14 días)", f: (h) => h.seguimientos.A.resp_pct },
   seg_resp_B_pct: { que: "% de respuesta de los seguimientos plan B (14 días)", f: (h) => h.seguimientos.B.resp_pct },
+  seg_con_plan_14d: { que: "seguimientos enviados con plan A o B en 14 días (los que manda el sender)", f: (h) => h.seguimientos.A.n + h.seguimientos.B.n },
   prosp_resp_pct: { que: "% de prospectos que respondieron (7 días)", f: (h) => h.prospeccion.resp_pct },
   consultas_por_video: { que: "chats nuevos atribuidos por video publicado (14 días)", f: (h) => h.redes.consultas_por_video },
   cupo_consultas_72h: { que: "consultas privadas en las 72 h después de cada mensaje de cupo (promedio, 14 días)", f: (h) => h.cupos.promedio_consultas },
@@ -73,7 +74,7 @@ export async function hechos(env, { dias = 14 } = {}) {
     todas(env, "SELECT conv, nombre, primer_ts, ult_ts, ult_yo, ult_cliente_ts, ult_yo_ts, ult_texto, perfil, presup_usd, producto, etapa, motivo, origen, cierre_ts, puntaje FROM w_conv WHERE grupo=0 AND COALESCE(prov,0)=0 AND COALESCE(archivado,0)=0 AND (primer_ts>=? OR ult_ts>=?)", s30, s30),
     todas(env, "SELECT conv, tipo, ts, dato FROM w_hito WHERE ts>=? AND tipo='cotizacion'", s30 - 45 * DIA),
     todas(env, "SELECT ts, conv, nombre, producto, monto, moneda, ganancia, linea FROM ventas WHERE ts>=? ORDER BY ts DESC", s30),
-    todas(env, "SELECT conv, ts, toque, situacion, quien, texto, plantilla FROM w_seg_log WHERE ts>=?", s14),
+    todas(env, "SELECT conv, ts, toque, situacion, quien, texto, plantilla FROM w_seg_log WHERE ts>=? AND quien<>'dueno-mal'", s14),
     todas(env, "SELECT conv, yo, texto, ts FROM w_msg INDEXED BY w_msg_priv WHERE ts>=? AND grupo=0 AND hist=0 ORDER BY conv, ts LIMIT 12000", s7),
     todas(env, "SELECT conv, texto, ts FROM w_msg WHERE grupo=1 AND yo=1 AND hist=0 AND ts>=? AND (lower(texto) LIKE '%cupo%' OR lower(texto) LIKE '%oferta%' OR lower(texto) LIKE '%combo%') ORDER BY ts", s14),
     todas(env, "SELECT id, ts, tipo, link, texto, formato, gancho, alcance, vistas, guardados, compartidos, comentarios, tiempo_ms FROM ig_posts WHERE ts>=? AND COALESCE(tipo,'')<>'STORY' ORDER BY ts", desde),
@@ -161,21 +162,40 @@ export async function hechos(env, { dias = 14 } = {}) {
     sin_resp_lista: cot7.filter((x) => !x.resp && x.c).slice(0, 12).map((x) => ({ conv: x.conv, nombre: x.c.nombre || "sin nombre", perfil: x.c.perfil || "?", producto: corto(x.c.producto, 40), usd: x.c.presup_usd || null, hace_dias: Math.round((ahora - x.ts) / DIA) })) };
 
   // --- Seguimientos (14 días): respuesta a 48 h y compra después, por plantilla (A/B) y por toque
+  // Cada fila de w_seg_log es un seguimiento mandado. Tres orígenes:
+  //   - el sender o el botón del panel: guardan el plan (A/B) y el texto que salió;
+  //   - cargados a mano con una nota ("lista html 10/11"): no tienen plan ni texto, y la hora es la de la carga, no la del envío.
+  // Para todos se busca el mensaje real en el chat (el nuestro más cercano a la hora registrada) y la respuesta se mide desde ESE
+  // mensaje. El plan A/B solo se compara con los que salieron con plan; los cargados a mano van aparte ("M").
   const segConvs = [...new Set(segLog.map((s) => s.conv))];
-  const cli14 = {};
+  const cli14 = {}, yo14 = {};
   for (let i = 0; i < segConvs.length; i += 90) {
     const lote = segConvs.slice(i, i + 90);
-    for (const m of await todas(env, `SELECT conv, ts FROM w_msg INDEXED BY w_msg_conv WHERE conv IN (${lote.map(() => "?").join(",")}) AND ts>=? AND grupo=0 AND yo=0 AND hist=0`, ...lote, s14)) (cli14[m.conv] || (cli14[m.conv] = [])).push(m.ts);
+    for (const m of await todas(env, `SELECT conv, yo, ts, texto FROM w_msg INDEXED BY w_msg_conv WHERE conv IN (${lote.map(() => "?").join(",")}) AND ts>=? AND grupo=0 AND hist=0`, ...lote, s14 - DIA)) {
+      if (!m.yo) (cli14[m.conv] || (cli14[m.conv] = [])).push(m.ts);
+      else if (!esBotTexto(m.texto) && String(m.texto || "").trim()) (yo14[m.conv] || (yo14[m.conv] = [])).push({ ts: m.ts, texto: m.texto });
+    }
   }
   const segStat = () => ({ n: 0, resp: 0, compro: 0, resp_pct: 0 });
-  const seguimientos = { total: segStat(), A: segStat(), B: segStat(), por_toque: {}, por_situacion: {} };
+  const seguimientos = { total: segStat(), A: segStat(), B: segStat(), M: segStat(), por_toque: {}, por_situacion: {}, sin_mensaje: 0 };
+  const textosReales = [];
   for (const s of segLog) {
-    const resp = (cli14[s.conv] || []).some((t) => t > s.ts && t - s.ts < 48 * H), compro = (ventaTs[s.conv] || 0) > s.ts;
-    const pl = s.plantilla || plantillaSeg(s.conv);
-    for (const g of [seguimientos.total, seguimientos[pl] || (seguimientos[pl] = segStat()), seguimientos.por_toque[s.toque || 0] || (seguimientos.por_toque[s.toque || 0] = segStat()), seguimientos.por_situacion[s.situacion || "?"] || (seguimientos.por_situacion[s.situacion || "?"] = segStat())]) { g.n++; if (resp) g.resp++; if (compro) g.compro++; }
+    const manual = !s.plantilla;
+    // el mensaje real: a mano pudo salir hasta 18 h antes de cargarlo; el sender registra justo después de mandar
+    const real = (yo14[s.conv] || []).filter((m) => m.ts >= s.ts - (manual ? 18 * H : 20 * 60e3) && m.ts <= s.ts + 30 * 60e3).sort((x, y) => Math.abs(x.ts - s.ts) - Math.abs(y.ts - s.ts))[0] || null;
+    if (!real) seguimientos.sin_mensaje++;
+    const t0 = real ? real.ts : s.ts;
+    const resp = (cli14[s.conv] || []).some((t) => t > t0 && t - t0 < 48 * H), compro = (ventaTs[s.conv] || 0) > t0;
+    const pl = manual ? "M" : s.plantilla;
+    const texto = real ? real.texto : manual ? "" : s.texto;
+    if (texto) textosReales.push({ texto, pl, resp });
+    for (const g of [seguimientos.total, seguimientos[pl] || (seguimientos[pl] = segStat()), seguimientos.por_toque[manual ? "a mano" : s.toque || 0] || (seguimientos.por_toque[manual ? "a mano" : s.toque || 0] = segStat()), seguimientos.por_situacion[s.situacion || (manual ? "a mano" : "?")] || (seguimientos.por_situacion[s.situacion || (manual ? "a mano" : "?")] = segStat())]) { g.n++; if (resp) g.resp++; if (compro) g.compro++; }
   }
-  for (const g of [seguimientos.total, seguimientos.A, seguimientos.B, ...Object.values(seguimientos.por_toque), ...Object.values(seguimientos.por_situacion)]) g.resp_pct = pct(g.resp, g.n);
-  seguimientos.textos_repetidos = Object.entries(segLog.reduce((o, s) => { const k = corto(s.texto, 60).toLowerCase().replace(/^buenas \w+, /, ""); if (k) o[k] = (o[k] || 0) + 1; return o; }, {})).filter(([, n]) => n >= 5).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([t, n]) => ({ texto: t, veces: n }));
+  for (const g of [seguimientos.total, seguimientos.A, seguimientos.B, seguimientos.M, ...Object.values(seguimientos.por_toque), ...Object.values(seguimientos.por_situacion)]) g.resp_pct = pct(g.resp, g.n);
+  seguimientos.textos_repetidos = Object.entries(textosReales.reduce((o, s) => { const k = corto(s.texto, 60).toLowerCase().replace(/^(buenas|hola) [^,]{1,25}, /, ""); if (k) o[k] = (o[k] || 0) + 1; return o; }, {})).filter(([, n]) => n >= 5).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([t, n]) => ({ texto: t, veces: n }));
+  // Ejemplos reales de lo que se mandó, con si contestaron o no: es lo que el agente de WhatsApp lee para decir QUÉ mensaje funciona
+  const ej = (pl, resp) => textosReales.filter((t) => t.pl === pl && t.resp === resp).slice(-3).map((t) => corto(t.texto, 170));
+  seguimientos.ejemplos = { A_si: ej("A", true), A_no: ej("A", false), B_si: ej("B", true), B_no: ej("B", false), M_si: ej("M", true), M_no: ej("M", false) };
 
   // --- Prospección (7 días)
   const pr7 = prospectos.filter((p) => (p.enviado_ts || 0) >= s7);
@@ -261,7 +281,13 @@ export function textoHechos(h, partes = ["embudo", "whatsapp", "redes", "product
     L.push(`COTIZACIONES 7d: ${c.n} · sin respuesta del cliente a las 48 h: ${c.sin_resp} (${c.sin_resp_pct}%) · por perfil ${JSON.stringify(c.por_perfil)}`);
     L.push(`COTIZADOS SIN RESPUESTA (los más recientes): ${c.sin_resp_lista.map((x) => `${x.nombre} (+${x.conv}) ${x.perfil} · ${x.producto}${x.usd ? " ~USD " + x.usd : ""} · hace ${x.hace_dias} d`).join(" | ") || "-"}`);
     const s = h.seguimientos;
-    L.push(`SEGUIMIENTOS 14d: ${s.total.n} enviados · ${s.total.resp} contestaron en 48 h (${s.total.resp_pct}%) · ${s.total.compro} compraron después · PLAN A: ${s.A.n} enviados, ${s.A.resp_pct}% respuesta, ${s.A.compro} compras · PLAN B: ${s.B.n} enviados, ${s.B.resp_pct}% respuesta, ${s.B.compro} compras · por toque ${JSON.stringify(s.por_toque)} · por situación ${JSON.stringify(s.por_situacion)}`);
+    const M = s.M || { n: 0, resp_pct: 0, compro: 0 }, conPlan = s.A.n + s.B.n;
+    L.push(`SEGUIMIENTOS 14d: ${s.total.n} enviados · ${s.total.resp} contestaron en 48 h (${s.total.resp_pct}%) · ${s.total.compro} compraron después.`);
+    L.push(`  CON PLAN (${conPlan}; es lo único que sirve para comparar A contra B): PLAN A oferta concreta: ${s.A.n} enviados, ${s.A.resp_pct}% respuesta, ${s.A.compro} compras · PLAN B entender su negocio: ${s.B.n} enviados, ${s.B.resp_pct}% respuesta, ${s.B.compro} compras.${Math.min(s.A.n, s.B.n) < 15 ? " OJO: con menos de 15 por plan la diferencia todavía no dice nada; no declares ganador." : ""}`);
+    L.push(`  MANDADOS A MANO, SIN PLAN (${M.n}): ${M.resp_pct}% respuesta, ${M.compro} compras. No los sumes a ningún plan.`);
+    L.push(`  Por toque ${JSON.stringify(s.por_toque)} · por situación ${JSON.stringify(s.por_situacion)}${s.sin_mensaje ? ` · ${s.sin_mensaje} registrados sin que el lector haya visto el mensaje en el chat (la respuesta se midió desde la hora de registro)` : ""}`);
+    const e = s.ejemplos || {}, ejs = [["PLAN A que SÍ contestaron", e.A_si], ["PLAN A que NO contestaron", e.A_no], ["PLAN B que SÍ contestaron", e.B_si], ["PLAN B que NO contestaron", e.B_no], ["A MANO que SÍ contestaron", e.M_si], ["A MANO que NO contestaron", e.M_no]].filter(([, l]) => l?.length);
+    if (ejs.length) L.push(`  MENSAJES REALES DE SEGUIMIENTO (texto que salió): ${ejs.map(([t, l]) => `${t}: ${l.map((x) => `"${x}"`).join(" / ")}`).join(" · ")}`);
     if (s.textos_repetidos.length) L.push(`TEXTOS DE SEGUIMIENTO REPETIDOS: ${s.textos_repetidos.map((t) => `"${t.texto}" x${t.veces}`).join(" · ")}`);
     const p = h.prospeccion;
     L.push(`PROSPECCIÓN 7d: ${p.enviados_7d} enviados · ${p.respondieron_7d} respondieron (${p.resp_pct}%) · ${p.calientes_7d} calientes · por rubro ${JSON.stringify(p.por_rubro)}`);

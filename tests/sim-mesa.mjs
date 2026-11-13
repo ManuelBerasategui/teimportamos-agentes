@@ -48,6 +48,10 @@ hito("5493410000010", "cotizacion", h(11));
 db.prepare("INSERT INTO w_seg_log VALUES ('s1','5493410000002',?,1,'2','auto','buenas ana, te paso una alternativa','A')").run(h(2.2));
 db.prepare("INSERT INTO w_seg_log VALUES ('s2','5493410000010',?,1,'2','auto','buenas, te paso una alternativa','A')").run(h(5));
 db.prepare("INSERT INTO w_seg_log VALUES ('s3','5493410000001',?,1,'2','auto','buenas beto, es para revender?','B')").run(h(1.2));
+// un seguimiento mandado a mano y cargado después con una nota (sin plan): Eli. El mensaje real salió 2 h antes de cargarlo y ella contestó antes de la carga
+msg("5493410000008", 1, "hola eli, seguis interesada en los parlantes?", h(0.4)); msg("5493410000008", 0, "si, pasame precio por 10", h(0.4) + 30 * 60e3);
+db.prepare("INSERT INTO w_seg_log (id, conv, ts, toque, situacion, quien, texto) VALUES ('man1','5493410000008',?,0,'','dueno','lista html 10/11')").run(h(0.4) + 2 * H);
+db.prepare("INSERT INTO w_seg_log VALUES ('s9','5493410000010',?,2,'2','dueno-mal','borrador que se marcó mal','A')").run(h(4));
 // grupos: un cupo hace 3 días → Ana y Fede preguntaron por NFC después
 msg("120363@g.us", 1, "CUPO tarjetas NFC para reseñas de Google, USD 4,7 c/u, cierra el viernes", h(3), 1);
 db.prepare("INSERT INTO ig_posts (id, ts, tipo, texto, formato, gancho, alcance, vistas, guardados, compartidos, tiempo_ms) VALUES ('p1',?,'REELS','Vendí 100 NFC','ml_vendi','Cuánto me quedó?',5000,9000,40,12,9000)").run(h(1));
@@ -65,13 +69,15 @@ chk("la primera respuesta humana no cuenta al bot (Ana esperó 40 min)", hh.resp
 chk("pregunta sin responder: Beto hace más de 24 h", hh.pendientes.some((p) => p.nombre === "Beto"));
 chk("cotizaciones sin respuesta a 48 h se miden", hh.cotizaciones.n >= 3 && hh.cotizaciones.sin_resp >= 1);
 chk("seguimientos por plan: A 2 enviados 50%, B 1 enviado 100%", hh.seguimientos.A.n === 2 && hh.seguimientos.A.resp_pct === 50 && hh.seguimientos.B.n === 1 && hh.seguimientos.B.resp_pct === 100);
+chk("seguimiento cargado a mano: va aparte, no se suma a ningún plan, y la respuesta se mide desde el mensaje real", hh.seguimientos.M.n === 1 && hh.seguimientos.M.resp_pct === 100 && hh.seguimientos.total.n === 4 && hh.seguimientos.sin_mensaje >= 0 && hh.seguimientos.ejemplos.M_si[0] === "hola eli, seguis interesada en los parlantes?" && !JSON.stringify(hh.seguimientos).includes("lista html"));
+chk("los marcados como mal no cuentan", hh.seguimientos.A.n === 2);
 chk("prospección 7 días: 2 enviados, 1 respondió", hh.prospeccion.enviados_7d === 2 && hh.prospeccion.resp_pct === 50);
 chk("productos pedidos agrupados: NFC x2 con perfil A", hh.productos.some((p) => /tarjetas nfc/.test(p.producto) && p.n === 2 && p.ab === 2));
 chk("cupo en grupos con consultas relacionadas en 72 h", hh.cupos.lista.length === 1 && hh.cupos.lista[0].relacionadas >= 1);
 chk("video con chats atribuidos en 48 h", hh.redes.videos.length === 1 && hh.redes.videos[0].chats_48h >= 2);
 chk("venta detectada en el chat y no cargada", hh.ventas.detectadas_sin_cargar.some((v) => v.nombre === "Caro"));
 const txt = M.textoHechos(hh);
-chk("texto de hechos con todas las secciones", /EMBUDO 7 DÍAS/.test(txt) && /VELOCIDAD HUMANA/.test(txt) && /PLAN A: 2 enviados/.test(txt) && /VIDEOS INSTAGRAM/.test(txt) && /PRODUCTOS PEDIDOS/.test(txt) && /MERCADO LIBRE: sin datos/.test(txt));
+chk("texto de hechos con todas las secciones", /EMBUDO 7 DÍAS/.test(txt) && /VELOCIDAD HUMANA/.test(txt) && /PLAN A oferta concreta: 2 enviados/.test(txt) && /MANDADOS A MANO, SIN PLAN \(1\): 100% respuesta/.test(txt) && /no declares ganador/.test(txt) && /A MANO que SÍ contestaron: "hola eli/.test(txt) && /VIDEOS INSTAGRAM/.test(txt) && /PRODUCTOS PEDIDOS/.test(txt) && /MERCADO LIBRE: sin datos/.test(txt));
 chk("virales de otras cuentas y guiones propios llegan al agente de Redes", hh.redes.virales.length === 1 && hh.redes.virales[0].veces === 20 && /VIRALES DE OTRAS CUENTAS/.test(txt) && /DICE: Compré doscientos termos/.test(txt) && /GUION: Vendí cien tarjetas/.test(txt));
 chk("métricas medibles", M.medir(hh, "ventas_7d") === 1 && M.medir(hh, "seg_resp_A_pct") === 50 && M.medir(hh, "inventada") === null);
 
