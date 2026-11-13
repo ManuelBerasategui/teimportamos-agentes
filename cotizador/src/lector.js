@@ -152,7 +152,11 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
     // Mismo criterio que el panel: revisado por la IA, con mensaje y "llamalo vos" solo si hay monto alto, negociación o pedido de llamada (perfil A/B solo no alcanza)
     const conDueno = (s) => !!s.dueno && (Number(s.situacion) === 8 || !!s.llamada || (s.presup_usd || 0) > 1000);
     const soloListos = url.searchParams.get("listos") === "1";
-    const lista = (await seguimientos(env)).filter((s) => /^\d{8,15}$/.test(String(s.conv)) && s.borrador && (!soloListos || (s.revisado && !conDueno(s)))).map((s) => ({ ...s, dueno: conDueno(s) })).slice(0, lim)
+    // Cache de 15 min: la PC pide la lista antes de cada seguimiento y recalcularla cada vez gastaba mucho cupo de D1
+    let todosSeg = null;
+    if (url.searchParams.get("refrescar") !== "1") try { const c = JSON.parse((await kvGet(env, "seg_ruta")) || "null"); if (c && Date.now() - c.ts < 15 * 60e3) todosSeg = c.l; } catch {}
+    if (!todosSeg) { todosSeg = await seguimientos(env); await kvPut(env, "seg_ruta", JSON.stringify({ ts: Date.now(), l: todosSeg })).catch(() => {}); }
+    const lista = todosSeg.filter((s) => /^\d{8,15}$/.test(String(s.conv)) && s.borrador && (!soloListos || (s.revisado && !conDueno(s)))).map((s) => ({ ...s, dueno: conDueno(s) })).slice(0, lim)
       .map((s) => ({ conv: s.conv, nombre: s.nombre, producto: s.producto, cantidad: s.cantidad, total: s.total, tipo: s.tipo, toque: s.toque, situacion: s.situacion, revisado: s.revisado, dueno: s.dueno, llamada: s.llamada, reaccion: s.reaccion, dias_cot: s.dias_cot, borrador: s.borrador }));
     // Cuántos seguimientos van hoy (lo que muestra el panel en Objetivos) y el objetivo, para que la PC frene al llegar
     const hoyAR = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
@@ -187,6 +191,7 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
     if (p === "/enviar/hecho") await logSeg(env, String(b.conv || ""), "auto");
     // Sacarlo ya de la lista del panel (Hoy > seguimientos), sin esperar a que se recalcule
     try { const v = await kvGet(env, "tab_segs"); if (v) { const l = JSON.parse(v); const f = l.filter((x) => String(x.conv) !== String(b.conv || "")); if (f.length !== l.length) await kvPut(env, "tab_segs", JSON.stringify(f)); } } catch {}
+    for (const k of ["seg_ruta"]) try { const c = JSON.parse((await kvGet(env, k)) || "null"); if (c?.l) { c.l = c.l.filter((x) => String(x.conv) !== String(b.conv || "")); await kvPut(env, k, JSON.stringify(c)); } } catch {}
     return Response.json({ ok: true });
   }
   return new Response("no existe", { status: 404 });

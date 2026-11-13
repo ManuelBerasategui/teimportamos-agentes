@@ -70,7 +70,7 @@ export async function hechos(env, { dias = 14 } = {}) {
     todas(env, "SELECT conv, tipo, ts, dato FROM w_hito WHERE ts>=? AND tipo IN ('cotizacion','venta','comprobante')", s30),
     todas(env, "SELECT ts, conv, nombre, producto, monto, moneda, ganancia, linea FROM ventas WHERE ts>=? ORDER BY ts DESC", s30),
     todas(env, "SELECT conv, ts, toque, situacion, quien, texto, plantilla FROM w_seg_log WHERE ts>=?", s14),
-    todas(env, "SELECT conv, yo, texto, ts FROM w_msg WHERE grupo=0 AND hist=0 AND ts>=? ORDER BY conv, ts LIMIT 12000", s7),
+    todas(env, "SELECT conv, yo, texto, ts FROM w_msg INDEXED BY w_msg_priv WHERE ts>=? AND grupo=0 AND hist=0 ORDER BY conv, ts LIMIT 12000", s7),
     todas(env, "SELECT conv, texto, ts FROM w_msg WHERE grupo=1 AND yo=1 AND hist=0 AND ts>=? AND (lower(texto) LIKE '%cupo%' OR lower(texto) LIKE '%oferta%' OR lower(texto) LIKE '%combo%') ORDER BY ts", s14),
     todas(env, "SELECT id, ts, tipo, link, texto, formato, gancho, alcance, vistas, guardados, compartidos, comentarios, tiempo_ms FROM ig_posts WHERE ts>=? AND COALESCE(tipo,'')<>'STORY' ORDER BY ts", desde),
     todas(env, "SELECT id, ts, texto, vistas, likes, compartidos, guardados, guion FROM tt_posts WHERE ts>=? ORDER BY ts", desde),
@@ -134,7 +134,7 @@ export async function hechos(env, { dias = 14 } = {}) {
   const cli14 = {};
   for (let i = 0; i < segConvs.length; i += 90) {
     const lote = segConvs.slice(i, i + 90);
-    for (const m of await todas(env, `SELECT conv, ts FROM w_msg WHERE grupo=0 AND yo=0 AND hist=0 AND ts>=? AND conv IN (${lote.map(() => "?").join(",")})`, s14, ...lote)) (cli14[m.conv] || (cli14[m.conv] = [])).push(m.ts);
+    for (const m of await todas(env, `SELECT conv, ts FROM w_msg INDEXED BY w_msg_conv WHERE conv IN (${lote.map(() => "?").join(",")}) AND ts>=? AND grupo=0 AND yo=0 AND hist=0`, ...lote, s14)) (cli14[m.conv] || (cli14[m.conv] = [])).push(m.ts);
   }
   const segStat = () => ({ n: 0, resp: 0, compro: 0, resp_pct: 0 });
   const seguimientos = { total: segStat(), A: segStat(), B: segStat(), por_toque: {}, por_situacion: {} };
