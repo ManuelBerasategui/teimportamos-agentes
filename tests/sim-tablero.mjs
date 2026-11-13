@@ -168,7 +168,7 @@ globalThis.fetch = real;
 // HTML del panel compila
 const { PANEL_P } = await import(dir + "/panel-p.js");
 for (const m of PANEL_P.matchAll(/<script>([\s\S]*?)<\/script>/g)) { try { new Function(m[1]); chk("js del panel compila", true); } catch (e) { chk("js del panel: " + e.message, false); } }
-chk("pestañas Hoy, Chats, Números, Links, Agente", ["hoy", "chats", "num", "links", "ag"].every((v) => PANEL_P.includes('data-v="' + v + '"')));
+chk("pestañas Agentes, Hoy, Chats, Números, Links", ["mesa", "hoy", "chats", "num", "links"].every((v) => PANEL_P.includes('data-v="' + v + '"')));
 chk("sin Telegram", !/telegram/i.test(PANEL_P));
 const W = fs.readFileSync("src/worker.js", "utf8");
 chk("el panel nuevo es el principal y el viejo queda en /panel/viejo", W.includes('url.pathname === "/panel" || url.pathname === "/panel/p"') && W.includes('"/panel/viejo"'));

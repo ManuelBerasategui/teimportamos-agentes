@@ -18,6 +18,7 @@ db.exec("CREATE TABLE IF NOT EXISTS ig_posts (id TEXT PRIMARY KEY, ts INTEGER, t
 db.exec("CREATE TABLE IF NOT EXISTS tt_posts (id TEXT PRIMARY KEY, ts INTEGER, link TEXT, texto TEXT, duracion INTEGER, portada TEXT, vistas INTEGER, likes INTEGER, comentarios INTEGER, compartidos INTEGER, guardados INTEGER, seguidores INTEGER, actualizado INTEGER, guion TEXT)");
 db.exec("CREATE TABLE IF NOT EXISTS prospectos (tel TEXT PRIMARY KEY, negocio TEXT, rubro TEXT, ciudad TEXT, estado TEXT, enviado_ts INTEGER, respuesta TEXT, temperatura TEXT, recontacto TEXT, proximo_mensaje TEXT, le_contestamos TEXT, nota TEXT, quien TEXT, act_ts INTEGER)");
 db.exec("CREATE TABLE IF NOT EXISTS ig_refs (id TEXT PRIMARY KEY, ts INTEGER, link TEXT, nicho TEXT, que_pasa TEXT, por_que TEXT, usos INTEGER DEFAULT 0, quien TEXT)");
+db.exec("CREATE TABLE IF NOT EXISTS virales (id TEXT PRIMARY KEY, ts INTEGER, red TEXT, autor TEXT, link TEXT, texto TEXT, duracion INTEGER, vistas INTEGER, likes INTEGER, comentarios INTEGER, compartidos INTEGER, guardados INTEGER, seguidores INTEGER, fuente TEXT, guion TEXT, leido INTEGER)");
 db.exec("CREATE TABLE IF NOT EXISTS ag_mem (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, tipo TEXT, texto TEXT)");
 const D = 86400e3, H = 3600e3, ahora = Date.now(), h = (d) => ahora - d * D;
 let nm = 0;
@@ -53,6 +54,9 @@ db.prepare("INSERT INTO ig_posts (id, ts, tipo, texto, formato, gancho, alcance,
 db.prepare("INSERT INTO tt_posts (id, ts, texto, vistas, compartidos, guardados) VALUES ('t1',?,'Vendí 100 NFC',30000,80,200)").run(h(1));
 db.prepare("INSERT INTO prospectos (tel, negocio, rubro, estado, enviado_ts, respuesta, temperatura, act_ts) VALUES ('5493419990001','Perfumería X','perfumeria','enviado',?,'si, pasame precios','caliente',?),('5493419990002','Kiosco Y','kiosco','enviado',?,NULL,NULL,?)").run(h(2), h(1), h(2), h(2));
 
+db.prepare("INSERT INTO virales (id, ts, red, autor, link, texto, vistas, compartidos, guardados, seguidores, fuente, guion) VALUES ('v1',?,'tiktok','otro.importador','https://www.tiktok.com/@otro.importador/video/1','Traje 200 termos de China',800000,900,12000,40000,'#importardechina','Compré doscientos termos a dos dólares y mirá lo que pasó en la aduana')").run(h(4));
+db.prepare("UPDATE tt_posts SET guion='Vendí cien tarjetas NFC por Mercado Libre, querés saber cuánto me quedó?' WHERE id='t1'").run();
+
 // 1) Hechos medidos
 const hh = await M.hechos(env);
 chk("embudo 7 días: 6 nuevos, 4 cotizados, 1 venta", hh.embudo.v7.nuevos === 6 && hh.embudo.v7.cotizados === 4 && hh.embudo.v7.ventas === 1);
@@ -68,6 +72,7 @@ chk("video con chats atribuidos en 48 h", hh.redes.videos.length === 1 && hh.red
 chk("venta detectada en el chat y no cargada", hh.ventas.detectadas_sin_cargar.some((v) => v.nombre === "Caro"));
 const txt = M.textoHechos(hh);
 chk("texto de hechos con todas las secciones", /EMBUDO 7 DÍAS/.test(txt) && /VELOCIDAD HUMANA/.test(txt) && /PLAN A: 2 enviados/.test(txt) && /VIDEOS INSTAGRAM/.test(txt) && /PRODUCTOS PEDIDOS/.test(txt) && /MERCADO LIBRE: sin datos/.test(txt));
+chk("virales de otras cuentas y guiones propios llegan al agente de Redes", hh.redes.virales.length === 1 && hh.redes.virales[0].veces === 20 && /VIRALES DE OTRAS CUENTAS/.test(txt) && /DICE: Compré doscientos termos/.test(txt) && /GUION: Vendí cien tarjetas/.test(txt));
 chk("métricas medibles", M.medir(hh, "ventas_7d") === 1 && M.medir(hh, "seg_resp_A_pct") === 50 && M.medir(hh, "inventada") === null);
 
 // 2) Corrida completa con IA simulada
@@ -77,15 +82,21 @@ const ia = async (_e, p) => {
   if (/AGENTE DE WHATSAPP/.test(p)) return { resumen: "Cotizamos sin próximo paso.", hallazgos: [{ titulo: "Beto sin respuesta", detalle: "preguntó el envío", evidencia: "Beto +5493410000001" }], hipotesis: [{ texto: "Si contestamos en menos de 1 h, responden más", accion: "Manuel contesta antes de 1 h", metrica: "resp_mas_1h_pct", meta: 10, dias: 7 }], ideas: ["responder a Beto"], para_manuel: [] };
   if (/AGENTE DE REDES/.test(p)) return { resumen: "El reel de NFC trajo 2 consultas.", hallazgos: [], hipotesis: [], ideas: ["otro reel de NFC"], para_manuel: [] };
   if (/AGENTE DE PRODUCTOS/.test(p)) return { resumen: "NFC se pide y se vende.", hallazgos: [], hipotesis: [{ texto: "Un cupo de NFC trae consultas", accion: "Sender manda cupo", metrica: "cupo_consultas_72h", meta: 3, dias: 7 }], ideas: [], para_manuel: ["stockear NFC"] };
+  if (/^DISCUSIÓN DE LA MESA/.test(p)) return { turnos: [{ agente: "redes", a: "whatsapp", texto: "El reel de NFC trajo 2 chats, qué pasó con ellos?" }, { agente: "whatsapp", a: "redes", texto: "Ana cotizada sin respuesta, Fede sin cotizar." }, { agente: "critico", a: "todos", texto: "Son 2 casos: es una pista, no un patrón." }, { agente: "inventado", a: "nadie", texto: "turno de un agente que no existe" }], acuerdos: ["NFC tiene demanda"], desacuerdos: ["si el cupo o el reel trajo las consultas"], falta_medir: ["origen declarado de Ana y Fede"] };
+  if (/^PREPARÁS LA RESPUESTA/.test(p)) return { entendi: "Quiere saber por qué los cupos de esta semana no vendieron y qué cambió contra la vez anterior.", consultas: [{ tipo: "cupos", q: "nfc" }, { tipo: "chat", q: "Beto" }, { tipo: "borrar_todo", q: "x" }], partes: ["productos"] };
+  if (/^CHARLA CON MANUEL\. Sos el agente de REDES/.test(p)) return { respuesta: "**El reel de NFC** trajo 2 chats.", guardar: [], hipotesis: [], seguir: ["qué gancho usó el viral de los termos?"] };
   if (/INTEGRADOR/.test(p)) return { lectura: "Arriba bien, abajo se cae: 4 cotizados y 1 venta.", decisiones: [{ que: "Contestarle a Beto", quien: "Manuel", por_que: "pregunta sin responder hace 26 h" }], hipotesis: [{ texto: "Inventada con métrica que no existe", accion: "x", metrica: "nada", meta: 1, dias: 7 }], cambio_rumbo: "", mensaje: "4 cotizados, 1 venta. Beto espera respuesta hace 26 h." };
   if (/Sos la MESA/.test(p)) return { respuesta: "Los cupos esta semana trajeron 2 consultas.", guardar: [{ tipo: "decision", texto: "No cotizar réplicas de marca" }], hipotesis: [{ texto: "Plan A responde más que B", accion: "medir", metrica: "seg_resp_A_pct", meta: 60, dias: 7 }] };
   return null;
 };
 const r = await M.correrMesa(env, ia, { forzar: true, motivo: "panel" });
-chk("corren los 3 agentes y el integrador", r.ok && prompts.length === 4);
+chk("corren los 3 agentes, la discusión y el integrador", r.ok && prompts.length === 5);
+chk("los agentes razonan con su manual", /CRITERIO DE VENTAS POR CHAT/.test(prompts[0]) && /CRITERIO DE CONTENIDO/.test(prompts[1]) && /CRITERIO DE PRODUCTO/.test(prompts[2]) && /Nunca una sola causa/.test(prompts[0]));
+chk("la discusión cruza los informes y se guarda (un agente inventado pasa a ser el crítico)", r.debate.turnos.length === 4 && r.debate.turnos[3].agente === "critico" && r.debate.turnos[3].a === "todos" && /INFORME REDES: \{"resumen":"El reel de NFC/.test(prompts[3]) && db.prepare("SELECT 1 FROM mesa_informes WHERE agente='debate'").get());
+chk("el integrador lee la discusión", /DISCUSIÓN ENTRE LOS AGENTES/.test(prompts[4]) && /es una pista, no un patrón/.test(prompts[4]) && /origen declarado de Ana y Fede/.test(prompts[4]));
 chk("el agente de WhatsApp lee charlas reales", /CHARLAS REALES/.test(prompts[0]) && /COTIZADO SIN RESPUESTA/.test(prompts[0]) && /Beto/.test(prompts[0]));
-chk("el integrador ve los tres informes y el embudo", /WHATSAPP: \{"resumen":"Cotizamos sin próximo paso/.test(prompts[3]) && /EMBUDO 7 DÍAS/.test(prompts[3]));
-chk("informes guardados por agente", db.prepare("SELECT COUNT(DISTINCT agente) n FROM mesa_informes").get().n === 4);
+chk("el integrador ve los tres informes y el embudo", /WHATSAPP: \{"resumen":"Cotizamos sin próximo paso/.test(prompts[4]) && /EMBUDO 7 DÍAS/.test(prompts[4]));
+chk("informes guardados por agente", db.prepare("SELECT COUNT(DISTINCT agente) n FROM mesa_informes").get().n === 5);
 const hips = db.prepare("SELECT * FROM mesa_hip").all();
 chk("hipótesis con base medida hoy (la de métrica inventada se descarta)", hips.length === 2 && hips.every((x) => x.estado === "activa") && hips.find((x) => x.metrica === "resp_mas_1h_pct").base === hh.respuesta.mas_1h_pct);
 chk("avisa al dueño con el mensaje corto", env.__captura.length === 1 && /Beto espera respuesta/.test(env.__captura[0]) && /corrida pedida/.test(env.__captura[0]));
@@ -103,11 +114,19 @@ const q = await M.preguntarMesa(env, ia, "los cupos de esta semana no vendieron 
 chk("responde y guarda la charla", /2 consultas/.test(q.respuesta) && db.prepare("SELECT COUNT(*) n FROM mesa_chat").get().n === 2);
 chk("guarda la decisión del dueño y su hipótesis", db.prepare("SELECT 1 FROM ag_mem WHERE tipo='decision' AND texto LIKE '%réplicas%'").get() && db.prepare("SELECT 1 FROM mesa_hip WHERE agente='manuel' AND metrica='seg_resp_A_pct'").get());
 
+const pq = prompts.slice(-2);
+chk("antes de contestar amplía la pregunta y pide datos a la base", /^PREPARÁS LA RESPUESTA/.test(pq[0]) && /cupos: cada vez que publicamos/.test(pq[0]) && /por qué los cupos de esta semana no vendieron/.test(q.entendi) && q.consultas.length === 2);
+chk("la respuesta usa lo que se buscó (cupos de NFC por fecha y la charla de Beto)", /DATOS BUSCADOS PARA ESTA PREGUNTA/.test(pq[1]) && /CONSULTA cupos "nfc"/.test(pq[1]) && /CUPO tarjetas NFC.*consultas de ese producto en 72 h/.test(pq[1]) && /CONSULTA chat "beto"/.test(pq[1]) && /y el envio cuanto tarda/.test(pq[1]) && /LO QUE ENTENDIMOS DE SU MENSAJE: Quiere saber/.test(pq[1]));
+const q2 = await M.preguntarMesa(env, ia, "qué grabo?", "redes");
+chk("se puede hablar con un agente solo (con su manual y sin asteriscos)", q2.agente === "redes" && q2.respuesta === "El reel de NFC trajo 2 chats." && q2.seguir.length === 1 && /CRITERIO DE CONTENIDO/.test(prompts.at(-1)) && !/CRITERIO DE VENTAS POR CHAT/.test(prompts.at(-1)) && db.prepare("SELECT agente FROM mesa_chat ORDER BY id DESC LIMIT 1").get().agente === "redes");
+chk("consultas a la base: solo lectura y solo los tipos conocidos", (await M.ejecutarConsulta(env, { tipo: "borrar_todo", q: "x" })) === null && /Caro/.test(await M.ejecutarConsulta(env, { tipo: "clientes_producto", q: "viales" })) && /Dani.*motivo: caro/.test(await M.ejecutarConsulta(env, { tipo: "perdidos" })) && /otro\.importador.*20x seguidores/.test(await M.ejecutarConsulta(env, { tipo: "virales", q: "termos" })) && /TikTok.*GUION: Vendí cien/.test(await M.ejecutarConsulta(env, { tipo: "videos" })) && /cuanto salen 100 nfc/.test(await M.ejecutarConsulta(env, { tipo: "buscar_mensajes", q: "nfc" })));
+
 // 5) Estado para el panel y API
 const est = await M.estadoMesa(env);
-chk("estado: informes, hipótesis, hechos resumidos y última corrida", est.informes.integrador && est.hipotesis.length === 3 && est.hechos.embudo.nuevos === 6 && est.ultima.motivo === "panel");
+chk("estado: informes, hipótesis, hechos resumidos y última corrida", est.informes.integrador && est.hipotesis.length === 3 && est.hechos.embudo.nuevos === 6 && est.ultima.motivo === "panel" && est.informes.debate.datos.turnos.length === 4 && est.virales.lista.length === 1 && est.virales.fuentes.hashtags.length > 3 && est.chat.at(-1).agente === "redes");
 const api = async (m, b) => (await M.apiMesa(env, { method: m, json: async () => { throw new Error("cuerpo ya leído"); } }, new URL("https://x/panel/p/api/mesa"), ia, b)).json();   // como en apiTablero: el cuerpo llega leído
 chk("API: descartar una hipótesis", (await api("POST", { accion: "hipotesis", id: hips[0].id, estado: "descartada" })).ok && db.prepare("SELECT estado FROM mesa_hip WHERE id=?").get(hips[0].id).estado === "descartada");
+chk("API: elegir hashtags y cuentas de los virales y pedir una lectura", (await api("POST", { accion: "fuentes", hashtags: "#importar, alibaba alibaba", perfiles: "@otro.importador" })).fuentes.hashtags.join() === "importar,alibaba" && JSON.parse(db.prepare("SELECT v FROM kv WHERE k='virales_fuentes'").get().v).perfiles[0] === "otro.importador" && (await api("POST", { accion: "virales_leer" })).ok && (await M.estadoMesa(env)).virales.leyendo === true);
 chk("API: tendencias de Mercado Libre desde la PC", (await M.guardarML(env, { items: [{ palabra: "tarjetas nfc", puesto: 1, resultados: 1200, precio_min: 3000, precio_max: 9000, vendidos: "+500 vendidos", top: [{ titulo: "Tarjeta NFC", precio: 3500, vendidos: "+500" }] }] })).guardadas === 1 && /MERCADO LIBRE \(leído/.test(M.textoHechos(await M.hechos(env), ["productos"])));
 
 // 6) Cron: corre a las 06:10 AR una vez y a las 20:30 la segunda; no antes de una hora entre intentos
@@ -124,5 +143,7 @@ chk("borradores distintos por plan", /alternativa/.test(L.borradorBase({ nombre:
 
 // 8) El panel tiene la pestaña Mesa y su JS compila
 const { PANEL_P } = await import(dir + "/panel-p.js");
-chk("pestaña Mesa", PANEL_P.includes('data-v="mesa"') && PANEL_P.includes('id="v-mesa"') && PANEL_P.includes('id="mesaCorrer"') && PANEL_P.includes('id="mesaEnv"'));
+chk("pestaña Mesa", PANEL_P.includes('data-v="mesa"') && PANEL_P.includes('id="v-mesa"') && PANEL_P.includes('id="mesaCorrer"') && PANEL_P.includes('id="mesaEnv"') && PANEL_P.includes('id="mesaQuien"') && PANEL_P.includes('id="mesaDebate"') && PANEL_P.includes('id="mesaVir"') && !PANEL_P.includes('data-v="ag"'));
+chk("la pestaña Agentes es la primera y la que abre por defecto", /<nav id="tabs"><button data-v="mesa" class="on">Agentes/.test(PANEL_P) && PANEL_P.includes('|| "mesa"'));
+new Function(PANEL_P.match(/<script>([\s\S]*)<\/script>/)[1]);   // el JS del panel compila
 console.log(`\nsim-mesa: ${ok} ok, ${mal} fallas`); if (mal) throw new Error("simulations failed");

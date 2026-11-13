@@ -34,7 +34,8 @@ export async function prepararMesa(env) {
     env.DB.prepare("CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT, exp INTEGER)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS w_seg_log (id TEXT PRIMARY KEY, conv TEXT, ts INTEGER, toque INTEGER, situacion TEXT, quien TEXT, texto TEXT)"),
   ]);
-  await env.DB.prepare("ALTER TABLE w_seg_log ADD COLUMN plantilla TEXT").run().catch(() => {});   // plan A/B de cada seguimiento (lo escribe logSeg)
+  await env.DB.prepare("ALTER TABLE w_seg_log ADD COLUMN plantilla TEXT").run().catch(() => {});
+  await env.DB.prepare("ALTER TABLE mesa_chat ADD COLUMN agente TEXT").run().catch(() => {});   // con quién fue la charla: mesa, whatsapp, redes o productos   // plan A/B de cada seguimiento (lo escribe logSeg)
   listo = true;
 }
 
@@ -65,7 +66,7 @@ export async function hechos(env, { dias = 14 } = {}) {
   await prepararMesa(env);
   const ahora = Date.now(), hoy = diaAR(ahora);
   const s7 = ahora - 7 * DIA, s14 = ahora - 14 * DIA, s30 = ahora - 30 * DIA, desde = ahora - Math.max(14, dias) * DIA;
-  const [convs, hitos, ventasCargadas, segLog, msgs7, grupos, ig, tt, prospectos, eq, mem, mlRaw, refs] = await Promise.all([
+  const [convs, hitos, ventasCargadas, segLog, msgs7, grupos, ig, tt, prospectos, eq, mem, mlRaw, refs, vir] = await Promise.all([
     todas(env, "SELECT conv, nombre, primer_ts, ult_ts, ult_yo, ult_cliente_ts, ult_yo_ts, ult_texto, perfil, presup_usd, producto, etapa, motivo, origen, cierre_ts, puntaje FROM w_conv WHERE grupo=0 AND COALESCE(prov,0)=0 AND COALESCE(archivado,0)=0 AND (primer_ts>=? OR ult_ts>=?)", s30, s30),
     todas(env, "SELECT conv, tipo, ts, dato FROM w_hito WHERE ts>=? AND tipo IN ('cotizacion','venta','comprobante')", s30),
     todas(env, "SELECT ts, conv, nombre, producto, monto, moneda, ganancia, linea FROM ventas WHERE ts>=? ORDER BY ts DESC", s30),
@@ -79,6 +80,7 @@ export async function hechos(env, { dias = 14 } = {}) {
     todas(env, "SELECT tipo, texto, ts FROM ag_mem ORDER BY ts DESC LIMIT 25"),
     kvGet(env, "ml_tendencias"),
     todas(env, "SELECT ts, link, nicho, que_pasa, por_que FROM ig_refs WHERE que_pasa<>'' ORDER BY ts DESC LIMIT 12"),
+    todas(env, "SELECT id, ts, autor, link, texto, vistas, compartidos, guardados, seguidores, fuente, guion FROM virales WHERE ts>=? ORDER BY vistas DESC LIMIT 14", ahora - 45 * DIA),   // lo lee el worker buscador (virales.js); si la tabla no existe todavía, queda vacío
   ]);
   const porConv = Object.fromEntries(convs.map((c) => [c.conv, c]));
   const activo = (c) => !["perdido", "vendido", "no_cliente"].includes(c.etapa);
@@ -173,7 +175,9 @@ export async function hechos(env, { dias = 14 } = {}) {
   const baseDia = convs.filter((c) => c.primer_ts >= desde).length / Math.max(14, dias);
   const videos = ig.map((p) => { const n48 = convs.filter((c) => c.primer_ts > p.ts && c.primer_ts < p.ts + 48 * H).length; return { fecha: fecha(p.ts), gancho: corto(p.gancho, 70), texto: corto(p.texto, 90), formato: p.formato || "?", alcance: p.alcance, vistas: p.vistas, guardados: p.guardados, compartidos: p.compartidos, seg_vistos: p.tiempo_ms ? Math.round(p.tiempo_ms / 1000) : null, chats_48h: n48, atribuidos: Math.max(0, Math.round(n48 - baseDia * 2)) }; });
   const origen = {}; for (const c of convs) if (c.primer_ts >= s14) origen[c.origen || "sin dato"] = (origen[c.origen || "sin dato"] || 0) + 1;
-  const redes = { videos, tiktok: tt.map((p) => ({ fecha: fecha(p.ts), texto: corto(p.texto, 80), vistas: p.vistas, compartidos: p.compartidos, guardados: p.guardados, guion: corto(p.guion, 160) })), origen_14d: origen,
+  const chats48 = (ts) => convs.filter((c) => c.primer_ts > ts && c.primer_ts < ts + 48 * H).length;
+  const virales = vir.map((v) => ({ fecha: fecha(v.ts), autor: v.autor, link: v.link, texto: corto(v.texto, 140), vistas: v.vistas, compartidos: v.compartidos, guardados: v.guardados, seguidores: v.seguidores, veces: v.seguidores ? Math.round(v.vistas / v.seguidores) : null, fuente: v.fuente, guion: corto(v.guion, 420) }));
+  const redes = { videos, virales, tiktok: tt.map((p) => ({ fecha: fecha(p.ts), texto: corto(p.texto, 80), vistas: p.vistas, compartidos: p.compartidos, guardados: p.guardados, chats_48h: chats48(p.ts), guion: corto(p.guion, 420) })), origen_14d: origen,
     consultas_por_video: videos.length ? Math.round((videos.reduce((a, v) => a + v.atribuidos, 0) / videos.length) * 10) / 10 : null, base_diaria: Math.round(baseDia * 10) / 10, referencias: refs.map((r) => ({ fecha: fecha(r.ts), red: r.nicho, que_pasa: corto(r.que_pasa, 120), por_que: corto(r.por_que, 100) })) };
 
   // --- Ventas con detalle (30 días) y las que están en el chat pero no cargadas
@@ -233,8 +237,10 @@ export function textoHechos(h, partes = ["embudo", "whatsapp", "redes", "product
   if (partes.includes("redes")) {
     const r = h.redes;
     L.push(`VIDEOS INSTAGRAM (chats nuevos en las 48 h siguientes contra base de ${r.base_diaria} por día): ${r.videos.map((v) => `${v.fecha} [${v.formato}] gancho "${v.gancho}" · alcance ${n0(v.alcance)} · vistas ${n0(v.vistas)} · guardados ${n0(v.guardados)} · compartidos ${n0(v.compartidos)} · ${v.seg_vistos ?? "-"} s vistos · chats 48h ${v.chats_48h} (atribuidos ${v.atribuidos})`).join(" | ") || "sin videos"}`);
-    L.push(`TIKTOK: ${r.tiktok.map((t) => `${t.fecha} "${t.texto}" ${n0(t.vistas)} vistas · ${n0(t.compartidos)} compartidos${t.guion ? ` · guion: ${t.guion}` : ""}`).join(" | ") || "sin datos"}`);
+    L.push(`TIKTOK (los mismos videos que Instagram; "guion" es lo que se dice en el video, transcripto): ${r.tiktok.map((t) => `${t.fecha} "${t.texto}" ${n0(t.vistas)} vistas · ${n0(t.compartidos)} compartidos · ${n0(t.guardados)} guardados · chats 48h ${t.chats_48h}${t.guion ? ` · GUION: ${t.guion}` : ""}`).join(" | ") || "sin datos"}`);
     L.push(`ORIGEN DE LOS CHATS NUEVOS 14d (lo que dijo el cliente): ${JSON.stringify(r.origen_14d)}`);
+    if (r.virales?.length) L.push(`VIRALES DE OTRAS CUENTAS (TikTok, leídos solos por hashtag o cuenta; "x seguidores" = cuántas veces superó a sus seguidores): ${r.virales.map((v) => `${v.fecha} @${v.autor} ${n0(v.vistas)} vistas${v.veces ? ` (${v.veces}x seguidores)` : ""} · ${n0(v.compartidos)} compartidos · ${n0(v.guardados)} guardados · ${v.fuente || ""} · "${v.texto}"${v.guion ? ` · DICE: ${v.guion}` : ""}`).join(" | ")}`);
+    else L.push("VIRALES DE OTRAS CUENTAS: todavía no hay lectura (se leen solos los lunes; en el panel se puede pedir una lectura ahora y elegir hashtags y cuentas)");
     if (r.referencias.length) L.push(`VIDEOS VIRALES DE OTROS guardados como referencia: ${r.referencias.map((x) => `${x.fecha} ${x.red}: ${x.que_pasa} (${x.por_que})`).join(" | ")}`);
   }
   if (partes.includes("productos")) {
@@ -255,11 +261,45 @@ const REGLAS = `REGLAS:
 - Directo, español rioplatense con voseo, sin emojis, sin signos de apertura (¿ ¡), sin guiones largos. Manuel no tiene tiempo: primero lo importante.
 - Las hipótesis son pocas (máximo 2), concretas y medibles: una acción que alguien puede hacer esta semana, una métrica de la lista y una meta numérica. Métricas posibles: ${Object.entries(METRICAS).map(([k, v]) => `${k} (${v.que})`).join("; ")}.
 - Vapers, pods y tabaco no existen para vos.`;
+// Manuales: criterio de cada agente. Armados con lo que ya aprendió el negocio y con patrones de equipos de agentes públicos
+// (analistas por área + debate con un crítico + un jefe que decide, como en TauricResearch/TradingAgents; roles con método
+// propio, como en los repos de agentes de marketing y ventas). Son criterio para razonar, no datos: los datos son los HECHOS.
+export const MANUAL = {
+  comun: `MÉTODO (para todos):
+- De lo general a lo particular: primero en qué etapa del embudo se pierde más (arriba: contenido y consultas; medio: atención y cotización; abajo: cierre), después por qué.
+- Nunca una sola causa. Para cada conclusión escribí también la explicación contraria y descartala con un dato; si no podés descartarla, dejala como duda y decí qué habría que medir.
+- Compará siempre contra algo: la semana anterior, la base diaria, el otro plan, el otro perfil. Un número solo no dice nada.
+- Con menos de 5 casos no hay patrón: decí "pocos casos" y tratá el hallazgo como pista.
+- Cruzá con las otras áreas: una consulta viene de un contenido, pide un producto y termina (o no) en una venta. Seguí ese hilo completo.`,
+  whatsapp: `CRITERIO DE VENTAS POR CHAT:
+- Velocidad: el que pregunta y recibe respuesta en minutos sigue la charla; después de una hora la mayoría ya se fue a otra cosa. Mirá la demora humana, no la del bot.
+- Calificar antes de cotizar: para qué lo quiere (revender, su negocio, uso propio), cantidad y presupuesto. Cotizarle a un perfil D o E es trabajo que no vuelve.
+- Una cotización buena termina con un próximo paso y una pregunta concreta (seña, cantidad alternativa, fecha en que sale el pedido). "Cualquier cosa avisame" no es un próximo paso.
+- Objeciones: precio total, mínimo, plazo, desconfianza, "lo pienso". Cada una pide otra respuesta. "Lo pienso" casi siempre es desconfianza o que no vio su margen.
+- Lo que cierra con revendedores es mostrarles SU ganancia: costo puesto en Argentina contra el precio al que se vende acá.
+- Para explicar por qué no se cierra: compará las charlas de los que compraron con las de los que no (quién era, qué se le dijo, cuánto tardamos, cómo se cotizó, qué objeción apareció).`,
+  redes: `CRITERIO DE CONTENIDO:
+- La métrica que importa es consultas de perfil A o B por video, no las vistas. Un video con pocas vistas que trae 3 chats de comerciantes vale más que uno de 100.000 que trae curiosos.
+- Señales de intención: guardados y compartidos sobre vistas, comentarios pidiendo info, segundos vistos. Vistas solas son alcance.
+- El primer segundo decide: un número, una pregunta o una imagen rara. Si el gancho no retiene, lo ven solo los seguidores.
+- Un viral de otro se analiza en cuatro partes: gancho, desarrollo (qué muestra), giro u obstáculo, y pedido final. Se adapta la estructura a nuestro servicio, no se copia el tema.
+- Un video "se despegó" cuando supera varias veces a los seguidores de la cuenta: esos son los que vale la pena estudiar, sean nuestros o de otros.
+- Lo que funcionó se repite mejorado; una serie se gasta, y cuando cae hay que cortarla.
+- Cada idea para grabar lleva: a quién le habla (perfil), producto, gancho textual, qué se muestra y qué consulta debería traer.`,
+  productos: `CRITERIO DE PRODUCTO:
+- Un producto vale si junta: demanda repetida (varios lo piden), compradores A o B, ticket que deje ganancia y poco riesgo (ni réplicas de marca ni cosas que frena la aduana).
+- En Mercado Libre la oportunidad es: muchas ventas del primero + pocas publicaciones o publicaciones flojas + precio que deja margen contra el costo puesto.
+- Un cupo funciona cuando el producto ya es conocido por el grupo, el precio por unidad está claro, hay cantidad mínima baja y fecha de cierre. Si el mismo cupo antes vendió y ahora no, mirá: saturación (ya compraron los que querían), precio contra la vez anterior, horario y cuántos mensajes hubo ese día en el grupo.
+- Lista de corte: lo que se pide mucho y nunca cierra consume tiempo de cotización. Decí cuáles dejar de cotizar.
+- Para cada producto decí la vía: cupo en grupos, por encargo, stock propio con entrega inmediata o publicarlo en Mercado Libre.`,
+};
 const SALIDA = `Respondé SOLO JSON: {"resumen":"2 o 3 líneas con lo más importante","hallazgos":[{"titulo":"corto","detalle":"qué pasa y por qué importa para vender","evidencia":"nombres, números o cifras exactas"}],"hipotesis":[{"texto":"qué creemos","accion":"qué hacer esta semana y quién (Manuel, Sender, agente, Buko)","metrica":"nombre de la lista","meta":número,"dias":7}],"ideas":["acciones concretas sueltas, máximo 5"],"para_manuel":["cosas que solo él puede decidir o hacer, máximo 3"]}`;
 
 const PROMPTS = {
   whatsapp: (h, muestras) => `Sos el AGENTE DE WHATSAPP de la mesa de ${NEGOCIO}
 Tu trabajo: explicar con evidencia por qué los chats no terminan en venta y qué cambiar. Mirá todo el recorrido: cuánto tardamos en contestar (humanos, no el bot), si quedan preguntas sin responder, cómo cotizamos (texto o solo archivo, con o sin próximo paso), qué objeciones aparecen (precio, margen, mínimo, plazo, desconfianza), si la propuesta de valor es coherente (lo que prometemos vs lo que decimos en el chat), qué seguimientos funcionan (plan A oferta concreta vs plan B entender el negocio), prospección y cupos. Fijate en los perfiles: a quién le cotizamos y quién compra.
+${MANUAL.comun}
+${MANUAL.whatsapp}
 ${REGLAS}
 HECHOS (medidos por el código):
 ${textoHechos(h, ["embudo", "whatsapp"])}
@@ -269,7 +309,9 @@ ${muestras || "(sin muestras)"}
 
 ${SALIDA}`,
   redes: (h) => `Sos el AGENTE DE REDES de la mesa de ${NEGOCIO}
-Tu trabajo: decir qué contenido trae CONSULTAS QUE COMPRAN, no solo vistas. Cruzá cada video con los chats nuevos de las 48 h siguientes, con los perfiles que llegan (A y B valen, D y E no) y con los productos que después se piden. Comparalo con lo que guardamos de videos virales de otros. Si las consultas bajaron, mirá qué cambió en el contenido. Proponé qué grabar la semana que viene (tema, gancho, producto, a quién le habla) con la razón medida.
+Tu trabajo: decir qué contenido trae CONSULTAS QUE COMPRAN, no solo vistas. Cruzá cada video con los chats nuevos de las 48 h siguientes, con los perfiles que llegan (A y B valen, D y E no) y con los productos que después se piden. Comparalo con lo que guardamos de videos virales de otros. Si las consultas bajaron, mirá qué cambió en el contenido. Proponé qué grabar la semana que viene (tema, gancho, producto, a quién le habla) con la razón medida. Leé los GUIONES (lo que se dice en cada video nuestro) y lo que DICEN los virales de otras cuentas: compará estructuras, no solo temas, y decí qué viral conviene adaptar y cómo.
+${MANUAL.comun}
+${MANUAL.redes}
 ${REGLAS}
 HECHOS:
 ${textoHechos(h, ["embudo", "redes", "productos"])}
@@ -277,6 +319,8 @@ ${textoHechos(h, ["embudo", "redes", "productos"])}
 ${SALIDA}`,
   productos: (h) => `Sos el AGENTE DE PRODUCTOS de la mesa de ${NEGOCIO}
 Tu trabajo: decir QUÉ VENDER y de qué forma. Fuentes: lo que la gente pide por WhatsApp (repetido, con perfil A o B, con cotización y venta), lo que se vendió, cómo rindieron los cupos en los grupos, los videos virales de otros, y las tendencias de Mercado Libre si están. Para cada producto que propongas decí la vía: cupo en grupos, importar por encargo, stockearlo nosotros (entrega inmediata) o publicarlo en Mercado Libre. Marcá productos a DEJAR de cotizar (los que se piden pero nunca cierran o son réplicas de marca/originales con riesgo de aduana). Si ves un producto que se vende mucho en Mercado Libre y las publicaciones son flojas, decilo: es una oportunidad.
+${MANUAL.comun}
+${MANUAL.productos}
 ${REGLAS}
 HECHOS:
 ${textoHechos(h, ["embudo", "productos", "redes"])}
@@ -328,8 +372,37 @@ export async function verificarHipotesis(env, h) {
 }
 
 // ---------------------------------------------------------------------------
-// INTEGRADOR: cruza los tres informes, lo verificado y la memoria; decide y escribe el mensaje para Manuel
-async function integrar(env, iaJSON, h, informes, cerradas, opts) {
+// DISCUSIÓN: los agentes se contestan entre sí y un crítico ataca la conclusión más floja, antes de que el integrador decida.
+// (Una sola llamada a la IA: cada agente habla solo desde su informe.)
+const AGENTES = { whatsapp: "WhatsApp", redes: "Redes", productos: "Productos", critico: "Crítico", integrador: "Integrador", mesa: "Mesa", todos: "todos" };
+async function discutir(env, iaJSON, h, informes, opts) {
+  const compacto = (d) => d ? { resumen: d.resumen, hallazgos: d.hallazgos.map((x) => `${x.titulo}: ${corto(x.detalle, 220)} [${corto(x.evidencia, 140)}]`), ideas: d.ideas } : "sin informe";
+  const prompt = `DISCUSIÓN DE LA MESA de ${NEGOCIO}
+Abajo están los informes de hoy de tres agentes. Escribí la discusión entre ellos, en turnos cortos (2 a 4 líneas cada uno), como una reunión de equipo que busca la verdad y no quedar bien:
+- Cada agente habla SOLO desde los datos de su informe y de los hechos. Nadie inventa números.
+- Tiene que haber al menos un cruce Redes con WhatsApp (qué contenido trajo qué tipo de consulta y qué pasó después con esas consultas) y uno WhatsApp con Productos (qué se pide, qué se cotiza y qué cierra).
+- Si un agente dice algo que los datos de otro contradicen o matizan, ese otro lo marca con el dato.
+- El CRÍTICO entra una o dos veces: ataca la conclusión más floja (pocos casos, otra explicación posible, correlación que no es causa) y pide el dato que la confirmaría.
+- Máximo 8 turnos. Terminá con los acuerdos, los desacuerdos que quedan abiertos y lo que falta medir para cerrarlos.
+- Español rioplatense con voseo, sin emojis, sin signos de apertura, sin guiones largos. Vapers, pods y tabaco no existen.
+${MANUAL.comun}
+INFORME WHATSAPP: ${JSON.stringify(compacto(informes.whatsapp))}
+INFORME REDES: ${JSON.stringify(compacto(informes.redes))}
+INFORME PRODUCTOS: ${JSON.stringify(compacto(informes.productos))}
+HECHOS: ${textoHechos(h, ["embudo"])}
+Respondé SOLO JSON: {"turnos":[{"agente":"whatsapp|redes|productos|critico","a":"whatsapp|redes|productos|todos","texto":""}],"acuerdos":[""],"desacuerdos":[""],"falta_medir":[""]}`;
+  const r = await iaJSON(env, prompt, opts).catch(() => null);
+  if (!r || !Array.isArray(r.turnos) || !r.turnos.length) return null;
+  const lista = (x, n) => (Array.isArray(x) ? x : []).slice(0, n).map((t) => corto(t, 260)).filter(Boolean);
+  const datos = { turnos: r.turnos.slice(0, 8).filter((t) => t?.texto).map((t) => ({ agente: AGENTES[t.agente] && !["todos", "mesa", "integrador"].includes(t.agente) ? t.agente : "critico", a: AGENTES[t.a] ? t.a : "todos", texto: corto(t.texto, 520) })), acuerdos: lista(r.acuerdos, 4), desacuerdos: lista(r.desacuerdos, 4), falta_medir: lista(r.falta_medir, 4) };
+  const texto = datos.turnos.map((t) => `${AGENTES[t.agente]} a ${AGENTES[t.a]}: ${t.texto}`).join("\n");
+  await env.DB.prepare("INSERT INTO mesa_informes (id, ts, dia, agente, datos, texto) VALUES (?,?,?,?,?,?)").bind(`debate:${Date.now()}`, Date.now(), h.hoy, "debate", JSON.stringify(datos), texto).run().catch(() => {});
+  return datos;
+}
+
+// ---------------------------------------------------------------------------
+// INTEGRADOR: cruza los tres informes, la discusión, lo verificado y la memoria; decide y escribe el mensaje para Manuel
+async function integrar(env, iaJSON, h, informes, cerradas, opts, debate = null) {
   const activas = await todas(env, "SELECT texto, accion, metrica, base, actual, meta, vence FROM mesa_hip WHERE estado='activa'");
   const previas = await todas(env, "SELECT texto FROM mesa_informes WHERE agente='integrador' ORDER BY ts DESC LIMIT 2");
   const prompt = `Sos el INTEGRADOR de la mesa de ${NEGOCIO}
@@ -344,6 +417,7 @@ INFORMES DE HOY:
 WHATSAPP: ${JSON.stringify(informes.whatsapp || "sin informe")}
 REDES: ${JSON.stringify(informes.redes || "sin informe")}
 PRODUCTOS: ${JSON.stringify(informes.productos || "sin informe")}
+DISCUSIÓN ENTRE LOS AGENTES (tenela en cuenta: lo que quedó en desacuerdo no lo des por cierto; lo que falta medir puede ser una decisión): ${debate ? JSON.stringify({ turnos: debate.turnos.map((t) => `${AGENTES[t.agente]}: ${t.texto}`), acuerdos: debate.acuerdos, desacuerdos: debate.desacuerdos, falta_medir: debate.falta_medir }) : "no hubo"}
 HIPÓTESIS ACTIVAS (medidas hoy): ${JSON.stringify(activas) || "ninguna"}
 CERRADAS HOY: ${cerradas.map((c) => `${c.estado.toUpperCase()}: ${c.texto} → ${c.resultado}`).join(" | ") || "ninguna"}
 LECTURAS ANTERIORES (no las repitas): ${previas.map((p) => corto(p.texto, 500)).join(" || ") || "ninguna"}
@@ -371,7 +445,7 @@ async function avisarTelegram(env, texto, avisar = null) {
 }
 
 // ---------------------------------------------------------------------------
-// CORRIDA COMPLETA: hechos → verificar hipótesis → 3 agentes → integrador → Telegram
+// CORRIDA COMPLETA: hechos → verificar hipótesis → 3 agentes → discusión → integrador → aviso
 export async function correrMesa(env, iaJSON, { forzar = false, profundo = false, motivo = "cron", avisar = null, ahora = Date.now() } = {}) {
   await prepararMesa(env);
   const hoy = diaAR(ahora);
@@ -391,7 +465,9 @@ export async function correrMesa(env, iaJSON, { forzar = false, profundo = false
   informes.productos = await correrAgente(env, iaJSON, "productos", h, null, opts);
   for (const [k, d] of Object.entries(informes)) if (d?.hipotesis?.length) await crearHipotesis(env, h, k, d.hipotesis);
   const ok = Object.values(informes).some(Boolean);
-  const integrador = ok ? await integrar(env, iaJSON, h, informes, cerradas, opts) : null;
+  const nInf = Object.values(informes).filter(Boolean).length;
+  const debate = nInf >= 2 && env.MESA_DEBATE !== "0" ? await discutir(env, iaJSON, h, informes, opts).catch(() => null) : null;
+  const integrador = ok ? await integrar(env, iaJSON, h, informes, cerradas, opts, debate) : null;
   if (integrador) {
     const n = +((await kvGet(env, "mesa_corridas:" + hoy)) || 0) + 1;
     await kvPut(env, "mesa_corridas:" + hoy, n);
@@ -399,7 +475,7 @@ export async function correrMesa(env, iaJSON, { forzar = false, profundo = false
     const cab = `Mesa · ${motivo === "cron" ? (n === 1 ? "arranque del día" : "cierre del día") : "corrida pedida"} ${hoy.slice(5).split("-").reverse().join("/")}\n`;
     await avisarTelegram(env, cab + integrador.mensaje + (cerradas.length ? "\n\nHipótesis cerradas: " + cerradas.map((c) => `${c.estado} "${corto(c.texto, 60)}"`).join("; ") : ""), avisar);
   }
-  return { ok: !!integrador, informes, integrador, cerradas, hechos: h };
+  return { ok: !!integrador, informes, debate, integrador, cerradas, hechos: h };
 }
 
 // Cron (cada minuto): 06:10 AR arranca el día (después de que vuelve el cupo de Gemini a las 05:00), 20:30 cierra el día.
@@ -416,38 +492,143 @@ export async function cronMesa(env, iaJSON, ts = Date.now(), avisar = null) {
 
 // ---------------------------------------------------------------------------
 // ESTADO para el panel y CHARLA con la mesa
+// Hashtags y cuentas de donde el worker buscador lee los virales de otros (copia de buscador/src/virales.js)
+const FUENTES_DEF = { hashtags: ["importardechina", "importaciones", "alibaba", "emprendedoresargentinos", "revender", "productosganadores", "mercadolibreargentina"], perfiles: [] };
 export async function estadoMesa(env) {
   await prepararMesa(env);
   const ult = (await todas(env, "SELECT agente, ts, dia, datos, texto FROM mesa_informes ORDER BY ts DESC LIMIT 40"));
   const porAgente = {}; for (const x of ult) if (!porAgente[x.agente]) { let datos = {}; try { datos = JSON.parse(x.datos || "{}"); } catch {} porAgente[x.agente] = { ts: x.ts, dia: x.dia, datos, texto: x.texto }; }
   const hip = await todas(env, "SELECT * FROM mesa_hip ORDER BY CASE estado WHEN 'activa' THEN 0 ELSE 1 END, ts DESC LIMIT 30");
-  const chat = (await todas(env, "SELECT ts, rol, texto FROM mesa_chat ORDER BY id DESC LIMIT 30")).reverse();
+  const chat = (await todas(env, "SELECT ts, rol, texto, agente FROM mesa_chat ORDER BY id DESC LIMIT 40")).reverse();
   let hechosR = null; try { const h = JSON.parse((await kvGet(env, "mesa_hechos")) || "null"); if (h) hechosR = { generado: h.generado, embudo: h.embudo.v7, embudo_ant: h.embudo.v7ant, perfiles: h.perfiles, respuesta: h.respuesta, pendientes: h.pendientes.length, cotizaciones: { n: h.cotizaciones.n, sin_resp_pct: h.cotizaciones.sin_resp_pct }, seguimientos: h.seguimientos, prospeccion: h.prospeccion, cupos: h.cupos, consultas_por_video: h.redes.consultas_por_video, ventas_sin_cargar: h.ventas.detectadas_sin_cargar, ml: !!h.ml }; } catch {}
   let ult2 = null; try { ult2 = JSON.parse((await kvGet(env, "mesa_ult")) || "null"); } catch {}
-  return { informes: porAgente, hipotesis: hip, chat, hechos: hechosR, ultima: ult2, metricas: Object.fromEntries(Object.entries(METRICAS).map(([k, v]) => [k, v.que])) };
+  const virales = await todas(env, "SELECT ts, autor, link, texto, vistas, compartidos, guardados, seguidores, fuente, guion FROM virales WHERE ts>=? ORDER BY vistas DESC LIMIT 12", Date.now() - 45 * DIA);
+  let fuentes = null, virUlt = null; try { fuentes = JSON.parse((await kvGet(env, "virales_fuentes")) || "null"); virUlt = JSON.parse((await kvGet(env, "vir_ultimo")) || "null"); } catch {}
+  const virPedido = !!(await kvGet(env, "vir_forzar")) || !!(await kvGet(env, "vir_run"));
+  return { informes: porAgente, hipotesis: hip, chat, hechos: hechosR, ultima: ult2, virales: { lista: virales.map((v) => ({ ...v, texto: corto(v.texto, 160), guion: corto(v.guion, 500) })), fuentes: fuentes || FUENTES_DEF, ultimo: virUlt, leyendo: virPedido }, metricas: Object.fromEntries(Object.entries(METRICAS).map(([k, v]) => [k, v.que])) };
 }
-export async function preguntarMesa(env, iaJSON, pregunta) {
+// ---------------------------------------------------------------------------
+// CHARLA: Manuel le habla a la mesa entera o a un agente. Suele escribir corto, así que cada pregunta tiene dos pasos:
+//   1) ENTENDER: la IA amplía la pregunta (qué quiere saber de verdad, sub-preguntas) y pide consultas a la base.
+//   2) CONTESTAR: con los hechos, los informes del día y lo que devolvieron esas consultas.
+// Las consultas las ejecuta el código (solo lectura, acotadas): la IA no toca la base.
+export const CONSULTAS = {
+  buscar_mensajes: 'mensajes privados de los últimos 21 días que contienen una palabra o frase. q = la palabra (ej. "caro", "seña", "perfume")',
+  chat: "la charla completa reciente con un cliente. q = su número o su nombre",
+  clientes_producto: "todos los clientes que pidieron un producto en 45 días, con perfil, etapa, monto y motivo de pérdida. q = el producto",
+  perdidos: "los últimos 20 chats marcados como perdidos, con motivo y último mensaje. q vacío",
+  cupos: "cada vez que publicamos un cupo u oferta de un producto en los grupos en 90 días, con las consultas privadas y las ventas de ese producto en las 72 h siguientes (sirve para comparar el mismo cupo en fechas distintas). q = el producto",
+  videos: "nuestros videos de 60 días con vistas, guardados, compartidos, guion transcripto y chats nuevos en las 48 h siguientes. q vacío",
+  virales: "videos virales de otras cuentas leídos en 45 días, con lo que dicen. q = palabra para filtrar o vacío",
+};
+export async function ejecutarConsulta(env, c, ahora = Date.now()) {
+  const tipo = String(c?.tipo || ""), q = corto(c?.q, 60).toLowerCase().replace(/[%_]/g, ""), like = "%" + q + "%";
+  const quien = (m) => (m.yo ? (esBotTexto(m.texto) ? "BOT" : "NOSOTROS") : "CLIENTE");
+  let out = "";
+  if (tipo === "buscar_mensajes") {
+    if (q.length < 3) return null;
+    const r = await todas(env, "SELECT conv, yo, texto, ts FROM w_msg INDEXED BY w_msg_priv WHERE ts>=? AND grupo=0 AND hist=0 AND lower(texto) LIKE ? ORDER BY ts DESC LIMIT 30", ahora - 21 * DIA, like);
+    out = r.length ? r.map((m) => `${fecha(m.ts)} +${m.conv} ${quien(m)}: ${corto(m.texto, 200)}`).join("\n") : "ningún mensaje con eso";
+  } else if (tipo === "chat") {
+    if (q.length < 3) return null;
+    const dig = q.replace(/\D/g, "");
+    const cs = dig.length >= 6 ? await todas(env, "SELECT conv, nombre, perfil, etapa, producto, presup_usd, motivo FROM w_conv WHERE grupo=0 AND conv LIKE ? ORDER BY ult_ts DESC LIMIT 1", "%" + dig)
+      : await todas(env, "SELECT conv, nombre, perfil, etapa, producto, presup_usd, motivo FROM w_conv WHERE grupo=0 AND lower(COALESCE(nombre,'')) LIKE ? ORDER BY ult_ts DESC LIMIT 2", like);
+    const partes = [];
+    for (const x of cs) {
+      const ms = (await todas(env, "SELECT yo, texto, ts FROM w_msg INDEXED BY w_msg_conv WHERE conv=? AND COALESCE(texto,'')<>'' ORDER BY ts DESC LIMIT 30", x.conv)).reverse();
+      partes.push(`${x.nombre || "sin nombre"} (+${x.conv}) perfil ${x.perfil || "?"} · etapa ${x.etapa || "?"} · ${corto(x.producto, 50)}${x.presup_usd ? " · ~USD " + x.presup_usd : ""}${x.motivo ? " · motivo de pérdida: " + x.motivo : ""}\n` + ms.map((m) => `${fecha(m.ts)} ${quien(m)}: ${corto(m.texto, 220)}`).join("\n"));
+    }
+    out = partes.join("\n\n") || "no encontré ese cliente";
+  } else if (tipo === "clientes_producto") {
+    if (q.length < 3) return null;
+    const r = await todas(env, "SELECT conv, nombre, perfil, etapa, producto, presup_usd, motivo, primer_ts, ult_yo, ult_texto FROM w_conv WHERE grupo=0 AND COALESCE(prov,0)=0 AND ult_ts>=? AND lower(COALESCE(producto,'')) LIKE ? ORDER BY ult_ts DESC LIMIT 30", ahora - 45 * DIA, like);
+    const et = {}; for (const x of r) et[x.etapa || "?"] = (et[x.etapa || "?"] || 0) + 1;
+    out = r.length ? `${r.length} clientes · por etapa ${JSON.stringify(et)}\n` + r.map((x) => `${fecha(x.primer_ts)} ${x.nombre || "sin nombre"} (+${x.conv}) perfil ${x.perfil || "?"} · ${x.etapa || "?"} · ${corto(x.producto, 50)}${x.presup_usd ? " · ~USD " + x.presup_usd : ""}${x.motivo ? " · perdido por: " + x.motivo : ""} · último (${x.ult_yo ? "nosotros" : "cliente"}): "${corto(x.ult_texto, 90)}"`).join("\n") : "nadie pidió eso en 45 días";
+  } else if (tipo === "perdidos") {
+    const r = await todas(env, "SELECT conv, nombre, perfil, producto, presup_usd, motivo, cierre_ts, ult_ts, ult_yo, ult_texto FROM w_conv WHERE grupo=0 AND etapa='perdido' ORDER BY COALESCE(cierre_ts, ult_ts) DESC LIMIT 20");
+    out = r.map((x) => `${fecha(x.cierre_ts || x.ult_ts)} ${x.nombre || "sin nombre"} (+${x.conv}) perfil ${x.perfil || "?"} · ${corto(x.producto, 50)}${x.presup_usd ? " · ~USD " + x.presup_usd : ""} · motivo: ${x.motivo || "sin motivo"} · último (${x.ult_yo ? "nosotros" : "cliente"}): "${corto(x.ult_texto, 90)}"`).join("\n") || "no hay perdidos marcados";
+  } else if (tipo === "cupos") {
+    const s90 = ahora - 90 * DIA;
+    const g = await todas(env, `SELECT conv, texto, ts FROM w_msg WHERE grupo=1 AND yo=1 AND hist=0 AND ts>=? AND ${q.length >= 3 ? "lower(texto) LIKE ?" : "(lower(texto) LIKE '%cupo%' OR lower(texto) LIKE '%oferta%')"} ORDER BY ts LIMIT 80`, ...(q.length >= 3 ? [s90, like] : [s90]));
+    const cs = q.length >= 3 ? await todas(env, "SELECT conv, nombre, perfil, etapa, primer_ts FROM w_conv WHERE grupo=0 AND primer_ts>=? AND lower(COALESCE(producto,'')) LIKE ?", s90, like) : await todas(env, "SELECT conv, nombre, perfil, etapa, primer_ts FROM w_conv WHERE grupo=0 AND primer_ts>=?", s90);
+    const vs = new Set((await todas(env, "SELECT conv FROM w_hito WHERE tipo IN ('venta','comprobante') AND ts>=?", s90)).map((x) => x.conv));
+    const vistos = new Set(), filas = [];
+    for (const m of g) {
+      const k = fecha(m.ts) + corto(m.texto, 40).toLowerCase(); if (vistos.has(k)) continue; vistos.add(k);
+      const n72 = cs.filter((c) => c.primer_ts > m.ts && c.primer_ts < m.ts + 72 * H);
+      filas.push(`${fecha(m.ts)} ${new Date(m.ts - AR).toISOString().slice(11, 16)} h · "${corto(m.texto, 160)}" → ${n72.length} consultas${q.length >= 3 ? " de ese producto" : ""} en 72 h (${n72.filter((c) => c.perfil === "A" || c.perfil === "B").length} de perfil A o B) · ${n72.filter((c) => vs.has(c.conv) || c.etapa === "vendido").length} compraron`);
+    }
+    out = filas.slice(-25).join("\n") || "no publicamos cupos de eso en 90 días (o el lector no los vio)";
+  } else if (tipo === "videos") {
+    const d60 = ahora - 60 * DIA;
+    const [tt, ig, nuevos] = await Promise.all([
+      todas(env, "SELECT ts, texto, vistas, compartidos, guardados, guion FROM tt_posts WHERE ts>=? ORDER BY ts DESC LIMIT 30", d60),
+      todas(env, "SELECT ts, texto, formato, gancho, alcance, vistas, guardados, compartidos FROM ig_posts WHERE ts>=? AND COALESCE(tipo,'')<>'STORY' ORDER BY ts DESC LIMIT 30", d60),
+      todas(env, "SELECT primer_ts, perfil FROM w_conv WHERE grupo=0 AND COALESCE(prov,0)=0 AND primer_ts>=?", d60),
+    ]);
+    const c48 = (ts) => { const l = nuevos.filter((c) => c.primer_ts > ts && c.primer_ts < ts + 48 * H); return `${l.length} chats en 48 h (${l.filter((c) => c.perfil === "A" || c.perfil === "B").length} A o B)`; };
+    out = [...ig.map((p) => `IG ${fecha(p.ts)} [${p.formato || "?"}] gancho "${corto(p.gancho, 70)}" · alcance ${n0(p.alcance)} · vistas ${n0(p.vistas)} · guardados ${n0(p.guardados)} · compartidos ${n0(p.compartidos)} · ${c48(p.ts)}`),
+      ...tt.map((p) => `TikTok ${fecha(p.ts)} "${corto(p.texto, 70)}" · ${n0(p.vistas)} vistas · ${n0(p.guardados)} guardados · ${c48(p.ts)}${p.guion ? " · GUION: " + corto(p.guion, 350) : ""}`)].join("\n") || "sin videos en 60 días";
+  } else if (tipo === "virales") {
+    const r = await todas(env, `SELECT ts, autor, link, texto, vistas, compartidos, guardados, seguidores, guion FROM virales WHERE ts>=? ${q.length >= 3 ? "AND (lower(texto) LIKE ? OR lower(COALESCE(guion,'')) LIKE ?)" : ""} ORDER BY vistas DESC LIMIT 15`, ...(q.length >= 3 ? [ahora - 45 * DIA, like, like] : [ahora - 45 * DIA]));
+    out = r.map((v) => `${fecha(v.ts)} @${v.autor} ${n0(v.vistas)} vistas${v.seguidores ? ` (${Math.round(v.vistas / v.seguidores)}x seguidores)` : ""} · "${corto(v.texto, 140)}"${v.guion ? " · DICE: " + corto(v.guion, 400) : ""} · ${v.link}`).join("\n") || "todavía no hay virales leídos";
+  } else return null;
+  return `CONSULTA ${tipo}${q ? ` "${q}"` : ""}:\n${out.slice(0, 4500)}`;
+}
+
+const QUIEN = {
+  mesa: { nombre: "la MESA de agentes", partes: ["embudo", "whatsapp", "redes", "productos"], rol: "Sos la MESA de agentes (WhatsApp, Redes, Productos e Integrador). Contestá integrando las áreas: cuando un agente tenga un dato que aporte, que hable con su nombre en una o dos líneas (WhatsApp: ..., Redes: ..., Productos: ...) y cerrá con la conclusión y qué hacer." },
+  whatsapp: { nombre: "el AGENTE DE WHATSAPP", partes: ["embudo", "whatsapp"], rol: "Sos el agente de WHATSAPP de la mesa: sabés de las charlas, la atención, las cotizaciones, los seguimientos, la prospección y por qué se cierra o no." },
+  redes: { nombre: "el AGENTE DE REDES", partes: ["embudo", "redes"], rol: "Sos el agente de REDES de la mesa: sabés qué contenido trae consultas que compran, qué dicen nuestros videos y qué se está pegando en otras cuentas." },
+  productos: { nombre: "el AGENTE DE PRODUCTOS", partes: ["embudo", "productos"], rol: "Sos el agente de PRODUCTOS de la mesa: sabés qué se pide, qué se vende, cómo rinden los cupos y qué pasa en Mercado Libre." },
+};
+export async function preguntarMesa(env, iaJSON, pregunta, agente = "mesa") {
   await prepararMesa(env);
   const q = corto(pregunta, 1000); if (!q) return { error: "falta la pregunta" };
+  const A = QUIEN[agente] ? agente : "mesa", Q = QUIEN[A];
   const est = await estadoMesa(env);
   let h = null; try { h = JSON.parse((await kvGet(env, "mesa_hechos")) || "null"); } catch {}
   if (!h || Date.now() - (h.generado || 0) > 6 * H) { h = await hechos(env); await kvPut(env, "mesa_hechos", JSON.stringify(h).slice(0, 180000)); }
-  const charla = est.chat.slice(-10).map((m) => `${m.rol === "u" ? "MANUEL" : "MESA"}: ${corto(m.texto, 500)}`).join("\n");
-  const r = await iaJSON(env, `Sos la MESA de agentes de ${NEGOCIO}
-Manuel te habla desde el panel. Tenés los informes de hoy de los agentes (WhatsApp, Redes, Productos e Integrador), las hipótesis con su avance medido y los hechos. Contestale directo, con números y nombres de los datos. Si te pide que cambies algo (una decisión, una regla, dejar de hacer algo), guardalo en "guardar" como decisión. Si propone probar algo medible, ponelo en "hipotesis" (métrica de la lista, meta numérica). Si te corrige un análisis, guardá la corrección como aprendizaje y no vuelvas a repetir el error.
-${REGLAS}
-INFORMES DE HOY: ${JSON.stringify(Object.fromEntries(Object.entries(est.informes).map(([k, v]) => [k, v.datos])))}
+  const charla = est.chat.slice(-8).map((m) => `${m.rol === "u" ? "MANUEL" : (AGENTES[m.agente] || "MESA").toUpperCase()}: ${corto(m.texto, 400)}`).join("\n");
+  const lectura = corto(est.informes.integrador?.datos?.lectura, 500);
+
+  // Paso 1: entender y pedir datos
+  const plan = await iaJSON(env, `PREPARÁS LA RESPUESTA de ${Q.nombre} de ${NEGOCIO}
+Manuel escribe corto y apurado. Antes de contestarle hay que entender qué quiere saber DE VERDAD y juntar los datos. No contestes todavía.
+${charla ? "CHARLA RECIENTE:\n" + charla + "\n" : ""}MENSAJE DE MANUEL: ${q}
+LECTURA DE HOY (para contexto): ${lectura || "sin lectura todavía"}
+1) "entendi": la pregunta ampliada en 2 o 3 oraciones: qué quiere saber, de qué período o producto habla, y las 2 a 4 sub-preguntas que hay que contestar para que la respuesta le sirva (aunque él no las haya escrito).
+2) "consultas": hasta 4 consultas a la base, solo las que hagan falta (si con los números generales alcanza, ninguna). Tipos:
+${Object.entries(CONSULTAS).map(([k, v]) => `- ${k}: ${v}`).join("\n")}
+3) "partes": qué bloques de números generales hacen falta: embudo, whatsapp, redes, productos.
+Respondé SOLO JSON: {"entendi":"","consultas":[{"tipo":"","q":""}],"partes":["embudo"]}`, { prioridad: true }).catch(() => null);
+  const entendi = corto(plan?.entendi, 700);
+  const pedidas = (Array.isArray(plan?.consultas) ? plan.consultas : []).filter((c) => CONSULTAS[c?.tipo]).slice(0, 4);
+  const datos = [];
+  for (const c of pedidas) { const r = await ejecutarConsulta(env, c).catch(() => null); if (r) datos.push(r); }
+  const partes = [...new Set([...Q.partes, ...(Array.isArray(plan?.partes) ? plan.partes : []).filter((p) => ["embudo", "whatsapp", "redes", "productos"].includes(p))])];
+  const informes = A === "mesa" ? Object.fromEntries(Object.entries(est.informes).map(([k, v]) => [k, v.datos])) : { [A]: est.informes[A]?.datos || "sin informe hoy", integrador: est.informes.integrador?.datos || "sin lectura hoy", discusion: est.informes.debate?.datos || "no hubo" };
+
+  // Paso 2: contestar
+  const r = await iaJSON(env, `CHARLA CON MANUEL. ${Q.rol} Negocio: ${NEGOCIO}
+Manuel te habla desde el panel. Tenés los informes de hoy, las hipótesis con su avance medido, los hechos y los datos que se buscaron en la base para esta pregunta.
+CÓMO CONTESTAR: primero la respuesta directa en 1 o 2 líneas; después la evidencia (números, nombres, fechas de los datos de abajo); después qué harías y quién. Contestá también las sub-preguntas de "LO QUE ENTENDIMOS" aunque él no las haya escrito. Si te falta un dato para afirmar algo, decí cuál y cómo medirlo. Si no estás de acuerdo con lo que plantea, decilo con el dato. Texto plano, sin asteriscos ni títulos con numerales.
+Si te pide que cambies algo (una decisión, una regla, dejar de hacer algo), guardalo en "guardar" como decisión. Si propone probar algo medible, ponelo en "hipotesis" (métrica de la lista, meta numérica). Si te corrige un análisis, guardá la corrección como aprendizaje y no repitas el error.
+${MANUAL.comun}
+${A === "mesa" ? "" : MANUAL[A] + "\n"}${REGLAS}
+INFORMES DE HOY: ${JSON.stringify(informes)}
 HIPÓTESIS: ${JSON.stringify(est.hipotesis.slice(0, 10).map((x) => ({ texto: x.texto, metrica: x.metrica, base: x.base, actual: x.actual, meta: x.meta, vence: x.vence, estado: x.estado })))}
 HECHOS:
-${textoHechos(h)}
-${charla ? "CHARLA RECIENTE:\n" + charla + "\n" : ""}
+${textoHechos(h, partes)}
+${datos.length ? "DATOS BUSCADOS PARA ESTA PREGUNTA:\n" + datos.join("\n\n") + "\n" : ""}${charla ? "CHARLA RECIENTE:\n" + charla + "\n" : ""}LO QUE ENTENDIMOS DE SU MENSAJE: ${entendi || "(tomalo literal)"}
 MANUEL: ${q}
-Respondé SOLO JSON: {"respuesta":"texto","guardar":[{"tipo":"decision|preferencia|aprendizaje","texto":"máximo 250 caracteres"}],"hipotesis":[{"texto":"","accion":"","metrica":"","meta":número,"dias":7}]}`, { prioridad: true }).catch(() => null);
-  const respuesta = r?.respuesta ? corto(r.respuesta, 3000) : "No pude responder ahora (la IA no tiene cupo). Probá en un rato.";
-  await env.DB.batch([env.DB.prepare("INSERT INTO mesa_chat (ts, rol, texto) VALUES (?,?,?)").bind(Date.now(), "u", q), env.DB.prepare("INSERT INTO mesa_chat (ts, rol, texto) VALUES (?,?,?)").bind(Date.now(), "a", respuesta)]);
+Respondé SOLO JSON: {"respuesta":"texto","guardar":[{"tipo":"decision|preferencia|aprendizaje","texto":"máximo 250 caracteres"}],"hipotesis":[{"texto":"","accion":"","metrica":"","meta":número,"dias":7}],"seguir":["hasta 2 preguntas cortas que le convendría hacerte después"]}`, { prioridad: true }).catch(() => null);
+  const respuesta = r?.respuesta ? corto(String(r.respuesta).replace(/\*\*/g, ""), 3500) : "No pude responder ahora (la IA no tiene cupo). Probá en un rato.";
+  await env.DB.batch([env.DB.prepare("INSERT INTO mesa_chat (ts, rol, texto, agente) VALUES (?,?,?,?)").bind(Date.now(), "u", q, A), env.DB.prepare("INSERT INTO mesa_chat (ts, rol, texto, agente) VALUES (?,?,?,?)").bind(Date.now() + 1, "a", respuesta, A)]);
   for (const g of (r?.guardar || []).slice(0, 3)) if (g?.texto) await env.DB.prepare("INSERT INTO ag_mem (ts, tipo, texto) VALUES (?,?,?)").bind(Date.now(), ["decision", "preferencia", "aprendizaje"].includes(g.tipo) ? g.tipo : "aprendizaje", corto(g.texto, 250)).run().catch(() => {});
   if (r?.hipotesis?.length) await crearHipotesis(env, h, "manuel", r.hipotesis);
-  return { respuesta };
+  return { respuesta, agente: A, entendi: r?.respuesta ? entendi : "", consultas: pedidas.map((c) => c.tipo + (c.q ? ": " + corto(c.q, 40) : "")), seguir: (Array.isArray(r?.seguir) ? r.seguir : []).slice(0, 2).map((x) => corto(x, 140)).filter(Boolean) };
 }
 export async function apiMesa(env, req, url, iaJSON, body = null) {
   await prepararMesa(env);
@@ -458,7 +639,13 @@ export async function apiMesa(env, req, url, iaJSON, body = null) {
   }
   const b = body || (await req.json().catch(() => ({})));   // apiTablero ya leyó el cuerpo: lo recibe por parámetro
   if (b.accion === "correr") { if (!iaJSON) return json({ error: "sin IA" }); const r = await correrMesa(env, iaJSON, { forzar: true, profundo: !!b.profundo, motivo: "panel" }); return json({ ok: r.ok, integrador: r.integrador, cerradas: r.cerradas, sin_ia: !r.ok }); }
-  if (b.accion === "preguntar") { if (!iaJSON) return json({ error: "sin IA" }); return json(await preguntarMesa(env, iaJSON, b.pregunta)); }
+  if (b.accion === "preguntar") { if (!iaJSON) return json({ error: "sin IA" }); return json(await preguntarMesa(env, iaJSON, b.pregunta, b.agente)); }
+  if (b.accion === "fuentes") {
+    const lim = (x) => [...new Set(String(x || "").split(/[\s,;]+/).map((t) => t.trim().replace(/^[@#]/, "").replace(/[^\w.\-áéíóúñ]/gi, "").slice(0, 40)).filter(Boolean))].slice(0, 12);
+    const f = { hashtags: lim(b.hashtags), perfiles: lim(b.perfiles) };
+    await kvPut(env, "virales_fuentes", JSON.stringify(f)); return json({ ok: true, fuentes: f });
+  }
+  if (b.accion === "virales_leer") { await kvPut(env, "vir_forzar", Date.now()); return json({ ok: true }); }
   if (b.accion === "hipotesis" && b.id && ["descartada", "activa"].includes(b.estado)) { await env.DB.prepare("UPDATE mesa_hip SET estado=? WHERE id=?").bind(b.estado, String(b.id)).run(); return json({ ok: true }); }
   return json({ error: "acción desconocida" });
 }

@@ -1,4 +1,5 @@
 import { vueltaTikTok, gastoTikTokMes } from "./tiktok.js";
+import { vueltaVirales } from "./virales.js";
 /**
  * Buscador de proveedores · Te Importamos (v1.1: + búsqueda web multipaís con Tavily)
  *
@@ -591,6 +592,7 @@ export async function vuelta(env) {
   await recogerResultados(env, log).catch((e) => log.push("Error recogiendo: " + (e?.stack || e)));
   await lanzarNuevas(env, log).catch((e) => log.push("Error lanzando: " + (e?.stack || e)));
   await vueltaTikTok(env, { apify, gastoMes, topeMes: topes(env).usdPorMes }).then((x) => x && log.push(x)).catch((e) => log.push("Error TikTok: " + (e?.stack || e)));
+  await vueltaVirales(env, { apify, gastoMes, topeMes: topes(env).usdPorMes }).then((x) => x && log.push(x)).catch((e) => log.push("Error virales: " + (e?.stack || e)));
   if (log.length) console.log(log.join("\n"));
   return log;
 }
@@ -610,6 +612,7 @@ export default {
     await prepararTablas(env);
     if (url.pathname === "/correr") return Response.json({ log: await vuelta(env) });
     if (url.pathname === "/tiktok") return Response.json({ res: await vueltaTikTok(env, { apify, gastoMes, topeMes: topes(env).usdPorMes, forzar: true }), ultimo: JSON.parse((await env.DB.prepare("SELECT v FROM kv WHERE k='tt_ultimo'").first())?.v || "null") });
+    if (url.pathname === "/virales") return Response.json({ res: await vueltaVirales(env, { apify, gastoMes, topeMes: topes(env).usdPorMes, forzar: true }), ultimo: JSON.parse((await env.DB.prepare("SELECT v FROM kv WHERE k='vir_ultimo'").first())?.v || "null") });
     if (url.pathname === "/estado") {
       const tp = topes(env);
       return Response.json({

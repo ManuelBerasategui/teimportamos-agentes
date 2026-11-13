@@ -1,4 +1,4 @@
-// Panel nuevo (/panel/p): Hoy · Chats · Números · Links · Agente. Datos en tablero.js.
+// Panel (/panel/p): Agentes (la mesa, es la pantalla principal) · Hoy · Chats · Números · Prospección · Links. Datos en tablero.js y mesa.js.
 export const PANEL_P = String.raw`<!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Te Importamos</title>
@@ -51,14 +51,20 @@ input:focus,select:focus,textarea:focus{outline:2px solid color-mix(in srgb,var(
 #consejo{background:linear-gradient(135deg,color-mix(in srgb,var(--ac) 9%,var(--card)),var(--card));border-color:color-mix(in srgb,var(--ac) 30%,var(--li))}#consejo>b{font-size:15px}
 .cons{white-space:pre-wrap;color:var(--tx);margin-top:6px}
 .link{font-size:12px;word-break:break-all;color:var(--mu)}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}.chip{border:1px solid var(--li);background:var(--card);color:var(--tx);border-radius:20px;padding:5px 12px;font:inherit;font-size:13px;font-weight:600;cursor:pointer}.chip.on{background:var(--tx);color:var(--bg);border-color:var(--tx)}.chip.sug{font-weight:500;color:var(--mu);border-style:dashed}
+.msg .quien{display:block;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;color:var(--ac);margin-bottom:2px}.msg .ent{display:block;font-size:12.5px;color:var(--mu);border-left:3px solid var(--li);padding-left:8px;margin-bottom:6px}
+#mesaHilo{max-height:60vh;overflow-y:auto;padding:2px}
+.turno{display:flex;gap:10px;margin-top:9px}.turno .av{flex:0 0 86px;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;color:var(--k,var(--mu));padding-top:3px}.turno .tx{flex:1;background:var(--chip);border-radius:10px;padding:7px 10px;font-size:14px;border-left:3px solid var(--k,var(--li))}
+.tri{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:9px;margin-top:10px}.tri div{background:var(--chip);border-radius:10px;padding:8px 10px;font-size:13.5px}.tri ul{margin:4px 0 0;padding-left:18px}
+.vir{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:9px}.vir .card{margin:0}.vir a{color:var(--ac);font-weight:700;text-decoration:none}
 .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:var(--tx);color:var(--bg);padding:9px 15px;border-radius:10px;display:none;z-index:30;font-weight:600}
 @media (max-width:560px){.viejo{display:none}nav button{padding:6px 9px;font-size:13px}}
 </style></head><body>
 <header><div class="hw"><div class="logo"><i></i>TE <span>IMPORTAMOS</span></div>
-<nav id="tabs"><button data-v="hoy" class="on">Hoy</button><button data-v="chats">Chats y ventas</button><button data-v="num">Números</button><button data-v="prosp">Prospección</button><button data-v="links">Links</button><button data-v="mesa">Mesa</button><button data-v="ag">Agente</button></nav>
+<nav id="tabs"><button data-v="mesa" class="on">Agentes</button><button data-v="hoy">Hoy</button><button data-v="chats">Chats y ventas</button><button data-v="num">Números</button><button data-v="prosp">Prospección</button><button data-v="links">Links</button></nav>
 <a class="viejo" href="/panel/viejo">panel viejo</a></div></header>
 <main>
-<section id="v-hoy"><div class="est" id="estado"></div><div class="card" id="objetivos"><div class="top"><b>Objetivos de hoy</b><button class="b" id="objEdit" style="margin-left:auto">Editar</button></div><div id="objBody" class="mu">Cargando…</div></div><div class="card" id="consejo"><b>Lo que dicen los datos</b><div class="mu" id="consTxt">Cargando…</div><div class="acc"><button class="b" id="consBtn">Actualizar análisis</button></div></div><div class="eq" id="equipoHoy"></div><div id="lista"><div class="vacio">Cargando…</div></div></section>
+<section id="v-hoy" hidden><div class="est" id="estado"></div><div class="card" id="objetivos"><div class="top"><b>Objetivos de hoy</b><button class="b" id="objEdit" style="margin-left:auto">Editar</button></div><div id="objBody" class="mu">Cargando…</div></div><div class="card" id="consejo"><b>Lo que dicen los datos</b><div class="mu" id="consTxt">Cargando…</div><div class="acc"><button class="b" id="consBtn">Actualizar análisis</button></div></div><div class="eq" id="equipoHoy"></div><div id="lista"><div class="vacio">Cargando…</div></div></section>
 <section id="v-chats" hidden>
  <div class="fila"><input id="q" placeholder="Buscar chat por nombre, número o producto"><button class="b p" id="ventaSuelta">Registrar venta sin chat</button></div>
  <div id="res"></div><h2>Ventas registradas</h2><div id="ventas"></div>
@@ -84,20 +90,22 @@ input:focus,select:focus,textarea:focus{outline:2px solid color-mix(in srgb,var(
  <input id="lTxt" placeholder="Mensaje que le aparece escrito al cliente (opcional)"><div class="acc"><button class="b p" id="lCrear">Crear link</button></div><div id="lNuevo"></div></div>
  <div id="lLista"></div>
 </section>
-<section id="v-mesa" hidden>
+<section id="v-mesa">
  <div class="est" id="mesaEst"></div>
+ <div class="card" id="mesaChat"><div class="top"><b>Hablá con los agentes</b><span class="mu">Escribí corto: ellos amplían la pregunta, buscan en los chats, los videos y los números, y te contestan con datos.</span></div>
+  <div class="chips" id="mesaQuien"><button class="chip on" data-q="mesa">Toda la mesa</button><button class="chip" data-q="whatsapp">WhatsApp</button><button class="chip" data-q="redes">Redes</button><button class="chip" data-q="productos">Productos</button></div>
+  <div class="hilo" id="mesaHilo"></div>
+  <div class="chips" id="mesaSug"></div>
+  <div class="fila"><textarea id="mesaQ" rows="2" placeholder="Ej: qué pasa que no estamos cerrando?"></textarea></div><button class="b p" id="mesaEnv">Preguntar</button>
+ </div>
  <div class="card" id="mesaLectura"><div class="top"><b>Lectura de hoy</b><button class="b" id="mesaCorrer" style="margin-left:auto">Correr ahora</button></div><div class="cons mu" id="mesaLecTxt">Todavía no corrió.</div><div id="mesaDec"></div><div id="mesaRumbo"></div></div>
+ <h2>La discusión entre los agentes</h2><p class="mu">Antes de decidir, cada agente le contesta a los otros con sus datos y un crítico ataca la conclusión más floja.</p><div class="card" id="mesaDebate"><div class="mu">Todavía no hubo discusión.</div></div>
  <h2>Hipótesis en curso <span class="n" id="mesaHipN">0</span></h2><p class="mu">Cada una tiene una métrica, el valor de arranque, el de hoy y la meta. El código las cierra solo: cumplida o fallida. Eso es lo que la mesa aprende.</p><div class="tw" id="mesaHip"></div>
  <h2>Lo que vio cada agente</h2><div id="mesaAg"></div>
+ <h2>Lo que se está pegando en otras cuentas</h2><p class="mu">Se lee solo todos los lunes (TikTok, por hashtag y por cuenta). El agente de Redes lo cruza con lo que publicamos.</p>
+ <div class="card"><div class="fila"><input id="virHash" placeholder="Hashtags separados por coma"><input id="virPerf" placeholder="Cuentas a seguir (sin @), separadas por coma"></div><div class="acc"><button class="b" id="virGuardar">Guardar fuentes</button><button class="b" id="virLeer">Leer ahora</button><span class="mu" id="virEst"></span></div></div>
+ <div class="vir" id="mesaVir"></div>
  <h2>Números de la última corrida</h2><div class="eq" id="mesaNum"></div>
- <h2>Hablá con la mesa</h2><p class="mu">Corregila, pedile que profundice o que pruebe algo. Lo que decidas queda guardado.</p>
- <div class="hilo" id="mesaHilo"></div>
- <div class="fila"><textarea id="mesaQ" rows="2" placeholder="Ej: los cupos de esta semana no vendieron nada, qué cambió respecto a la vez anterior?"></textarea></div><button class="b p" id="mesaEnv">Preguntar</button>
-</section>
-<section id="v-ag" hidden>
- <p class="mu">Preguntale lo que quieras del negocio. Ve los números reales: chats, cotizaciones, ventas cargadas, equipo, redes.</p>
- <div class="hilo" id="hilo"></div>
- <div class="fila"><textarea id="agQ" rows="2" placeholder="Ej: por qué esta semana vendimos menos que la anterior?"></textarea></div><button class="b p" id="agEnv">Preguntar</button>
 </section>
 </main>
 <div class="modal" id="mod"><div class="card" id="modC"></div></div><div class="toast" id="toast"></div>
@@ -121,7 +129,7 @@ function ver(v) {
   [].forEach.call(document.querySelectorAll("#tabs button"), function (x) { x.classList.toggle("on", x.dataset.v === v); });
   [].forEach.call(document.querySelectorAll("main section"), function (s) { s.hidden = s.id !== "v-" + v; });
   history.replaceState(null, "", "#" + v);
-  if (v === "hoy") cargarHoy(); if (v === "chats") { buscar(); cargarVentas(); } if (v === "num") cargarNum(); if (v === "links") cargarLinks(); if (v === "prosp") cargarProsp(); if (v === "ag") cargarAg(); if (v === "mesa") cargarMesa();
+  if (v === "hoy") cargarHoy(); if (v === "chats") { buscar(); cargarVentas(); } if (v === "num") cargarNum(); if (v === "links") cargarLinks(); if (v === "prosp") cargarProsp(); if (v === "mesa") cargarMesa();
 }
 
 // ---- Lo que dicen los datos (el agente lo arma una vez por día; se puede actualizar)
@@ -347,19 +355,6 @@ $("#lCrear").onclick = function () {
   });
 };
 
-// ---- Agente
-function pintarHilo(l) { $("#hilo").innerHTML = l.map(function (m) { var u = m.rol === "u" || m.rol === "user" || m.rol === "yo"; return '<div class="msg ' + (u ? "u" : "a") + '">' + esc(m.texto) + "</div>"; }).join(""); window.scrollTo(0, document.body.scrollHeight); }
-var HILO = [];
-function cargarAg() { fetch("/panel/api/agente/charla").then(function (r) { return r.json(); }).then(function (l) { HILO = Array.isArray(l) ? l : []; pintarHilo(HILO); }).catch(function () {}); }
-$("#agEnv").onclick = function () {
-  var q = $("#agQ").value.trim(); if (!q) return; $("#agQ").value = "";
-  HILO.push({ rol: "u", texto: q }, { rol: "a", texto: "Pensando…" }); pintarHilo(HILO);
-  fetch("/panel/api/agente/preguntar", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pregunta: q }) }).then(function (r) { return r.json(); })
-    .then(function (r) { HILO[HILO.length - 1] = { rol: "a", texto: r.respuesta || r.error || "No pude responder ahora." }; pintarHilo(HILO); })
-    .catch(function () { HILO[HILO.length - 1] = { rol: "a", texto: "No pude responder ahora. Probá de nuevo." }; pintarHilo(HILO); });
-};
-
-
 // ---- Mesa de agentes
 var MESA = null, MESA_HILO = [];
 function cargarMesa() { api("mesa").then(function (d) { MESA = d; pintarMesa(d); }).catch(function () {}); }
@@ -368,11 +363,20 @@ function pintarMesa(d) {
   var est = [], u = d.ultima;
   est.push('<span class="pill ' + (u ? "ok" : "warn") + '">' + (u ? "Última corrida " + fechaHoraM(u.ts) + " (" + esc(u.motivo) + ")" : "Todavía no corrió") + "</span>");
   est.push('<span class="pill">Corre sola 06:10 y 20:30 · te avisa por WhatsApp</span>');
+  var vr = d.virales || {}, vu = vr.ultimo;
+  est.push('<span class="pill ' + ((vr.lista || []).length ? "ok" : "warn") + '">Virales de otros: ' + ((vr.lista || []).length ? (vr.lista.length + " guardados · leído " + fechaHoraM(vu && vu.ts)) : (vr.leyendo ? "leyendo…" : "sin lectura todavía")) + "</span>");
   $("#mesaEst").innerHTML = est.join("");
   var it = d.informes.integrador, dt = (it && it.datos) || {};
   $("#mesaLecTxt").className = dt.lectura ? "cons" : "cons mu"; $("#mesaLecTxt").textContent = dt.lectura || "Todavía no hay lectura. Tocá Correr ahora.";
   $("#mesaDec").innerHTML = (dt.decisiones || []).map(function (x, i) { return '<div class="nota"><b>' + (i + 1) + ". " + esc(x.que) + '</b> <span class="mu">(' + esc(x.quien) + ')</span><div class="mu">' + esc(x.por_que) + "</div></div>"; }).join("");
   $("#mesaRumbo").innerHTML = dt.cambio_rumbo ? '<div class="nota" style="background:color-mix(in srgb,var(--bad) 12%,var(--card))"><b>Cambio de rumbo:</b> ' + esc(dt.cambio_rumbo) + "</div>" : "";
+  var db = d.informes.debate, dd = (db && db.datos) || {}, NOM = { whatsapp: "WhatsApp", redes: "Redes", productos: "Productos", critico: "Crítico", todos: "todos" }, COL = { whatsapp: "var(--c-consulta)", redes: "var(--c-venta)", productos: "var(--c-cotizar)", critico: "var(--bad)" };
+  var lista3 = function (t, l) { return (l || []).length ? "<div><b>" + t + "</b><ul>" + l.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul></div>" : ""; };
+  $("#mesaDebate").innerHTML = (dd.turnos || []).length ? '<div class="mu">' + fechaHoraM(db.ts) + "</div>" + dd.turnos.map(function (t) { return '<div class="turno" style="--k:' + (COL[t.agente] || "var(--mu)") + '"><div class="av">' + esc(NOM[t.agente] || t.agente) + (t.a && t.a !== "todos" ? '<div class="mu" style="font-weight:500;text-transform:none">a ' + esc(NOM[t.a] || t.a) + "</div>" : "") + '</div><div class="tx">' + esc(t.texto) + "</div></div>"; }).join("") +
+    '<div class="tri">' + lista3("Acuerdos", dd.acuerdos) + lista3("Desacuerdos abiertos", dd.desacuerdos) + lista3("Falta medir", dd.falta_medir) + "</div>" : '<div class="mu">Todavía no hubo discusión. Aparece en la próxima corrida.</div>';
+  if (document.activeElement !== $("#virHash") && document.activeElement !== $("#virPerf")) { $("#virHash").value = ((vr.fuentes || {}).hashtags || []).join(", "); $("#virPerf").value = ((vr.fuentes || {}).perfiles || []).join(", "); }
+  $("#virEst").textContent = vr.leyendo ? "Leyendo… tarda unos minutos, recargá después." : vu ? ("Última lectura " + fechaHoraM(vu.ts) + (vu.error ? " · " + vu.error : vu.estado && vu.estado !== "SUCCEEDED" ? " · " + vu.estado : "") + (vu.guardados != null ? " · " + vu.guardados + " guardados" : "")) : "";
+  $("#mesaVir").innerHTML = (vr.lista || []).map(function (v) { var x = v.seguidores ? Math.round(v.vistas / v.seguidores) : 0; return '<div class="card"><div class="top"><a href="' + esc(v.link) + '" target="_blank" rel="noopener">@' + esc(v.autor) + '</a><span class="tag">' + plata(v.vistas) + " vistas</span>" + (x >= 2 ? '<span class="tag">' + x + "x sus seguidores</span>" : "") + '<span class="mu">' + new Date(v.ts).toLocaleDateString("es-AR") + " · " + esc(v.fuente || "") + '</span></div><div class="que">' + esc(v.texto) + "</div>" + (v.guion ? '<div class="ult">Dice: ' + esc(v.guion) + "</div>" : "") + '<div class="mu">' + plata(v.guardados) + " guardados · " + plata(v.compartidos) + " compartidos</div></div>"; }).join("") || '<div class="mu">Todavía no hay videos leídos. Tocá Leer ahora (usa el lector de Apify del buscador, dentro del tope mensual).</div>';
   var hip = d.hipotesis || [], act = hip.filter(function (h) { return h.estado === "activa"; });
   $("#mesaHipN").textContent = act.length;
   var est2 = { activa: "en curso", cumplida: "cumplida", fallida: "fallida", descartada: "descartada" };
@@ -402,22 +406,39 @@ function pintarMesa(d) {
     kp("Ventas sin cargar", (h.ventas_sin_cargar || []).length, esc((h.ventas_sin_cargar || []).map(function (v) { return v.nombre; }).join(", "))),
     kp("Mercado Libre", h.ml ? "con datos" : "sin datos", h.ml ? "" : "correr tendencias_ml.bat en la PC"),
   ].join("") : '<div class="mu">Corré la mesa para ver los números.</div>';
-  MESA_HILO = d.chat || []; pintarMesaHilo();
+  if (!MESA_OCUPADA) { MESA_HILO = d.chat || []; pintarMesaHilo(); }
 }
-function pintarMesaHilo() { $("#mesaHilo").innerHTML = MESA_HILO.map(function (m) { return '<div class="msg ' + (m.rol === "u" ? "u" : "a") + '">' + esc(m.texto) + "</div>"; }).join(""); }
+var QUIEN = "mesa", NOMQ = { mesa: "Mesa", whatsapp: "WhatsApp", redes: "Redes", productos: "Productos" };
+var SUG_BASE = { mesa: ["qué pasa que no estamos cerrando?", "qué hago hoy primero?", "en qué no están de acuerdo los agentes?"], whatsapp: ["por qué no contestan las cotizaciones?", "qué objeción aparece más?", "plan A o plan B, cuál rinde más?"], redes: ["qué grabo esta semana?", "qué video trajo consultas que compran?", "qué viral de otros conviene adaptar?"], productos: ["qué producto empujo esta semana?", "mismo cupo, antes vendió y ahora no: por qué?", "qué dejo de cotizar?"] };
+function pintarSug(l) { $("#mesaSug").innerHTML = (l && l.length ? l : SUG_BASE[QUIEN]).map(function (t) { return '<button class="chip sug" data-sug="' + esc(t) + '">' + esc(t) + "</button>"; }).join(""); }
+function pintarMesaHilo() {
+  $("#mesaHilo").innerHTML = MESA_HILO.map(function (m) { var u = m.rol === "u";
+    return '<div class="msg ' + (u ? "u" : "a") + '">' + (u ? "" : '<span class="quien">' + esc(NOMQ[m.agente] || "Mesa") + "</span>") + (m.entendi ? '<span class="ent">Entendí: ' + esc(m.entendi) + (m.consultas && m.consultas.length ? "<br>Busqué: " + esc(m.consultas.join(" · ")) : "") + "</span>" : "") + esc(m.texto) + "</div>"; }).join("");
+  var h = $("#mesaHilo"); h.scrollTop = h.scrollHeight;
+}
+$("#mesaQuien").addEventListener("click", function (e) { var b = e.target.closest("[data-q]"); if (!b) return; QUIEN = b.dataset.q; [].forEach.call($("#mesaQuien").children, function (x) { x.classList.toggle("on", x === b); }); pintarSug(); $("#mesaQ").focus(); });
+$("#mesaSug").addEventListener("click", function (e) { var b = e.target.closest("[data-sug]"); if (!b) return; $("#mesaQ").value = b.dataset.sug; preguntarMesa(); });
+pintarSug();
 $("#mesaCorrer").onclick = function () {
-  var b = $("#mesaCorrer"); b.disabled = true; b.textContent = "Corriendo (1 a 2 min)…";
+  var b = $("#mesaCorrer"); b.disabled = true; b.textContent = "Corriendo (2 a 3 min)…";
   api("mesa", { accion: "correr" }).then(function (r) { b.disabled = false; b.textContent = "Correr ahora"; toast(r.sin_ia ? "La IA no respondió (sin cupo)" : "Listo"); cargarMesa(); }).catch(function () { b.disabled = false; b.textContent = "Correr ahora"; toast("No pude correrla"); });
 };
-$("#mesaEnv").onclick = function () {
-  var q = $("#mesaQ").value.trim(); if (!q) return; $("#mesaQ").value = "";
-  MESA_HILO.push({ rol: "u", texto: q }, { rol: "a", texto: "Pensando…" }); pintarMesaHilo();
-  api("mesa", { accion: "preguntar", pregunta: q }).then(function (r) { MESA_HILO[MESA_HILO.length - 1] = { rol: "a", texto: r.respuesta || r.error || "No pude responder ahora." }; pintarMesaHilo(); cargarMesa(); })
-    .catch(function () { MESA_HILO[MESA_HILO.length - 1] = { rol: "a", texto: "No pude responder ahora. Probá de nuevo." }; pintarMesaHilo(); });
-};
+var MESA_OCUPADA = false;
+function preguntarMesa() {
+  var q = $("#mesaQ").value.trim(); if (!q || MESA_OCUPADA) return; $("#mesaQ").value = ""; MESA_OCUPADA = true;
+  var quien = QUIEN;
+  MESA_HILO.push({ rol: "u", texto: q }, { rol: "a", agente: quien, texto: "Entendiendo la pregunta y buscando los datos…" }); pintarMesaHilo();
+  api("mesa", { accion: "preguntar", pregunta: q, agente: quien }).then(function (r) { MESA_OCUPADA = false; MESA_HILO[MESA_HILO.length - 1] = { rol: "a", agente: r.agente || quien, texto: r.respuesta || r.error || "No pude responder ahora.", entendi: r.entendi, consultas: r.consultas }; pintarMesaHilo(); pintarSug(r.seguir); })
+    .catch(function () { MESA_OCUPADA = false; MESA_HILO[MESA_HILO.length - 1] = { rol: "a", agente: quien, texto: "No pude responder ahora. Probá de nuevo." }; pintarMesaHilo(); });
+}
+$("#mesaEnv").onclick = preguntarMesa;
+$("#mesaQ").addEventListener("keydown", function (e) { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); preguntarMesa(); } });
+$("#virGuardar").onclick = function () { api("mesa", { accion: "fuentes", hashtags: $("#virHash").value, perfiles: $("#virPerf").value }).then(function (r) { toast(r.ok ? "Fuentes guardadas" : "No pude guardar"); }); };
+$("#virLeer").onclick = function () { api("mesa", { accion: "fuentes", hashtags: $("#virHash").value, perfiles: $("#virPerf").value }).then(function () { return api("mesa", { accion: "virales_leer" }); }).then(function () { toast("Lectura pedida: tarda unos minutos"); $("#virEst").textContent = "Leyendo… tarda unos minutos, recargá después."; }); };
 $("#mesaHip").addEventListener("click", function (e) { var b = e.target.closest("[data-hip]"); if (!b) return; api("mesa", { accion: "hipotesis", id: b.dataset.hip, estado: "descartada" }).then(function () { toast("Descartada"); cargarMesa(); }); });
 
-ver((location.hash || "#hoy").slice(1) || "hoy");
+var INI = (location.hash || "").slice(1); if (INI === "ag") INI = "mesa";
+ver(document.getElementById("v-" + INI) ? INI : "" || "mesa");
 setInterval(function () { if (!document.hidden && document.hasFocus() && !$("#v-hoy").hidden && !$("#mod").classList.contains("on")) cargarHoy(true); }, 30000);
 document.addEventListener("visibilitychange", function () { if (!document.hidden && !$("#v-hoy").hidden) cargarHoy(true); });
 </script></body></html>`;
