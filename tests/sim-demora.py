@@ -1,4 +1,4 @@
-# Demora del contestador (sender/responder.py): espera de 5 a 10 min desde el último mensaje del cliente antes de contestar.
+# Contestador de la PC (sender/responder.py): demora de 5 a 10 min antes de contestar y envío de las cotizaciones aprobadas por Telegram.
 # Correr desde la raíz o desde cotizador/:  python ../tests/sim-demora.py
 import os, shutil, sys, tempfile, time
 from pathlib import Path
@@ -36,4 +36,47 @@ chk("el contestador solo toma los que cumplieron su espera", [x["conv"] for x in
 chk("los que esperan no frenan los seguimientos", R.QUEDAN == 1)
 lista, _ = R.hay_pendientes(sin_demora=True)
 chk("la vista previa muestra todos", len(lista) == 2 and R.ESPERAN == 0)
+# Cotizaciones aprobadas por Telegram (✅ Mandala): la PC las manda como un mensaje con el link
+import types
+if "playwright" not in sys.modules:   # en la PC está instalado; acá alcanza con una versión de mentira
+    pw = types.ModuleType("playwright"); pws = types.ModuleType("playwright.sync_api"); pws.TimeoutError = TimeoutError; pw.sync_api = pws
+    sys.modules["playwright"], sys.modules["playwright.sync_api"] = pw, pws
+R.api = lambda path, body=None: {"lista": [], "quedan": 0, "cotizaciones": [], "envios": [{"id": "abc", "conv": "549333", "nombre": "Ana", "texto": "Hola Ana! Ya tengo tu cotización: https://x/q/1\nCualquier duda me decís."}]}
+R.hay_pendientes()
+chk("la PC recibe las cotizaciones aprobadas", len(R.ENVIOS) == 1 and R.ENVIOS[0]["id"] == "abc")
+R.api = lambda path, body=None: {"tope": True}
+R.hay_pendientes()
+chk("si el panel corta antes (tope por hora), no reusa la lista vieja", R.ENVIOS == [])
+class Caja:
+    def __init__(s, pg): s.pg = pg
+    @property
+    def first(s): return s
+    @property
+    def last(s): return s
+    def inner_text(s): return s.pg.texto
+    def click(s): pass
+    def press(s, k):
+        if k == "Enter": s.pg.enviados.append(s.pg.texto); s.pg.texto = ""
+    def count(s): return 0
+class Teclado:
+    def __init__(s, pg): s.pg = pg
+    def type(s, ch): s.pg.texto += ch
+    def press(s, k):
+        if k == "Shift+Enter": s.pg.texto += "\n"
+        elif k == "Delete": s.pg.texto = ""
+class Pagina:
+    def __init__(s): s.texto, s.enviados, s.urls = "", [], []; s.keyboard = Teclado(s)
+    def goto(s, u): s.urls.append(u)
+    def wait_for_selector(s, sel, timeout=0): return True
+    def locator(s, sel): return Caja(s)
+llamadas = []
+R.api = lambda path, body=None: llamadas.append((path, body)) or {"ok": True}
+R.dormir = lambda seg, motivo="": True
+R.time = types.SimpleNamespace(sleep=lambda x: None, time=time.time)
+pg = Pagina(); fall = set()
+e = {"id": "abc", "conv": "549333", "nombre": "Ana", "texto": "Hola Ana! Ya tengo tu cotización: https://x/q/1\nCualquier duda me decís."}
+chk("manda la cotización aprobada", R.mandar_envio(pg, e, fall) is True and pg.enviados == [e["texto"]] and pg.urls == ["https://web.whatsapp.com/send?phone=549333"])
+chk("avisa al panel que salió (y el panel avisa por Telegram)", llamadas[-1] == ("/enviar/envio-hecho", {"id": "abc"}))
+pg2 = Pagina(); pg2.texto = "algo que estabas escribiendo"
+chk("si la caja ya tenía texto, no pisa nada y avisa que la mandes vos", R.mandar_envio(pg2, e, fall) is False and pg2.enviados == [] and llamadas[-1][0] == "/enviar/envio-fallo" and "abc" in fall)
 print(f"sim-demora: {ok} ok, {mal} fallas")

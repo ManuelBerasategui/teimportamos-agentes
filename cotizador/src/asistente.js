@@ -1,6 +1,7 @@
 import { pausaAutoresp, derivados } from "./autoresp.js";
 import { seguimientos, revisarSeguimientos, lineaSeguimiento } from "./lector.js";
 import { preguntarAgente } from "./agente.js";
+import { botonCotizacion } from "./cotiz-tg.js";
 import { notionActivo, notionHoy, textoNotion, crearEnNotion, marcarEnNotion, descubrir, diagnosticoNotion, fijarRol, agendaNotion, nivelesNotion } from "./notion.js";
 // Asistente personal por Telegram: le mandás un audio o un texto con todo lo que tenés en la cabeza
 // y lo ordena en tareas por prioridad. Cada persona tiene su lista (según desde qué chat escribe).
@@ -662,6 +663,7 @@ export async function rutaTelegram(env, req, url, ctx, iaJSON) {
   // Si pasa de 50 s, se le contesta a Telegram igual (para que no reintente) y se sigue en segundo plano.
   const trabajo = (async () => {
     await kvPut(env, "asist_ultimo", JSON.stringify({ ts: Date.now(), texto: String(upd?.message?.text || (upd?.message?.voice ? "[audio]" : "")).slice(0, 60) })).catch(() => {});
+    if (upd?.callback_query && /^cot:/.test(upd.callback_query.data || "")) return botonCotizacion(env, upd.callback_query, await chatsConocidos(env)).catch((e) => console.log("Asistente boton cotización:", e?.stack || e));
     if (upd?.callback_query) return botonSeguimiento(env, upd.callback_query).catch((e) => console.log("Asistente boton:", e?.stack || e));
     await atender(env, iaJSON, upd).catch(async (e) => {
       const ch = upd?.message?.chat?.id; if (ch) await decir(env, String(ch), "Se me trabó procesando eso (" + String(e?.message || e).slice(0, 80) + "). Mandámelo de nuevo en un minuto.").catch(() => {}); console.log("Asistente:", e?.stack || e); await kvPut(env, "asist_error", JSON.stringify({ ts: Date.now(), error: String(e?.stack || e).slice(0, 800) })).catch(() => {}); });

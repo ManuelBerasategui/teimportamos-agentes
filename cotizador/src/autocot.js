@@ -15,6 +15,7 @@ const r2 = (n) => Math.round(n * 100) / 100;
 const kvGet = async (env, k) => { const r = await env.DB.prepare("SELECT v, exp FROM kv WHERE k=?").bind(k).first().catch(() => null); return r && (!r.exp || r.exp > Date.now()) ? r.v : null; };
 const kvPut = (env, k, v, ttl) => env.DB.prepare("INSERT OR REPLACE INTO kv (k, v, exp) VALUES (?,?,?)").bind(k, String(v), ttl ? Date.now() + ttl : null).run().catch(() => {});
 const todas = async (env, sql, ...b) => { try { return (await env.DB.prepare(sql).bind(...b).all()).results || []; } catch { return []; } };
+import { avisarCotizacion, prepararCotTg } from "./cotiz-tg.js";
 export const RE_ALI = /https?:\/\/(?:[a-z0-9-]+\.)*alibaba\.com\/[^\s<>"']+/gi;
 export const linksAlibaba = (t) => [...new Set((String(t || "").match(RE_ALI) || []).map((l) => l.replace(/[),.;]+$/, "")))];
 // Mismo producto = mismo número de producto, venga del link largo, del corto o de otro idioma
@@ -201,8 +202,14 @@ Respondé SOLO JSON: {"cantidades":[número por producto, en el mismo orden]}`, 
   const todo = [...falta.filter((x) => !/vende desde/.test(x)), ...(calc.ok ? [] : calc.falta || [])];
   const avisos = falta.filter((x) => /vende desde/.test(x));
   const id = "ac:" + (conv || soloClave) + ":" + filas.map((f) => f.clave).sort().join("|").slice(0, 120);
-  await env.DB.prepare("INSERT OR REPLACE INTO autocot (id, ts, conv, nombre, items, via, total, detalle, estado, falta) VALUES (?,?,?,?,?,?,?,?,?,?)")
+  await prepararCotTg(env);
+  // Si ya existía, conserva el link y la aprobación de Telegram; si cambió el total, la aprobación se anula (hay que volver a aprobarla)
+  await env.DB.prepare(`INSERT INTO autocot (id, ts, conv, nombre, items, via, total, detalle, estado, falta) VALUES (?,?,?,?,?,?,?,?,?,?)
+    ON CONFLICT(id) DO UPDATE SET ts=excluded.ts, conv=excluded.conv, nombre=excluded.nombre, items=excluded.items, via=excluded.via, total=excluded.total, detalle=excluded.detalle,
+      estado=CASE WHEN autocot.estado='descartada' AND autocot.total IS excluded.total THEN 'descartada' ELSE excluded.estado END, falta=excluded.falta,
+      aprobado_ts=CASE WHEN autocot.total IS excluded.total THEN autocot.aprobado_ts ELSE NULL END`)
     .bind(id, Date.now(), conv || "", nombre, JSON.stringify(items), calc.via || "", calc.ok ? calc.total : null, JSON.stringify(calc.ok ? { ...calc, avisos } : { avisos }), calc.ok && !todo.length ? "lista" : "falta", [...new Set(todo)].join("; ").slice(0, 600)).run();
+  if (conv) await avisarCotizacion(env, id).catch((e) => console.log("Aviso cotización Telegram:", e?.stack || e));
   return { id, estado: calc.ok && !todo.length ? "lista" : "falta", total: calc.ok ? calc.total : null, falta: todo };
 }
 
@@ -232,7 +239,9 @@ export async function apiAutocot(env, req, url, iaJSON, body = {}) {
     const cfg = await configCalc(env); let items = []; try { items = JSON.parse(f.items || "[]"); } catch {}
     items = items.map((i, n) => ({ ...i, ...(b.items?.[n] ? { cantidad: Math.round(num(b.items[n].cantidad, i.cantidad)), fob: num(b.items[n].fob, i.fob), peso: num(b.items[n].peso, i.peso), volumen: num(b.items[n].volumen, i.volumen), nombre: corto(b.items[n].nombre || i.nombre, 90) } : {}) }));
     const c = calcularWeb(items, cfg, { via: b.via });
-    await env.DB.prepare("UPDATE autocot SET items=?, via=?, total=?, detalle=?, estado=?, falta=?, ts=? WHERE id=?").bind(JSON.stringify(items), c.via || "", c.ok ? c.total : null, JSON.stringify(c.ok ? c : {}), c.ok ? "lista" : "falta", c.ok ? "" : (c.falta || []).join("; ").slice(0, 600), Date.now(), f.id).run();
+    await prepararCotTg(env);
+    await env.DB.prepare("UPDATE autocot SET items=?, via=?, total=?, detalle=?, estado=?, falta=?, ts=?, aprobado_ts=CASE WHEN total IS ? THEN aprobado_ts ELSE NULL END WHERE id=?").bind(JSON.stringify(items), c.via || "", c.ok ? c.total : null, JSON.stringify(c.ok ? c : {}), c.ok ? "lista" : "falta", c.ok ? "" : (c.falta || []).join("; ").slice(0, 600), Date.now(), c.ok ? c.total : null, f.id).run();
+    if (f.conv) await avisarCotizacion(env, f.id).catch(() => {});   // completada en el panel: llega lista para aprobar por Telegram
     return json({ ...c, texto: textoResultado(c) });
   }
   if (b.accion === "borrar" && b.id) { await env.DB.prepare("DELETE FROM autocot WHERE id=?").bind(String(b.id)).run(); return json({ ok: true }); }

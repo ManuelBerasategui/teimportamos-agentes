@@ -11,6 +11,7 @@ import { apiTablero, cronTablero } from "./tablero.js";
 import { PANEL_P } from "./panel-p.js";
 import { rutaTelegram, apiAsistente, cronAsistente } from "./asistente.js";
 import { preguntarAgente, charlaAgente } from "./agente.js";
+import { paginaCotPublica } from "./cotiz-tg.js";
 import { cronMesa } from "./mesa.js";
 import { apiGrupos, cronGrupos } from "./grupos.js";
 import { simularRedactar } from "./autoresp.js";
@@ -3544,6 +3545,7 @@ export default {
     const clave = url.searchParams.get("clave");
     // Lector 805: el puente de WhatsApp (solo lectura) postea acá
     { const a = rutaApp(url); if (a) return a; }   // app web (manifest e íconos, públicos)
+    { const mq = url.pathname.match(/^\/q\/([0-9a-f]{16})\/([0-9a-f]{16})$/); if (mq && req.method === "GET") return paginaCotPublica(env, mq[1], mq[2]); }   // la cotización que ve el cliente (link firmado, sin login)
     if (url.pathname.startsWith("/tg/") && req.method === "POST") return rutaTelegram(env, req, url, ctx, iaJSON);   // asistente de tareas por Telegram
     if (url.pathname.startsWith("/lector/")) return rutaLector(env, req, url, ctx, iaJSON, { T });
     if (url.pathname.startsWith("/informes/")) return rutaInformes(env, url);

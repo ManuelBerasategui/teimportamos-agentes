@@ -27,6 +27,7 @@ VENTANA = os.environ.get("VENTANA", "oculta")                # minimizada | ocul
 # Espera antes de contestar, en minutos desde el último mensaje del cliente (al azar entre los dos). 0 y 0 = contesta enseguida
 DEMORA = Demora(float(os.environ.get("RESP_DEMORA_MIN", "5")), float(os.environ.get("RESP_DEMORA_MAX", "10")))
 ESPERAN, PROXIMO = 0, 0   # chats que todavía están en su espera y segundos hasta el próximo
+ENVIOS = []   # cotizaciones que aprobaste por Telegram (✅ Mandala): se mandan como un mensaje con el link
 CAJA = 'footer div[contenteditable="true"]'
 
 def pausado():
@@ -80,6 +81,7 @@ def desde_ms():
 
 def hay_pendientes(sin_demora=False):
     """Devuelve (chats a contestar, cotizaciones para mandar) o None si está pausado. sin_demora: todos, aunque no hayan cumplido su espera (vista previa)."""
+    global ENVIOS; ENVIOS = []   # nunca reusar la lista de una vuelta anterior (una ya mandada se mandaría de nuevo)
     r = api(f"/enviar/responder?limite=30&desde={desde_ms()}&dias={DIAS}")
     if r.get("pausado"): print("⏸  Pausado desde el bot de Telegram. Escribí 'reanudar respuestas' para seguir."); return None
     global QUEDAN
@@ -87,6 +89,7 @@ def hay_pendientes(sin_demora=False):
     QUEDAN = r.get("quedan", len(r["lista"]))
     global COT_DIRECTO; COT_DIRECTO = bool(r.get("cot_directo"))   # el servidor lo activa cuando confirmaste 7 cotizaciones bien seguidas
     global ESPERAN, PROXIMO
+    ENVIOS = r.get("envios", [])
     lista, ESPERAN, PROXIMO = (r["lista"], 0, 0) if sin_demora else DEMORA.separar(r["lista"], time.time() * 1000)   # los que todavía no cumplieron su espera quedan para la próxima vuelta
     QUEDAN = max(0, QUEDAN - ESPERAN)   # los que esperan no frenan los seguimientos: se hacen mientras tanto
     return lista[:10], r.get("cotizaciones", [])
@@ -191,6 +194,35 @@ def guardar_cotizacion(p, c):
     ruta.replace(AQUI / "cotizaciones" / nombre_pdf)
     with open(AQUI / "para_vos.txt", "a", encoding="utf-8") as f: f.write(f"{datetime.now():%d/%m %H:%M} | {c['nombre']} | +{c['conv']} | cotización N° {c['num']} (USD {c['total']}) lista para revisar y mandar: cotizaciones\\{nombre_pdf}\n")
     api("/enviar/cotizacion-guardada", {"id": c["id"]}); print(f"  Cotización N° {c['num']} guardada para revisar: cotizaciones\\{nombre_pdf}")
+
+def mandar_envio(pg, e, fallidos):
+    """Manda una cotización aprobada por Telegram: un mensaje con el link a la cotización (no adjunta archivos).
+    No espera la demora ni mira quién escribió último: el cliente pidió la cotización y vos la aprobaste."""
+    from playwright.sync_api import TimeoutError as PWTimeout
+    print(f"\nCotización aprobada · {e.get('nombre') or 'sin nombre'} ({e['conv']}):\n  {e['texto']}")
+    def fallo(motivo):
+        fallidos.add(e["id"]); print(f"  No la pude mandar ({motivo}). Te llega por Telegram para que la mandes vos.")
+        try: api("/enviar/envio-fallo", {"id": e["id"], "motivo": motivo})
+        except Exception: pass
+        return False
+    try:
+        pg.goto(f"https://web.whatsapp.com/send?phone={e['conv']}")
+        try: pg.wait_for_selector(CAJA, timeout=45000)
+        except PWTimeout: return fallo("no abrió el chat")
+        if not dormir(random.uniform(4, 8) + EXTRA_SEG): return False
+        caja = pg.locator(CAJA).first
+        if caja.inner_text().strip(): return fallo("la caja del chat ya tenía texto")
+        if not escribir(pg, caja, e["texto"]): return False
+        time.sleep(random.uniform(1.0, 2.5))
+        if not igual_a_lo_escrito(pg, e["texto"]): borrar_caja(pg); return fallo("alguien usó la ventana mientras escribía")
+        caja.press("Enter"); time.sleep(3)
+        if pg.locator(CAJA).first.inner_text().strip(): debug_pantalla(pg, f"cotización {e['conv']} no salió"); return fallo("no se envió")
+    except Exception as ex:
+        debug_pantalla(pg, f"cotización {e['conv']}: {ex}"); return fallo(str(ex).splitlines()[0][:80])
+    for _ in range(3):   # que quede marcada aunque el panel tarde (si no, se mandaría de nuevo)
+        try: api("/enviar/envio-hecho", {"id": e["id"]}); break
+        except Exception: time.sleep(5)
+    print("  Cotización enviada ✅"); return True
 
 def mandar_seguimiento(pg, saltados):
     """Manda un seguimiento revisado del Worker, usando su borrador personalizado."""
@@ -340,6 +372,7 @@ def main():
         pend = hay_pendientes(sin_demora=True) or ([], [])
         lista, cots = pend
         for c in cots: print(f"\n- COTIZACIÓN N° {c['num']} lista para {c['nombre']} ({c['conv']}): total USD {c['total']} → se enviaría el PDF con un texto corto.")
+        for e in ENVIOS: print(f"\n- COTIZACIÓN APROBADA por Telegram para {e.get('nombre') or 'sin nombre'} ({e['conv']}) → se mandaría:\n  {e['texto']}")
         print(f"\n{QUEDAN} chats sin contestar en total; acá van los primeros {len(lista)} (vista previa, no se envía nada).")
         for it in lista:
             try: d = api("/enviar/redactar", {"conv": it["conv"], "prueba": True})
@@ -363,7 +396,7 @@ def main():
         print("Si pide QR, escanealo con el celular (solo la primera vez). Esperando WhatsApp Web...")
         if VENTANA != "visible": print("La ventana del agente queda fuera de la pantalla: para usar WhatsApp vos, usá la app de escritorio o el celular.")
         pg.wait_for_selector('#pane-side', timeout=180000)
-        enviados = 0; fallidas = set(); seg_enviados = 0; seg_saltados = set(); chats_saltados = set()   # los que fallaron se reintentan en la próxima corrida
+        enviados = 0; fallidas = set(); seg_enviados = 0; seg_saltados = set(); chats_saltados = set(); envios_fallidos = set()   # los que fallaron se reintentan en la próxima corrida
         SEG_TOPE = SEG_MAX
         if solo_seguimientos:   # seguimientos.bat: manda hasta llegar al objetivo del día del panel (ej. 50) y se cierra
             try:
@@ -429,6 +462,10 @@ def main():
                         api("/enviar/cotizacion-enviada", {"id": c["id"]})
                         continue
                     api("/enviar/cotizacion-enviada", {"id": c["id"]}); enviados += 1; print("  Cotización enviada ✅")
+                    if not dormir(random.randint(PAUSA_MIN, PAUSA_MAX)): break
+                for e in ENVIOS:   # cotizaciones que aprobaste por Telegram: van primero (el cliente está esperando)
+                    if parar() or pausado() or e["id"] in envios_fallidos: continue
+                    if mandar_envio(pg, e, envios_fallidos): enviados += 1; envios_fallidos.add(e["id"])   # en esta corrida no se toca más
                     if not dormir(random.randint(PAUSA_MIN, PAUSA_MAX)): break
                 lista = [x for x in lista if x["conv"] not in chats_saltados]
                 if not lista and QUEDAN <= len(chats_saltados): QUEDAN = 0   # solo quedan los que fallaron en esta corrida

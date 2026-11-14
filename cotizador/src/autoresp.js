@@ -9,6 +9,7 @@ const kvGet = async (env, k) => (await env.DB.prepare("SELECT v FROM kv WHERE k=
 const kvPut = (env, k, v) => env.DB.prepare("INSERT INTO kv (k,v,exp) VALUES (?,?,NULL) ON CONFLICT(k) DO UPDATE SET v=excluded.v, exp=NULL").bind(k, String(v)).run();
 const hora = () => new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 13);
 import { calcular, paginaCotizacion, guardarCotizAuto } from "./cotizar.js";
+import { enviosPendientes, resultadoEnvio } from "./cotiz-tg.js";
 import { evento } from "./posthog.js";
 import { cargarEstilo, cargarReglas, cargarGuia, guiaTexto, reglasTexto, perfilTexto, similares, ejemplosTexto, juzgar, chequeoDuro, registrarCaso, informe, editarReglas, K as KENT, OBJETIVO, PLAZOS, revisarCotizacion, estadoCotizaciones, cargarCorrecciones, corrSimilares, correccionesTexto, agregarCorreccion, SOP_EMBUDO } from "./entrenador.js";
 const SIN_VAPES = "lower(COALESCE(producto,'')) NOT LIKE '%vap%' AND lower(COALESCE(producto,'')) NOT LIKE '%elf%bar%'";
@@ -89,7 +90,8 @@ export async function pendientesResponder(env, { limite = 10, T = null, desde = 
     it.bot = it._bot || (u?.yo && RE_DERIVA_BOT.test(String(u.texto || ""))) ? 1 : 0; delete it._bot;
   }
   const quedan = filas.filter((f) => /^\d{8,15}$/.test(String(f.conv)) && !(vistos[f.conv] >= f.ult_cliente_ts)).length;   // incluye los reservados por otra PC
-  return { pausado: false, lista, quedan, cotizaciones: cotizaciones.slice(0, Math.max(0, topeHora - hechos)), cot_directo: (await kvGet(env, "cot:directo")) === "1" };
+  const envios = await enviosPendientes(env).catch(() => []);   // cotizaciones aprobadas por Telegram: las manda la PC como un mensaje con el link
+  return { pausado: false, lista, quedan, cotizaciones: cotizaciones.slice(0, Math.max(0, topeHora - hechos)), cot_directo: (await kvGet(env, "cot:directo")) === "1", envios };
 }
 
 const URL_OK = /^https?:\/\/(www\.)?teimportamosarg\.com/i;
@@ -349,6 +351,12 @@ export async function rutaAutoresp(env, req, p, url, iaJSON, h = {}) {
     if (conv) await env.DB.batch([env.DB.prepare("INSERT INTO kv (k,v,exp) VALUES (?,?,NULL) ON CONFLICT(k) DO UPDATE SET v=excluded.v, exp=NULL").bind("resp_auto:" + conv, String(Date.now())), env.DB.prepare("DELETE FROM kv WHERE k=?").bind("resp_toma:" + conv), ...marcarContestado(env, conv)]);
     const k = "resp_hora:" + hora(); await kvPut(env, k, (+((await kvGet(env, k)) || 0)) + 1); return json({ ok: true });
   }
+  if (p === "/enviar/envio-hecho" && req.method === "POST") {   // salió la cotización aprobada por Telegram: el chat queda atendido y se avisa
+    const conv = await resultadoEnvio(env, (await body()).id, true);
+    if (conv) await env.DB.batch([env.DB.prepare("INSERT INTO kv (k,v,exp) VALUES (?,?,NULL) ON CONFLICT(k) DO UPDATE SET v=excluded.v, exp=NULL").bind("resp_auto:" + conv, String(Date.now())), env.DB.prepare("DELETE FROM kv WHERE k=?").bind("resp_toma:" + conv), ...marcarContestado(env, conv)]);
+    return json({ ok: true });
+  }
+  if (p === "/enviar/envio-fallo" && req.method === "POST") { const b = await body(); await resultadoEnvio(env, b.id, false, b.motivo); return json({ ok: true }); }   // no salió: vuelve a Telegram para mandarla a mano
   if (p === "/enviar/atendido" && req.method === "POST") {   // la PC vio en WhatsApp que lo último ya es nuestro (el lector no lo había registrado): no se contesta
     const conv = String((await body()).conv || "");
     if (conv) await env.DB.batch([env.DB.prepare("INSERT INTO kv (k,v,exp) VALUES (?,?,NULL) ON CONFLICT(k) DO UPDATE SET v=excluded.v, exp=NULL").bind("resp_auto:" + conv, String(Date.now())), env.DB.prepare("DELETE FROM kv WHERE k=?").bind("resp_toma:" + conv), ...marcarContestado(env, conv)]);

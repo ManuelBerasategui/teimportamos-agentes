@@ -63,6 +63,14 @@ Contesta los chats cuyo último mensaje es del cliente (incluye los que dejaste 
 - No corras `enviar.py` y `responder.py` a la vez (comparten la misma sesión de WhatsApp Web).
 - Los chats que deja para vos se anotan en `para_vos.txt` (fecha | nombre | número | qué hacer, en 3-5 palabras) y aparecen en el panel, en "Para hacer hoy" → pestaña **Para vos**, con botón para abrir WhatsApp. Salen de la lista cuando contestás vos.
 
+## Cotizaciones por Telegram (aprobás con un toque)
+Cuando el lector de Alibaba (`cotizar_links.bat`) termina la cotización de un cliente, te llega por **Telegram** con el resumen y botones:
+- **✅ Mandala**: el agente (`responder.py`, abierto y activado) le escribe al cliente en su próxima vuelta un mensaje corto con el **link a la cotización** (misma cuenta que el panel; desde ahí el cliente la guarda en PDF). Cuando sale, te avisa por Telegram. No adjunta archivos: es lo más estable de WhatsApp Web.
+- **✏️ La mando yo**: abre el WhatsApp del cliente con ese mensaje escrito.
+- **❌ No va**: la descarta. **📝 Corregir**: la abrís en el panel (Cotizar); si cambia el total, te llega de nuevo para aprobar.
+- Si falta un dato (peso, FOB, cantidad), te avisa qué falta con el botón para completarla en el panel.
+- Si el agente no pudo mandarla, te avisa por Telegram con el botón para mandarla vos.
+
 ## Cotizaciones automáticas
 El panel ya arma solo la cotización cuando un cliente manda un link de **Alibaba.com** + cantidad (lee precio y peso de la publicación). `responder.py` además la puede **mandar por WhatsApp** como PDF (con `COTIZ_MODO=enviar`; por defecto es `revisar`: guarda el PDF en la carpeta `cotizaciones` y lo anota en `para_vos.txt`, y la cotización sigue en Pendientes del panel para que la mandes vos) con un texto corto, sin números en el mensaje (están en el PDF).
 - Si el peso no figuraba en la publicación y quedó **estimado**, NO se manda sola: aparece en la pestaña "Para vos" para que la revises. Para que igual se mande (el PDF avisa que el peso es estimado) cargá `COTIZ_PESO_ESTIMADO=1` como variable en Cloudflare.
