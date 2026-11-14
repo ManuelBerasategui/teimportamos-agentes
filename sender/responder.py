@@ -10,6 +10,7 @@ import random, re, sys, time, urllib.parse
 from datetime import datetime
 import json, urllib.request
 from enviar import api, parar, AQUI, H_DESDE, H_HASTA, URL, TOKEN, variar, os
+from demora import Demora
 # Sin horario: si lo prendés, corre. Para volver a usar HORA_DESDE/HORA_HASTA del .env poné RESP_HORARIO=1
 if os.environ.get("RESP_HORARIO", "0") != "1": H_DESDE, H_HASTA = 0, 24
 
@@ -23,6 +24,9 @@ SEGUIMIENTOS = os.environ.get("RESP_SEGUIMIENTOS", "1") == "1"   # sin chats par
 SEG_MAX = int(os.environ.get("RESP_SEG_MAX", "30"))              # tope de seguimientos por corrida
 TECLEO = float(os.environ.get("RESP_TECLEO", "1"))                # velocidad de tipeo: 1 = normal, 0.6 = más rápido, 1.5 = más lento
 VENTANA = os.environ.get("VENTANA", "oculta")                # minimizada | oculta | visible
+# Espera antes de contestar, en minutos desde el último mensaje del cliente (al azar entre los dos). 0 y 0 = contesta enseguida
+DEMORA = Demora(float(os.environ.get("RESP_DEMORA_MIN", "5")), float(os.environ.get("RESP_DEMORA_MAX", "10")))
+ESPERAN, PROXIMO = 0, 0   # chats que todavía están en su espera y segundos hasta el próximo
 CAJA = 'footer div[contenteditable="true"]'
 
 def pausado():
@@ -74,15 +78,18 @@ def desde_ms():
     try: return int(datetime.fromisoformat(v).timestamp() * 1000)
     except ValueError: sys.exit("RESP_DESDE tiene que ser fecha y hora así: 2026-11-02 21:05")
 
-def hay_pendientes():
-    """Devuelve (chats a contestar, cotizaciones para mandar) o None si está pausado."""
-    r = api(f"/enviar/responder?limite=10&desde={desde_ms()}&dias={DIAS}")
+def hay_pendientes(sin_demora=False):
+    """Devuelve (chats a contestar, cotizaciones para mandar) o None si está pausado. sin_demora: todos, aunque no hayan cumplido su espera (vista previa)."""
+    r = api(f"/enviar/responder?limite=30&desde={desde_ms()}&dias={DIAS}")
     if r.get("pausado"): print("⏸  Pausado desde el bot de Telegram. Escribí 'reanudar respuestas' para seguir."); return None
     global QUEDAN
     if r.get("tope"): print("Llegué al tope de respuestas por hora. Espero."); QUEDAN = 1; return [], []
     QUEDAN = r.get("quedan", len(r["lista"]))
     global COT_DIRECTO; COT_DIRECTO = bool(r.get("cot_directo"))   # el servidor lo activa cuando confirmaste 7 cotizaciones bien seguidas
-    return r["lista"], r.get("cotizaciones", [])
+    global ESPERAN, PROXIMO
+    lista, ESPERAN, PROXIMO = (r["lista"], 0, 0) if sin_demora else DEMORA.separar(r["lista"], time.time() * 1000)   # los que todavía no cumplieron su espera quedan para la próxima vuelta
+    QUEDAN = max(0, QUEDAN - ESPERAN)   # los que esperan no frenan los seguimientos: se hacen mientras tanto
+    return lista[:10], r.get("cotizaciones", [])
 
 QUEDAN = 0   # chats sin contestar que quedan en total (si hay, no se hacen seguimientos)
 
@@ -283,6 +290,10 @@ def main_escritorio(seguir):
             quedan = 0 if QUEDAN <= len(saltados) else QUEDAN
             if not lista:
                 # Los seguimientos solo salen desde WhatsApp Web con borrador personalizado.
+                if ESPERAN:
+                    print(f"{datetime.now():%H:%M} · {ESPERAN} chat(s) esperando para contestar como una persona; el próximo en {max(1, round(PROXIMO / 60))} min.")
+                    if not dormir(min(120, max(15, PROXIMO + 2))): break
+                    continue
                 if not seguir: print("No quedan chats para contestar."); break
                 print(f"{datetime.now():%H:%M} · " + (f"quedan {quedan} sin contestar (otra PC o tope por hora)." if quedan else "no hay chats esperando respuesta.") + " Vuelvo a mirar en 2 minutos.")
                 if not dormir(120): break
@@ -326,7 +337,7 @@ def main():
             print(f"Vista previa de seguimientos ({len(segs)} borradores). No se abrió WhatsApp ni se envió o marcó ningún chat.")
             for s in segs: print(f"\n- {s.get('nombre') or 'sin nombre'} (+{s['conv']}) · toque {s.get('toque', '?')} · {'revisado por IA' if s.get('revisado') else 'borrador de respaldo, sin revisión IA'}\n  {s.get('borrador', '')}")
             return
-        pend = hay_pendientes() or ([], [])
+        pend = hay_pendientes(sin_demora=True) or ([], [])
         lista, cots = pend
         for c in cots: print(f"\n- COTIZACIÓN N° {c['num']} lista para {c['nombre']} ({c['conv']}): total USD {c['total']} → se enviaría el PDF con un texto corto.")
         print(f"\n{QUEDAN} chats sin contestar en total; acá van los primeros {len(lista)} (vista previa, no se envía nada).")
@@ -429,6 +440,10 @@ def main():
                         if not dormir(random.randint(PAUSA_MIN, PAUSA_MAX)): break
                         continue
                     if solo_seguimientos: print(f"\nListo: mandé {seg_enviados} seguimientos" + (" (llegué al objetivo del día)." if seg_enviados >= SEG_TOPE else ". No quedan más listos en el panel por ahora (los que dicen 'llamalo vos' los hacés vos).")); break
+                    if ESPERAN:   # hay chats esperando su demora: se queda hasta contestarlos aunque no esté en modo --seguir
+                        print(f"{datetime.now():%H:%M} · {ESPERAN} chat(s) esperando para contestar como una persona; el próximo en {max(1, round(PROXIMO / 60))} min.")
+                        if not dormir(min(120, max(15, PROXIMO + 2))): break
+                        continue
                     if not seguir: print("No quedan chats para contestar."); break
                     print(f"{datetime.now():%H:%M} · nada para contestar" + (" ni seguimientos" if SEGUIMIENTOS else "") + ". Vuelvo a mirar en 2 minutos.")
                     if not dormir(120): break
