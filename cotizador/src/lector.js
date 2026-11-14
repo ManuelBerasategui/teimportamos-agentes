@@ -1214,7 +1214,7 @@ export function borradorBase(s) {
   const t = s.toque || 1, plan = plantillaSeg(s.conv);
   if (plan === "A") {
     if (t >= 3) return "buenas" + n + ", lo dejo acá para no molestarte. si en algún momento querés retomar " + que + ", el precio que te pasé te lo sostengo hasta fin de mes";
-    if (t === 2) return "buenas" + n + ", esta semana mando un pedido a china. si entrás con " + que + " ahora el flete se comparte y te queda más barato por unidad. te paso el total con la cantidad que quieras?";
+    if (t === 2) return "buenas" + n + ", esta semana armo un pedido. si entrás con " + que + " ahora el envío se comparte y te queda más barato por unidad. te paso el total con la cantidad que quieras?";
     return "buenas" + n + ", te paso una alternativa por " + que + ": si querés arrancar con menos unidades te armo el total puesto en argentina hoy mismo. con cuántas te gustaría probar?";
   }
   if (t >= 3) return "buenas" + n + ", cerramos " + que + " por ahora? qué te frenó más: 1) el precio total 2) la cantidad 3) el plazo 4) no es el momento 5) otra cosa. con un número me alcanza";
@@ -1239,7 +1239,7 @@ export async function revisarSeguimientos(env, iaJSON, { limite = 10, tope = SEG
       const tanda = faltan.slice(i, i + SEG.porLlamada);
       const charlas = await Promise.all(tanda.map((s) => env.DB.prepare("SELECT yo, texto, ts FROM w_msg WHERE conv=? AND COALESCE(texto,'')<>'' ORDER BY ts DESC LIMIT 40").bind(s.conv).all().then((r) => (r.results || []).reverse()).catch(() => [])));
       const oferta = (await kvGet(env, "seg_oferta")) !== "0";
-      const r = await iaJSON(env, `Atendés el WhatsApp de "Te Importamos" (Rosario: gestionamos importaciones de China para revendedores y comercios; compras grupales/cupos y pedidos a medida por foto o link de Alibaba/1688; nos encargamos de proveedor, aduana y envío; mostramos costos reales; plazo real China puerta a puerta 25 a 40 días). A estos clientes les mandamos cotización, precio, catálogo o info y dejaron de contestar o no avanzaron. Ahora es ${fechaHora(Date.now())} (hora Argentina).
+      const r = await iaJSON(env, `Atendés el WhatsApp de "Te Importamos" (Rosario: gestionamos importaciones para revendedores y comercios: de China, y también de Paraguay y EE.UU. (ej. AirPods, iPhone, Apple, consolas y perfumes originales suelen ser de Paraguay/EE.UU., NO de China). En el mensaje no nombres el país de origen salvo que en el chat esté claro de dónde viene ESE producto; compras grupales/cupos y pedidos a medida por foto o link de Alibaba/1688; nos encargamos de proveedor, aduana y envío; mostramos costos reales; plazo real China puerta a puerta 25 a 40 días). A estos clientes les mandamos cotización, precio, catálogo o info y dejaron de contestar o no avanzaron. Ahora es ${fechaHora(Date.now())} (hora Argentina).
 Lo que cierra ventas NO es recordar que existimos: es sacarle la duda y el riesgo (cuánto paga en total, qué no incluye, qué pasa si sale mal, cómo sigue). Insistir sin aportar nada no funciona.
 PASO 1: leé TODA la charla y elegí UNA situación:
 1 pendiente nuestro (preguntó algo y no le contestamos, o prometimos algo y no lo dimos) → el mensaje es la respuesta atrasada, sin disculpas largas
