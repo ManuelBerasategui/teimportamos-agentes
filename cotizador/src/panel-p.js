@@ -45,7 +45,7 @@ input,select,textarea{font:inherit;border:1px solid var(--li);background:var(--c
 input:focus,select:focus,textarea:focus{outline:2px solid color-mix(in srgb,var(--ac) 40%,transparent);border-color:var(--ac)}
 .fila{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:8px;margin-bottom:8px}
 .modal{position:fixed;inset:0;background:#0008;display:none;align-items:center;justify-content:center;padding:16px;z-index:20}.modal.on{display:flex}
-.modal .card{width:100%;max-width:440px}.modal label{font-size:13px;color:var(--mu);display:block;margin:9px 0 3px}
+.modal .card{width:100%;max-width:440px}.modal .card.ancho{max-width:860px;max-height:88vh;overflow:auto}.hchat{margin-top:14px;padding-top:8px;border-top:1px solid #ffffff1a}.hmsg{font-size:14px;margin:4px 0;white-space:pre-wrap}.hmsg span{color:var(--mu);font-size:12px;margin-right:6px}.modal label{font-size:13px;color:var(--mu);display:block;margin:9px 0 3px}
 .seg{display:inline-flex;background:var(--chip);border-radius:10px;padding:3px}.seg button{border:0;background:none;padding:5px 13px;border-radius:8px;font:inherit;font-weight:600;color:var(--mu);cursor:pointer}.seg button.on{background:var(--card);color:var(--tx);box-shadow:var(--sh)}
 .hilo{display:flex;flex-direction:column;gap:8px;margin-bottom:10px}.msg{max-width:85%;padding:10px 13px;border-radius:14px;white-space:pre-wrap}.msg.u{align-self:flex-end;background:linear-gradient(135deg,var(--ac),var(--ac2));color:#fff}.msg.a{align-self:flex-start;background:var(--card);border:1px solid var(--li)}
 #consejo{background:linear-gradient(135deg,color-mix(in srgb,var(--ac) 9%,var(--card)),var(--card));border-color:color-mix(in srgb,var(--ac) 30%,var(--li))}#consejo>b{font-size:15px}
@@ -201,7 +201,7 @@ function cargarHoy(liviano) {
     if (ia.geminiModelosSinCupo) est.push('<span class="pill warn">Gemini: ' + ia.geminiModelosSinCupo + " modelos sin cupo</span>");
     $("#estado").innerHTML = est.join("");
     var por = {}; (d.equipo || []).forEach(function (e) { var p = por[e.persona] || (por[e.persona] = { hoy: 0, ayer: 0, mh: 0 }); if (e.dia === d.hoy) { p.hoy += e.chats; p.mh += e.mensajes; } else p.ayer += e.chats; });
-    $("#equipoHoy").innerHTML = Object.keys(por).sort(function (a, b) { return por[b].hoy - por[a].hoy; }).map(function (n) { var p = por[n], dn = (n.match(/^Sin identificar \(dispositivo (\d+)\)/) || [])[1]; return '<div class="card"><span class="kp">' + esc(n) + '</span><b>' + p.hoy + '</b><span class="mu">chats hoy · ' + p.mh + " mensajes · ayer " + p.ayer + "</span>" + (dn ? '<div class="dispId" data-dn="' + dn + '"><button class="b" data-vermsj="' + dn + '" style="margin-top:8px">Ver últimos mensajes</button></div>' : "") + "</div>"; }).join("") || '<div class="mu">Todavía no hay chats contestados hoy.</div>';
+    $("#equipoHoy").innerHTML = Object.keys(por).sort(function (a, b) { return por[b].hoy - por[a].hoy; }).map(function (n) { var p = por[n], dn = (n.match(/^Sin identificar \(dispositivo (\d+)\)/) || [])[1]; return '<div class="card"><span class="kp">' + esc(n) + '</span><b>' + p.hoy + '</b><span class="mu">chats hoy · ' + p.mh + " mensajes · ayer " + p.ayer + "</span>" + (dn ? '<div class="dispId" data-dn="' + dn + '"><button class="b" data-vermsj="' + dn + '" style="margin-top:8px">Ver últimos mensajes</button> <button class="b" data-verhoy="' + dn + '" style="margin-top:8px">Todo lo de hoy</button></div>' : "") + "</div>"; }).join("") || '<div class="mu">Todavía no hay chats contestados hoy.</div>';
     pintarLista();
   }).catch(function () { $("#lista").innerHTML = '<div class="vacio">No pude cargar. Recargá la página.</div>'; });
 }
@@ -232,7 +232,7 @@ document.addEventListener("click", function (e) {
   if (a === "nota") modalNota(conv, card, b.dataset.nota || "", b.dataset.para || "");
   if (a === "borrarVenta") { if (confirm("¿Borrar esta venta?")) api("venta-borrar", { id: b.dataset.id }).then(function () { cargarVentas(); toast("Venta borrada"); }); }
 });
-function cerrarModal() { $("#mod").classList.remove("on"); }
+function cerrarModal() { $("#mod").classList.remove("on"); $("#modC").classList.remove("ancho"); }
 $("#mod").addEventListener("click", function (e) { if (e.target.id === "mod" || e.target.dataset.cerrar !== undefined) cerrarModal(); });
 function modalVenta(conv, card) {
   var nombre = card ? ((card.querySelector("[data-tel]") || card.querySelector("b") || {}).textContent || "") : "";
@@ -315,10 +315,23 @@ $("#equipoHoy").addEventListener("click", function (e) {
   var b = e.target.closest("[data-vermsj]"); if (!b) return; var dn = b.dataset.vermsj, box = b.parentNode; b.disabled = true; b.textContent = "Cargando...";
   api("dispmsj?d=" + dn).then(function (r) {
     var ms = (r && r.msgs) || [];
-    box.innerHTML = (ms.length ? ms.map(function (m) { return '<div class="ult">' + new Date(m.ts).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) + " · a " + esc(m.a) + ": " + esc(m.texto) + "</div>"; }).join("") : '<div class="mu" style="margin-top:6px">No hay mensajes de texto de este dispositivo en los últimos 3 días.</div>') +
+    box.innerHTML = '<button class="b" data-verhoy="' + dn + '" style="margin-top:8px">Todo lo de hoy</button>' + (ms.length ? ms.map(function (m) { return '<div class="ult">' + new Date(m.ts).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) + " · a " + esc(m.a) + ": " + esc(m.texto) + "</div>"; }).join("") : '<div class="mu" style="margin-top:6px">No hay mensajes de texto de este dispositivo en los últimos 3 días.</div>') +
       '<input data-asig="' + dn + '" placeholder="¿De quién es? (ej. Buko)" style="margin-top:8px;width:100%">';
   }).catch(function () { b.disabled = false; b.textContent = "Ver últimos mensajes"; toast("No pude cargar, probá de nuevo"); });
 });
+$("#equipoHoy").addEventListener("click", function (e) {
+  var b = e.target.closest("[data-verhoy]"); if (!b) return; var dn = b.dataset.verhoy, M = $("#mod"), C = $("#modC");
+  C.classList.add("ancho"); C.innerHTML = '<div class="mu">Cargando todo lo de hoy del dispositivo ' + esc(dn) + "...</div>"; M.classList.add("on");
+  api("disphoy?d=" + dn).then(function (r) {
+    var ms = (r && r.msgs) || [], ch = {}, orden = [];
+    ms.forEach(function (m) { if (!ch[m.conv]) { ch[m.conv] = { a: m.a, ms: [] }; orden.push(m.conv); } ch[m.conv].ms.push(m); });
+    var hora = function (t) { return new Date(t).toLocaleTimeString("es-AR", { hour: "2-digit", minute: "2-digit" }); };
+    C.innerHTML = '<div class="fila" style="justify-content:space-between;align-items:center"><b>Dispositivo ' + esc(dn) + " · hoy: " + ms.length + " mensajes en " + orden.length + ' chats</b><button class="b" data-cerrar>Cerrar</button></div>' +
+      '<div class="mu" style="margin-top:4px">Ordenado por el primer mensaje de cada chat. Escribí de quién es:</div><input data-asig="' + dn + '" placeholder="¿De quién es? (ej. Buko)" style="margin-top:6px;width:100%">' +
+      (orden.length ? orden.map(function (k) { var c = ch[k]; return '<div class="hchat"><b>' + esc(c.a) + '</b> <span class="mu">(' + c.ms.length + ")</span>" + c.ms.map(function (m) { return '<div class="hmsg"><span>' + hora(m.ts) + "</span>" + esc(m.texto) + "</div>"; }).join("") + "</div>"; }).join("") : '<div class="vacio">No mandó nada hoy.</div>');
+  }).catch(function () { C.innerHTML = '<div class="mu">No pude cargar.</div><button class="b" data-cerrar>Cerrar</button>'; });
+});
+$("#mod").addEventListener("change", function (e) { var i = e.target.closest("[data-asig]"); if (!i || !i.value.trim()) return; api("asignar", { disp: i.dataset.asig, persona: i.value.trim() }).then(function () { toast("Guardado: dispositivo " + i.dataset.asig + " es de " + i.value.trim()); }); });
 $("#equipoHoy").addEventListener("change", function (e) { var i = e.target.closest("[data-asig]"); if (!i || !i.value.trim()) return; api("asignar", { disp: i.dataset.asig, persona: i.value.trim() }).then(function () { toast("Guardado: dispositivo " + i.dataset.asig + " es de " + i.value.trim() + ". El historial se recalcula en las próximas horas"); }); });
 $("#disp").addEventListener("change", function (e) { var i = e.target.closest("[data-disp]"); if (!i) return; api("asignar", { disp: i.dataset.disp, persona: i.value }).then(function () { toast("Guardado. Se recalcula el historial en las próximas horas"); }); });
 

@@ -295,6 +295,16 @@ export async function mensajesDispositivo(env, disp) {
     .slice(0, 8).map((m) => ({ texto: String(m.texto).slice(0, 200), ts: m.ts, a: m.nombre || m.conv }));
   return { disp: d, msgs };
 }
+// Todo lo que mandó UN dispositivo hoy (desde las 0 h de Argentina), en orden, incluidos archivos. A pedido.
+export async function hoyDispositivo(env, disp) {
+  const d = String(disp || "").replace(/\D/g, ""); if (!d) return { error: "falta el dispositivo" };
+  const desde = Math.floor((Date.now() - 3 * 3600e3) / DIA) * DIA + 3 * 3600e3;
+  const q = (idx) => todas(env, "SELECT m.texto, m.ts, m.conv, m.autor, c.nombre FROM w_msg m " + idx + " LEFT JOIN w_conv c ON c.conv=m.conv WHERE m.ts>=? AND m.grupo=0 AND m.yo=1 AND m.hist=0 AND m.autor LIKE ? ORDER BY m.ts ASC LIMIT 800", desde, "%:" + d + "%");
+  const filas = await q("INDEXED BY w_msg_priv").catch(() => q("").catch(() => []));
+  const msgs = filas.filter((m) => (String(m.autor || "").match(/:(\d+)/) || [])[1] === d)
+    .map((m) => ({ texto: String(m.texto || "(sin texto)").slice(0, 1500), ts: m.ts, conv: m.conv, a: m.nombre || m.conv }));
+  return { disp: d, desde, msgs };
+}
 export async function asignarDispositivo(env, disp, persona) {
   const mapa = JSON.parse((await kvGet(env, "equipo_disp")) || "{}");
   const d = String(disp || "").replace(/\D/g, ""); if (!d) return { error: "falta el dispositivo" };
@@ -508,6 +518,7 @@ export async function apiTablero(env, req, url, quien, iaJSON) {
   if (r === "numeros") return json(await numeros(env, ["mes", "dia"].includes(url.searchParams.get("p")) ? url.searchParams.get("p") : "semana", Math.min(31, +url.searchParams.get("n") || (url.searchParams.get("p") === "dia" ? 14 : 8))));
   if (r === "equipo") return json({ dias: await equipoDias(env, Math.min(400, +url.searchParams.get("d") || 31)), dispositivos: await dispositivos(env) });
   if (r === "dispmsj") return json(await mensajesDispositivo(env, url.searchParams.get("d")));
+  if (r === "disphoy") return json(await hoyDispositivo(env, url.searchParams.get("d")));
   if (r === "asignar" && req.method === "POST") return json(await asignarDispositivo(env, body.disp, body.persona));
   if (r === "links") return json({ links: await links(env), canales: CANALES });
   if (r === "link" && req.method === "POST") return json(await crearLink(env, body, quien));
