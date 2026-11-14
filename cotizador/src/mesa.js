@@ -9,6 +9,8 @@
 // Regla de oro: la IA no inventa números. Todos los números vienen de acá.
 import { diaAR } from "./tablero.js";
 import { esBotTexto, plantillaSeg } from "./lector.js";
+import { podarIdeas } from "./clasificar.js";
+import { esCierre } from "./cierre.js";
 
 const AR = 3 * 3600e3, DIA = 86400e3, H = 3600e3;
 const inicioDia = (dia) => Date.parse(dia + "T00:00:00Z") + AR;
@@ -71,7 +73,7 @@ export async function hechos(env, { dias = 14 } = {}) {
   const ahora = Date.now(), hoy = diaAR(ahora);
   const s7 = ahora - 7 * DIA, s14 = ahora - 14 * DIA, s30 = ahora - 30 * DIA, desde = ahora - Math.max(14, dias) * DIA;
   const [convs, hitos, ventasCargadas, segLog, msgs7, grupos, ig, tt, prospectos, eq, mem, mlRaw, refs, vir, hitosVenta, ideasPrev] = await Promise.all([
-    todas(env, "SELECT conv, nombre, primer_ts, ult_ts, ult_yo, ult_cliente_ts, ult_yo_ts, ult_texto, perfil, presup_usd, producto, etapa, motivo, origen, cierre_ts, puntaje FROM w_conv WHERE grupo=0 AND COALESCE(prov,0)=0 AND COALESCE(archivado,0)=0 AND (primer_ts>=? OR ult_ts>=?)", s30, s30),
+    todas(env, "SELECT conv, nombre, primer_ts, ult_ts, ult_yo, ult_cliente_ts, ult_yo_ts, ult_texto, perfil, presup_usd, producto, etapa, motivo, origen, cierre_ts, puntaje, resp FROM w_conv WHERE grupo=0 AND COALESCE(prov,0)=0 AND COALESCE(archivado,0)=0 AND (primer_ts>=? OR ult_ts>=?)", s30, s30),
     todas(env, "SELECT conv, tipo, ts, dato FROM w_hito WHERE ts>=? AND tipo='cotizacion'", s30 - 45 * DIA),
     todas(env, "SELECT ts, conv, nombre, producto, monto, moneda, ganancia, linea FROM ventas WHERE ts>=? ORDER BY ts DESC", s30),
     todas(env, "SELECT conv, ts, toque, situacion, quien, texto, plantilla FROM w_seg_log WHERE ts>=? AND quien<>'dueno-mal'", s14),
@@ -148,7 +150,7 @@ export async function hechos(env, { dias = 14 } = {}) {
   }
   const red0 = (x) => (x == null ? null : Math.round(x));
   const respuesta = { n: primeras.length, p50: red0(mediana(primeras)), p90: red0(percentil(primeras, 0.9)), mas_1h_pct: pct(primeras.filter((x) => x > 60).length, primeras.length), mas_12h: primeras.filter((x) => x > 720).length, todas_p50: red0(mediana(delays)) };
-  const pendientes = convs.filter((c) => activo(c) && c.ult_yo === 0 && c.ult_cliente_ts && ahora - c.ult_cliente_ts > 24 * H && ahora - c.ult_cliente_ts < 10 * DIA && RE_PREGUNTA.test(c.ult_texto || ""))
+  const pendientes = convs.filter((c) => activo(c) && c.ult_yo === 0 && c.ult_cliente_ts && ahora - c.ult_cliente_ts > 24 * H && ahora - c.ult_cliente_ts < 10 * DIA && c.resp !== 0 && !esCierre(c.ult_texto) && RE_PREGUNTA.test(c.ult_texto || ""))
     .sort((a, b) => (b.perfil === "A" || b.perfil === "B") - (a.perfil === "A" || a.perfil === "B") || b.ult_cliente_ts - a.ult_cliente_ts).slice(0, 60)
     .map((c) => ({ conv: c.conv, nombre: c.nombre || "sin nombre", perfil: c.perfil || "?", producto: corto(c.producto, 40), horas: Math.round((ahora - c.ult_cliente_ts) / H), texto: corto(c.ult_texto, 120) }));
 
@@ -237,7 +239,7 @@ export async function hechos(env, { dias = 14 } = {}) {
   // --- Equipo (7 días)
   const equipo = {}; for (const e of eq) { const o = equipo[e.persona] || (equipo[e.persona] = { chats: 0, mensajes: 0 }); o.chats += e.chats; o.mensajes += e.mensajes; }
   let ml = null; try { ml = mlRaw ? JSON.parse(mlRaw) : null; } catch {}
-  const ideas = { utiles: ideasPrev.filter((i) => i.estado === "util" || i.estado === "hecha").slice(0, 8).map((i) => corto(i.texto, 140)), descartadas: ideasPrev.filter((i) => i.estado === "descartada").slice(0, 10).map((i) => corto(i.texto, 110) + (i.nota ? ` (motivo: ${corto(i.nota, 80)})` : "")), abiertas: ideasPrev.filter((i) => i.estado === "nueva").slice(0, 12).map((i) => corto(i.texto, 110)) };
+  const ideas = { podadas: ideasPrev.filter((i) => i.estado === "podada").slice(0, 10).map((i) => corto(i.texto, 100) + (i.nota ? ` (${corto(i.nota, 60)})` : "")), utiles: ideasPrev.filter((i) => i.estado === "util" || i.estado === "hecha").slice(0, 8).map((i) => corto(i.texto, 140)), descartadas: ideasPrev.filter((i) => i.estado === "descartada").slice(0, 10).map((i) => corto(i.texto, 110) + (i.nota ? ` (motivo: ${corto(i.nota, 80)})` : "")), abiertas: ideasPrev.filter((i) => i.estado === "nueva").slice(0, 12).map((i) => corto(i.texto, 110)) };
   return { hoy, generado: ahora, ideas, esperando_total: esperando, embudo, perfiles, respuesta, pendientes, cotizaciones, seguimientos, prospeccion, productos, cupos: cuposR, redes, ventas, equipo, memoria: mem.map((m) => ({ tipo: m.tipo, texto: corto(m.texto, 160) })), ml, convs_30d: convs.length };
 }
 
@@ -275,7 +277,7 @@ export function textoHechos(h, partes = ["embudo", "whatsapp", "redes", "product
   if (partes.includes("whatsapp")) {
     const r = h.respuesta;
     L.push(`VELOCIDAD HUMANA 7d (sin contar el bot): mediana primera respuesta ${r.p50 ?? "-"} min · p90 ${r.p90 ?? "-"} min · ${r.mas_1h_pct}% tardó más de 1 h · ${r.mas_12h} esperaron más de 12 h (${r.n} charlas)`);
-    L.push(`CHATS ESPERANDO RESPUESTA NUESTRA (último mensaje del cliente hace entre 24 h y 10 días): ${h.esperando_total ?? "-"} en total, de los cuales ${h.pendientes.length} tienen una pregunta o pedido concreto. El resto son cierres ("gracias", "ok", "dale") o saludos: no los cuentes como pendientes. Usá SOLO estos dos números, no otros.`);
+    L.push(`CHATS PENDIENTES DE VERDAD (cliente con una pregunta o pedido concreto sin respuesta hace más de 24 h; sin proveedores, sin cierres tipo gracias/ok/dale y sin los que la IA marcó que no necesitan respuesta): ${h.pendientes.length}. Es el ÚNICO número de pendientes que podés usar. NO existe otro total de pendientes: no hables de "${h.esperando_total ?? "-"} chats pendientes" ni sumes chats donde el último mensaje del cliente es un cierre.`);
     L.push(`PREGUNTAS SIN RESPONDER hace más de 24 h (${h.pendientes.length}; primero perfil A y B): ${h.pendientes.slice(0, 18).map((p) => `${p.nombre} (+${p.conv}) perfil ${p.perfil} · ${p.producto} · hace ${p.horas} h: "${p.texto}"`).join(" | ") || "ninguna"}`);
     const c = h.cotizaciones;
     L.push(`COTIZACIONES 7d: ${c.n} · sin respuesta del cliente a las 48 h: ${c.sin_resp} (${c.sin_resp_pct}%) · por perfil ${JSON.stringify(c.por_perfil)}`);
@@ -308,6 +310,7 @@ export function textoHechos(h, partes = ["embudo", "whatsapp", "redes", "product
     else L.push("MERCADO LIBRE: sin datos todavía (corre tendencias_ml.bat en la PC para tenerlos)");
   }
   if (h.ideas?.utiles?.length) L.push(`IDEAS QUE MANUEL MARCÓ COMO ÚTILES O YA HIZO (más en esa línea): ${h.ideas.utiles.join(" | ")}`);
+  if (h.ideas?.podadas?.length) L.push(`IDEAS QUE LA MESA PODÓ SOLA POR GENÉRICAS, REPETIDAS O MENOS CONCRETAS (no repitas ese estilo): ${h.ideas.podadas.join(" | ")}`);
   if (h.ideas?.descartadas?.length) L.push(`IDEAS QUE MANUEL DESCARTÓ (no las repitas ni parecidas): ${h.ideas.descartadas.join(" | ")}`);
   if (h.ideas?.abiertas?.length) L.push(`IDEAS YA PROPUESTAS QUE TODAVÍA NO MIRÓ (no las repitas igual: proponé otras o mejoralas con un dato nuevo): ${h.ideas.abiertas.join(" | ")}`);
   if (h.memoria.length) L.push(`MEMORIA (decisiones y aprendizajes guardados): ${h.memoria.map((m) => `[${m.tipo}] ${m.texto}`).join(" · ")}`);
@@ -355,7 +358,7 @@ export const MANUAL = {
 - Lista de corte: lo que se pide mucho y nunca cierra consume tiempo de cotización. Decí cuáles dejar de cotizar.
 - Para cada producto decí la vía: cupo en grupos, por encargo, stock propio con entrega inmediata o publicarlo en Mercado Libre.`,
 };
-const SALIDA = `Respondé SOLO JSON: {"resumen":"2 o 3 líneas con lo más importante","hallazgos":[{"titulo":"corto","detalle":"qué pasa y por qué importa para vender","evidencia":"nombres, números o cifras exactas"}],"hipotesis":[{"texto":"qué creemos","accion":"qué hacer esta semana y quién (Manuel, Sender, agente, Buko)","metrica":"nombre de la lista","meta":número,"dias":7}],"ideas":["máximo 5 ideas NUEVAS para vender más, cada una concreta y completa en una oración: qué hacer, con qué producto o cliente, y el dato que la respalda"],"para_manuel":["cosas que solo él puede decidir o hacer, máximo 3"]}`;
+const SALIDA = `Respondé SOLO JSON: {"resumen":"2 o 3 líneas con lo más importante","hallazgos":[{"titulo":"corto","detalle":"qué pasa y por qué importa para vender","evidencia":"nombres, números o cifras exactas"}],"hipotesis":[{"texto":"qué creemos","accion":"qué hacer esta semana y quién (Manuel, Sender, agente, Buko)","metrica":"nombre de la lista","meta":número,"dias":7}],"ideas":["máximo 2 ideas NUEVAS, y solo si son mejores que las abiertas: cada una nombra un producto, cliente o canal concreto (reel, historia, grupo, cupo), un número y el dato que la respalda. Prohibidas las genéricas (crear un sistema, un programa de fidelidad, un análisis de competencia, mejorar u optimizar algo) y las que repiten un producto que ya tiene idea abierta. Si no tenés una mejor, devolvé la lista vacía"],"para_manuel":["cosas que solo él puede decidir o hacer, máximo 3"]}`;
 
 const PROMPTS = {
   whatsapp: (h, muestras) => `Sos el AGENTE DE WHATSAPP de la mesa de ${NEGOCIO}
@@ -534,6 +537,7 @@ export async function correrMesa(env, iaJSON, { forzar = false, profundo = false
   informes.whatsapp = await correrAgente(env, iaJSON, "whatsapp", h, muestras, opts);
   informes.redes = await correrAgente(env, iaJSON, "redes", h, null, opts);
   informes.productos = await correrAgente(env, iaJSON, "productos", h, null, opts);
+  await podarIdeasMesa(env, (h.productos || []).map((p) => p.producto)).catch(() => {});
   for (const [k, d] of Object.entries(informes)) if (d?.hipotesis?.length) await crearHipotesis(env, h, k, d.hipotesis);
   const ok = Object.values(informes).some(Boolean);
   const nInf = Object.values(informes).filter(Boolean).length;
@@ -569,8 +573,19 @@ export async function cronMesa(env, iaJSON, ts = Date.now(), avisar = null) {
 // ESTADO para el panel y CHARLA con la mesa
 // Hashtags y cuentas de donde el worker buscador lee los virales de otros (copia de buscador/src/virales.js)
 const FUENTES_DEF = { hashtags: ["importardechina", "importaciones", "alibaba", "emprendedoresargentinos", "revender", "productosganadores", "mercadolibreargentina"], perfiles: [] };
+// Poda de ideas (sin IA): deja a la vista como mucho 6 (2 por agente), saca repetidas, genéricas y viejas.
+// Las podadas quedan con estado 'podada' y el motivo en nota: los agentes las ven para no repetir ese estilo.
+export async function podarIdeasMesa(env, productos = null) {
+  if (!productos) { try { productos = (JSON.parse((await kvGet(env, "mesa_hechos")) || "null")?.productos || []).map((p) => p.producto); } catch { productos = []; } }
+  const ideas = await todas(env, "SELECT id, ts, agente, texto FROM mesa_ideas WHERE estado='nueva' ORDER BY ts DESC LIMIT 80");
+  const { podadas } = podarIdeas(ideas, { productos });
+  if (podadas.length) await env.DB.batch(podadas.map((p) => env.DB.prepare("UPDATE mesa_ideas SET estado='podada', nota=? WHERE id=?").bind(corto(p.motivo, 120), String(p.id))));
+  await kvPut(env, "ideas_poda_dia", diaAR(Date.now()));
+  return podadas.length;
+}
 export async function estadoMesa(env) {
   await prepararMesa(env);
+  if ((await kvGet(env, "ideas_poda_dia")) !== diaAR(Date.now())) await podarIdeasMesa(env).catch(() => {});
   const ult = (await todas(env, "SELECT agente, ts, dia, datos, texto FROM mesa_informes ORDER BY ts DESC LIMIT 40"));
   const porAgente = {}; for (const x of ult) if (!porAgente[x.agente]) { let datos = {}; try { datos = JSON.parse(x.datos || "{}"); } catch {} porAgente[x.agente] = { ts: x.ts, dia: x.dia, datos, texto: x.texto }; }
   const hip = await todas(env, "SELECT * FROM mesa_hip ORDER BY CASE estado WHEN 'activa' THEN 0 ELSE 1 END, ts DESC LIMIT 30");
@@ -652,9 +667,9 @@ export async function ejecutarConsulta(env, c, ahora = Date.now()) {
     const r = await todas(env, `SELECT ts, autor, link, texto, vistas, compartidos, guardados, seguidores, guion FROM virales WHERE ts>=? ${q.length >= 3 ? "AND (lower(texto) LIKE ? OR lower(COALESCE(guion,'')) LIKE ?)" : ""} ORDER BY vistas DESC LIMIT 15`, ...(q.length >= 3 ? [ahora - 45 * DIA, like, like] : [ahora - 45 * DIA]));
     out = r.map((v) => `${fecha(v.ts)} @${v.autor} ${n0(v.vistas)} vistas${v.seguidores ? ` (${Math.round(v.vistas / v.seguidores)}x seguidores)` : ""} · "${corto(v.texto, 140)}"${v.guion ? " · DICE: " + corto(v.guion, 400) : ""} · ${v.link}`).join("\n") || "todavía no hay virales leídos";
   } else if (tipo === "pendientes") {
-    const r = await todas(env, "SELECT conv, nombre, perfil, producto, etapa, ult_cliente_ts, ult_texto FROM w_conv WHERE grupo=0 AND COALESCE(prov,0)=0 AND COALESCE(archivado,0)=0 AND ult_yo=0 AND ult_cliente_ts>=? AND ult_cliente_ts<? AND COALESCE(etapa,'') NOT IN ('perdido','vendido','no_cliente') ORDER BY ult_cliente_ts DESC LIMIT 200", ahora - 10 * DIA, ahora - 24 * H);
-    const con = r.filter((c) => RE_PREGUNTA.test(c.ult_texto || "")), l = (q === "todos" ? r : con).sort((a, b) => (b.perfil === "A" || b.perfil === "B") - (a.perfil === "A" || a.perfil === "B") || b.ult_cliente_ts - a.ult_cliente_ts);
-    out = `${r.length} chats con el último mensaje del cliente hace entre 24 h y 10 días; ${con.length} con una pregunta o pedido concreto. Lista (${q === "todos" ? "todos" : "los que tienen pregunta"}; primero perfil A y B):\n` + l.slice(0, 70).map((c) => `+${c.conv} · ${c.nombre || "sin nombre"} · perfil ${c.perfil || "?"} · ${corto(c.producto, 40) || "sin producto"} · hace ${Math.round((ahora - c.ult_cliente_ts) / H)} h · "${corto(c.ult_texto, 90)}"`).join("\n");
+    const r = await todas(env, "SELECT conv, nombre, perfil, producto, etapa, ult_cliente_ts, ult_texto, resp FROM w_conv WHERE grupo=0 AND COALESCE(prov,0)=0 AND COALESCE(archivado,0)=0 AND ult_yo=0 AND ult_cliente_ts>=? AND ult_cliente_ts<? AND COALESCE(etapa,'') NOT IN ('perdido','vendido','no_cliente') ORDER BY ult_cliente_ts DESC LIMIT 200", ahora - 10 * DIA, ahora - 24 * H);
+    const con = r.filter((c) => c.resp !== 0 && !esCierre(c.ult_texto) && RE_PREGUNTA.test(c.ult_texto || "")), l = (q === "todos" ? r : con).sort((a, b) => (b.perfil === "A" || b.perfil === "B") - (a.perfil === "A" || a.perfil === "B") || b.ult_cliente_ts - a.ult_cliente_ts);
+    out = `PENDIENTES DE VERDAD: ${con.length} (pregunta o pedido concreto sin respuesta; sin proveedores ni cierres). Aparte hay ${r.length - con.length} chats donde lo último del cliente es un cierre, un saludo o algo que no necesita respuesta: esos NO son pendientes. Lista (${q === "todos" ? "todos" : "los que tienen pregunta"}; primero perfil A y B):\n` + l.slice(0, 70).map((c) => `+${c.conv} · ${c.nombre || "sin nombre"} · perfil ${c.perfil || "?"} · ${corto(c.producto, 40) || "sin producto"} · hace ${Math.round((ahora - c.ult_cliente_ts) / H)} h · "${corto(c.ult_texto, 90)}"`).join("\n");
     return `CONSULTA pendientes:\n${out.slice(0, 9000)}`;
   } else if (tipo === "ventas") {
     const h = await hechos(env);

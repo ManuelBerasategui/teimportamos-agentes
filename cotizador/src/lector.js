@@ -2,6 +2,7 @@ import { syncProspectos } from "./prospeccion.js";
 import { opsLinks, pendientesPC, linkLeido, latidoPC, ESQUEMA_AUTOCOT } from "./autocot.js";
 import { rutaAutoresp } from "./autoresp.js";
 import { esCierre } from "./cierre.js";
+import { perfilEstricto, pareceProveedor } from "./clasificar.js";
 import { esquemaAlDia, marcarEsquema } from "./esquema.js";
 // ============================================================================
 // LECTOR 805 — análisis de solo lectura del WhatsApp Business +54 9 341 805-1515
@@ -325,11 +326,13 @@ export async function analizarChats(env, iaJSON, { limite = LECTOR.analizarPorVu
   const convs = (await env.DB.prepare(`SELECT * FROM w_conv WHERE grupo=0 AND archivado=0 AND ult_ts > ? ${forzar ? "" : "AND ult_ts > analizado_ts"} ORDER BY ult_ts DESC LIMIT ?`)
     .bind(Date.now() - 14 * 86400e3, limite).all()).results || [];
   let hechos = 0;
+  const marcas = await marcasClientes(env);   // lo que marcó el equipo a mano: "prov" (no es cliente) o "cliente"
   for (let i = 0; i < convs.length; i += LECTOR.porLlamada) {
     const tanda = convs.slice(i, i + LECTOR.porLlamada);
-    const bloques = [];
+    const bloques = [], msDe = {};
     for (const c of tanda) {
       const ms = ((await env.DB.prepare("SELECT yo, texto, ts FROM w_msg WHERE conv=? ORDER BY ts DESC LIMIT ?").bind(c.conv, LECTOR.mensajesPorChat).all()).results || []).reverse();
+      msDe[c.conv] = ms;
       bloques.push(`### CHAT ${c.conv} (${c.nombre || "sin nombre"})\n` + ms.map((m) => `[${fechaHora(m.ts)}] ${m.yo ? (esBot(m.texto) ? "BOT AUTOMATICO (no es una persona)" : "NOSOTROS") : "CLIENTE"}: ${String(m.texto).slice(0, 400)}`).join("\n"));
     }
     const r = await iaJSON(env, `Sos analista comercial de "Te Importamos" (importaciones desde China/EE.UU., catálogo de stock, combos para revender; Rosario, Argentina).
@@ -358,7 +361,7 @@ REGLAS DEL DUEÑO (mandan por encima de todo lo anterior):${REGLAS_DUENO}
 - Si es_proveedor es true: etapa "no_cliente", puntaje 1, cot_pend false, venta_real false.
 - Consultas por vapers, vapes, pods o tabaco: etapa "no_cliente" (no los trabajamos; los atiende el socio por otro canal).
 - resumen: 1 oración con lo esencial (nombre, producto, cantidad, en qué quedó)
-- perfil: "A" (vende en Mercado Libre o quiere arrancar a vender en serio, con presupuesto claro), "B" (negocio físico, empresa o marca que compra para abaratar costos o insumos), "C" (revendedor chico o emprendedor que arranca, cantidades chicas), "D" (consumidor final, 1 a 3 unidades para uso propio), "E" (curioso: pregunta precio, catálogo o cómo funciona, sin producto ni cantidad concreta, y no avanza). Si pide cantidad mayorista (20 unidades o más, o más de USD 1000) NUNCA es "D". Si es proveedor o no es cliente: "".
+- perfil: "A" SOLO si el CLIENTE dice con sus palabras que vende online (Mercado Libre, tienda online, Instagram, e-commerce). "B" SOLO si el CLIENTE dice que tiene un local, negocio, empresa, marca o fábrica (o pide factura A / da CUIT). Pedir mucha cantidad o tener presupuesto alto NO alcanza para A ni B: eso va en presup_usd. Ante la duda, "C". "C" (revendedor o emprendedor, o cualquiera que compra para revender sin prueba de A o B), "D" (consumidor final, 1 a 3 unidades para uso propio), "E" (curioso: pregunta precio, catálogo o cómo funciona, sin producto ni cantidad concreta, y no avanza). Si pide cantidad mayorista (20 unidades o más, o más de USD 1000) NUNCA es "D". Si es proveedor o no es cliente: "".
 - presup_usd: presupuesto en dólares (número entero) o null. Si no lo dijo, estimalo con cantidad por precio aproximado del producto (ej. 20 iPhones = 16000; 50 tarjetas NFC = 150). Si habla en pesos argentinos, dividí por ${DOLAR}.
 - origen: cómo nos conoció, SOLO si lo dijo en el chat: "reel" | "historia" | "instagram" | "tiktok" | "web" | "recomendacion" | "grupo" | "mercadolibre" | "otro" | null.
 - motivo_perdida: solo si etapa es "perdido" o la charla se cortó después de cotizarle: "caro" | "minimo" (quería menos que el mínimo) | "plazo" | "desconfianza" | "sin_respuesta" (dejó de contestar aunque le escribimos después de cotizar) | "sin_seguimiento" (lo último es nuestra cotización y nunca más le escribimos) | "otro" | null.
@@ -370,9 +373,13 @@ ${bloques.join("\n\n")}`, { sinRespaldo: true });
     for (const a of lista) {
       const c = tanda.find((x) => x.conv === String(a.conv)); if (c && NO_CLIENTES.has(c.conv)) a.es_proveedor = true;
       if (!c) continue;
+      // Reglas sin IA: la marca del equipo manda; si no hay marca, la charla "al revés" (nosotros le compramos) es proveedor
+      if (marcas[c.conv] === "prov" || pareceProveedor(msDe[c.conv])) a.es_proveedor = true;
+      if (marcas[c.conv] === "cliente") a.es_proveedor = false;
       let perfil = ["A", "B", "C", "D", "E"].includes(String(a.perfil || "").toUpperCase()) ? String(a.perfil).toUpperCase() : null;
       const presup = Number.isFinite(+a.presup_usd) && +a.presup_usd > 0 ? Math.min(500000, Math.round(+a.presup_usd)) : null;
       if (perfil === "D" && presup >= 1000) perfil = "C";
+      perfil = perfilEstricto(perfil, (msDe[c.conv] || []).filter((m) => !m.yo).map((m) => m.texto || "").join(" \n "), c.nombre);
       if (a.es_proveedor) perfil = null;
       const origen = ["reel", "historia", "instagram", "tiktok", "web", "recomendacion", "grupo", "mercadolibre", "otro"].includes(a.origen) ? a.origen : null;
       const motivo = ["caro", "minimo", "plazo", "desconfianza", "sin_respuesta", "sin_seguimiento", "otro"].includes(a.motivo_perdida) ? a.motivo_perdida : null;
@@ -385,6 +392,36 @@ ${bloques.join("\n\n")}`, { sinRespaldo: true });
     if (ops.length) await env.DB.batch(ops);
   }
   return hechos;
+}
+
+// Marcas a mano del equipo desde el panel ("No es cliente" / "Sí es cliente"): mandan sobre la IA y las reglas
+export async function marcasClientes(env) { try { return JSON.parse((await kvGet(env, "clientes_marca")) || "{}") || {}; } catch { return {}; } }
+
+// Una sola vez: los A/B que ya estaban clasificados sin prueba bajan a C, y los proveedores evidentes salen de clientes.
+// Una consulta para todos los mensajes (no una por chat) para cuidar las lecturas y el límite de consultas por invocación.
+export async function revalidarClasificacion(env, ahora = Date.now()) {
+  const desde = ahora - 30 * 86400e3, marcas = await marcasClientes(env);
+  const convs = (await env.DB.prepare("SELECT conv, nombre, perfil, prov FROM w_conv WHERE grupo=0 AND COALESCE(archivado,0)=0 AND ult_ts>=?").bind(desde).all()).results || [];
+  const msgs = (await env.DB.prepare("SELECT m.conv, m.yo, m.texto FROM w_msg m JOIN w_conv c ON c.conv=m.conv WHERE c.grupo=0 AND COALESCE(c.archivado,0)=0 AND c.ult_ts>=? AND m.ts>=? ORDER BY m.ts LIMIT 40000").bind(desde, ahora - 60 * 86400e3).all()).results || [];
+  const por = {}; for (const m of msgs) (por[m.conv] || (por[m.conv] = [])).push(m);
+  const ops = [], cambios = { perfil: [], prov: [] };
+  for (const c of convs) {
+    const ms = (por[c.conv] || []).slice(-80);
+    if (!c.prov && marcas[c.conv] !== "cliente" && pareceProveedor(ms)) {
+      cambios.prov.push(c.conv);
+      ops.push(env.DB.prepare("UPDATE w_conv SET prov=1, perfil=NULL, etapa='no_cliente', cot_pend=0 WHERE conv=?").bind(c.conv));
+      ops.push(env.DB.prepare("UPDATE tareas SET estado='resuelta' WHERE (ref=? OR tel=?) AND estado='abierta'").bind("w805:" + c.conv, c.conv));
+      continue;
+    }
+    if (c.perfil === "A" || c.perfil === "B") {
+      const nuevo = perfilEstricto(c.perfil, ms.filter((m) => !m.yo).map((m) => m.texto || "").join(" \n "), c.nombre);
+      if (nuevo !== c.perfil) { cambios.perfil.push(`${c.conv}:${c.perfil}>${nuevo}`); ops.push(env.DB.prepare("UPDATE w_conv SET perfil=? WHERE conv=?").bind(nuevo, c.conv)); }
+    }
+  }
+  for (let i = 0; i < ops.length; i += 80) await env.DB.batch(ops.slice(i, i + 80));
+  await kvPut(env, "perfil_v2", JSON.stringify({ ts: ahora, ...cambios }));
+  await env.DB.prepare("DELETE FROM kv WHERE k='lector_resumen'").run().catch(() => {});
+  return cambios;
 }
 
 // Pendientes del panel que salen del análisis del 805 (uno abierto por chat como máximo)
@@ -705,6 +742,7 @@ export async function cronLector(env, iaJSON, scheduledTime) {
   }
   if (m % 30 === 3) await alertasRapidas(env).catch((e) => console.log("lector alertas", e?.stack || e));
   { const lista = [...NO_CLIENTES], kf = "no_clientes:" + lista.join(","); if (lista.length && !(await kvGet(env, kf))) { const q = lista.map(() => "?").join(","); await env.DB.batch([env.DB.prepare(`UPDATE w_conv SET prov=1, perfil=NULL, etapa='no_cliente' WHERE conv IN (${q})`).bind(...lista), env.DB.prepare(`UPDATE w_hito SET oculto=1 WHERE tipo='venta' AND conv IN (${q})`).bind(...lista), env.DB.prepare(`UPDATE tareas SET estado='resuelta' WHERE estado='abierta' AND tel IN (${q})`).bind(...lista), env.DB.prepare("DELETE FROM kv WHERE k='lector_resumen'")]); await kvPut(env, kf, Date.now()); } }
+  if (!(await kvGet(env, "perfil_v2"))) await revalidarClasificacion(env).catch((e) => console.log("perfil_v2", e?.stack || e));
   if (!(await kvGet(env, "perfil_v1"))) { await env.DB.prepare("UPDATE w_conv SET analizado_ts=0 WHERE grupo=0 AND ult_ts>=?").bind(Date.now() - 14 * 86400e3).run(); await kvPut(env, "perfil_v1", Date.now()); }
   // Reporte diario: desde las 21 h; si falla o se saltea, reintenta cada 10 min y se recupera durante todo el día siguiente
   {

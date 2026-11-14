@@ -221,7 +221,7 @@ function tarjeta(i) {
     (i.usd ? '<span class="tag">~USD ' + plata(i.usd) + "</span>" : "") + (i.cat !== "seguimiento" && i.cat !== "llamar" ? '<span class="mu">' + hace(i.espera_h) + "</span>" : (i.toque ? '<span class="tag">toque ' + i.toque + "</span>" : "")) + "</div>" +
     (i.que ? '<div class="que">' + esc(i.que) + "</div>" : "") + (i.ultimo ? '<div class="ult">"' + esc(i.ultimo) + '"</div>' : "") + (i.borrador ? '<div class="borr" data-copiar="' + esc(i.borrador) + '" title="Tocá para copiar">' + esc(i.borrador) + "</div>" : "") +
     (i.nota && i.cat !== "recordatorio" ? '<div class="nota">📝 ' + esc(i.nota) + (i.nota_para ? ' <span class="mu">· ' + esc(i.nota_para.slice(5)) + "</span>" : "") + "</div>" : "") +
-    '<div class="acc"><button class="b" data-a="nota" data-nota="' + esc(i.nota || "") + '" data-para="' + esc(i.nota_para || "") + '">Nota</button><button class="b" data-a="listo">Listo</button><button class="b v" data-a="vendido">Vendido</button><button class="b x" data-a="perdido">Perdido</button></div></div>';
+    '<div class="acc"><button class="b" data-a="nota" data-nota="' + esc(i.nota || "") + '" data-para="' + esc(i.nota_para || "") + '">Nota</button><button class="b" data-a="listo">Listo</button><button class="b v" data-a="vendido">Vendido</button><button class="b x" data-a="perdido">Perdido</button><button class="b" data-a="proveedor" title="Proveedor, socio o servicio: sale de clientes y de los pendientes">No es cliente</button></div></div>';
 }
 document.addEventListener("click", function (e) {
   var b = e.target.closest("[data-a]"); if (!b) return;
@@ -229,6 +229,7 @@ document.addEventListener("click", function (e) {
   if (a === "listo") api("listo", { conv: conv }).then(function () { card.remove(); toast("Listo, sale de la lista"); });
   if (a === "vendido") modalVenta(conv, card);
   if (a === "perdido") modalPerdido(conv, card);
+  if (a === "proveedor" && confirm("¿Marcar este chat como NO cliente (proveedor, socio o servicio)? Sale de pendientes, perfiles y seguimientos.")) api("proveedor", { conv: conv }).then(function () { if (card) card.remove(); toast("Listo: no es cliente, no vuelve a aparecer como pendiente"); });
   if (a === "nota") modalNota(conv, card, b.dataset.nota || "", b.dataset.para || "");
   if (a === "borrarVenta") { if (confirm("¿Borrar esta venta?")) api("venta-borrar", { id: b.dataset.id }).then(function () { cargarVentas(); toast("Venta borrada"); }); }
 });
@@ -272,7 +273,7 @@ function buscar() {
   api("buscar?q=" + encodeURIComponent($("#q").value)).then(function (l) {
     $("#res").innerHTML = (l || []).map(function (c) {
       return '<div class="card" data-conv="' + esc(c.conv) + '"><div class="top"><b>' + esc(c.nombre || "+" + c.conv) + '</b><span class="mu">' + esc(c.producto || "") + '</span><span class="tag">' + esc(c.etapa || "sin etapa") + '</span></div><div class="ult">"' + esc(String(c.ult_texto || "").slice(0, 120)) + '"</div>' +
-        '<div class="acc"><button class="b" data-a="nota">Nota</button><button class="b v" data-a="vendido">Vendido</button><button class="b x" data-a="perdido">Perdido</button></div></div>';
+        '<div class="acc"><button class="b" data-a="nota">Nota</button><button class="b v" data-a="vendido">Vendido</button><button class="b x" data-a="perdido">Perdido</button><button class="b" data-a="proveedor" title="Proveedor, socio o servicio: sale de clientes y de los pendientes">No es cliente</button></div></div>';
     }).join("") || '<div class="vacio">Sin resultados.</div>';
   });
 }

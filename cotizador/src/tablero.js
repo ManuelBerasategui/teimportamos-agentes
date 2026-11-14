@@ -200,6 +200,17 @@ export async function marcar(env, accion, b, quien) {
     await env.DB.prepare("UPDATE w_conv SET nota=?, nota_ts=?, nota_para=?, nota_quien=? WHERE conv=?").bind(texto || null, ahora, texto ? para : null, quien || "", conv).run();
     return { ok: true };
   }
+  // "No es cliente" (proveedor, socio, servicio): sale de clientes, pendientes, perfiles y seguimientos, y la IA no lo vuelve a meter.
+  // "Sí es cliente": deshace lo anterior (también si lo marcó la regla automática).
+  if (accion === "proveedor" || accion === "es-cliente") {
+    if (!conv) return { error: "falta el chat" };
+    let m = {}; try { m = JSON.parse((await kvGet(env, "clientes_marca")) || "{}") || {}; } catch {}
+    m[conv] = accion === "proveedor" ? "prov" : "cliente";
+    await kvPut(env, "clientes_marca", JSON.stringify(m));
+    if (accion === "proveedor") await env.DB.batch([env.DB.prepare("UPDATE w_conv SET prov=1, perfil=NULL, etapa='no_cliente', cot_pend=0 WHERE conv=?").bind(conv), cerrarTareas]);
+    else await env.DB.prepare("UPDATE w_conv SET prov=0, etapa=CASE WHEN etapa='no_cliente' THEN 'consulta' ELSE etapa END, analizado_ts=0 WHERE conv=?").bind(conv).run();
+    return { ok: true };
+  }
   if (accion === "listo") {
     if (!conv) return { error: "falta el chat" };
     const rec = await env.DB.prepare("SELECT nota_para FROM w_conv WHERE conv=?").bind(conv).first().catch(() => null);
@@ -514,7 +525,7 @@ export async function apiTablero(env, req, url, quien, iaJSON) {
     if (r2?.respuesta) await kvPut(env, k, JSON.stringify(out));
     return json(out);
   }
-  if (["listo", "perdido", "vendido", "venta-borrar", "nota"].includes(r) && req.method === "POST") return json(await marcar(env, r, body, quien));
+  if (["listo", "perdido", "vendido", "venta-borrar", "nota", "proveedor", "es-cliente"].includes(r) && req.method === "POST") return json(await marcar(env, r, body, quien));
   if (r === "numeros") return json(await numeros(env, ["mes", "dia"].includes(url.searchParams.get("p")) ? url.searchParams.get("p") : "semana", Math.min(31, +url.searchParams.get("n") || (url.searchParams.get("p") === "dia" ? 14 : 8))));
   if (r === "equipo") return json({ dias: await equipoDias(env, Math.min(400, +url.searchParams.get("d") || 31)), dispositivos: await dispositivos(env) });
   if (r === "dispmsj") return json(await mensajesDispositivo(env, url.searchParams.get("d")));
