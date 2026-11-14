@@ -12,6 +12,7 @@ Uso (desde la carpeta sender):
 
 No publica ni cambia nada: solo lee páginas públicas de Mercado Libre. Si Mercado Libre pide captcha, frena y avisa.
 """
+import ssl_fix  # noqa: F401  (certificados en Windows)
 import json, os, re, sys, time, urllib.request
 from pathlib import Path
 

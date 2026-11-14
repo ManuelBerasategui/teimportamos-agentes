@@ -5,6 +5,7 @@ Uso:  python responder.py --prueba   -> muestra respuestas y seguimientos, NO ab
       python responder.py --escritorio --seguir -> usa el WhatsApp que ya tenés abierto (app o tu Chrome), sin QR
       python responder.py --seguir   -> queda andando y revisa cada 2 minutos hasta que lo cortes
 Para frenarlo: Ctrl+C, un archivo llamado STOP en esta carpeta, o escribirle al bot de Telegram "pausar respuestas"."""
+import ssl_fix  # noqa: F401  (certificados en Windows)
 import random, re, sys, time, urllib.parse
 from datetime import datetime
 import json, urllib.request

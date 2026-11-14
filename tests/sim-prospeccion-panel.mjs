@@ -13,7 +13,8 @@ await syncProspectos(env, [
   { telefono: "5493414444444", negocio: "Fijo", estado: "sin whatsapp (v2)" }], "buko");
 let d = await listarProspectos(env);
 chk("sube solo las filas con estado", d.prospectos.length === 3);
-chk("resumen: enviados, respondieron, para hoy y sin whatsapp", d.resumen.enviados === 2 && d.resumen.respondieron === 1 && d.resumen.paraHoy === 1 && d.resumen.sinWhatsapp === 1);
+chk("resumen: enviados, respondieron, para hoy y sin whatsapp", d.resumen.enviados === 2 && d.resumen.respondieron === 1 && d.resumen.paraHoy === 2 && d.resumen.sinWhatsapp === 1);
+chk("enviado sin respuesta: recontacto a 3 días y nota automática", d.prospectos.some((p) => p.tel === "5493412222222" && /-11-14$/.test(p.recontacto) && p.nota));
 await editarProspecto(env, { tel: "5493411111111", temperatura: "caliente", hecho: true }, "manuel");
 await syncProspectos(env, [{ telefono: "5493411111111", negocio: "Barber A", estado: "enviado 11/11 14:05", respuesta: "el 14 te digo", temperatura: "neutro", recontacto: hoy, proximo_mensaje: "hola, pudieron verlo?" }], "buko");
 let a = (await listarProspectos(env)).prospectos.find((p) => p.tel === "5493411111111");

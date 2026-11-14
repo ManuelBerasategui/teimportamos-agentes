@@ -6,6 +6,7 @@ La planilla (prospectos.csv, se abre con Excel) lleva estas columnas: telefono, 
   - mensaje: si está vacío lo escribe la IA en --prueba; si lo escribís o corregís vos, se manda tal cual.
   - estado: lo completa el programa (enviado DD/MM HH:MM, sin whatsapp, ya hablamos). Las filas con estado no se vuelven a mandar.
 Antes de usarlo cerrá responder.py (usan la misma ventana de WhatsApp). Para frenarlo: Ctrl+C, o un archivo STOP o PAUSA en esta carpeta."""
+import ssl_fix  # noqa: F401  (certificados en Windows)
 import csv, random, re, sys, time
 from datetime import datetime
 from enviar import api, parar, AQUI, os

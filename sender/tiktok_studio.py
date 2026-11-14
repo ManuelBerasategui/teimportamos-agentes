@@ -11,6 +11,7 @@ Uso (desde la carpeta sender):
 No publica, no comenta, no cambia nada: solo abre TikTok Studio y lee lo que TikTok le muestra al dueño de la cuenta.
 Si TikTok pide verificación (captcha), se frena y avisa: la resolvés vos con --ver.
 """
+import ssl_fix  # noqa: F401  (certificados en Windows)
 import json, os, re, sys, time, urllib.request
 from pathlib import Path
 

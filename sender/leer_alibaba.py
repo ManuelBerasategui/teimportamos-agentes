@@ -15,6 +15,7 @@ Uso (desde la carpeta sender):
 
 No escribe ni compra nada en Alibaba: solo abre páginas públicas de productos.
 """
+import ssl_fix  # noqa: F401  (certificados en Windows)
 import json, os, re, sys, time, urllib.request
 from pathlib import Path
 

@@ -1,4 +1,5 @@
 """Compatibilidad: delega todo en responder.py; por defecto solo muestra una vista previa."""
+import ssl_fix  # noqa: F401  (certificados en Windows)
 import json, os, random, re, sys, time, urllib.error, urllib.request
 from pathlib import Path
 
