@@ -14,6 +14,9 @@ ok(perfilEstricto("A", "es para mi negocio, necesito factura A") === "B", "A que
 ok(perfilEstricto("B", "consulta por cables", "Conect Cell - Servicio Tecnico Profesional") === "B", "nombre de negocio cuenta como prueba de B");
 ok(perfilEstricto("A", "quiero 4 frascos de 500 ml") === "C", "'ml' de mililitros no es Mercado Libre");
 ok(perfilEstricto("C", "tengo un local") === "C", "C no se toca");
+ok(perfilEstricto("B", "se cayó el negocio de las antiparras por la aduana") === "C", "'el negocio' (el trato) no prueba que tenga un negocio");
+ok(perfilEstricto("B", "me lo manda la fabrica en 10 dias") === "C", "'la fábrica' del proveedor no prueba nada");
+ok(perfilEstricto("B", "es para el local") === "B" && perfilEstricto("B", "tengo una tienda de ropa") === "B", "'para el local' y 'tengo una tienda' sí prueban B");
 ok(perfilEstricto(null, "") === null, "sin perfil queda sin perfil");
 
 // --- Proveedor (charla real de Michael Shop, resumida)
