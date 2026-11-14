@@ -286,6 +286,15 @@ export async function dispositivos(env) {
       .filter((m) => (String(m.autor || "").match(/:(\d+)/) || [])[1] === o.disp && m.texto && !/^\(archivo\)/.test(m.texto)).slice(0, 5).map((m) => ({ texto: String(m.texto || "").slice(0, 160), ts: m.ts, a: m.nombre || m.conv }));
   return Object.values(out).sort((a, b) => b.ult - a.ult);
 }
+// Últimos mensajes de UN dispositivo (a pedido desde el panel, para reconocer de quién es). Solo 3 días y 30 filas: pocas lecturas.
+export async function mensajesDispositivo(env, disp) {
+  const d = String(disp || "").replace(/\D/g, ""); if (!d) return { error: "falta el dispositivo" };
+  const filas = await todas(env, "SELECT m.texto, m.ts, m.conv, m.autor, c.nombre FROM w_msg m INDEXED BY w_msg_priv LEFT JOIN w_conv c ON c.conv=m.conv WHERE m.ts>=? AND m.grupo=0 AND m.yo=1 AND m.hist=0 AND m.autor LIKE ? ORDER BY m.ts DESC LIMIT 30", Date.now() - 3 * DIA, "%:" + d + "%")
+    .catch(() => todas(env, "SELECT m.texto, m.ts, m.conv, m.autor, c.nombre FROM w_msg m LEFT JOIN w_conv c ON c.conv=m.conv WHERE m.ts>=? AND m.grupo=0 AND m.yo=1 AND m.hist=0 AND m.autor LIKE ? ORDER BY m.ts DESC LIMIT 30", Date.now() - 3 * DIA, "%:" + d + "%").catch(() => []));
+  const msgs = filas.filter((m) => (String(m.autor || "").match(/:(\d+)/) || [])[1] === d && m.texto && !/^\(archivo\)/.test(m.texto))
+    .slice(0, 8).map((m) => ({ texto: String(m.texto).slice(0, 200), ts: m.ts, a: m.nombre || m.conv }));
+  return { disp: d, msgs };
+}
 export async function asignarDispositivo(env, disp, persona) {
   const mapa = JSON.parse((await kvGet(env, "equipo_disp")) || "{}");
   const d = String(disp || "").replace(/\D/g, ""); if (!d) return { error: "falta el dispositivo" };
@@ -498,6 +507,7 @@ export async function apiTablero(env, req, url, quien, iaJSON) {
   if (["listo", "perdido", "vendido", "venta-borrar", "nota"].includes(r) && req.method === "POST") return json(await marcar(env, r, body, quien));
   if (r === "numeros") return json(await numeros(env, ["mes", "dia"].includes(url.searchParams.get("p")) ? url.searchParams.get("p") : "semana", Math.min(31, +url.searchParams.get("n") || (url.searchParams.get("p") === "dia" ? 14 : 8))));
   if (r === "equipo") return json({ dias: await equipoDias(env, Math.min(400, +url.searchParams.get("d") || 31)), dispositivos: await dispositivos(env) });
+  if (r === "dispmsj") return json(await mensajesDispositivo(env, url.searchParams.get("d")));
   if (r === "asignar" && req.method === "POST") return json(await asignarDispositivo(env, body.disp, body.persona));
   if (r === "links") return json({ links: await links(env), canales: CANALES });
   if (r === "link" && req.method === "POST") return json(await crearLink(env, body, quien));

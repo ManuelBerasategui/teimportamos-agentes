@@ -201,7 +201,7 @@ function cargarHoy(liviano) {
     if (ia.geminiModelosSinCupo) est.push('<span class="pill warn">Gemini: ' + ia.geminiModelosSinCupo + " modelos sin cupo</span>");
     $("#estado").innerHTML = est.join("");
     var por = {}; (d.equipo || []).forEach(function (e) { var p = por[e.persona] || (por[e.persona] = { hoy: 0, ayer: 0, mh: 0 }); if (e.dia === d.hoy) { p.hoy += e.chats; p.mh += e.mensajes; } else p.ayer += e.chats; });
-    $("#equipoHoy").innerHTML = Object.keys(por).sort(function (a, b) { return por[b].hoy - por[a].hoy; }).map(function (n) { var p = por[n]; return '<div class="card"><span class="kp">' + esc(n) + '</span><b>' + p.hoy + '</b><span class="mu">chats hoy · ' + p.mh + " mensajes · ayer " + p.ayer + "</span></div>"; }).join("") || '<div class="mu">Todavía no hay chats contestados hoy.</div>';
+    $("#equipoHoy").innerHTML = Object.keys(por).sort(function (a, b) { return por[b].hoy - por[a].hoy; }).map(function (n) { var p = por[n], dn = (n.match(/^Sin identificar \(dispositivo (\d+)\)/) || [])[1]; return '<div class="card"><span class="kp">' + esc(n) + '</span><b>' + p.hoy + '</b><span class="mu">chats hoy · ' + p.mh + " mensajes · ayer " + p.ayer + "</span>" + (dn ? '<div class="dispId" data-dn="' + dn + '"><button class="b" data-vermsj="' + dn + '" style="margin-top:8px">Ver últimos mensajes</button></div>' : "") + "</div>"; }).join("") || '<div class="mu">Todavía no hay chats contestados hoy.</div>';
     pintarLista();
   }).catch(function () { $("#lista").innerHTML = '<div class="vacio">No pude cargar. Recargá la página.</div>'; });
 }
@@ -311,6 +311,15 @@ function cargarNum() {
     }).join("");
   });
 }
+$("#equipoHoy").addEventListener("click", function (e) {
+  var b = e.target.closest("[data-vermsj]"); if (!b) return; var dn = b.dataset.vermsj, box = b.parentNode; b.disabled = true; b.textContent = "Cargando...";
+  api("dispmsj?d=" + dn).then(function (r) {
+    var ms = (r && r.msgs) || [];
+    box.innerHTML = (ms.length ? ms.map(function (m) { return '<div class="ult">' + new Date(m.ts).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) + " · a " + esc(m.a) + ": " + esc(m.texto) + "</div>"; }).join("") : '<div class="mu" style="margin-top:6px">No hay mensajes de texto de este dispositivo en los últimos 3 días.</div>') +
+      '<input data-asig="' + dn + '" placeholder="¿De quién es? (ej. Buko)" style="margin-top:8px;width:100%">';
+  }).catch(function () { b.disabled = false; b.textContent = "Ver últimos mensajes"; toast("No pude cargar, probá de nuevo"); });
+});
+$("#equipoHoy").addEventListener("change", function (e) { var i = e.target.closest("[data-asig]"); if (!i || !i.value.trim()) return; api("asignar", { disp: i.dataset.asig, persona: i.value.trim() }).then(function () { toast("Guardado: dispositivo " + i.dataset.asig + " es de " + i.value.trim() + ". El historial se recalcula en las próximas horas"); }); });
 $("#disp").addEventListener("change", function (e) { var i = e.target.closest("[data-disp]"); if (!i) return; api("asignar", { disp: i.dataset.disp, persona: i.value }).then(function () { toast("Guardado. Se recalcula el historial en las próximas horas"); }); });
 
 // ---- Prospección
