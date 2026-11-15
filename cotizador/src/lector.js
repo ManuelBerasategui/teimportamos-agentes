@@ -1043,6 +1043,8 @@ const RE_PIDE = /pas[aá]me|mand[aá]me|cu[aá]nto|precio|quiero|necesito|ten[e�
 const esAcuse = (t) => { t = String(t || "").trim(); return t.length > 0 && t.length < 140 && !/\?/.test(t) && !RE_PIDE.test(t) && (RE_ACUSE.test(t) || RE_ACUSE_EN.test(t)); };
 // Dijo claramente que no, o que ya lo resolvió: no se le insiste (el resto lo decide la IA leyendo la charla)
 const RE_NO_SEGUIR = /\bno (me )?(interesa|sirve|gracias|va|voy a (comprar|seguir))|lo dejo\b|lo dejamos\b|ya (lo )?(compr[eé]|consegu[ií]|consegu[ií]|lo tengo|tengo proveedor)|no (estoy|ando) (buscando|interesad)|desisto|olvidate|no quise hacer(te|les)? perder|no me (genera|da) confianza|no me (cierra|conviene|convenci[oó]|convence)|(abrazo|saludos?)\W{0,3}(y )?suerte|por ahora no\b|ya no (lo )?(necesito|quiero)/i;
+// Mensaje nuestro con cara de seguimiento (aunque repita el precio): cuenta como toque, no como algo nuevo
+const RE_TOQUE = /pudiste ver|lleg[aó] a ver|alcanzaste a ver|viste (la|el|lo)|quer[eé]s que avancemos|seguimos con|segu[ií]s interesad|te interesa seguir|no respondiste|te qued[oó] (alguna )?duda|algo no te cerr[oó]|c[oó]mo (lo )?ven[ií]s|retomamos|te escribo (de nuevo|otra vez|por lo de)|record(arte|ás)/i;
 // Lo que mandamos que cuenta como "le pasamos algo" (escrito por una persona, no el bot automático)
 const RE_AUTO = /^(¡?bienvenid|gracias por (escribir|consultar|compartir|enviar|el dato|tu consulta)|te qued[oó] pendiente|quedamos atentos a tu consulta|te dejo la consulta abierta|ya pas[eé] tu|te voy a derivar|perfecto,? .{0,20}¿qu[eé] (modelo|producto|cantidad))/i;
 // Precio = un monto con número (un "¿pudiste ver la cotización?" sin números es un toque, no algo nuevo que le mandamos)
@@ -1105,13 +1107,21 @@ async function candidatosSeguimiento(env, ahora = Date.now()) {
     for (const t of await todas(`SELECT tel FROM tareas WHERE estado='abierta' AND tipo IN ('cotizacion','promesa','comprobante') AND tel IN (${q})`, ...parte).catch(() => [])) deuda.add(t.tel);
     for (const m of await todas(`SELECT conv, yo, texto, ts FROM w_msg INDEXED BY w_msg_conv WHERE conv IN (${q}) AND ts>=? ORDER BY ts`, ...parte, desde - 86400e3)) { if (!msgs.has(m.conv)) msgs.set(m.conv, []); msgs.get(m.conv).push(m); }
   }
-  const lista = [];
+  const lista = [], perdidos = [];
   for (const f of filas) {
     if (deuda.has(f.conv) || f.cot_pend === 1) continue;              // le debemos algo: va a Pendientes, no a seguimientos
     const ms = (msgs.get(f.conv) || []).filter((m) => !(m.yo && esBot(m.texto)));
     // Qué le mandamos: la cotización registrada, o lo último con precio / catálogo / archivo / info que escribió una persona
-    let envTs = 0, tipo = "";
-    for (const m of ms) { const q = queMandamos(m); if (q) { envTs = m.ts; tipo = q === "archivo" ? (tipo === "precio" ? "precio" : "archivo") : q; } }
+    // Un seguimiento nuestro que repite el precio ("¿pudiste ver lo de 20.5 USD?") NO es algo nuevo que le mandamos: es un toque.
+    // Cuenta como envío nuevo solo si el cliente habló desde el envío anterior (o es el primero y no tiene cara de seguimiento).
+    let envTs = 0, tipo = "", toquesPrevios = 0, cliDesde = true;
+    for (const m of ms) {
+      if (!m.yo) { cliDesde = true; continue; }
+      const q = queMandamos(m); if (!q) continue;
+      const pareceToque = RE_TOQUE.test(String(m.texto || ""));
+      if (!cliDesde || (pareceToque && (envTs || !f.cot_ts))) { if (!envTs) { envTs = m.ts; tipo = q; toquesPrevios = 1; } cliDesde = false; continue; }   // primer "envío" visible ya era un seguimiento (el original quedó fuera de la ventana)
+      envTs = m.ts; tipo = q === "archivo" ? (tipo === "precio" ? "precio" : "archivo") : q; toquesPrevios = 0; cliDesde = false;
+    }
     let base = f.cot_ts || 0;
     if (base && base >= envTs - 3600e3) tipo = "cotizacion";
     else if (envTs) { base = envTs; if (f.cot_ts) tipo = "cotizacion"; }
@@ -1143,8 +1153,11 @@ async function candidatosSeguimiento(env, ahora = Date.now()) {
     const desdeToque = Math.max(base, ultCli?.ts || 0);
     const dias = new Set(ms.filter((m) => m.yo && m.ts > desdeToque + 3 * 3600e3).map((m) => diaAR(m.ts)));
     if ((f.seg_visto || 0) > desdeToque) dias.add(diaAR(f.seg_visto));    // "Listo" en el panel o en Telegram cuenta como toque
-    const toques = dias.size;
-    if (toques >= SEG.esperas.length) continue;                       // ya le escribimos 4 veces sin respuesta: frío
+    const toques = dias.size + (ultCli ? 0 : toquesPrevios);
+    if (toques >= SEG.esperas.length) {                              // ya le hicimos todos los seguimientos sin respuesta: queda como perdido
+      if (!ultCli && f.etapa !== "perdido") perdidos.push(f.conv);
+      continue;
+    }
     const movida = Math.max(f.ult_yo_ts || 0, f.ult_cliente_ts || 0, f.seg_visto || 0, ult?.ts || 0);
     const diasSin = (ahora - movida) / 86400e3;
     if (diasSin < SEG.esperas[toques]) continue;
@@ -1154,6 +1167,8 @@ async function candidatosSeguimiento(env, ahora = Date.now()) {
       ult_yo_ts: f.ult_yo_ts, seg_visto: f.seg_visto, ult_texto: f.ult_texto, ult_ts: f.ult_ts || movida, cot_ts: base, cot_dato: cotTxt.get(f.conv) || "", tipo,
       dias_cot: Math.floor((ahora - base) / 86400e3), dias_sin: Math.floor(diasSin), toque: toques + 1, reaccion, pri: PRI_PERFIL[f.perfil] ?? 2 });
   }
+  // Los que no respondieron a ningún seguimiento pasan a "perdido" solos (si después escriben, vuelven a entrar normalmente)
+  for (let i = 0; i < perdidos.length; i += 50) await env.DB.batch(perdidos.slice(i, i + 50).map((c) => env.DB.prepare("UPDATE w_conv SET etapa='perdido', motivo=COALESCE(NULLIF(motivo,''),'sin_respuesta') WHERE conv=? AND COALESCE(etapa,'')<>'vendido'").bind(c))).catch((e) => console.log("seg perdidos", e?.message || e));
   // Sin repetidos: el mismo número (aunque venga con otro formato) queda una sola vez, el de lo más nuevo que le mandamos
   const unicos = new Map();
   for (const x of lista) { const k = ultimos10(x.conv) || x.conv, y = unicos.get(k); if (!y || x.cot_ts > y.cot_ts) unicos.set(k, x); }
