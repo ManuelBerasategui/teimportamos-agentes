@@ -29,11 +29,42 @@ export function calcular(items, opc, T) {
   return { filas, fob, kg, flete: fl + hand, imp, hon, total };
 }
 
+// Página de Alibaba pegada entera (Ctrl+A, Ctrl+C, Ctrl+V): saca tramos de precio, peso bruto, medidas y título sin IA.
+export function leerPaginaPegada(texto) {
+  const t = String(texto || "").replace(/\r/g, "").replace(/[ \t\u00a0]+/g, " ");
+  const U = "(?:pieces?|pcs|units?|sets?|pairs?|pares|piezas|unidades|bags?|boxes|meters?|metros|kilograms?|rolls?|cartons?)";
+  const num = (x) => +String(x).replace(/,/g, "");
+  const tramos = [], vistos = new Set();
+  const re = new RegExp(`(?:(≥|>=|mayor o igual a)\\s*)?(\\d[\\d,]*)\\s*(?:[-–~]\\s*\\d[\\d,]*\\s*)?${U}\\s*\\n?\\s*(?:US\\s*)?\\$\\s?(\\d+(?:\\.\\d+)?)`, "gi");
+  for (const m of t.matchAll(re)) { const d = num(m[2]), p = +m[3]; if (d > 0 && p > 0 && p < 100000 && !vistos.has(d)) { vistos.add(d); tramos.push({ desde: d, precio: p }); } }
+  tramos.sort((a, b) => a.desde - b.desde);
+  const pm = t.match(/(?:single )?gross weight[^\d\n]{0,15}\n?\s*(\d+(?:\.\d+)?)\s*(kg|g)\b/i) || t.match(/peso bruto[^\d\n]{0,15}\n?\s*(\d+(?:\.\d+)?)\s*(kg|g)\b/i);
+  const peso = pm ? Math.round((pm[2].toLowerCase() === "g" ? +pm[1] / 1000 : +pm[1]) * 1000) / 1000 : 0;
+  const mm = t.match(/(?:single )?package size[^\d\n]{0,15}\n?\s*(\d+(?:\.\d+)?\s*[x×*]\s*\d+(?:\.\d+)?\s*[x×*]\s*\d+(?:\.\d+)?\s*cm)/i);
+  const minimo = t.match(/min(?:imum)?\.?\s*order[^\d\n]{0,12}(\d[\d,]*)/i);
+  return { tramos, peso_kg: peso, medidas: mm ? mm[1] : "", minimo: minimo ? num(minimo[1]) : (tramos[0]?.desde || 0), es_pagina: tramos.length > 0 && t.length > 800 };
+}
+
+// "300 unidades", "cantidad: 300", o un número solo en un renglón (no confunde honorarios ni flete)
+function cantidadDe(t) {
+  t = String(t || "");
+  const m = t.match(/(\d[\d.]*)\s*(?:u|unid\.?|unidades|pcs|piezas|pares|pares de)\b/i) || t.match(/cantidad\s*:?\s*(\d[\d.]*)/i) || t.match(/^\s*(\d[\d.]*)\s*$/m);
+  return m ? parseInt(m[1].replace(/\./g, "")) || 0 : 0;
+}
+
 async function leerItems(env, h, texto, indicaciones, imagenes) {
+  const pegada = leerPaginaPegada(texto);
+  // Una página entera pegada es muy larga: a la IA le llega el principio (título) y lo que rodea a precios y peso
+  if (pegada.es_pagina && String(texto).length > 12000) {
+    const t = String(texto), cortes = [t.slice(0, 2500)];
+    for (const k of [/gross weight|peso bruto/i, /\$\s?\d/, /package size/i]) { const i = t.search(k); if (i > 0) cortes.push(t.slice(Math.max(0, i - 600), i + 900)); }
+    texto = cortes.join("\n...\n");
+  }
   const links = [...new Set((String(texto).match(/https?:\/\/[^\s<>"']+/g) || []).map((l) => l.replace(/[),.;]+$/, "")))].slice(0, 30);
   const prompt = `Sos el asistente de cotizaciones de "Te Importamos" (importamos desde China). Te paso un listado que nos mandó un cliente: links de productos con cantidades, y las indicaciones de cómo cotizar.
 Armá la lista de productos a cotizar. Cada link es un producto distinto, salvo que el texto diga otra cosa. Si un producto no tiene link, igual incluilo.
 Para cada uno devolvé: link (exacto, o ""), nombre (corto y claro en español, 2-6 palabras), variante (color/talle/modelo si lo dice, o ""), cantidad (número; si no dice, 0), nota (lo que aclare el cliente, o "").
+Puede que en vez de links me peguen la PÁGINA ENTERA de un producto de Alibaba (texto copiado con Ctrl+A): en ese caso es UN solo producto; sacá el título real del producto (no menús ni avisos), y la cantidad que pidan va en las indicaciones o al principio del texto.
 Si hay capturas, leé de ahí precios por cantidad (tramos) y peso de cada producto y asignalos al producto que corresponda: tramos [{desde, precio_usd}], peso_kg por unidad.
 REGLAS DE DATOS (importante, no inventes nada):
 - nombre: copiá el título real del producto que se ve en la captura o en el link. Si no hay forma de saber qué producto es, dejá nombre "" (NUNCA pongas "Producto Alibaba" ni nombres genéricos).
@@ -51,6 +82,14 @@ ${String(indicaciones || "").slice(0, 3000)}`;
   const r = (imagenes?.length ? await h.iaConImagenes(env, prompt, imagenes) : await h.iaJSON(env, prompt)) || {};
   let items = Array.isArray(r.items) ? r.items : [];
   if (!items.length) items = links.map((l) => ({ link: l, nombre: "", cantidad: 0 }));
+  if (!items.length && pegada.es_pagina) items = [{ link: "", nombre: "", cantidad: cantidadDe(indicaciones) }];
+  // Página pegada: los precios y el peso escritos en la página mandan sobre lo que haya adivinado la IA
+  if (pegada.es_pagina && items.length === 1 && !links.length) {
+    const it = items[0];
+    it.tramos = pegada.tramos.map((x) => ({ desde: x.desde, precio_usd: x.precio }));
+    if (pegada.peso_kg) it.peso_kg = pegada.peso_kg;
+    if (pegada.medidas && !it.nota) it.nota = "Caja: " + pegada.medidas;
+  }
   for (const l of links) if (!items.some((i) => i.link === l)) items.push({ link: l, nombre: "", cantidad: 0 });
   items = items.slice(0, 30);
   // Leer cada página (en paralelo)
@@ -58,7 +97,7 @@ ${String(indicaciones || "").slice(0, 3000)}`;
     it.cantidad = Math.max(0, parseInt(it.cantidad) || 0);
     it.tramos = (Array.isArray(it.tramos) ? it.tramos : []).map((t) => ({ desde: +t.desde || 1, precio: +(t.precio_usd ?? t.precio) || 0 })).filter((t) => t.precio > 0);
     it.peso = +it.peso_kg || 0; delete it.peso_kg;
-    it.origen = it.tramos.length ? "captura" : "";
+    it.origen = it.tramos.length ? (pegada.es_pagina && !links.length ? "página pegada" : "captura") : "";
     if (!it.link) return;
     const p = await h.leerPagina(it.link).catch(() => null);
     if (p?.datos) {
@@ -230,7 +269,7 @@ table{width:100%;border-collapse:collapse}th{font-size:11.5px;text-transform:upp
 .hist div{display:flex;gap:10px;align-items:center;padding:8px 0;border-bottom:1px solid #F0F0F0;font-size:13.5px}.hist span{flex:1}.hist a{color:var(--o);font-weight:600;text-decoration:none}.cap{font-size:12.5px;color:var(--g)}
 @media(max-width:800px){.dos{grid-template-columns:1fr}.oc{display:none}}</style></head><body>
 <header><a href="/panel">&larr; Panel</a><b>Cotizar desde links</b></header><main>
-<div class="card"><h2>1. Pegá lo que te mandaron</h2><div class="dos"><div><label>Links y cantidades (como vengan: un link por renglón con la cantidad al lado, o el mensaje entero)</label><textarea id="texto" placeholder="https://www.alibaba.com/product-detail/... x 200&#10;https://www.alibaba.com/product-detail/... 50 unidades color negro"></textarea></div>
+<div class="card"><h2>1. Pegá lo que te mandaron</h2><div class="dos"><div><label>Links y cantidades (como vengan: un link por renglón con la cantidad al lado, o el mensaje entero). También podés pegar la página entera de un producto de Alibaba (Ctrl+A, Ctrl+C, Ctrl+V) y poner la cantidad en Indicaciones</label><textarea id="texto" placeholder="https://www.alibaba.com/product-detail/... x 200&#10;https://www.alibaba.com/product-detail/... 50 unidades color negro"></textarea></div>
 <div><label>Indicaciones (cliente, honorarios, aclaraciones)</label><textarea id="ind" placeholder="Cliente: Juan Pérez&#10;Honorarios 120&#10;Aclarar que el plazo es de 30 a 45 días"></textarea>
 <label style="margin-top:8px">Capturas de precios o pesos (opcional, hasta 6)</label><input type="file" id="fotos" accept="image/*" multiple></div></div>
 <div class="fila"><button class="btn" id="leer">Armar cotización</button><span class="cap" id="estado"></span></div></div>
