@@ -30,6 +30,7 @@ const claveML = (s) => corto(String(s || "").normalize("NFD").replace(/[\u0300-\
 function recomendarML(rows, feedback, ahora = Date.now()) {
   const omitidas = new Set(feedback.filter((f) => f.estado === "descartada" && f.ts > ahora - 30 * DIA).map((f) => f.clave));
   const marca = new Map(feedback.map((f) => [f.clave, f]));
+  const terminosGenericos = /^(oferta|ofertas|navidad|buscar|dell tienda oficial|tienda oficial)$/i;
   const agregar = (lista, horizonte) => {
     const grupos = new Map();
     for (const r of lista) {
@@ -40,13 +41,17 @@ function recomendarML(rows, feedback, ahora = Date.now()) {
       grupos.set(r.clave, g);
     }
     return [...grupos.values()].map((g) => {
+      // Solo recomendar búsquedas respaldadas por una publicación física con título y precio.
+      // Así no suben búsquedas/eventos como "Ofertas" o "Navidad" al ranking de productos.
+      const tienePublicacionVerificable = g.top.some((x) => corto(x.titulo, 100).length >= 8 && +x.precio > 0);
+      if (terminosGenericos.test(g.palabra.trim()) || /\btienda oficial\b/i.test(g.palabra) || !tienePublicacionVerificable) return null;
       const promedio = g.ranks.length ? g.ranks.reduce((a, b) => a + b, 0) / g.ranks.length : 30;
       const frescura = Math.max(0, 7 - Math.floor((ahora - g.ultima) / DIA));
       const fb = marca.get(g.clave);
       const score = Math.round(g.diasSet.size * 12 + frescura * 2 + Math.max(0, 20 - promedio) + Math.min(g.tipos.size, 3) * 2 + (fb?.estado === "interesa" ? 5 : 0));
       const confianza = g.diasSet.size >= 5 ? "repetida" : g.diasSet.size >= 2 ? "en observación" : "inicial";
       return { ...g, dias: g.diasSet.size, rank_promedio: Math.round(promedio * 10) / 10, score, confianza, feedback: fb?.estado || null, nota: fb?.nota || "", horizonte };
-    }).sort((a, b) => b.score - a.score || a.rank_promedio - b.rank_promedio).slice(0, horizonte === "mes" ? 5 : horizonte === "semana" ? 3 : 1);
+    }).filter(Boolean).sort((a, b) => b.score - a.score || a.rank_promedio - b.rank_promedio).slice(0, horizonte === "mes" ? 5 : horizonte === "semana" ? 3 : 1);
   };
   const inicio7 = ahora - 7 * DIA, inicio30 = ahora - 30 * DIA;
   return {
@@ -675,6 +680,13 @@ export async function podarIdeasMesa(env, productos = null) {
   await kvPut(env, "ideas_poda_dia", diaAR(Date.now()));
   return podadas.length;
 }
+async function recomendacionesMercadoLibre(env, ahora = Date.now()) {
+  const [rows, feedback] = await Promise.all([
+    todas(env, "SELECT ts, dia, clave, palabra, categoria, tipo, puesto, resultados, precio_min, precio_max, vendidos, top FROM ml_observaciones WHERE ts>=? ORDER BY ts DESC", ahora - 30 * DIA),
+    todas(env, "SELECT clave, estado, nota, ts FROM ml_feedback WHERE ts>=?", ahora - 30 * DIA),
+  ]);
+  return recomendarML(rows, feedback, ahora);
+}
 export async function estadoMesa(env) {
   await prepararMesa(env);
   if ((await kvGet(env, "ideas_poda_dia")) !== diaAR(Date.now())) await podarIdeasMesa(env).catch(() => {});
@@ -688,9 +700,7 @@ export async function estadoMesa(env) {
   let fuentes = null, virUlt = null; try { fuentes = JSON.parse((await kvGet(env, "virales_fuentes")) || "null"); virUlt = JSON.parse((await kvGet(env, "vir_ultimo")) || "null"); } catch {}
   const virPedido = !!(await kvGet(env, "vir_forzar")) || !!(await kvGet(env, "vir_run"));
   const ideas = await todas(env, "SELECT id, ts, agente, texto, estado FROM mesa_ideas WHERE estado IN ('nueva','util') ORDER BY CASE estado WHEN 'nueva' THEN 0 ELSE 1 END, ts DESC LIMIT 30");
-  const mlRows = await todas(env, "SELECT ts, dia, clave, palabra, categoria, tipo, puesto, resultados, precio_min, precio_max, vendidos, top FROM ml_observaciones WHERE ts>=? ORDER BY ts DESC", Date.now() - 30 * DIA);
-  const mlFb = await todas(env, "SELECT clave, estado, nota, ts FROM ml_feedback WHERE ts>=?", Date.now() - 30 * DIA);
-  return { informes: porAgente, ideas, hipotesis: hip, chat, hechos: hechosR, ultima: ult2, mercadolibre: recomendarML(mlRows, mlFb), virales: { lista: virales.map((v) => ({ ...v, texto: corto(v.texto, 160), guion: corto(v.guion, 500) })), fuentes: fuentes || FUENTES_DEF, ultimo: virUlt, leyendo: virPedido }, metricas: Object.fromEntries(Object.entries(METRICAS).map(([k, v]) => [k, v.que])) };
+  return { informes: porAgente, ideas, hipotesis: hip, chat, hechos: hechosR, ultima: ult2, mercadolibre: await recomendacionesMercadoLibre(env), virales: { lista: virales.map((v) => ({ ...v, texto: corto(v.texto, 160), guion: corto(v.guion, 500) })), fuentes: fuentes || FUENTES_DEF, ultimo: virUlt, leyendo: virPedido }, metricas: Object.fromEntries(Object.entries(METRICAS).map(([k, v]) => [k, v.que])) };
 }
 // ---------------------------------------------------------------------------
 // CHARLA: Manuel le habla a la mesa entera o a un agente. Suele escribir corto, así que cada pregunta tiene dos pasos:
@@ -831,6 +841,7 @@ export async function apiMesa(env, req, url, iaJSON, body = null) {
   await prepararMesa(env);
   const json = (d) => Response.json(d, { headers: { "Cache-Control": "no-store" } });
   if (req.method !== "POST") {
+    if (url.searchParams.get("ml") === "1") return json(await recomendacionesMercadoLibre(env));
     if (url.searchParams.get("hechos") === "1") return json(await hechos(env));
     return json(await estadoMesa(env));
   }

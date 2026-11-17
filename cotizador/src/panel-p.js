@@ -61,7 +61,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid color-mix(in srgb,var(
 @media (max-width:560px){.viejo{display:none}nav button{padding:6px 9px;font-size:13px}}
 </style></head><body>
 <header><div class="hw"><div class="logo"><i></i>TE <span>IMPORTAMOS</span></div>
-<nav id="tabs"><button data-v="mesa" class="on">Agentes</button><button data-v="hoy">Hoy</button><button data-v="chats">Chats y ventas</button><button data-v="cot">Cotizar</button><button data-v="num">Números</button><button data-v="prosp">Prospección</button><button data-v="links">Links</button></nav>
+<nav id="tabs"><button data-v="mesa" class="on">Agentes</button><button data-v="hoy">Hoy</button><button data-v="chats">Chats y ventas</button><button data-v="ml">Mercado Libre</button><button data-v="num">Números</button><button data-v="prosp">Prospección</button><button data-v="links">Links</button></nav>
 <a class="viejo" href="/panel/viejo">panel viejo</a></div></header>
 <main>
 <section id="v-hoy" hidden><div class="est" id="estado"></div><div class="card" id="objetivos"><div class="top"><b>Objetivos de hoy</b><button class="b" id="objEdit" style="margin-left:auto">Editar</button></div><div id="objBody" class="mu">Cargando…</div></div><div class="card" id="consejo"><b>Lo que dicen los datos</b><div class="mu" id="consTxt">Cargando…</div><div class="acc"><button class="b" id="consBtn">Actualizar análisis</button></div></div><div class="eq" id="equipoHoy"></div><div id="lista"><div class="vacio">Cargando…</div></div></section>
@@ -81,6 +81,12 @@ input:focus,select:focus,textarea:focus{outline:2px solid color-mix(in srgb,var(
  </div>
  <h2>Cotizaciones automáticas <span class="n" id="cotN">0</span></h2><div id="cotLista"></div>
  <h2>Links esperando lectura <span class="n" id="cotColaN">0</span></h2><div id="cotCola"></div>
+</section>
+<section id="v-ml" hidden>
+ <h2>Tendencias de Mercado Libre</h2>
+ <p class="mu">Productos respaldados por publicaciones concretas y precio observado. El lector de la PC actualiza los datos; estas señales no representan ventas exactas por día.</p>
+ <div class="acc" style="margin:8px 0 12px"><button class="b p" id="mlActualizar">Actualizar lectura</button><span class="mu" id="mlEstado"></span></div>
+ <div id="mlLista"><div class="vacio">Cargando tendencias…</div></div>
 </section>
 <section id="v-num" hidden>
  <div class="seg" id="per"><button data-p="dia">Día</button><button data-p="semana" class="on">Semana</button><button data-p="mes">Mes</button></div>
@@ -105,7 +111,6 @@ input:focus,select:focus,textarea:focus{outline:2px solid color-mix(in srgb,var(
 </section>
 <section id="v-mesa">
  <div class="est" id="mesaEst"></div>
- <h2>Productos señalados por Mercado Libre</h2><p class="mu">Una oportunidad para revisar hoy, hasta 3 señales repetidas esta semana y hasta 5 sostenidas este mes. Son rankings y búsquedas observadas, no unidades exactas vendidas. El lector de la PC debe estar abierto para seguir juntando historial.</p><div id="mesaML"></div>
  <div class="card" id="mesaChat"><div class="top"><b>Hablá con los agentes</b><span class="mu">Escribí corto: ellos amplían la pregunta, buscan en los chats, los videos y los números, y te contestan con datos.</span></div>
   <div class="chips" id="mesaQuien"><button class="chip on" data-q="mesa">Toda la mesa</button><button class="chip" data-q="whatsapp">WhatsApp</button><button class="chip" data-q="redes">Redes</button><button class="chip" data-q="productos">Productos</button></div>
   <div class="hilo" id="mesaHilo"></div>
@@ -145,7 +150,7 @@ function ver(v) {
   [].forEach.call(document.querySelectorAll("#tabs button"), function (x) { x.classList.toggle("on", x.dataset.v === v); });
   [].forEach.call(document.querySelectorAll("main section"), function (s) { s.hidden = s.id !== "v-" + v; });
   history.replaceState(null, "", "#" + v);
-  if (v === "hoy") cargarHoy(); if (v === "chats") { buscar(); cargarVentas(); } if (v === "num") cargarNum(); if (v === "links") cargarLinks(); if (v === "prosp") cargarProsp(); if (v === "mesa") cargarMesa(); if (v === "cot") cargarCot();
+  if (v === "hoy") cargarHoy(); if (v === "chats") { buscar(); cargarVentas(); } if (v === "num") cargarNum(); if (v === "links") cargarLinks(); if (v === "prosp") cargarProsp(); if (v === "mesa") cargarMesa(); if (v === "ml") cargarMercadoLibre(); if (v === "cot") cargarCot();
 }
 
 // ---- Lo que dicen los datos (el agente lo arma una vez por día; se puede actualizar)
@@ -450,6 +455,21 @@ $("#cotCola").addEventListener("click", function (e) { var q = e.target.closest(
 var MESA = null, MESA_HILO = [];
 function cargarMesa() { api("mesa").then(function (d) { MESA = d; pintarMesa(d); }).catch(function () {}); }
 function fechaHoraM(ts) { return ts ? new Date(ts).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "-"; }
+function cargarMercadoLibre() {
+  var estado = $("#mlEstado"); if (estado) estado.textContent = "Actualizando…";
+  api("mesa?ml=1").then(pintarMercadoLibre).catch(function () { if (estado) estado.textContent = "No pude cargar las tendencias."; });
+}
+function pintarMercadoLibre(ml) {
+  ml = ml || {}; var estado = $("#mlEstado"), lista = $("#mlLista");
+  if (estado) estado.textContent = ml.actualizado ? "Última lectura: " + fechaHoraM(ml.actualizado) + " · " + (ml.cantidad_dias || 0) + " día(s) con datos" : "Todavía no hay datos guardados. Ejecutá tendencias_ml.bat en la computadora lectora.";
+  var secciones = [["dia", "Señal de hoy · hasta 1 producto"], ["semana", "Esta semana · hasta 3 productos"], ["mes", "Este mes · hasta 5 productos"]];
+  function tarjetas(items) { return (items || []).map(function (x) {
+    var pub = x.top && x.top[0] ? '<div class="mu" style="margin-top:6px">Publicación: ' + esc(x.top[0].titulo) + (x.top[0].precio ? ' · $' + plata(x.top[0].precio) : "") + (x.top[0].vendidos ? ' · contador visible: ' + esc(x.top[0].vendidos) : "") + '</div>' : "";
+    return '<div class="card"><div class="top"><b>' + esc(x.palabra) + '</b><span class="tag">' + x.dias + ' día(s) observado(s)</span><span class="tag">' + esc(x.confianza) + '</span><span class="mu">' + esc(x.categoria || "Mercado Libre") + '</span></div><div class="mu">Puesto promedio observado: ' + x.rank_promedio + (x.resultados ? ' · ' + plata(x.resultados) + ' publicaciones' : "") + (x.precio_min && x.precio_max ? ' · rango $' + plata(x.precio_min) + '–$' + plata(x.precio_max) : "") + '</div>' + pub + (x.nota ? '<div class="mu">Resultado que anotaste: ' + esc(x.nota) + '</div>' : '') + '<div class="acc"><button class="b v" data-mlestado="interesa" data-mlclave="' + esc(x.clave) + '">Me interesa</button><button class="b" data-mlestado="probado" data-mlclave="' + esc(x.clave) + '">Ya lo probé</button><button class="b x" data-mlestado="descartada" data-mlclave="' + esc(x.clave) + '">Descartar 30 días</button></div></div>';
+  }).join("") || '<div class="vacio">No hay productos con publicaciones y precios verificables para este período.</div>'; }
+  if (lista) lista.innerHTML = secciones.map(function (s) { return '<h2>' + s[1] + '</h2>' + tarjetas(ml[s[0]]); }).join("");
+}
+$("#mlActualizar").onclick = cargarMercadoLibre;
 function pintarMesa(d) {
   var est = [], u = d.ultima;
   est.push('<span class="pill ' + (u ? "ok" : "warn") + '">' + (u ? "Última corrida " + fechaHoraM(u.ts) + " (" + esc(u.motivo) + ")" : "Todavía no corrió") + "</span>");
@@ -457,12 +477,6 @@ function pintarMesa(d) {
   var vr = d.virales || {}, vu = vr.ultimo;
   est.push('<span class="pill ' + ((vr.lista || []).length ? "ok" : "warn") + '">Virales de otros: ' + ((vr.lista || []).length ? (vr.lista.length + " guardados · leído " + fechaHoraM(vu && vu.ts)) : (vr.leyendo ? "leyendo…" : "sin lectura todavía")) + "</span>");
   $("#mesaEst").innerHTML = est.join("");
-  var ml = d.mercadolibre || {}, seccionesML = [["dia", "Señal de hoy"], ["semana", "Hasta 3 repetidos esta semana"], ["mes", "Hasta 5 sostenidos este mes"]];
-  var tarjetasML = function (lista) { return (lista || []).map(function (x) {
-    var top = x.top && x.top.length ? '<div class="mu" style="margin-top:6px">Publicación observada: ' + esc(x.top[0].titulo) + (x.top[0].precio ? ' · $' + plata(x.top[0].precio) : "") + (x.top[0].vendidos ? ' · contador visible: ' + esc(x.top[0].vendidos) : "") + '</div>' : "";
-    return '<div class="card" style="padding:12px;margin:6px 0"><div class="top"><b>' + esc(x.palabra) + '</b><span class="tag">' + x.dias + ' día(s) observado(s)</span><span class="tag">señal ' + esc(x.confianza) + '</span><span class="mu">' + esc(x.categoria || "Mercado Libre") + '</span></div><div class="mu">Puesto promedio observado: ' + x.rank_promedio + (x.resultados ? ' · ' + plata(x.resultados) + ' publicaciones' : '') + (x.precio_min && x.precio_max ? ' · rango relevado $' + plata(x.precio_min) + ' a $' + plata(x.precio_max) : '') + '</div>' + top + (x.nota ? '<div class="mu">Resultado que anotaste: ' + esc(x.nota) + '</div>' : '') + '<div class="acc"><button class="b v" data-mlestado="interesa" data-mlclave="' + esc(x.clave) + '">Me interesa</button><button class="b" data-mlestado="probado" data-mlclave="' + esc(x.clave) + '">Ya lo probé</button><button class="b x" data-mlestado="descartada" data-mlclave="' + esc(x.clave) + '">Descartar 30 días</button></div></div>';
-  }).join("") || '<div class="mu">Todavía no hay observaciones para este período.</div>'; };
-  $("#mesaML").innerHTML = '<div class="mu" style="margin:6px 0 10px">' + (ml.actualizado ? 'Última lectura: ' + fechaHoraM(ml.actualizado) + ' · historial en ' + (ml.cantidad_dias || 0) + ' día(s). El contador de vendidos y los rankings son señales observadas, no ventas exactas por día.' : 'Sin lecturas guardadas. Abrí tendencias_ml.bat en la PC para empezar a recopilar.') + '</div>' + seccionesML.map(function (s) { return '<div class="card" style="padding:12px;margin:8px 0"><b>' + s[1] + '</b><div>' + tarjetasML(ml[s[0]]) + '</div></div>'; }).join("");
   var it = d.informes.integrador, dt = (it && it.datos) || {};
   $("#mesaLecTxt").className = dt.lectura ? "cons" : "cons mu"; $("#mesaLecTxt").textContent = dt.lectura || "Todavía no hay lectura. Tocá Correr ahora.";
   $("#mesaDec").innerHTML = (dt.decisiones || []).map(function (x, i) { return '<div class="nota"><b>' + (i + 1) + ". " + esc(x.que) + '</b> <span class="mu">(' + esc(x.quien) + ')</span><div class="mu">' + esc(x.por_que) + "</div></div>"; }).join("");
@@ -546,7 +560,7 @@ $("#mesaIdeas").addEventListener("click", function (e) { var b = e.target.closes
   if (est === "preguntar") { $("#mesaQ").value = "Desarrollame esta idea con datos y decime cómo la hago paso a paso: " + card.querySelector(".que").textContent; window.scrollTo(0, 0); preguntarMesa(); return; }
   var nota = est === "descartada" ? (prompt("Por qué no sirve? (opcional, así no la repiten)") || "") : "";
   api("mesa", { accion: "idea", id: card.dataset.idea, estado: est, nota: nota }).then(function () { toast(est === "util" ? "Anotado: más de estas" : est === "hecha" ? "Anotado como hecho" : "Descartada"); if (est === "util") cargarMesa(); else card.remove(); }); });
-$("#mesaML").addEventListener("click", function (e) { var b = e.target.closest("[data-mlestado]"); if (!b) return; var nota = b.dataset.mlestado === "probado" ? (prompt("Qué resultado tuvo? (consultas, cotizaciones, ventas o margen)") || "") : ""; api("mesa", { accion: "ml_feedback", clave: b.dataset.mlclave, estado: b.dataset.mlestado, nota: nota }).then(function (r) { toast(r.ok ? (b.dataset.mlestado === "descartada" ? "Se oculta por 30 días" : "Señal guardada") : "No pude guardar"); cargarMesa(); }); });
+$("#mlLista").addEventListener("click", function (e) { var b = e.target.closest("[data-mlestado]"); if (!b) return; var nota = b.dataset.mlestado === "probado" ? (prompt("Qué resultado tuvo? (consultas, cotizaciones, ventas o margen)") || "") : ""; api("mesa", { accion: "ml_feedback", clave: b.dataset.mlclave, estado: b.dataset.mlestado, nota: nota }).then(function (r) { toast(r.ok ? (b.dataset.mlestado === "descartada" ? "Se oculta por 30 días" : "Señal guardada") : "No pude guardar"); cargarMercadoLibre(); }); });
 $("#mesaVentas").addEventListener("click", function (e) { var b = e.target.closest("[data-ventano]"); if (!b) return; var card = b.closest("[data-conv]"); api("mesa", { accion: "venta_no", conv: card.dataset.conv }).then(function () { card.remove(); toast("Listo, no se cuenta como venta"); }); });
 $("#mesaHip").addEventListener("click", function (e) { var b = e.target.closest("[data-hip]"); if (!b) return; api("mesa", { accion: "hipotesis", id: b.dataset.hip, estado: "descartada" }).then(function () { toast("Descartada"); cargarMesa(); }); });
 
