@@ -117,8 +117,8 @@ def leer(ver=False, maximo=25):
                 if "captcha" in pg.url:
                     # No se esquiva: con --ver esperamos a que la persona complete el paso; sin --ver se mandan solo las tendencias
                     if ver:
-                        print("  Mercado Libre pide una verificación: completala en la ventana (espero hasta 3 minutos)...")
-                        for _ in range(90):
+                        print("  Mercado Libre pide una verificación: completala en la ventana (espero hasta 10 minutos)...")
+                        for _ in range(300):
                             if "captcha" not in pg.url: break
                             time.sleep(2)
                     if "captcha" in pg.url:
