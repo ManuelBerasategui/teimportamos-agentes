@@ -61,7 +61,6 @@ export function puntajeIdea(t, productos = []) {
 // ideas: [{id, texto, agente, ts}] (las que están 'nueva'). Devuelve { quedan:[ids], podadas:[{id, motivo}] }
 export function podarIdeas(ideas, { maximo = 6, porAgente = 2, productos = [], diasMax = 7, ahora = Date.now() } = {}) {
   const podadas = [], cand = [], quedan = [], vivas = [], cuenta = {};
-  const temas = (t) => { const l = String(t || "").toLowerCase(); return productos.filter((x) => x && x.length > 3 && l.includes(String(x).toLowerCase())).map((x) => String(x).toLowerCase()); };
   for (const i of ideas) {
     if (ahora - (i.ts || 0) > diasMax * 86400e3) podadas.push({ id: i.id, motivo: "vieja: más de " + diasMax + " días sin usarse" });
     else if (puntajeIdea(i.texto, productos) < 0) podadas.push({ id: i.id, motivo: "genérica: no dice qué producto, cliente, número o canal" });
@@ -70,8 +69,8 @@ export function podarIdeas(ideas, { maximo = 6, porAgente = 2, productos = [], d
   // Primero las más concretas (y a igual puntaje, las más nuevas): esas son las que quedan cuando hay repetidas
   cand.sort((a, b) => puntajeIdea(b.texto, productos) - puntajeIdea(a.texto, productos) || b.ts - a.ts);
   for (const i of cand) {
-    const tm = temas(i.texto);
-    if (vivas.some((v) => parecidas(v.texto, i.texto) || (tm.length && temas(v.texto).some((x) => tm.includes(x))))) { podadas.push({ id: i.id, motivo: "repetida: ya hay otra idea del mismo producto o casi igual" }); continue; }
+    // El mismo producto puede justificar pruebas creativas distintas; solo se poda el concepto casi duplicado.
+    if (vivas.some((v) => parecidas(v.texto, i.texto))) { podadas.push({ id: i.id, motivo: "repetida: ya hay otra idea con un enfoque casi igual" }); continue; }
     if (quedan.length >= maximo || (cuenta[i.agente] || 0) >= porAgente) { podadas.push({ id: i.id, motivo: "menos concreta que las que quedaron" }); continue; }
     vivas.push(i); cuenta[i.agente] = (cuenta[i.agente] || 0) + 1; quedan.push(i.id);
   }
