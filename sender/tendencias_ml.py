@@ -28,8 +28,13 @@ def cargar_env():
             if "=" in l and not l.strip().startswith("#"):
                 k, v = l.split("=", 1); os.environ.setdefault(k.strip(), v.strip())
 cargar_env()
-URL = os.environ["PANEL_URL"].rstrip("/")
-TOKEN = os.environ["LECTOR_TOKEN"]
+URL = os.environ.get("PANEL_URL", "").strip().rstrip("/")
+TOKEN = os.environ.get("LECTOR_TOKEN", "").strip()
+if not URL or not TOKEN or "el mismo token" in TOKEN.lower() or TOKEN.lower() in {"changeme", "replace_me", "reemplazar"}:
+    print("Falta configurar el acceso al panel para el lector de Mercado Libre.")
+    print(f"Abrí este archivo y completá LECTOR_TOKEN: {AQUI / '.env'}")
+    print("PANEL_URL ya viene cargada en .env.example. No pegues el token en un chat ni lo compartas.")
+    raise SystemExit(2)
 
 def num(t):
     t = re.sub(r"[^\d]", "", str(t or ""))
@@ -64,11 +69,14 @@ JS_LISTADO = """
   const txt = document.body.innerText || '';
   const m = txt.match(/([\\d.]+)\\s+resultados/i);
   const items = [];
+  const vistos = new Set();
   for (const li of document.querySelectorAll('li.ui-search-layout__item, .ui-search-result, .poly-card')) {
     const titulo = (li.querySelector('.poly-component__title, .ui-search-item__title, h2, h3') || {}).innerText || '';
     const precio = (li.querySelector('.andes-money-amount__fraction') || {}).innerText || '';
     const vend = (li.innerText.match(/(\\+?[\\d.]+\\s*vendidos?)/i) || [])[1] || '';
-    if (titulo) items.push({ titulo: titulo.trim(), precio: precio.replace(/\\./g, ''), vendidos: vend });
+    const t = titulo.trim(), p = precio.replace(/\\./g, '');
+    const clave = t.toLowerCase().replace(/\\s+/g, ' ') + '|' + p;
+    if (t && !vistos.has(clave)) { vistos.add(clave); items.push({ titulo: t, precio: p, vendidos: vend }); }
     if (items.length >= 8) break;
   }
   return { resultados: m ? m[1].replace(/\\./g, '') : null, items };
