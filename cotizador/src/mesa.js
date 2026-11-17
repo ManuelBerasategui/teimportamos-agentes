@@ -37,7 +37,8 @@ function recomendarML(rows, feedback, ahora = Date.now()) {
       if (!r.clave || omitidas.has(r.clave)) continue;
       const g = grupos.get(r.clave) || { palabra: r.palabra, clave: r.clave, categoria: r.categoria, diasSet: new Set(), rankPorDia: new Map(), tipos: new Set(), ultima: 0, precio_min: null, precio_max: null, resultados: null, top: [] };
       g.diasSet.add(r.dia); if (r.puesto) g.rankPorDia.set(r.dia, Math.min(g.rankPorDia.get(r.dia) || Infinity, r.puesto)); if (r.tipo) g.tipos.add(r.tipo);
-      if (r.ts >= g.ultima) { g.ultima = r.ts; g.palabra = r.palabra; g.categoria = r.categoria; g.precio_min = r.precio_min; g.precio_max = r.precio_max; g.resultados = r.resultados; g.vendidos = r.vendidos; try { g.top = JSON.parse(r.top || "[]"); } catch {} }
+      if (r.ts >= g.ultima) { g.ultima = r.ts; g.palabra = r.palabra; g.categoria = r.categoria; g.precio_min = r.precio_min; g.precio_max = r.precio_max; g.resultados = r.resultados; g.vendidos = r.vendidos; }
+      if (r.top) { try { const top = JSON.parse(r.top || "[]"); if (top.some((x) => corto(x.titulo, 100).length >= 8 && +x.precio > 0)) { g.top = top; g.publicacion_ts = r.ts; } } catch {} }
       grupos.set(r.clave, g);
     }
     return [...grupos.values()].map((g) => {
