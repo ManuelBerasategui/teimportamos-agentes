@@ -1,15 +1,15 @@
 // La MESA: agentes que analizan el negocio todos los días sin que nadie se lo pida.
 //  - Capa de hechos (código, sin IA): embudo, tiempos de respuesta, preguntas sin responder, seguimientos por plantilla,
-//    prospección, productos pedidos, cupos en los grupos, videos y consultas atribuidas, ventas. Todo medido en D1.
+//    prospección, productos pedidos, cupos en los grupos, videos y consultas asociadas, ventas. Todo medido en D1.
 //  - Agentes (IA sobre los hechos): WhatsApp (por qué no cerramos), Redes (qué contenido trae consultas), Productos
 //    (qué vender: demanda propia, cupos, Mercado Libre) e Integrador (cruza todo, decide, propone hipótesis).
 //  - Hipótesis: cada una tiene una métrica, un valor base, una meta y un vencimiento. El código las verifica solo:
-//    cumplida o fallida. Así la mesa aprende de lo que pasó, no de lo que opinó.
-//  - Corre sola dos veces por día (06:10 y 20:30 hora AR), avisa por Telegram y se puede conversar con ella en el panel.
+//    cumplida, fallida o sin datos suficientes. Así la mesa aprende de resultados medidos, no de impresiones.
+//  - Corre sola tres veces por día (06:10, 13:30 y 20:30 hora AR), avisa por Telegram y se puede conversar con ella en el panel.
 // Regla de oro: la IA no inventa números. Todos los números vienen de acá.
 import { diaAR } from "./tablero.js";
 import { esBotTexto, plantillaSeg } from "./lector.js";
-import { podarIdeas } from "./clasificar.js";
+import { podarIdeas, parecidas } from "./clasificar.js";
 import { esCierre } from "./cierre.js";
 
 const AR = 3 * 3600e3, DIA = 86400e3, H = 3600e3;
@@ -46,23 +46,23 @@ export async function prepararMesa(env) {
 // ---------------------------------------------------------------------------
 // MÉTRICAS: nombre → cómo se calcula a partir de los hechos. Las hipótesis solo pueden usar estas.
 export const METRICAS = {
-  chats_nuevos_7d: { que: "chats nuevos en 7 días", f: (h) => h.embudo.v7.nuevos },
-  cotizados_7d: { que: "chats cotizados en 7 días", f: (h) => h.embudo.v7.cotizados },
-  ventas_7d: { que: "ventas en 7 días (cargadas + detectadas en el chat)", f: (h) => h.embudo.v7.ventas },
-  cot_a_venta_pct: { que: "% de cotizados que compran (7 días)", f: (h) => pct(h.embudo.v7.ventas, h.embudo.v7.cotizados) },
-  perfil_ab_pct: { que: "% de chats nuevos de perfil A o B (7 días)", f: (h) => h.perfiles.ab_pct },
-  resp_humana_p50_min: { que: "mediana de minutos hasta la primera respuesta humana", f: (h) => h.respuesta.p50 },
-  resp_mas_1h_pct: { que: "% de primeras respuestas humanas que tardaron más de 1 hora", f: (h) => h.respuesta.mas_1h_pct },
-  preguntas_sin_responder: { que: "preguntas de clientes sin responder hace más de 24 h", f: (h) => h.pendientes.length },
-  ventas_confirmadas_7d: { que: "ventas cargadas con el botón Vendido en 7 días", f: (h) => h.embudo.v7.ventas_confirmadas },
-  cotizados_sin_resp_48h_pct: { que: "% de cotizaciones sin respuesta del cliente a las 48 h (7 días)", f: (h) => h.cotizaciones.sin_resp_pct },
-  seg_resp_48h_pct: { que: "% de seguimientos que el cliente contestó en 48 h (14 días)", f: (h) => h.seguimientos.total.resp_pct },
-  seg_resp_A_pct: { que: "% de respuesta de los seguimientos plan A (14 días)", f: (h) => h.seguimientos.A.resp_pct },
-  seg_resp_B_pct: { que: "% de respuesta de los seguimientos plan B (14 días)", f: (h) => h.seguimientos.B.resp_pct },
-  seg_con_plan_14d: { que: "seguimientos enviados con plan A o B en 14 días (los que manda el sender)", f: (h) => h.seguimientos.A.n + h.seguimientos.B.n },
-  prosp_resp_pct: { que: "% de prospectos que respondieron (7 días)", f: (h) => h.prospeccion.resp_pct },
-  consultas_por_video: { que: "chats nuevos atribuidos por video publicado (14 días)", f: (h) => h.redes.consultas_por_video },
-  cupo_consultas_72h: { que: "consultas privadas en las 72 h después de cada mensaje de cupo (promedio, 14 días)", f: (h) => h.cupos.promedio_consultas },
+  chats_nuevos_7d: { que: "chats nuevos en 7 días", mejor: "sube", muestra: (h) => h.embudo.v7.nuevos, f: (h) => h.embudo.v7.nuevos },
+  cotizados_7d: { que: "chats cotizados en 7 días", mejor: "sube", muestra: (h) => h.embudo.v7.nuevos, f: (h) => h.embudo.v7.cotizados },
+  ventas_7d: { que: "ventas en 7 días (cargadas + detectadas en el chat)", mejor: "sube", muestra: (h) => h.embudo.v7.cotizados, f: (h) => h.embudo.v7.ventas },
+  cot_a_venta_pct: { que: "% de cotizados que compran (7 días)", mejor: "sube", muestra: (h) => h.embudo.v7.cotizados, f: (h) => pct(h.embudo.v7.ventas, h.embudo.v7.cotizados) },
+  perfil_ab_pct: { que: "% de chats nuevos de perfil A o B (7 días)", mejor: "sube", muestra: (h) => h.embudo.v7.nuevos, f: (h) => h.perfiles.ab_pct },
+  resp_humana_p50_min: { que: "mediana de minutos hasta la primera respuesta humana", mejor: "baja", muestra: (h) => h.respuesta.n, f: (h) => h.respuesta.p50 },
+  resp_mas_1h_pct: { que: "% de primeras respuestas humanas que tardaron más de 1 hora", mejor: "baja", muestra: (h) => h.respuesta.n, f: (h) => h.respuesta.mas_1h_pct },
+  preguntas_sin_responder: { que: "preguntas de clientes sin responder hace más de 24 h", mejor: "baja", muestra: () => Infinity, f: (h) => h.pendientes.length },
+  ventas_confirmadas_7d: { que: "ventas cargadas con el botón Vendido en 7 días", mejor: "sube", muestra: (h) => h.embudo.v7.cotizados, f: (h) => h.embudo.v7.ventas_confirmadas },
+  cotizados_sin_resp_48h_pct: { que: "% de cotizaciones maduras sin respuesta del cliente a las 48 h (7 días)", mejor: "baja", muestra: (h) => h.cotizaciones.maduras, f: (h) => h.cotizaciones.sin_resp_pct },
+  seg_resp_48h_pct: { que: "% de seguimientos que el cliente contestó en 48 h (14 días)", mejor: "sube", muestra: (h) => h.seguimientos.total.n, f: (h) => h.seguimientos.total.resp_pct },
+  seg_resp_A_pct: { que: "% de respuesta de los seguimientos plan A (14 días)", mejor: "sube", muestra: (h) => h.seguimientos.A.n, minimo: 15, f: (h) => h.seguimientos.A.resp_pct },
+  seg_resp_B_pct: { que: "% de respuesta de los seguimientos plan B (14 días)", mejor: "sube", muestra: (h) => h.seguimientos.B.n, minimo: 15, f: (h) => h.seguimientos.B.resp_pct },
+  seg_con_plan_14d: { que: "seguimientos enviados con plan A o B en 14 días (los que manda el sender)", mejor: "sube", muestra: (h) => h.seguimientos.A.n + h.seguimientos.B.n, f: (h) => h.seguimientos.A.n + h.seguimientos.B.n },
+  prosp_resp_pct: { que: "% de prospectos que respondieron (7 días)", mejor: "sube", muestra: (h) => h.prospeccion.enviados_7d, f: (h) => h.prospeccion.resp_pct },
+  consultas_por_video: { que: "chats nuevos asociados por video maduro (ventana de 48 h, 14 días)", mejor: "sube", muestra: (h) => h.redes.videos_maduros, f: (h) => h.redes.consultas_por_video },
+  cupo_consultas_72h: { que: "consultas privadas asociadas a cupos (promedio, 14 días)", mejor: "sube", muestra: (h) => h.cupos.lista.length, f: (h) => h.cupos.promedio_consultas },
 };
 export const medir = (h, nombre) => { const m = METRICAS[nombre]; if (!m) return null; try { const v = m.f(h); return v == null || isNaN(v) ? null : Math.round(v * 10) / 10; } catch { return null; } };
 
@@ -134,7 +134,15 @@ export async function hechos(env, { dias = 14 } = {}) {
   // --- Perfiles de los chats nuevos (7 días vs 7 anteriores)
   const perf = (a, b) => { const o = {}; for (const c of convs) if (c.primer_ts >= a && c.primer_ts < b) o[c.perfil || "?"] = (o[c.perfil || "?"] || 0) + 1; return o; };
   const p7 = perf(s7, ahora + H), p7a = perf(s14, s7), tot7 = Object.values(p7).reduce((x, y) => x + y, 0);
-  const perfiles = { v7: p7, v7ant: p7a, ab_pct: pct((p7.A || 0) + (p7.B || 0), tot7) };
+  const embudoPerfil = Object.values(convs.filter((c) => c.primer_ts >= s7 && c.primer_ts < ahora + H).reduce((o, c) => {
+    const k = c.perfil || "?", x = o[k] || (o[k] = { perfil: k, chats: 0, cotizados: 0, ventas: 0, ventas_confirmadas: 0 });
+    x.chats++;
+    if ((cotTodas[c.conv] || []).some((t) => t >= s7)) x.cotizados++;
+    if (ventaTs[c.conv] >= s7) x.ventas++;
+    if (cargada.has(c.conv) && ventaTs[c.conv] >= s7) x.ventas_confirmadas++;
+    return o;
+  }, {})).sort((a, b) => b.chats - a.chats);
+  const perfiles = { v7: p7, v7ant: p7a, ab_pct: pct((p7.A || 0) + (p7.B || 0), tot7), embudo: embudoPerfil };
 
   // --- Velocidad humana y preguntas sin responder (7 días de mensajes)
   const delays = [], primeras = [];
@@ -158,8 +166,10 @@ export async function hechos(env, { dias = 14 } = {}) {
   const esperando = convs.filter((c) => activo(c) && c.ult_yo === 0 && c.ult_cliente_ts && ahora - c.ult_cliente_ts > 24 * H && ahora - c.ult_cliente_ts < 10 * DIA).length;
   // --- Cotizaciones de los últimos 7 días: ¿el cliente contestó algo en 48 h?
   const cliTs = {}; for (const m of msgs7) if (!m.yo) (cliTs[m.conv] || (cliTs[m.conv] = [])).push(m.ts);
-  const cot7 = Object.entries(cotPorConv).filter(([, ts]) => ts >= s7).map(([conv, ts]) => ({ conv, ts, resp: (cliTs[conv] || []).some((t) => t > ts && t - ts < 48 * H), c: porConv[conv] }));
-  const cotizaciones = { n: cot7.length, sin_resp: cot7.filter((x) => !x.resp).length, sin_resp_pct: pct(cot7.filter((x) => !x.resp).length, cot7.length),
+  const cot7Todas = Object.entries(cotPorConv).filter(([, ts]) => ts >= s7).map(([conv, ts]) => ({ conv, ts, c: porConv[conv] }));
+  // No marcar como "sin respuesta a 48 h" una cotización que todavía no tuvo 48 h para recibir respuesta.
+  const cot7 = cot7Todas.filter((x) => x.ts <= ahora - 48 * H).map((x) => ({ ...x, resp: (cliTs[x.conv] || []).some((t) => t > x.ts && t - x.ts < 48 * H) }));
+  const cotizaciones = { n: cot7.length, total_7d: cot7Todas.length, recientes_sin_madurar: cot7Todas.length - cot7.length, maduras: cot7.length, sin_resp: cot7.filter((x) => !x.resp).length, sin_resp_pct: pct(cot7.filter((x) => !x.resp).length, cot7.length),
     por_perfil: cot7.reduce((o, x) => { const k = x.c?.perfil || "?"; o[k] = o[k] || { n: 0, resp: 0 }; o[k].n++; if (x.resp) o[k].resp++; return o; }, {}),
     sin_resp_lista: cot7.filter((x) => !x.resp && x.c).slice(0, 12).map((x) => ({ conv: x.conv, nombre: x.c.nombre || "sin nombre", perfil: x.c.perfil || "?", producto: corto(x.c.producto, 40), usd: x.c.presup_usd || null, hace_dias: Math.round((ahora - x.ts) / DIA) })) };
 
@@ -224,12 +234,36 @@ export async function hechos(env, { dias = 14 } = {}) {
 
   // --- Redes: cada video con sus métricas y los chats nuevos en las 48 h siguientes (contra la base diaria)
   const baseDia = convs.filter((c) => c.primer_ts >= desde).length / Math.max(14, dias);
-  const videos = ig.map((p) => { const n48 = convs.filter((c) => c.primer_ts > p.ts && c.primer_ts < p.ts + 48 * H).length; return { fecha: fecha(p.ts), gancho: corto(p.gancho, 70), texto: corto(p.texto, 90), formato: p.formato || "?", alcance: p.alcance, vistas: p.vistas, guardados: p.guardados, compartidos: p.compartidos, seg_vistos: p.tiempo_ms ? Math.round(p.tiempo_ms / 1000) : null, chats_48h: n48, atribuidos: Math.max(0, Math.round(n48 - baseDia * 2)) }; });
-  const origen = {}; for (const c of convs) if (c.primer_ts >= s14) origen[c.origen || "sin dato"] = (origen[c.origen || "sin dato"] || 0) + 1;
+  // Asociación exploratoria, no atribución causal: cada chat se asocia como máximo al reel más reciente
+  // anterior a su primer contacto, dentro de 48 h. Las publicaciones sin ventana completa quedan pendientes.
+  const igMaduros = ig.filter((p) => p.ts + 48 * H <= ahora);
+  const videoChats = new Map(igMaduros.map((p) => [p.id, []]));
+  for (const c of convs) {
+    const elegible = igMaduros.filter((p) => c.primer_ts > p.ts && c.primer_ts < p.ts + 48 * H).sort((a, b) => b.ts - a.ts)[0];
+    if (elegible) videoChats.get(elegible.id)?.push(c);
+  }
+  const videos = ig.map((p) => {
+    const maduro = p.ts + 48 * H <= ahora, chats = maduro ? (videoChats.get(p.id) || []) : [];
+    const n48 = maduro ? convs.filter((c) => c.primer_ts > p.ts && c.primer_ts < p.ts + 48 * H).length : null;
+    return { fecha: fecha(p.ts), gancho: corto(p.gancho, 70), texto: corto(p.texto, 90), formato: p.formato || "?", alcance: p.alcance, vistas: p.vistas, guardados: p.guardados, compartidos: p.compartidos, seg_vistos: p.tiempo_ms ? Math.round(p.tiempo_ms / 1000) : null, maduro, chats_48h: n48,
+      chats_asociados: chats.length, chats_ab: chats.filter((c) => c.perfil === "A" || c.perfil === "B").length, cotizados_asociados: chats.filter((c) => (cotTodas[c.conv] || []).some((t) => t >= p.ts && t < p.ts + 48 * H)).length,
+      ventas_confirmadas_asociadas: chats.filter((c) => ventasCargadas.some((v) => v.conv === c.conv && v.ts >= c.primer_ts)).length, chats_sobre_base_48h: n48 == null ? null : Math.max(0, Math.round(n48 - baseDia * 2)) };
+  });
+  const origen = {}, canales = {};
+  for (const c of convs) if (c.primer_ts >= s14) {
+    const k = c.origen || "sin dato"; origen[k] = (origen[k] || 0) + 1;
+    const x = canales[k] || (canales[k] = { origen: k, chats: 0, ab: 0, cotizados: 0, ventas: 0, ventas_confirmadas: 0 });
+    x.chats++; if (c.perfil === "A" || c.perfil === "B") x.ab++;
+    if ((cotTodas[c.conv] || []).some((t) => t >= s14)) x.cotizados++;
+    if (ventaTs[c.conv] >= s14) x.ventas++;
+    if (cargada.has(c.conv) && ventaTs[c.conv] >= s14) x.ventas_confirmadas++;
+  }
+  const canalesFunnel = Object.values(canales).sort((a, b) => b.chats - a.chats);
   const chats48 = (ts) => convs.filter((c) => c.primer_ts > ts && c.primer_ts < ts + 48 * H).length;
   const virales = vir.map((v) => ({ fecha: fecha(v.ts), autor: v.autor, link: v.link, texto: corto(v.texto, 140), vistas: v.vistas, compartidos: v.compartidos, guardados: v.guardados, seguidores: v.seguidores, veces: v.seguidores ? Math.round(v.vistas / v.seguidores) : null, fuente: v.fuente, guion: corto(v.guion, 420) }));
-  const redes = { videos, virales, tiktok: tt.map((p) => ({ fecha: fecha(p.ts), texto: corto(p.texto, 80), vistas: p.vistas, compartidos: p.compartidos, guardados: p.guardados, chats_48h: chats48(p.ts), guion: corto(p.guion, 420) })), origen_14d: origen,
-    consultas_por_video: videos.length ? Math.round((videos.reduce((a, v) => a + v.atribuidos, 0) / videos.length) * 10) / 10 : null, base_diaria: Math.round(baseDia * 10) / 10, referencias: refs.map((r) => ({ fecha: fecha(r.ts), red: r.nicho, que_pasa: corto(r.que_pasa, 120), por_que: corto(r.por_que, 100) })) };
+  const redes = { videos, virales, tiktok: tt.map((p) => ({ fecha: fecha(p.ts), texto: corto(p.texto, 80), vistas: p.vistas, compartidos: p.compartidos, guardados: p.guardados, chats_48h: chats48(p.ts), guion: corto(p.guion, 420) })), origen_14d: origen, canales_14d: canalesFunnel,
+    videos_maduros: igMaduros.length, chats_ab_asociados: videos.reduce((a, v) => a + v.chats_ab, 0), cotizados_asociados: videos.reduce((a, v) => a + v.cotizados_asociados, 0), ventas_confirmadas_asociadas: videos.reduce((a, v) => a + v.ventas_confirmadas_asociadas, 0),
+    consultas_por_video: igMaduros.length ? Math.round((videos.reduce((a, v) => a + v.chats_asociados, 0) / igMaduros.length) * 10) / 10 : null, base_diaria: Math.round(baseDia * 10) / 10, referencias: refs.map((r) => ({ fecha: fecha(r.ts), red: r.nicho, que_pasa: corto(r.que_pasa, 120), por_que: corto(r.por_que, 100) })) };
 
   // --- Ventas con detalle (30 días) y las que están en el chat pero no cargadas
   const ventas = { cargadas: ventasCargadas.map((v) => ({ fecha: fecha(v.ts), nombre: v.nombre, producto: corto(v.producto, 40), monto: v.monto, moneda: v.moneda, ganancia: v.ganancia, linea: v.linea })),
@@ -269,6 +303,7 @@ export function textoHechos(h, partes = ["embudo", "whatsapp", "redes", "product
     L.push(`7 DÍAS ANTERIORES: ${e.v7ant.nuevos} nuevos → ${e.v7ant.cotizados} cotizados → ${e.v7ant.ventas} ventas · 30 DÍAS: ${e.v30.nuevos} → ${e.v30.cotizados} → ${e.v30.ventas}`);
     L.push(`POR DÍA (nuevos/cotizados/ventas): ${e.por_dia.map((d) => `${d.dia} ${d.nuevos}/${d.cotizados}/${d.ventas}`).join(" · ")}`);
     L.push(`PERFILES chats nuevos 7d: ${JSON.stringify(h.perfiles.v7)} (A+B = ${h.perfiles.ab_pct}%) · 7d anteriores: ${JSON.stringify(h.perfiles.v7ant)}`);
+    L.push(`EMBUDO POR PERFIL 7d (chats/cotizados/ventas detectadas o cargadas/ventas confirmadas): ${h.perfiles.embudo.map((x) => `${x.perfil} ${x.chats}/${x.cotizados}/${x.ventas}/${x.ventas_confirmadas}`).join(" · ") || "sin datos"}`);
     L.push(`VENTAS 30d cargadas: ${h.ventas.cargadas.map((v) => `${v.fecha} ${v.nombre} ${v.producto} ${v.moneda} ${n0(v.monto)} (${v.linea})`).join(" · ") || "ninguna"}`);
     L.push(`VENTAS DETECTADAS EN EL CHAT, SIN CONFIRMAR (primera señal de pago de un cliente nuevo o recién cotizado; son POSIBLES ventas: no las des por hechas, pedile a Manuel que las confirme o las descarte en el panel): ${h.ventas.detectadas_sin_cargar.map((v) => `${v.fecha} ${v.nombre} (+${v.conv}) ${v.producto} perfil ${v.perfil}${v.usd ? " ~USD " + v.usd : ""}${v.evidencia ? ` · señal: "${v.evidencia}"` : ""}`).join(" · ") || "ninguna"}`);
     if (h.ventas.movimientos_clientes_anteriores?.length) L.push(`PAGOS O COMPROBANTES DE CLIENTES QUE YA HABÍAN COMPRADO ANTES (saldos, envíos, recompras sin confirmar: NO son ventas nuevas y NO cuentan en el embudo): ${h.ventas.movimientos_clientes_anteriores.map((m) => `${m.fecha} ${m.nombre} (+${m.conv}), su primera compra fue el ${m.primera}`).join(" · ")}`);
@@ -280,8 +315,8 @@ export function textoHechos(h, partes = ["embudo", "whatsapp", "redes", "product
     L.push(`CHATS PENDIENTES DE VERDAD (cliente con una pregunta o pedido concreto sin respuesta hace más de 24 h; sin proveedores, sin cierres tipo gracias/ok/dale y sin los que la IA marcó que no necesitan respuesta): ${h.pendientes.length}. Es el ÚNICO número de pendientes que podés usar. NO existe otro total de pendientes: no hables de "${h.esperando_total ?? "-"} chats pendientes" ni sumes chats donde el último mensaje del cliente es un cierre.`);
     L.push(`PREGUNTAS SIN RESPONDER hace más de 24 h (${h.pendientes.length}; primero perfil A y B): ${h.pendientes.slice(0, 18).map((p) => `${p.nombre} (+${p.conv}) perfil ${p.perfil} · ${p.producto} · hace ${p.horas} h: "${p.texto}"`).join(" | ") || "ninguna"}`);
     const c = h.cotizaciones;
-    L.push(`COTIZACIONES 7d: ${c.n} · sin respuesta del cliente a las 48 h: ${c.sin_resp} (${c.sin_resp_pct}%) · por perfil ${JSON.stringify(c.por_perfil)}`);
-    L.push(`COTIZADOS SIN RESPUESTA (los más recientes): ${c.sin_resp_lista.map((x) => `${x.nombre} (+${x.conv}) ${x.perfil} · ${x.producto}${x.usd ? " ~USD " + x.usd : ""} · hace ${x.hace_dias} d`).join(" | ") || "-"}`);
+    L.push(`COTIZACIONES: ${c.total_7d} en 7d; ${c.maduras} ya tuvieron 48 h para recibir respuesta; ${c.recientes_sin_madurar} todavía no maduraron y no se evalúan como silencio. De las maduras, ${c.sin_resp} siguen sin respuesta (${c.sin_resp_pct}%) · por perfil ${JSON.stringify(c.por_perfil)}`);
+    L.push(`COTIZADOS SIN RESPUESTA (solo cotizaciones con 48 h cumplidas; los más recientes): ${c.sin_resp_lista.map((x) => `${x.nombre} (+${x.conv}) ${x.perfil} · ${x.producto}${x.usd ? " ~USD " + x.usd : ""} · hace ${x.hace_dias} d`).join(" | ") || "-"}`);
     const s = h.seguimientos;
     const M = s.M || { n: 0, resp_pct: 0, compro: 0 }, conPlan = s.A.n + s.B.n;
     L.push(`SEGUIMIENTOS 14d: ${s.total.n} enviados · ${s.total.resp} contestaron en 48 h (${s.total.resp_pct}%) · ${s.total.compro} compraron después.`);
@@ -297,9 +332,10 @@ export function textoHechos(h, partes = ["embudo", "whatsapp", "redes", "product
   }
   if (partes.includes("redes")) {
     const r = h.redes;
-    L.push(`VIDEOS INSTAGRAM (chats nuevos en las 48 h siguientes contra base de ${r.base_diaria} por día): ${r.videos.map((v) => `${v.fecha} [${v.formato}] gancho "${v.gancho}" · alcance ${n0(v.alcance)} · vistas ${n0(v.vistas)} · guardados ${n0(v.guardados)} · compartidos ${n0(v.compartidos)} · ${v.seg_vistos ?? "-"} s vistos · chats 48h ${v.chats_48h} (atribuidos ${v.atribuidos})`).join(" | ") || "sin videos"}`);
+    L.push(`VIDEOS INSTAGRAM (asociación temporal, no prueba causal): cada chat se cuenta como máximo para el reel previo más reciente; la ventana debe completar 48 h. Base diaria ${r.base_diaria}; ${r.videos_maduros} videos maduros · ${r.chats_ab_asociados} chats A/B asociados · ${r.cotizados_asociados} cotizados · ${r.ventas_confirmadas_asociadas} ventas confirmadas. Detalle: ${r.videos.map((v) => `${v.fecha} [${v.formato}] gancho "${v.gancho}" · vistas ${n0(v.vistas)} · guardados ${n0(v.guardados)} · compartidos ${n0(v.compartidos)} · ${v.seg_vistos ?? "-"} s vistos · ventana ${v.maduro ? "completa" : "abierta"} · chats en 48 h ${v.chats_48h ?? "en curso"} · chats únicos asociados ${v.chats_asociados} (A/B ${v.chats_ab}, cotizados en esa ventana ${v.cotizados_asociados}, ventas confirmadas ${v.ventas_confirmadas_asociadas}, chats por encima de la base ${v.chats_sobre_base_48h ?? "-"})`).join(" | ") || "sin videos"}`);
     L.push(`TIKTOK (los mismos videos que Instagram; "guion" es lo que se dice en el video, transcripto): ${r.tiktok.map((t) => `${t.fecha} "${t.texto}" ${n0(t.vistas)} vistas · ${n0(t.compartidos)} compartidos · ${n0(t.guardados)} guardados · chats 48h ${t.chats_48h}${t.guion ? ` · GUION: ${t.guion}` : ""}`).join(" | ") || "sin datos"}`);
     L.push(`ORIGEN DE LOS CHATS NUEVOS 14d (lo que dijo el cliente): ${JSON.stringify(r.origen_14d)}`);
+    L.push(`EMBUDO POR ORIGEN 14d (origen registrado en el chat; chats/A-B/cotizados/ventas/confirmadas): ${r.canales_14d.map((x) => `${x.origen} ${x.chats}/${x.ab}/${x.cotizados}/${x.ventas}/${x.ventas_confirmadas}`).join(" · ") || "sin datos"}`);
     if (r.virales?.length) L.push(`VIRALES DE OTRAS CUENTAS (TikTok, leídos solos por hashtag o cuenta; "x seguidores" = cuántas veces superó a sus seguidores): ${r.virales.map((v) => `${v.fecha} @${v.autor} ${n0(v.vistas)} vistas${v.veces ? ` (${v.veces}x seguidores)` : ""} · ${n0(v.compartidos)} compartidos · ${n0(v.guardados)} guardados · ${v.fuente || ""} · "${v.texto}"${v.guion ? ` · DICE: ${v.guion}` : ""}`).join(" | ")}`);
     else L.push("VIRALES DE OTRAS CUENTAS: todavía no hay lectura (se leen solos los lunes; en el panel se puede pedir una lectura ahora y elegir hashtags y cuentas)");
     if (r.referencias.length) L.push(`VIDEOS VIRALES DE OTROS guardados como referencia: ${r.referencias.map((x) => `${x.fecha} ${x.red}: ${x.que_pasa} (${x.por_que})`).join(" | ")}`);
@@ -324,7 +360,7 @@ const REGLAS = `REGLAS:
 - Usá SOLO los números y charlas de abajo. Nunca inventes clientes, cifras ni resultados. Cada hallazgo lleva su evidencia (nombre y número de cliente, o la cifra exacta).
 - Si para afirmar algo te falta un dato, decí cuál y cómo medirlo: eso vale más que una opinión.
 - Directo, español rioplatense con voseo, sin emojis, sin signos de apertura (¿ ¡), sin guiones largos. Manuel no tiene tiempo: primero lo importante.
-- Las hipótesis son pocas (máximo 2), concretas y medibles: una acción que alguien puede hacer esta semana, una métrica de la lista y una meta numérica. Métricas posibles: ${Object.entries(METRICAS).map(([k, v]) => `${k} (${v.que})`).join("; ")}.
+- Las hipótesis son pocas (máximo 2 por corrida), concretas y medibles: una acción con responsable, una métrica de la lista y un vencimiento. La meta tiene que mejorar el valor base en la dirección correcta (subir o bajar según la métrica); no repitas métricas ya activas. Métricas posibles: ${Object.entries(METRICAS).map(([k, v]) => `${k} (${v.que}; ${v.mejor})`).join("; ")}.
 - Vapers, pods y tabaco no existen para vos.`;
 // Manuales: criterio de cada agente. Armados con lo que ya aprendió el negocio y con patrones de equipos de agentes públicos
 // (analistas por área + debate con un crítico + un jefe que decide, como en TauricResearch/TradingAgents; roles con método
@@ -334,7 +370,7 @@ export const MANUAL = {
 - De lo general a lo particular: primero en qué etapa del embudo se pierde más (arriba: contenido y consultas; medio: atención y cotización; abajo: cierre), después por qué.
 - Nunca una sola causa. Para cada conclusión escribí también la explicación contraria y descartala con un dato; si no podés descartarla, dejala como duda y decí qué habría que medir.
 - Compará siempre contra algo: la semana anterior, la base diaria, el otro plan, el otro perfil. Un número solo no dice nada.
-- Con menos de 5 casos no hay patrón: decí "pocos casos" y tratá el hallazgo como pista.
+- Con menos de 5 casos no hay patrón: decí "pocos casos" y tratá el hallazgo como pista. Los seguimientos A/B requieren 15 casos por plan antes de declarar ganador.
 - Cruzá con las otras áreas: una consulta viene de un contenido, pide un producto y termina (o no) en una venta. Seguí ese hilo completo.`,
   whatsapp: `CRITERIO DE VENTAS POR CHAT:
 - Velocidad: el que pregunta y recibe respuesta en minutos sigue la charla; después de una hora la mayoría ya se fue a otra cosa. Mirá la demora humana, no la del bot.
@@ -358,7 +394,7 @@ export const MANUAL = {
 - Lista de corte: lo que se pide mucho y nunca cierra consume tiempo de cotización. Decí cuáles dejar de cotizar.
 - Para cada producto decí la vía: cupo en grupos, por encargo, stock propio con entrega inmediata o publicarlo en Mercado Libre.`,
 };
-const SALIDA = `Respondé SOLO JSON: {"resumen":"2 o 3 líneas con lo más importante","hallazgos":[{"titulo":"corto","detalle":"qué pasa y por qué importa para vender","evidencia":"nombres, números o cifras exactas"}],"hipotesis":[{"texto":"qué creemos","accion":"qué hacer esta semana y quién (Manuel, Sender, agente, Buko)","metrica":"nombre de la lista","meta":número,"dias":7}],"ideas":["máximo 2 ideas NUEVAS, y solo si son mejores que las abiertas: cada una nombra un producto, cliente o canal concreto (reel, historia, grupo, cupo), un número y el dato que la respalda. Prohibidas las genéricas (crear un sistema, un programa de fidelidad, un análisis de competencia, mejorar u optimizar algo) y las que repiten un producto que ya tiene idea abierta. Si no tenés una mejor, devolvé la lista vacía"],"para_manuel":["cosas que solo él puede decidir o hacer, máximo 3"]}`;
+const SALIDA = `Respondé SOLO JSON: {"resumen":"2 o 3 líneas con lo más importante","hallazgos":[{"titulo":"corto","detalle":"qué pasa y por qué importa para vender","evidencia":"nombres, números o cifras exactas"}],"hipotesis":[{"texto":"qué creemos","accion":"qué hacer esta semana y quién (Manuel, Sender, agente, Buko)","metrica":"nombre de la lista","meta":número,"dias":7}],"ideas":["máximo 2 ideas NUEVAS, solo si aportan un ángulo distinto a las abiertas. Puede repetirse el producto si cambia el gancho o la hipótesis creativa. Cada idea incluye perfil objetivo, producto, gancho textual, qué se muestra en pantalla, CTA y métrica de éxito; priorizá chats A/B, cotizaciones y ventas confirmadas. Si solo hay vistas o asociación temporal, aclaralo y no afirmes causalidad. Prohibidas las ideas genéricas y sin dato de respaldo. Si no hay una prueba concreta, devolvé lista vacía"],"para_manuel":["cosas que solo él puede decidir o hacer, máximo 3"]}`;
 
 const PROMPTS = {
   whatsapp: (h, muestras) => `Sos el AGENTE DE WHATSAPP de la mesa de ${NEGOCIO}
@@ -394,18 +430,18 @@ CUPOS: ${h.cupos.lista.map((c) => `${c.fecha} "${c.texto}" → ${c.relacionadas}
 ${SALIDA}`,
 };
 
-const normIdea = (t) => String(t || "").toLowerCase().replace(/[^a-z0-9áéíóúñ ]/g, "").replace(/\s+/g, " ").trim().slice(0, 45);
+const normIdea = (t) => String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
 async function guardarIdeas(env, dia, agente, lista) {
-  const ya = new Set((await todas(env, "SELECT texto FROM mesa_ideas ORDER BY ts DESC LIMIT 120")).map((x) => normIdea(x.texto)));
+  const previas = (await todas(env, "SELECT texto FROM mesa_ideas ORDER BY ts DESC LIMIT 120")).map((x) => normIdea(x.texto));
   const ops = [];
-  for (const t of lista) { const k = normIdea(t); if (k.length < 12 || ya.has(k)) continue; ya.add(k); ops.push(env.DB.prepare("INSERT INTO mesa_ideas (id, ts, dia, agente, texto, estado) VALUES (?,?,?,?,?,'nueva')").bind(`i:${Date.now()}:${agente}:${ops.length}:${Math.random().toString(36).slice(2, 6)}`, Date.now(), dia, agente, corto(t, 300))); }
+  for (const t of lista) { const k = normIdea(t); if (k.length < 12 || previas.some((p) => p === k || parecidas(p, k))) continue; previas.push(k); ops.push(env.DB.prepare("INSERT INTO mesa_ideas (id, ts, dia, agente, texto, estado) VALUES (?,?,?,?,?,'nueva')").bind(`i:${Date.now()}:${agente}:${ops.length}:${Math.random().toString(36).slice(2, 6)}`, Date.now(), dia, agente, corto(t, 400))); }
   if (ops.length) await env.DB.batch(ops);
   return ops.length;
 }
 async function correrAgente(env, iaJSON, nombre, h, extra, opts) {
   const prompt = PROMPTS[nombre](h, extra);
   const r = await iaJSON(env, prompt, opts).catch(() => null);
-  const datos = r && typeof r === "object" ? { resumen: corto(r.resumen, 600), hallazgos: (r.hallazgos || []).slice(0, 7).map((x) => ({ titulo: corto(x.titulo, 90), detalle: corto(x.detalle, 500), evidencia: corto(x.evidencia, 300) })), hipotesis: (r.hipotesis || []).filter((x) => METRICAS[x.metrica]).slice(0, 2).map((x) => ({ texto: corto(x.texto, 240), accion: corto(x.accion, 240), metrica: x.metrica, meta: +x.meta, dias: Math.min(30, Math.max(3, +x.dias || 7)) })), ideas: (r.ideas || []).slice(0, 5).map((x) => corto(x, 240)), para_manuel: (r.para_manuel || []).slice(0, 3).map((x) => corto(x, 240)) } : null;
+  const datos = r && typeof r === "object" ? { resumen: corto(r.resumen, 600), hallazgos: (r.hallazgos || []).slice(0, 7).map((x) => ({ titulo: corto(x.titulo, 90), detalle: corto(x.detalle, 500), evidencia: corto(x.evidencia, 300) })), hipotesis: (r.hipotesis || []).filter((x) => METRICAS[x.metrica]).slice(0, 2).map((x) => ({ texto: corto(x.texto, 240), accion: corto(x.accion, 240), metrica: x.metrica, meta: +x.meta, dias: Math.min(30, Math.max(3, +x.dias || 7)) })), ideas: (r.ideas || []).slice(0, 5).map((x) => corto(x, 400)), para_manuel: (r.para_manuel || []).slice(0, 3).map((x) => corto(x, 240)) } : null;
   if (datos?.ideas?.length) await guardarIdeas(env, h.hoy, nombre, datos.ideas).catch(() => {});
   const texto = datos ? [datos.resumen, ...datos.hallazgos.map((x) => `- ${x.titulo}: ${x.detalle} (${x.evidencia})`)].join("\n") : "La IA no respondió (sin cupo). Se reintenta en la próxima corrida.";
   await env.DB.prepare("INSERT INTO mesa_informes (id, ts, dia, agente, datos, texto) VALUES (?,?,?,?,?,?)").bind(`${nombre}:${Date.now()}`, Date.now(), h.hoy, nombre, JSON.stringify(datos || {}), texto).run().catch(() => {});
@@ -413,16 +449,22 @@ async function correrAgente(env, iaJSON, nombre, h, extra, opts) {
 }
 
 // ---------------------------------------------------------------------------
-// HIPÓTESIS: se crean con base medida hoy; se verifican solas cuando vencen (o antes, si ya se cumplieron)
+// HIPÓTESIS: las métricas son ventanas móviles; se evalúan al vencimiento, nunca por un cruce transitorio.
 async function crearHipotesis(env, h, agente, lista) {
-  const activas = await todas(env, "SELECT id, texto FROM mesa_hip WHERE estado='activa'");
+  const activas = await todas(env, "SELECT id, texto, metrica FROM mesa_hip WHERE estado='activa'");
   const ops = [];
+  const metricasNuevas = new Set();
   for (const x of lista || []) {
-    if (activas.length + ops.length >= 6 || !METRICAS[x.metrica] || isNaN(x.meta)) continue;
+    if (activas.length + ops.length >= 4 || !METRICAS[x.metrica] || !Number.isFinite(+x.meta)) continue;
+    if (activas.some((a) => a.metrica === x.metrica) || metricasNuevas.has(x.metrica)) continue;
     if (activas.some((a) => a.texto.toLowerCase().slice(0, 40) === String(x.texto).toLowerCase().slice(0, 40))) continue;
-    const base = medir(h, x.metrica), vence = diaAR(Date.now() + (x.dias || 7) * DIA);
+    const base = medir(h, x.metrica); if (base == null) continue;
+    const sentido = METRICAS[x.metrica].mejor;
+    if ((sentido === "sube" && +x.meta <= base) || (sentido === "baja" && +x.meta >= base)) continue;
+    const vence = diaAR(Date.now() + (x.dias || 7) * DIA);
     ops.push(env.DB.prepare("INSERT INTO mesa_hip (id, ts, dia, agente, texto, accion, metrica, base, meta, vence, estado, actual, resultado, verificado) VALUES (?,?,?,?,?,?,?,?,?,?,'activa',?,NULL,0)")
       .bind(`h:${Date.now()}:${agente}:${ops.length}:${Math.random().toString(36).slice(2, 6)}`, Date.now(), h.hoy, agente, x.texto, x.accion, x.metrica, base, x.meta, vence, base));
+    metricasNuevas.add(x.metrica);
   }
   if (ops.length) await env.DB.batch(ops);
   return ops.length;
@@ -432,10 +474,13 @@ export async function verificarHipotesis(env, h) {
   const ops = [], cerradas = [];
   for (const x of activas) {
     const actual = medir(h, x.metrica);
-    const subir = x.meta >= (x.base ?? 0), llego = actual != null && (subir ? actual >= x.meta : actual <= x.meta);
+    const def = METRICAS[x.metrica], muestra = def?.muestra ? def.muestra(h) : 0;
+    const vencida = x.vence <= h.hoy, evaluable = vencida && actual != null && muestra >= (def?.minimo || 5);
+    const llego = evaluable && (def.mejor === "baja" ? actual <= x.meta : actual >= x.meta);
     let estado = "activa", resultado = null;
     if (llego) { estado = "cumplida"; resultado = `${x.metrica} pasó de ${x.base ?? "-"} a ${actual} (meta ${x.meta})`; }
-    else if (x.vence <= h.hoy) { estado = "fallida"; resultado = `${x.metrica} quedó en ${actual ?? "-"} (base ${x.base ?? "-"}, meta ${x.meta})`; }
+    else if (vencida && evaluable) { estado = "fallida"; resultado = `${x.metrica} quedó en ${actual} (base ${x.base ?? "-"}, meta ${x.meta}, muestra ${muestra})`; }
+    else if (vencida) { estado = "sin_datos"; resultado = `No se pudo evaluar ${x.metrica}: valor ${actual ?? "sin dato"}, muestra ${muestra}; se requieren al menos ${def?.minimo || 5} casos`; }
     ops.push(env.DB.prepare("UPDATE mesa_hip SET actual=?, estado=?, resultado=COALESCE(?, resultado), verificado=? WHERE id=?").bind(actual, estado, resultado, Date.now(), x.id));
     if (estado !== "activa") cerradas.push({ ...x, actual, estado, resultado });
   }
@@ -483,7 +528,7 @@ async function integrar(env, iaJSON, h, informes, cerradas, opts, debate = null)
 Tenés los informes de hoy de tres agentes (WhatsApp, Redes, Productos), las hipótesis en curso con su avance medido, las que se cerraron hoy y la memoria. Tu trabajo:
 1) LECTURA: qué pasó en el embudo, por etapa (arriba: contenido y consultas; medio: atención y cotización; abajo: cierre), con los números. Dónde se pierde más.
 2) DECISIONES: máximo 3, ordenadas por impacto en ventas, cada una con quién la hace (Manuel, Sender, el agente, Buko) y el dato que la justifica. No repitas lo que ya decidiste en las lecturas anteriores salvo que haya un dato nuevo.
-3) HIPÓTESIS: máximo 2 nuevas (podés tomar las de los agentes). Nada de hipótesis si ya hay 5 activas.
+3) HIPÓTESIS: máximo 2 nuevas (podés tomar las de los agentes). Nada de hipótesis si ya hay 4 activas; no dupliques métricas que ya tengan prueba en curso.
 4) CAMBIO DE RUMBO: solo si los datos lo justifican, decilo sin vueltas (qué dejar de hacer, qué empezar). Si no, "".
 5) MENSAJE: lo que le mandás a Manuel por Telegram, máximo 900 caracteres, 4 a 6 líneas, lo más importante primero, cada línea con un número o un nombre. Sin saludos.
 ${REGLAS}
@@ -590,7 +635,7 @@ export async function estadoMesa(env) {
   const porAgente = {}; for (const x of ult) if (!porAgente[x.agente]) { let datos = {}; try { datos = JSON.parse(x.datos || "{}"); } catch {} porAgente[x.agente] = { ts: x.ts, dia: x.dia, datos, texto: x.texto }; }
   const hip = await todas(env, "SELECT * FROM mesa_hip ORDER BY CASE estado WHEN 'activa' THEN 0 ELSE 1 END, ts DESC LIMIT 30");
   const chat = (await todas(env, "SELECT ts, rol, texto, agente FROM mesa_chat ORDER BY id DESC LIMIT 40")).reverse();
-  let hechosR = null; try { const h = JSON.parse((await kvGet(env, "mesa_hechos")) || "null"); if (h) hechosR = { generado: h.generado, embudo: h.embudo.v7, embudo_ant: h.embudo.v7ant, perfiles: h.perfiles, respuesta: h.respuesta, pendientes: h.pendientes.length, esperando_total: h.esperando_total ?? null, movimientos: h.ventas.movimientos_clientes_anteriores || [], cotizaciones: { n: h.cotizaciones.n, sin_resp_pct: h.cotizaciones.sin_resp_pct }, seguimientos: h.seguimientos, prospeccion: h.prospeccion, cupos: h.cupos, consultas_por_video: h.redes.consultas_por_video, ventas_sin_cargar: h.ventas.detectadas_sin_cargar, ml: !!h.ml }; } catch {}
+  let hechosR = null; try { const h = JSON.parse((await kvGet(env, "mesa_hechos")) || "null"); if (h) hechosR = { generado: h.generado, embudo: h.embudo.v7, embudo_ant: h.embudo.v7ant, perfiles: h.perfiles, respuesta: h.respuesta, pendientes: h.pendientes.length, esperando_total: h.esperando_total ?? null, movimientos: h.ventas.movimientos_clientes_anteriores || [], cotizaciones: { n: h.cotizaciones.n, maduras: h.cotizaciones.maduras ?? h.cotizaciones.n, recientes_sin_madurar: h.cotizaciones.recientes_sin_madurar ?? 0, sin_resp_pct: h.cotizaciones.sin_resp_pct }, seguimientos: h.seguimientos, prospeccion: h.prospeccion, cupos: h.cupos, redes: { consultas_por_video: h.redes.consultas_por_video, videos_maduros: h.redes.videos_maduros ?? 0, chats_ab_asociados: h.redes.chats_ab_asociados ?? 0, cotizados_asociados: h.redes.cotizados_asociados ?? 0, ventas_confirmadas_asociadas: h.redes.ventas_confirmadas_asociadas ?? 0, canales_14d: h.redes.canales_14d || [] }, ventas_sin_cargar: h.ventas.detectadas_sin_cargar, ml: !!h.ml }; } catch {}
   let ult2 = null; try { ult2 = JSON.parse((await kvGet(env, "mesa_ult")) || "null"); } catch {}
   const virales = await todas(env, "SELECT ts, autor, link, texto, vistas, compartidos, guardados, seguidores, fuente, guion FROM virales WHERE ts>=? ORDER BY vistas DESC LIMIT 12", Date.now() - 45 * DIA);
   let fuentes = null, virUlt = null; try { fuentes = JSON.parse((await kvGet(env, "virales_fuentes")) || "null"); virUlt = JSON.parse((await kvGet(env, "vir_ultimo")) || "null"); } catch {}
