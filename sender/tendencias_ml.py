@@ -54,7 +54,8 @@ JS_TENDENCIAS = r"""
     const lineas = (a.innerText || '').split('\n').map((x) => x.trim()).filter(Boolean);
     const palabra = lineas[lineas.length - 1] || '', tipo = lineas.length > 1 ? lineas[0].replace(/^\d+\S*\s*/, '').toLowerCase() : '';
     const k = palabra.toLowerCase(); if (!palabra || palabra.length > 60 || vistos.has(k)) continue; vistos.add(k);
-    out.push({ palabra, tipo, link: a.href });
+    const rango = lineas.length > 1 ? lineas[0].match(/^(\d+)/) : null;
+    out.push({ palabra, tipo, puesto: rango ? Number(rango[1]) : null, link: a.href });
   }
   return out;
 }
@@ -73,10 +74,11 @@ JS_LISTADO = """
   for (const li of document.querySelectorAll('li.ui-search-layout__item, .ui-search-result, .poly-card')) {
     const titulo = (li.querySelector('.poly-component__title, .ui-search-item__title, h2, h3') || {}).innerText || '';
     const precio = (li.querySelector('.andes-money-amount__fraction') || {}).innerText || '';
+    const enlace = li.querySelector('a.poly-component__title, a.ui-search-link, a[href*="/MLA"]') || li.querySelector('a[href]');
     const vend = (li.innerText.match(/(\\+?[\\d.]+\\s*vendidos?)/i) || [])[1] || '';
     const t = titulo.trim(), p = precio.replace(/\\./g, '');
     const clave = t.toLowerCase().replace(/\\s+/g, ' ') + '|' + p;
-    if (t && !vistos.has(clave)) { vistos.add(clave); items.push({ titulo: t, precio: p, vendidos: vend }); }
+    if (t && !vistos.has(clave)) { vistos.add(clave); items.push({ titulo: t, precio: p, vendidos: vend, url: enlace ? enlace.href : '' }); }
     if (items.length >= 8) break;
   }
   return { resultados: m ? m[1].replace(/\\./g, '') : null, items };
@@ -107,7 +109,7 @@ def leer(ver=False, maximo=25):
         print(f"{len(tend)} tendencias encontradas")
         bloqueado = False
         for i, t in enumerate(tend, 1):
-            fila = {"palabra": t["palabra"], "puesto": i, "categoria": t.get("categoria", ""), "tipo": t.get("tipo", "")}
+            fila = {"palabra": t["palabra"], "puesto": t.get("puesto"), "categoria": t.get("categoria", ""), "tipo": t.get("tipo", "")}
             if bloqueado: salida.append(fila); continue
             try:
                 link = t["link"] if t["link"].startswith("http") else "https://listado.mercadolibre.com.ar/" + re.sub(r"\s+", "-", t["palabra"].strip().lower())
@@ -128,7 +130,7 @@ def leer(ver=False, maximo=25):
                 d = pg.evaluate(JS_LISTADO)
                 precios = [num(x["precio"]) for x in d["items"] if num(x["precio"])]
                 fila.update({"resultados": num(d.get("resultados")), "precio_min": min(precios) if precios else None, "precio_max": max(precios) if precios else None,
-                             "vendidos": (d["items"][0]["vendidos"] if d["items"] else ""), "top": [{"titulo": x["titulo"], "precio": num(x["precio"]), "vendidos": x["vendidos"]} for x in d["items"][:5]]})
+                             "vendidos": (d["items"][0]["vendidos"] if d["items"] else ""), "top": [{"titulo": x["titulo"], "precio": num(x["precio"]), "vendidos": x["vendidos"], "url": x.get("url", "")} for x in d["items"][:5]]})
             except Exception as e:
                 fila["error"] = str(e)[:80]
             salida.append(fila); print(f"  {i}. {fila['palabra']} · {fila.get('resultados') or '?'} publicaciones · top vende {fila.get('vendidos') or '?'}")

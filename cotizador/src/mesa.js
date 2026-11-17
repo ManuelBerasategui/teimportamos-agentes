@@ -35,8 +35,8 @@ function recomendarML(rows, feedback, ahora = Date.now()) {
     const grupos = new Map();
     for (const r of lista) {
       if (!r.clave || omitidas.has(r.clave)) continue;
-      const g = grupos.get(r.clave) || { palabra: r.palabra, clave: r.clave, categoria: r.categoria, diasSet: new Set(), ranks: [], tipos: new Set(), ultima: 0, precio_min: null, precio_max: null, resultados: null, top: [] };
-      g.diasSet.add(r.dia); if (r.puesto) g.ranks.push(r.puesto); if (r.tipo) g.tipos.add(r.tipo);
+      const g = grupos.get(r.clave) || { palabra: r.palabra, clave: r.clave, categoria: r.categoria, diasSet: new Set(), rankPorDia: new Map(), tipos: new Set(), ultima: 0, precio_min: null, precio_max: null, resultados: null, top: [] };
+      g.diasSet.add(r.dia); if (r.puesto) g.rankPorDia.set(r.dia, Math.min(g.rankPorDia.get(r.dia) || Infinity, r.puesto)); if (r.tipo) g.tipos.add(r.tipo);
       if (r.ts >= g.ultima) { g.ultima = r.ts; g.palabra = r.palabra; g.categoria = r.categoria; g.precio_min = r.precio_min; g.precio_max = r.precio_max; g.resultados = r.resultados; g.vendidos = r.vendidos; try { g.top = JSON.parse(r.top || "[]"); } catch {} }
       grupos.set(r.clave, g);
     }
@@ -45,13 +45,13 @@ function recomendarML(rows, feedback, ahora = Date.now()) {
       // Así no suben búsquedas/eventos como "Ofertas" o "Navidad" al ranking de productos.
       const tienePublicacionVerificable = g.top.some((x) => corto(x.titulo, 100).length >= 8 && +x.precio > 0);
       if (terminosGenericos.test(g.palabra.trim()) || /\btienda oficial\b/i.test(g.palabra) || !tienePublicacionVerificable) return null;
-      const promedio = g.ranks.length ? g.ranks.reduce((a, b) => a + b, 0) / g.ranks.length : 30;
+      const ranks = [...g.rankPorDia.values()], promedio = ranks.length ? ranks.reduce((a, b) => a + b, 0) / ranks.length : 30;
       const frescura = Math.max(0, 7 - Math.floor((ahora - g.ultima) / DIA));
       const fb = marca.get(g.clave);
       const score = Math.round(g.diasSet.size * 12 + frescura * 2 + Math.max(0, 20 - promedio) + Math.min(g.tipos.size, 3) * 2 + (fb?.estado === "interesa" ? 5 : 0));
       const confianza = g.diasSet.size >= 5 ? "repetida" : g.diasSet.size >= 2 ? "en observación" : "inicial";
-      return { ...g, dias: g.diasSet.size, rank_promedio: Math.round(promedio * 10) / 10, score, confianza, feedback: fb?.estado || null, nota: fb?.nota || "", horizonte };
-    }).filter(Boolean).sort((a, b) => b.score - a.score || a.rank_promedio - b.rank_promedio).slice(0, horizonte === "mes" ? 5 : horizonte === "semana" ? 3 : 1);
+      return { ...g, dias: g.diasSet.size, rank_promedio: ranks.length ? Math.round(promedio * 10) / 10 : null, criterios: [...g.tipos], score, confianza, feedback: fb?.estado || null, nota: fb?.nota || "", horizonte };
+    }).filter(Boolean).sort((a, b) => b.score - a.score || (a.rank_promedio ?? 999) - (b.rank_promedio ?? 999)).slice(0, horizonte === "mes" ? 5 : horizonte === "semana" ? 3 : 1);
   };
   const inicio7 = ahora - 7 * DIA, inicio30 = ahora - 30 * DIA;
   return {
@@ -869,7 +869,7 @@ export async function apiMesa(env, req, url, iaJSON, body = null) {
 // Tendencias de Mercado Libre leídas desde la PC (sender/tendencias_ml.py)
 export async function guardarML(env, b) {
   await prepararMesa(env);
-  const items = (Array.isArray(b?.items) ? b.items : []).slice(0, 80).map((t) => ({ palabra: corto(t.palabra, 60), categoria: corto(t.categoria, 40), tipo: corto(t.tipo, 30), puesto: +t.puesto || null, resultados: +t.resultados || null, precio_min: +t.precio_min || null, precio_max: +t.precio_max || null, vendidos: corto(t.vendidos, 30), top: (Array.isArray(t.top) ? t.top : []).slice(0, 5).map((x) => ({ titulo: corto(x.titulo, 80), precio: +x.precio || null, vendidos: corto(x.vendidos, 30) })) })).filter((t) => t.palabra);
+  const items = (Array.isArray(b?.items) ? b.items : []).slice(0, 80).map((t) => ({ palabra: corto(t.palabra, 60), categoria: corto(t.categoria, 40), tipo: corto(t.tipo, 30), puesto: +t.puesto || null, resultados: +t.resultados || null, precio_min: +t.precio_min || null, precio_max: +t.precio_max || null, vendidos: corto(t.vendidos, 30), top: (Array.isArray(t.top) ? t.top : []).slice(0, 5).map((x) => { const u = corto(x.url, 500); const segura = /^https:\/\/([a-z0-9-]+\.)*mercadolibre\.com\.ar\//i.test(u); return { titulo: corto(x.titulo, 80), precio: +x.precio || null, vendidos: corto(x.vendidos, 30), url: segura ? u : "" }; }) })).filter((t) => t.palabra);
   const ts = Date.now(), dia = diaAR(ts);
   if (items.length) await env.DB.batch(items.map((t, i) => {
     const clave = claveML(t.palabra);

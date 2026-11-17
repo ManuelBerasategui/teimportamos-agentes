@@ -84,7 +84,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid color-mix(in srgb,var(
 </section>
 <section id="v-ml" hidden>
  <h2>Tendencias de Mercado Libre</h2>
- <p class="mu">Productos respaldados por publicaciones concretas y precio observado. El lector de la PC actualiza los datos; estas señales no representan ventas exactas por día.</p>
+ <p class="mu">Mercado Libre actualiza sus tendencias de búsqueda semanalmente; el lector toma una nueva lectura diaria. Priorizamos el puesto visible y la repetición en días distintos, y mostramos una publicación con precio para revisar competencia. Esto mide interés de búsqueda, no ventas ni rentabilidad garantizadas.</p>
  <div class="acc" style="margin:8px 0 12px"><button class="b p" id="mlActualizar">Actualizar lectura</button><span class="mu" id="mlEstado"></span></div>
  <div id="mlLista"><div class="vacio">Cargando tendencias…</div></div>
 </section>
@@ -462,10 +462,14 @@ function cargarMercadoLibre() {
 function pintarMercadoLibre(ml) {
   ml = ml || {}; var estado = $("#mlEstado"), lista = $("#mlLista");
   if (estado) estado.textContent = ml.actualizado ? "Última lectura: " + fechaHoraM(ml.actualizado) + " · " + (ml.cantidad_dias || 0) + " día(s) con datos" : "Todavía no hay datos guardados. Ejecutá tendencias_ml.bat en la computadora lectora.";
-  var secciones = [["dia", "Señal de hoy · hasta 1 producto"], ["semana", "Esta semana · hasta 3 productos"], ["mes", "Este mes · hasta 5 productos"]];
+  var secciones = [["dia", "Lectura más reciente · hasta 1 producto"], ["semana", "Repetidos en 7 días · hasta 3 productos"], ["mes", "Repetidos en 30 días · hasta 5 productos"]];
   function tarjetas(items) { return (items || []).map(function (x) {
-    var pub = x.top && x.top[0] ? '<div class="mu" style="margin-top:6px">Publicación: ' + esc(x.top[0].titulo) + (x.top[0].precio ? ' · $' + plata(x.top[0].precio) : "") + (x.top[0].vendidos ? ' · contador visible: ' + esc(x.top[0].vendidos) : "") + '</div>' : "";
-    return '<div class="card"><div class="top"><b>' + esc(x.palabra) + '</b><span class="tag">' + x.dias + ' día(s) observado(s)</span><span class="tag">' + esc(x.confianza) + '</span><span class="mu">' + esc(x.categoria || "Mercado Libre") + '</span></div><div class="mu">Puesto promedio observado: ' + x.rank_promedio + (x.resultados ? ' · ' + plata(x.resultados) + ' publicaciones' : "") + (x.precio_min && x.precio_max ? ' · rango $' + plata(x.precio_min) + '–$' + plata(x.precio_max) : "") + '</div>' + pub + (x.nota ? '<div class="mu">Resultado que anotaste: ' + esc(x.nota) + '</div>' : '') + '<div class="acc"><button class="b v" data-mlestado="interesa" data-mlclave="' + esc(x.clave) + '">Me interesa</button><button class="b" data-mlestado="probado" data-mlclave="' + esc(x.clave) + '">Ya lo probé</button><button class="b x" data-mlestado="descartada" data-mlclave="' + esc(x.clave) + '">Descartar 30 días</button></div></div>';
+    var p = (x.top || []).find(function (z) { return z.titulo && z.url; }) || (x.top || []).find(function (z) { return z.titulo; });
+    var tituloPub = p && p.url ? '<a href="' + esc(p.url) + '" target="_blank" rel="noopener noreferrer" style="color:var(--ac);font-weight:700">' + esc(p.titulo) + '</a>' : (p ? esc(p.titulo) : "");
+    var pub = p ? '<div class="mu" style="margin-top:6px">Publicación encontrada: ' + tituloPub + (p.precio ? ' · $' + plata(p.precio) : "") + (p.vendidos ? ' · contador visible: ' + esc(p.vendidos) : "") + '</div>' : "";
+    var puesto = x.rank_promedio == null ? "Puesto no disponible en la lectura" : "Puesto promedio en tendencias: #" + x.rank_promedio;
+    var criterios = x.criterios && x.criterios.length ? ' · tipo de señal: ' + esc(x.criterios.join(", ")) : "";
+    return '<div class="card"><div class="top"><b>' + esc(x.palabra) + '</b><span class="tag">' + x.dias + ' día(s) observado(s)</span><span class="tag">' + esc(x.confianza) + '</span><span class="mu">' + esc(x.categoria || "Mercado Libre") + '</span></div><div class="mu">' + puesto + criterios + (x.resultados ? ' · ' + plata(x.resultados) + ' publicaciones' : "") + (x.precio_min && x.precio_max ? ' · rango $' + plata(x.precio_min) + '–$' + plata(x.precio_max) : "") + '</div>' + pub + (x.nota ? '<div class="mu">Resultado que anotaste: ' + esc(x.nota) + '</div>' : '') + '<div class="acc"><button class="b v" data-mlestado="interesa" data-mlclave="' + esc(x.clave) + '">Me interesa</button><button class="b" data-mlestado="probado" data-mlclave="' + esc(x.clave) + '">Ya lo probé</button><button class="b x" data-mlestado="descartada" data-mlclave="' + esc(x.clave) + '">Descartar 30 días</button></div></div>';
   }).join("") || '<div class="vacio">No hay productos con publicaciones y precios verificables para este período.</div>'; }
   if (lista) lista.innerHTML = secciones.map(function (s) { return '<h2>' + s[1] + '</h2>' + tarjetas(ml[s[0]]); }).join("");
 }
