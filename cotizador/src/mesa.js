@@ -24,6 +24,39 @@ const percentil = (xs, p) => { const v = xs.filter((x) => x != null).sort((a, b)
 const fecha = (ts) => new Date(ts - AR).toISOString().slice(5, 10).split("-").reverse().join("/");
 const corto = (t, n = 200) => String(t || "").replace(/\s+/g, " ").trim().slice(0, n);
 const RE_PREGUNTA = /\?|pas[aá]me|mand[aá]me|cu[aá]nto|precio|quiero|necesito|ten[eé]s|tienen|cuando|cómo|como es|me pod[eé]s|se puede/i;
+const claveML = (s) => corto(String(s || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim(), 80);
+
+// Las puntuaciones comparan señales públicas observadas; no representan unidades vendidas.
+function recomendarML(rows, feedback, ahora = Date.now()) {
+  const omitidas = new Set(feedback.filter((f) => f.estado === "descartada" && f.ts > ahora - 30 * DIA).map((f) => f.clave));
+  const marca = new Map(feedback.map((f) => [f.clave, f]));
+  const agregar = (lista, horizonte) => {
+    const grupos = new Map();
+    for (const r of lista) {
+      if (!r.clave || omitidas.has(r.clave)) continue;
+      const g = grupos.get(r.clave) || { palabra: r.palabra, clave: r.clave, categoria: r.categoria, diasSet: new Set(), ranks: [], tipos: new Set(), ultima: 0, precio_min: null, precio_max: null, resultados: null, top: [] };
+      g.diasSet.add(r.dia); if (r.puesto) g.ranks.push(r.puesto); if (r.tipo) g.tipos.add(r.tipo);
+      if (r.ts >= g.ultima) { g.ultima = r.ts; g.palabra = r.palabra; g.categoria = r.categoria; g.precio_min = r.precio_min; g.precio_max = r.precio_max; g.resultados = r.resultados; g.vendidos = r.vendidos; try { g.top = JSON.parse(r.top || "[]"); } catch {} }
+      grupos.set(r.clave, g);
+    }
+    return [...grupos.values()].map((g) => {
+      const promedio = g.ranks.length ? g.ranks.reduce((a, b) => a + b, 0) / g.ranks.length : 30;
+      const frescura = Math.max(0, 7 - Math.floor((ahora - g.ultima) / DIA));
+      const fb = marca.get(g.clave);
+      const score = Math.round(g.diasSet.size * 12 + frescura * 2 + Math.max(0, 20 - promedio) + Math.min(g.tipos.size, 3) * 2 + (fb?.estado === "interesa" ? 5 : 0));
+      const confianza = g.diasSet.size >= 5 ? "repetida" : g.diasSet.size >= 2 ? "en observación" : "inicial";
+      return { ...g, dias: g.diasSet.size, rank_promedio: Math.round(promedio * 10) / 10, score, confianza, feedback: fb?.estado || null, nota: fb?.nota || "", horizonte };
+    }).sort((a, b) => b.score - a.score || a.rank_promedio - b.rank_promedio).slice(0, horizonte === "mes" ? 5 : horizonte === "semana" ? 3 : 1);
+  };
+  const inicio7 = ahora - 7 * DIA, inicio30 = ahora - 30 * DIA;
+  return {
+    actualizado: rows[0]?.ts || null,
+    cantidad_dias: new Set(rows.map((r) => r.dia)).size,
+    dia: agregar(rows.filter((r) => r.ts > ahora - 36 * H), "dia"),
+    semana: agregar(rows.filter((r) => r.ts >= inicio7), "semana"),
+    mes: agregar(rows.filter((r) => r.ts >= inicio30), "mes"),
+  };
+}
 
 let listo = false;
 export async function prepararMesa(env) {
@@ -35,6 +68,10 @@ export async function prepararMesa(env) {
     env.DB.prepare("CREATE TABLE IF NOT EXISTS mesa_chat (id INTEGER PRIMARY KEY AUTOINCREMENT, ts INTEGER, rol TEXT, texto TEXT)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS kv (k TEXT PRIMARY KEY, v TEXT, exp INTEGER)"),
     env.DB.prepare("CREATE TABLE IF NOT EXISTS w_seg_log (id TEXT PRIMARY KEY, conv TEXT, ts INTEGER, toque INTEGER, situacion TEXT, quien TEXT, texto TEXT)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS ml_observaciones (id TEXT PRIMARY KEY, ts INTEGER NOT NULL, dia TEXT NOT NULL, clave TEXT NOT NULL, palabra TEXT NOT NULL, categoria TEXT, tipo TEXT, puesto INTEGER, resultados INTEGER, precio_min REAL, precio_max REAL, vendidos TEXT, top TEXT)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS ml_observaciones_ts ON ml_observaciones(ts)"),
+    env.DB.prepare("CREATE INDEX IF NOT EXISTS ml_observaciones_clave_ts ON ml_observaciones(clave, ts)"),
+    env.DB.prepare("CREATE TABLE IF NOT EXISTS ml_feedback (clave TEXT PRIMARY KEY, estado TEXT NOT NULL, nota TEXT, ts INTEGER NOT NULL)"),
   ]);
   await env.DB.prepare("ALTER TABLE w_seg_log ADD COLUMN plantilla TEXT").run().catch(() => {});
   await env.DB.prepare("ALTER TABLE mesa_chat ADD COLUMN agente TEXT").run().catch(() => {});
@@ -72,7 +109,7 @@ export async function hechos(env, { dias = 14 } = {}) {
   await prepararMesa(env);
   const ahora = Date.now(), hoy = diaAR(ahora);
   const s7 = ahora - 7 * DIA, s14 = ahora - 14 * DIA, s30 = ahora - 30 * DIA, desde = ahora - Math.max(14, dias) * DIA;
-  const [convs, hitos, ventasCargadas, segLog, msgs7, grupos, ig, tt, prospectos, eq, mem, mlRaw, refs, vir, hitosVenta, ideasPrev] = await Promise.all([
+  const [convs, hitos, ventasCargadas, segLog, msgs7, grupos, ig, tt, prospectos, eq, mem, mlRaw, mlHist, mlFb, refs, vir, hitosVenta, ideasPrev] = await Promise.all([
     todas(env, "SELECT conv, nombre, primer_ts, ult_ts, ult_yo, ult_cliente_ts, ult_yo_ts, ult_texto, perfil, presup_usd, producto, etapa, motivo, origen, cierre_ts, puntaje, resp FROM w_conv WHERE grupo=0 AND COALESCE(prov,0)=0 AND COALESCE(archivado,0)=0 AND (primer_ts>=? OR ult_ts>=?)", s30, s30),
     todas(env, "SELECT conv, tipo, ts, dato FROM w_hito WHERE ts>=? AND tipo='cotizacion'", s30 - 45 * DIA),
     todas(env, "SELECT ts, conv, nombre, producto, monto, moneda, ganancia, linea FROM ventas WHERE ts>=? ORDER BY ts DESC", s30),
@@ -85,6 +122,8 @@ export async function hechos(env, { dias = 14 } = {}) {
     todas(env, "SELECT dia, persona, chats, mensajes FROM eq_dia WHERE dia>=? ORDER BY dia", diaAR(s7)),
     todas(env, "SELECT tipo, texto, ts FROM ag_mem ORDER BY ts DESC LIMIT 25"),
     kvGet(env, "ml_tendencias"),
+    todas(env, "SELECT ts, dia, clave, palabra, categoria, tipo, puesto, resultados, precio_min, precio_max, vendidos, top FROM ml_observaciones WHERE ts>=? ORDER BY ts DESC", s30),
+    todas(env, "SELECT clave, estado, nota, ts FROM ml_feedback WHERE ts>=?", s30),
     todas(env, "SELECT ts, link, nicho, que_pasa, por_que FROM ig_refs WHERE que_pasa<>'' ORDER BY ts DESC LIMIT 12"),
     todas(env, "SELECT id, ts, autor, link, texto, vistas, compartidos, guardados, seguidores, fuente, guion FROM virales WHERE ts>=? ORDER BY vistas DESC LIMIT 14", ahora - 45 * DIA),   // lo lee el worker buscador (virales.js); si la tabla no existe todavía, queda vacío
     todas(env, "SELECT conv, tipo, ts, dato FROM w_hito WHERE (tipo IN ('venta','comprobante') AND COALESCE(oculto,0)=0) OR tipo='no_venta' ORDER BY ts"),   // todas las señales de pago de la historia: hacen falta para saber cuál es la PRIMERA de cada cliente
@@ -273,6 +312,7 @@ export async function hechos(env, { dias = 14 } = {}) {
   // --- Equipo (7 días)
   const equipo = {}; for (const e of eq) { const o = equipo[e.persona] || (equipo[e.persona] = { chats: 0, mensajes: 0 }); o.chats += e.chats; o.mensajes += e.mensajes; }
   let ml = null; try { ml = mlRaw ? JSON.parse(mlRaw) : null; } catch {}
+  if (ml) ml.recomendaciones = recomendarML(mlHist, mlFb, ahora);
   const ideas = { podadas: ideasPrev.filter((i) => i.estado === "podada").slice(0, 10).map((i) => corto(i.texto, 100) + (i.nota ? ` (${corto(i.nota, 60)})` : "")), utiles: ideasPrev.filter((i) => i.estado === "util" || i.estado === "hecha").slice(0, 8).map((i) => corto(i.texto, 140)), descartadas: ideasPrev.filter((i) => i.estado === "descartada").slice(0, 10).map((i) => corto(i.texto, 110) + (i.nota ? ` (motivo: ${corto(i.nota, 80)})` : "")), abiertas: ideasPrev.filter((i) => i.estado === "nueva").slice(0, 12).map((i) => corto(i.texto, 110)) };
   return { hoy, generado: ahora, ideas, esperando_total: esperando, embudo, perfiles, respuesta, pendientes, cotizaciones, seguimientos, prospeccion, productos, cupos: cuposR, redes, ventas, equipo, memoria: mem.map((m) => ({ tipo: m.tipo, texto: corto(m.texto, 160) })), ml, convs_30d: convs.length };
 }
@@ -342,7 +382,14 @@ export function textoHechos(h, partes = ["embudo", "whatsapp", "redes", "product
   }
   if (partes.includes("productos")) {
     L.push(`PRODUCTOS PEDIDOS 30d (consultas / cotizados / ventas / perdidos / de perfil A o B): ${h.productos.map((p) => `${p.ejemplo}: ${p.n}/${p.cotizados}/${p.ventas}/${p.perdidos}/${p.ab}`).join(" · ") || "-"}`);
-    if (h.ml?.items?.length) L.push(`MERCADO LIBRE (leído desde la PC el ${fecha(h.ml.ts)}): ${h.ml.items.slice(0, 32).map((t) => `${t.palabra}${t.categoria && t.categoria !== "general" ? " [" + t.categoria + "]" : ""}${t.tipo ? " (" + t.tipo + ")" : ""}${t.resultados ? " · " + n0(t.resultados) + " publicaciones" : ""}${t.precio_min ? " · $" + n0(t.precio_min) + "-" + n0(t.precio_max) : ""}${t.vendidos ? " · top vende " + t.vendidos : ""}`).join(" | ")}`);
+    if (h.ml?.items?.length) {
+      L.push(`MERCADO LIBRE (lectura pública desde la PC, ${fecha(h.ml.ts)}): ${h.ml.items.slice(0, 32).map((t) => `${t.palabra}${t.categoria && t.categoria !== "general" ? " [" + t.categoria + "]" : ""}${t.tipo ? " (" + t.tipo + ")" : ""}${t.resultados ? " · " + n0(t.resultados) + " publicaciones" : ""}${t.precio_min ? " · $" + n0(t.precio_min) + "-" + n0(t.precio_max) : ""}${t.vendidos ? " · contador visible: " + t.vendidos : ""}`).join(" | ")}`);
+      const rec = h.ml.recomendaciones;
+      if (rec) for (const [periodo, titulo] of [["dia", "SEÑAL PARA REVISAR HOY"], ["semana", "OPORTUNIDADES CON MÁS REPETICIÓN EN 7 DÍAS"], ["mes", "OPORTUNIDADES SOSTENIDAS EN 30 DÍAS"]]) {
+        const lista = rec[periodo] || [];
+        L.push(`${titulo} (ranking de señales observadas; NO equivale a unidades vendidas): ${lista.map((x) => `${x.palabra} · ${x.dias} días observada(s) · puesto promedio ${x.rank_promedio} · repetición ${x.confianza}${x.feedback ? ` · decisión del dueño: ${x.feedback}${x.nota ? " (" + x.nota + ")" : ""}` : ""}`).join(" | ") || "sin datos suficientes"}`);
+      }
+    }
     else L.push("MERCADO LIBRE: sin datos todavía (corre tendencias_ml.bat en la PC para tenerlos)");
   }
   if (h.ideas?.utiles?.length) L.push(`IDEAS QUE MANUEL MARCÓ COMO ÚTILES O YA HIZO (más en esa línea): ${h.ideas.utiles.join(" | ")}`);
@@ -641,7 +688,9 @@ export async function estadoMesa(env) {
   let fuentes = null, virUlt = null; try { fuentes = JSON.parse((await kvGet(env, "virales_fuentes")) || "null"); virUlt = JSON.parse((await kvGet(env, "vir_ultimo")) || "null"); } catch {}
   const virPedido = !!(await kvGet(env, "vir_forzar")) || !!(await kvGet(env, "vir_run"));
   const ideas = await todas(env, "SELECT id, ts, agente, texto, estado FROM mesa_ideas WHERE estado IN ('nueva','util') ORDER BY CASE estado WHEN 'nueva' THEN 0 ELSE 1 END, ts DESC LIMIT 30");
-  return { informes: porAgente, ideas, hipotesis: hip, chat, hechos: hechosR, ultima: ult2, virales: { lista: virales.map((v) => ({ ...v, texto: corto(v.texto, 160), guion: corto(v.guion, 500) })), fuentes: fuentes || FUENTES_DEF, ultimo: virUlt, leyendo: virPedido }, metricas: Object.fromEntries(Object.entries(METRICAS).map(([k, v]) => [k, v.que])) };
+  const mlRows = await todas(env, "SELECT ts, dia, clave, palabra, categoria, tipo, puesto, resultados, precio_min, precio_max, vendidos, top FROM ml_observaciones WHERE ts>=? ORDER BY ts DESC", Date.now() - 30 * DIA);
+  const mlFb = await todas(env, "SELECT clave, estado, nota, ts FROM ml_feedback WHERE ts>=?", Date.now() - 30 * DIA);
+  return { informes: porAgente, ideas, hipotesis: hip, chat, hechos: hechosR, ultima: ult2, mercadolibre: recomendarML(mlRows, mlFb), virales: { lista: virales.map((v) => ({ ...v, texto: corto(v.texto, 160), guion: corto(v.guion, 500) })), fuentes: fuentes || FUENTES_DEF, ultimo: virUlt, leyendo: virPedido }, metricas: Object.fromEntries(Object.entries(METRICAS).map(([k, v]) => [k, v.que])) };
 }
 // ---------------------------------------------------------------------------
 // CHARLA: Manuel le habla a la mesa entera o a un agente. Suele escribir corto, así que cada pregunta tiene dos pasos:
@@ -794,6 +843,12 @@ export async function apiMesa(env, req, url, iaJSON, body = null) {
     await kvPut(env, "virales_fuentes", JSON.stringify(f)); return json({ ok: true, fuentes: f });
   }
   if (b.accion === "idea" && b.id && ["util", "hecha", "descartada", "nueva"].includes(b.estado)) { await env.DB.prepare("UPDATE mesa_ideas SET estado=?, nota=? WHERE id=?").bind(b.estado, corto(b.nota, 200) || null, String(b.id)).run(); return json({ ok: true }); }
+  if (b.accion === "ml_feedback") {
+    const clave = claveML(b.clave), estado = String(b.estado || "");
+    if (!clave || !["interesa", "probado", "descartada"].includes(estado)) return json({ error: "señal inválida" });
+    await env.DB.prepare("INSERT OR REPLACE INTO ml_feedback (clave, estado, nota, ts) VALUES (?,?,?,?)").bind(clave, estado, corto(b.nota, 200) || null, Date.now()).run();
+    return json({ ok: true });
+  }
   // "No fue venta": la señal de pago de ese chat deja de contarse (misma marca que usa el panel viejo)
   if (b.accion === "venta_no" && /^\d{8,16}$/.test(String(b.conv || ""))) { await env.DB.batch([env.DB.prepare("UPDATE w_hito SET oculto=1 WHERE conv=? AND tipo IN ('venta','comprobante')").bind(String(b.conv)), env.DB.prepare("INSERT OR REPLACE INTO w_hito (id, conv, tipo, ts, dato) VALUES (?,?,'no_venta',?,'el dueño marcó que no fue venta')").bind("nv:" + b.conv, String(b.conv), Date.now())]); await env.DB.prepare("DELETE FROM kv WHERE k='mesa_hechos'").run().catch(() => {}); return json({ ok: true }); }
   if (b.accion === "virales_leer") { await kvPut(env, "vir_forzar", Date.now()); return json({ ok: true }); }
@@ -804,8 +859,16 @@ export async function apiMesa(env, req, url, iaJSON, body = null) {
 export async function guardarML(env, b) {
   await prepararMesa(env);
   const items = (Array.isArray(b?.items) ? b.items : []).slice(0, 80).map((t) => ({ palabra: corto(t.palabra, 60), categoria: corto(t.categoria, 40), tipo: corto(t.tipo, 30), puesto: +t.puesto || null, resultados: +t.resultados || null, precio_min: +t.precio_min || null, precio_max: +t.precio_max || null, vendidos: corto(t.vendidos, 30), top: (Array.isArray(t.top) ? t.top : []).slice(0, 5).map((x) => ({ titulo: corto(x.titulo, 80), precio: +x.precio || null, vendidos: corto(x.vendidos, 30) })) })).filter((t) => t.palabra);
-  await kvPut(env, "ml_tendencias", JSON.stringify({ ts: Date.now(), items }));
-  return { ok: true, guardadas: items.length };
+  const ts = Date.now(), dia = diaAR(ts);
+  if (items.length) await env.DB.batch(items.map((t, i) => {
+    const clave = claveML(t.palabra);
+    return env.DB.prepare("INSERT OR REPLACE INTO ml_observaciones (id, ts, dia, clave, palabra, categoria, tipo, puesto, resultados, precio_min, precio_max, vendidos, top) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)")
+      .bind(`${ts}:${i}:${clave.slice(0, 35)}`, ts, dia, clave, t.palabra, t.categoria, t.tipo, t.puesto, t.resultados, t.precio_min, t.precio_max, t.vendidos, JSON.stringify(t.top));
+  }));
+  await kvPut(env, "ml_tendencias", JSON.stringify({ ts, items }));
+  await env.DB.prepare("DELETE FROM ml_observaciones WHERE ts<?").bind(ts - 180 * DIA).run().catch(() => {});
+  await env.DB.prepare("DELETE FROM ml_feedback WHERE ts<?").bind(ts - 180 * DIA).run().catch(() => {});
+  return { ok: true, guardadas: items.length, historial: true, ts };
 }
 
 // Diagnóstico (solo lectura, con el token del lector): los hechos tal como los ven los agentes y el último estado
