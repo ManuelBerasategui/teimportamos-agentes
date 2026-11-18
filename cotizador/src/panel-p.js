@@ -13,7 +13,7 @@ header{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--bg) 88
 .logo{font-weight:900;letter-spacing:.3px;font-size:17px;display:flex;align-items:center;gap:8px}.logo i{width:26px;height:26px;border-radius:8px;background:linear-gradient(135deg,var(--ac),var(--ac2));display:inline-block;box-shadow:0 3px 10px #e8590c55}.logo span{color:var(--ac)}
 nav{display:flex;gap:2px;flex-wrap:wrap;background:var(--chip);padding:3px;border-radius:11px}nav button{border:0;background:none;color:var(--mu);padding:6px 12px;border-radius:9px;font:inherit;font-size:14px;font-weight:600;cursor:pointer}
 nav button.on{background:var(--card);color:var(--tx);box-shadow:var(--sh)}
-.viejo{margin-left:auto;color:var(--mu);font-size:12px}
+.viejo{margin-left:auto;color:var(--mu);font-size:12px}.web{margin-left:auto;white-space:nowrap;letter-spacing:.3px}.web+.viejo{margin-left:0}
 main{max-width:1000px;margin:0 auto;padding:16px 16px 70px}
 .est{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}.pill{background:var(--card);border:1px solid var(--li);border-radius:20px;padding:4px 11px;font-size:12.5px}
 .pill.ok::before,.pill.bad::before,.pill.warn::before{content:"";display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;vertical-align:1px}
@@ -62,7 +62,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid color-mix(in srgb,var(
 </style></head><body>
 <header><div class="hw"><div class="logo"><i></i>TE <span>IMPORTAMOS</span></div>
 <nav id="tabs"><button data-v="mesa" class="on">Agentes</button><button data-v="hoy">Hoy</button><button data-v="chats">Chats y ventas</button><button data-v="ml">Mercado Libre</button><button data-v="num">Números</button><button data-v="prosp">Prospección</button><button data-v="links">Links</button></nav>
-<a class="viejo" href="/panel/viejo">panel viejo</a></div></header>
+<a class="b p web" href="/panel/web" title="Visitas, búsquedas, categorías y clics a WhatsApp de la página (PostHog)">📈 ESTADÍSTICAS WEB</a><a class="viejo" href="/panel/viejo">panel viejo</a></div></header>
 <main>
 <section id="v-hoy" hidden><div class="est" id="estado"></div><div class="card" id="objetivos"><div class="top"><b>Objetivos de hoy</b><button class="b" id="objEdit" style="margin-left:auto">Editar</button></div><div id="objBody" class="mu">Cargando…</div></div><div class="card" id="consejo"><b>Lo que dicen los datos</b><div class="mu" id="consTxt">Cargando…</div><div class="acc"><button class="b" id="consBtn">Actualizar análisis</button></div></div><div class="eq" id="equipoHoy"></div><div id="lista"><div class="vacio">Cargando…</div></div></section>
 <section id="v-chats" hidden>

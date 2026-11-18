@@ -103,4 +103,7 @@ chk("las corridas de todos los días también ven la última foto", /WEB \(PostH
 chk("la página del panel muestra la foto y el botón", /\/panel\/api\/web\/foto/.test(P.PANEL_WEB) && /Analizar ahora/.test(P.PANEL_WEB));
 chk("la página del panel muestra cada insight en vivo (números, barras con variación y embudo)", /\/panel\/api\/web\/insights/.test(P.PANEL_WEB) && /function embudo/.test(P.PANEL_WEB) && /function kpi/.test(P.PANEL_WEB) && !/<pre/.test(P.PANEL_WEB));
 
+const { PANEL_P } = await import(dir + "/panel-p.js");
+chk("el panel principal tiene el botón ESTADÍSTICAS WEB que lleva a /panel/web", /<a class="b p web" href="\/panel\/web"[^>]*>📈 ESTADÍSTICAS WEB<\/a>/.test(PANEL_P));
+
 console.log(`\nsim-posthog-mesa: ${ok} ok, ${mal} fallas`); process.exit(mal ? 1 : 0);
