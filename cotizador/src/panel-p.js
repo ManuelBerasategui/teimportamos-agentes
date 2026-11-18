@@ -61,7 +61,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid color-mix(in srgb,var(
 @media (max-width:560px){.viejo{display:none}nav button{padding:6px 9px;font-size:13px}}
 </style></head><body>
 <header><div class="hw"><div class="logo"><i></i>TE <span>IMPORTAMOS</span></div>
-<nav id="tabs"><button data-v="mesa" class="on">Agentes</button><button data-v="hoy">Hoy</button><button data-v="chats">Chats y ventas</button><button data-v="ml">Mercado Libre</button><button data-v="num">Números</button><button data-v="prosp">Prospección</button><button data-v="links">Links</button></nav>
+<nav id="tabs"><button data-v="mesa" class="on">Agentes</button><button data-v="hoy">Hoy</button><button data-v="chats">Chats y ventas</button><button data-v="cot">Cotizar</button><button data-v="ml">Mercado Libre</button><button data-v="num">Números</button><button data-v="prosp">Prospección</button><button data-v="links">Links</button></nav>
 <a class="b p web" href="/panel/web" title="Visitas, búsquedas, categorías y clics a WhatsApp de la página (PostHog)">📈 ESTADÍSTICAS WEB</a><a class="viejo" href="/panel/viejo">panel viejo</a></div></header>
 <main>
 <section id="v-hoy" hidden><div class="est" id="estado"></div><div class="card" id="objetivos"><div class="top"><b>Objetivos de hoy</b><button class="b" id="objEdit" style="margin-left:auto">Editar</button></div><div id="objBody" class="mu">Cargando…</div></div><div class="card" id="consejo"><b>Lo que dicen los datos</b><div class="mu" id="consTxt">Cargando…</div><div class="acc"><button class="b" id="consBtn">Actualizar análisis</button></div></div><div class="eq" id="equipoHoy"></div><div id="lista"><div class="vacio">Cargando…</div></div></section>
