@@ -25,10 +25,15 @@ const t = P.resumirTendencia([
   { label: "whatsapp_click", breakdown_value: "Tarjetas NFC", count: 20, compare_label: "previous" },
   { label: "whatsapp_click", breakdown_value: "Termos", data: [1, 2, 3], compare_label: "current" },
 ]);
-chk("tendencia: ordena por cantidad, compara contra los 14 días anteriores y suma la serie si no viene el total", t.lineas[0] === "total 36 (antes 20, +80%)" && t.lineas[1] === "Tarjetas NFC: 30 (antes 20, +50%)" && t.lineas[2] === "Termos: 6");
+chk("tendencia: ordena por cantidad, compara contra los 14 días anteriores y suma la serie si no viene el total", t.lineas[0] === "total 36 (antes 20, +80%)" && t.lineas[1] === "Tarjetas NFC: 30 (antes 20, +50%)" && t.lineas[2] === "Termos: 6 (nuevo)");
 const e = P.resumirEmbudo([{ name: "$pageview", count: 1000 }, { name: "add_to_cart", custom_name: "Agregó al carrito", count: 50 }, { name: "order_placed", count: 5 }]);
-chk("embudo: paso a paso con % del anterior y conversión total", /\$pageview 1000 → Agregó al carrito 50 \(5% del anterior\) → order_placed 5 \(10% del anterior\)/.test(e.lineas[0]) && e.lineas[1] === "conversión total 0.5%");
+chk("embudo: paso a paso con % del anterior y conversión total", /Visitas 1000 → Agregó al carrito 50 \(5% del anterior\) → Compró 5 \(10% del anterior\)/.test(e.lineas[0]) && e.lineas[1] === "conversión total 0.5%");
 chk("embudo con desglose: suma los grupos", P.resumirEmbudo([[{ name: "a", count: 10 }, { name: "b", count: 2 }], [{ name: "a", count: 30 }, { name: "b", count: 8 }]]).lineas[0] === "a 40 → b 10 (25% del anterior)");
+
+const o = P.resumirTendencia([{ breakdown_value: "$$_posthog_breakdown_other_$$", count: 165, compare_label: "current" }, { breakdown_value: "NFC PARA RESEÑAS", count: 7, compare_label: "current" }, { breakdown_value: "NFC PARA RESEÑAS", count: 2, compare_label: "previous" }]);
+chk("'Otros' de PostHog va con su nombre y al final; con menos de 5 antes no inventa porcentajes", o.filas[0].k === "NFC PARA RESEÑAS" && o.filas[1].k === "Otros" && o.filas[1].otro && o.lineas[1] === "NFC PARA RESEÑAS: 7 (antes 2)");
+chk("usuarios activos por día se promedian, no se suman", P.resumirTendencia([{ label: "$pageview", data: [100, 80, 90], compare_label: "current" }], "dau").filas[0].v === 90);
+chk("nombres en castellano para insights, eventos y orígenes", P.nombreInsight("whatsapp_click count by event's destino") === "Clics a WhatsApp por destino" && P.nombreInsight("Weekly active users (WAUs)") === "Usuarios activos por semana" && P.nombreInsight("Pageview → catalog_filter → add_to_cart → order_placed user conversion rate") === "Embudo de compra" && P.nombreValor("$direct") === "Directo (sin origen)" && P.nombreValor("l.instagram.com") === "instagram.com");
 
 // --- PostHog simulado: insights guardados como los de "My insights"
 const llamadas = []; let listarFalla = false;
@@ -57,14 +62,14 @@ globalThis.fetch = async (url, o) => {
 
 const f = await P.fotoWeb(env);
 const qTrend = llamadas.find((l) => l.q?.query?.kind === "TrendsQuery")?.q.query;
-chk("la foto trae los insights guardados (tendencias y embudos) y saltea tablas y borrados", f.ok && f.secciones.length === 3 && f.secciones[1].nombre.startsWith("whatsapp_click") && f.secciones[2].tipo === "embudo" && !/Tabla vieja|Borrado/.test(f.texto));
+chk("la foto trae los insights guardados (tendencias y embudos) y saltea tablas y borrados", f.ok && f.secciones.length === 3 && f.secciones[1].nombre === "Clics a WhatsApp por producto" && f.secciones[2].nombre === "Embudo de compra" && f.secciones[2].tipo === "embudo" && !/Tabla vieja|Borrado/.test(f.texto));
 chk("recalcula cada insight con los últimos 14 días contra los 14 anteriores, conservando su desglose", qTrend.dateRange.date_from === "-14d" && qTrend.compareFilter.compare === true && qTrend.breakdownFilter.breakdown === "producto");
 chk("el texto para la mesa trae números y comparación", /Tarjetas NFC: 42 \(antes 21, \+100%\)/.test(f.texto) && /conversión total 0\.5%/.test(f.texto) && /instagram\.com 70/.test(f.texto));
 chk("usa la clave personal contra la API de lectura", llamadas.every((l) => l.url.startsWith("https://us.posthog.com/api/projects/123/") && l.auth === "Bearer phx_test"));
 
 listarFalla = true; llamadas.length = 0;
 const f2 = await P.fotoWeb(env);
-chk("si la clave no puede listar insights, usa las consultas de respaldo y avisa qué permiso falta", f2.ok && /Clics a WhatsApp por producto: Tarjetas NFC: 12 \(antes 6, \+100%\)/.test(f2.texto) && /visitas 500 → catalog_filter 0/.test(f2.texto) && /insight:read/.test(f2.avisos.join(" ")));
+chk("si la clave no puede listar insights, usa las consultas de respaldo y avisa qué permiso falta", f2.ok && /Clics a WhatsApp por producto: Tarjetas NFC: 12 \(antes 6, \+100%\)/.test(f2.texto) && /Visitas 500 → Filtró el catálogo 0/.test(f2.texto) && /insight:read/.test(f2.avisos.join(" ")));
 listarFalla = false;
 chk("sin claves explica qué falta", /POSTHOG_PERSONAL_KEY/.test((await P.fotoWeb({})).falta) && (await M.cronFotoWeb({ DB: env.DB }, null, Date.now(), null, { forzar: true })).ok === false);
 
@@ -91,7 +96,7 @@ const est = await M.estadoFotoWeb(env);
 chk("el panel ve la foto y cuándo toca la próxima", est.claves && est.foto?.texto && est.proxima === base + 28 * 86400e3);
 const h = await M.hechos(env);
 chk("las corridas de todos los días también ven la última foto", /WEB \(PostHog/.test(M.textoHechos(h)) && !/WEB \(PostHog/.test(M.textoHechos(h, ["embudo"])));
-chk("la página del panel muestra la foto y el botón", /\/panel\/api\/web\/foto/.test(P.PANEL_WEB) && /Sacar ahora/.test(P.PANEL_WEB));
-chk("la página del panel muestra cada insight en vivo (categorías, búsquedas, embudo) como tarjeta", /\/panel\/api\/web\/insights/.test(P.PANEL_WEB) && /Tus insights de PostHog/.test(P.PANEL_WEB) && !/<pre/.test(P.PANEL_WEB));
+chk("la página del panel muestra la foto y el botón", /\/panel\/api\/web\/foto/.test(P.PANEL_WEB) && /Analizar ahora/.test(P.PANEL_WEB));
+chk("la página del panel muestra cada insight en vivo (números, barras con variación y embudo)", /\/panel\/api\/web\/insights/.test(P.PANEL_WEB) && /function embudo/.test(P.PANEL_WEB) && /function kpi/.test(P.PANEL_WEB) && !/<pre/.test(P.PANEL_WEB));
 
 console.log(`\nsim-posthog-mesa: ${ok} ok, ${mal} fallas`); process.exit(mal ? 1 : 0);
