@@ -170,4 +170,34 @@ const { PANEL_P } = await import(dir + "/panel-p.js");
 chk("pestaña Mesa", PANEL_P.includes('data-v="mesa"') && PANEL_P.includes('id="v-mesa"') && PANEL_P.includes('id="mesaCorrer"') && PANEL_P.includes('id="mesaEnv"') && PANEL_P.includes('id="mesaQuien"') && PANEL_P.includes('id="mesaDebate"') && PANEL_P.includes('id="mesaVir"') && PANEL_P.includes('id="mesaIdeas"') && PANEL_P.includes('id="mesaVentas"') && !PANEL_P.includes('data-v="ag"'));
 chk("la pestaña Agentes es la primera y la que abre por defecto", /<nav id="tabs"><button data-v="mesa" class="on">Agentes/.test(PANEL_P) && PANEL_P.includes('|| "mesa"'));
 new Function(PANEL_P.match(/<script>([\s\S]*)<\/script>/)[1]);   // el JS del panel compila
+// 3) Agente de la WEB: corre con cada foto de PostHog, discute con los demás y manda el informe largo por Telegram
+kv.clear(); db.exec("DELETE FROM kv WHERE k LIKE 'mesa_%'"); env.__captura.length = 0;
+const fotoW = { ok: true, dia: "2026-11-18", dias: 14, texto: "Búsquedas en el catálogo: tarjetas nfc 40 (antes 12, +233%), auriculares 9\nVistas por categoría: TECNOLOGIA 320 (antes 150), HOGAR 80\nClics a WhatsApp por producto: tarjetas NFC 18 (antes 6)\nEmbudo de compra: Visitas 900 → Filtró 300 (33%) → Carrito 20 (7%) → Compró 2 (10%)" };
+db.prepare("INSERT OR REPLACE INTO kv (k, v) VALUES ('posthog_foto', ?)").run(JSON.stringify(fotoW));
+const pw = [];
+const iaW = async (e, p) => {
+  pw.push(p);
+  if (/Sos el AGENTE DE LA WEB/.test(p)) return { resumen: "Lo más buscado son las tarjetas NFC (40, triplicó) y la categoría más vista es TECNOLOGÍA.", hallazgos: [{ titulo: "NFC explota en la web", detalle: "40 búsquedas y 18 clics a WhatsApp", evidencia: "antes 12 búsquedas" }], hipotesis: [], ideas: [], para_manuel: [],
+    plan: [{ accion: "Sacar cupo de importación de tarjetas NFC", tipo: "cupo", quien: "Manuel", por_que: "40 búsquedas y 18 clics a WhatsApp; Ana ya compró" }, { accion: "Grabar 2 videos de la categoría TECNOLOGÍA", tipo: "contenido", quien: "Manuel", por_que: "320 vistas, el doble que antes" }, { accion: "Revisar el carrito: de 300 a 20", tipo: "web", quien: "Manuel", por_que: "7% pasa al carrito" }],
+    como_seguir: "Esta semana el cupo de NFC con fecha de cierre.\nLa que viene, contenido de TECNOLOGÍA." };
+  if (/^DISCUSIÓN DE LA MESA/.test(p)) return { turnos: [{ agente: "web", a: "productos", texto: "NFC tiene 40 búsquedas en la web, ¿sacamos cupo?" }, { agente: "productos", a: "web", texto: "Sí, Ana lo compró por WhatsApp." }, { agente: "critico", a: "web", texto: "40 búsquedas no son 40 compradores." }], acuerdos: ["cupo de NFC"], desacuerdos: [], falta_medir: [] };
+  return ia(e, p);
+};
+const rw = await M.correrMesa(env, iaW, { forzar: true, motivo: "posthog" });
+const pWeb = pw.find((p) => /Sos el AGENTE DE LA WEB/.test(p)) || "";
+chk("web: corre el agente de la web con su criterio y los datos de PostHog", rw.ok && pw.length === 6 && /CRITERIO DE LA WEB/.test(pWeb) && /sacar un CUPO DE IMPORTACIÓN/.test(pWeb) && /tarjetas nfc 40/.test(pWeb) && /"plan":\[/.test(pWeb) && /"como_seguir"/.test(pWeb));
+const pDeb = pw.find((p) => /^DISCUSIÓN DE LA MESA/.test(p)) || "", pInt = pw.find((p) => /INTEGRADOR/.test(p) && !/^DISCUSIÓN/.test(p)) || "";
+chk("web: discute con los otros (su informe y su plan entran a la discusión)", /INFORME WEB: \{"resumen":"Lo más buscado son las tarjetas NFC/.test(pDeb) && /Sacar cupo de importación de tarjetas NFC/.test(pDeb) && /La WEB tiene que cruzarse con Productos/.test(pDeb) && rw.debate.turnos[0].agente === "web");
+chk("web: el integrador decide con el informe de la web", /WEB: \{"resumen":"Lo más buscado/.test(pInt));
+const largo = env.__captura.slice(1).join("\n");
+chk("web: llega el informe largo por Telegram (además del mensaje de la mesa)", env.__captura.length >= 2 && /datos nuevos de la web/.test(env.__captura[0]) && /INFORME DE LA WEB · últimos 14 días \(foto del 18\/11\)/.test(largo));
+chk("web: el informe dice qué hacer, cómo seguir, qué discutió y qué decidió la mesa", /QUÉ HACER\n1\. 📦 Sacar cupo de importación de tarjetas NFC · Manuel\n   Por qué: 40 búsquedas/.test(largo) && /🎬 Grabar 2 videos de la categoría TECNOLOGÍA/.test(largo) && /CÓMO SEGUIR ESTAS DOS SEMANAS\nEsta semana el cupo de NFC/.test(largo) && /Web a Productos: NFC tiene 40 búsquedas/.test(largo) && /Acuerdo: cupo de NFC/.test(largo) && /LO QUE DECIDIÓ LA MESA\n1\. Contestarle a Beto/.test(largo));
+chk("web: cada mensaje entra en Telegram", env.__captura.every((t) => t.length <= 4000));
+// La corrida siguiente (mismo día, misma foto): no vuelve a llamar al agente de la web, pero su informe sigue en la discusión
+env.__captura.length = 0; pw.length = 0;
+const rw2 = await M.correrMesa(env, iaW, { forzar: true, motivo: "panel" });
+chk("web: con la misma foto no repite el agente ni el informe largo, pero sigue discutiendo", rw2.ok && pw.length === 5 && !pw.some((p) => /Sos el AGENTE DE LA WEB/.test(p)) && /INFORME WEB:/.test(pw.find((p) => /^DISCUSIÓN/.test(p)) || "") && env.__captura.length === 1);
+chk("web: se le puede preguntar directo (chip Web)", PANEL_P.includes('data-q="web"') && PANEL_P.includes('web: "Agente de la Web"') && PANEL_P.includes("Cómo seguir:"));
+const partes = M.informeWeb({ resumen: "x".repeat(3000), hallazgos: [{ titulo: "t", detalle: "y".repeat(3000), evidencia: "" }], plan: [], como_seguir: "z".repeat(5000) }, null, null, { web: { dia: "2026-11-18", dias: 14 } });
+chk("web: un informe muy largo se parte en varios mensajes", partes.length >= 3 && partes.every((t) => t.length <= 3900) && partes.join("").includes("z".repeat(100)));
 console.log(`\nsim-mesa: ${ok} ok, ${mal} fallas`); if (mal) throw new Error("simulations failed");

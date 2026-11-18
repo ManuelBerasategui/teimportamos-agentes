@@ -453,6 +453,16 @@ export const MANUAL = {
 - Un cupo funciona cuando el producto ya es conocido por el grupo, el precio por unidad está claro, hay cantidad mínima baja y fecha de cierre. Si el mismo cupo antes vendió y ahora no, mirá: saturación (ya compraron los que querían), precio contra la vez anterior, horario y cuántos mensajes hubo ese día en el grupo.
 - Lista de corte: lo que se pide mucho y nunca cierra consume tiempo de cotización. Decí cuáles dejar de cotizar.
 - Para cada producto decí la vía: cupo en grupos, por encargo, stock propio con entrega inmediata o publicarlo en Mercado Libre.`,
+  web: `CRITERIO DE LA WEB (lo que hace la gente en la página antes de escribir):
+- La web muestra intención antes del chat: lo que buscan, miran y tocan es demanda que todavía no llegó al WhatsApp. Cruzalo siempre con lo que piden por WhatsApp y con lo que se vende.
+- Producto muy buscado o muy clickeado a WhatsApp = demanda probada. Si además se pide por WhatsApp o se vendió, la acción es sacar un CUPO DE IMPORTACIÓN de ese producto (con precio por unidad, mínimo y fecha de cierre). Si se busca en la web pero NO llega al chat, el problema es la ficha o el precio: revisar la ficha del catálogo (foto, precio puesto, mínimo) y el botón de WhatsApp.
+- Categoría más vista = el interés del público hoy. Decí cuál es y qué hacer con ella: combos o cupos de esa categoría, contenido de esa categoría en Redes, ponerla primera en el inicio y en el catálogo.
+- Buscan algo que no está en el catálogo = producto a agregar (o a cotizar por encargo). Nombralo.
+- Embudo de la tienda: decí en qué paso se cae más gente (visita, filtro, carrito, envío, compra) con el porcentaje, y el arreglo concreto de ESE paso.
+- De dónde llega la gente: la fuente que más trae y la que más convierte (clics a WhatsApp). Si una fuente creció, decí qué contenido o campaña lo explica y si conviene empujarla.
+- Clics a WhatsApp por producto o por destino: es el puente entre la web y las ventas; si suben los clics y no suben los chats o las ventas, el problema está en la atención, no en la web.
+- Compará siempre contra los 14 días anteriores (los datos traen "antes N"). Con menos de 5 casos es una pista, no un patrón.
+- Cada recomendación es una acción con nombre propio: "sacar cupo de importación de tarjetas NFC", "grabar 2 videos de la categoría TECNOLOGÍA", "agregar al catálogo X", "bajar el mínimo de Y", "publicar Z en Mercado Libre". Nada genérico.`,
 };
 const SALIDA = `Respondé SOLO JSON: {"resumen":"2 o 3 líneas con lo más importante","hallazgos":[{"titulo":"corto","detalle":"qué pasa y por qué importa para vender","evidencia":"nombres, números o cifras exactas"}],"hipotesis":[{"texto":"qué creemos","accion":"qué hacer esta semana y quién (Manuel, Sender, agente, Buko)","metrica":"nombre de la lista","meta":número,"dias":7}],"ideas":["máximo 2 ideas NUEVAS, solo si aportan un ángulo distinto a las abiertas. Puede repetirse el producto si cambia el gancho o la hipótesis creativa. Cada idea incluye perfil objetivo, producto, gancho textual, qué se muestra en pantalla, CTA y métrica de éxito; priorizá chats A/B, cotizaciones y ventas confirmadas. Si solo hay vistas o asociación temporal, aclaralo y no afirmes causalidad. Prohibidas las ideas genéricas y sin dato de respaldo. Si no hay una prueba concreta, devolvé lista vacía"],"para_manuel":["cosas que solo él puede decidir o hacer, máximo 3"]}`;
 
@@ -490,6 +500,17 @@ CUPOS: ${h.cupos.lista.map((c) => `${c.fecha} "${c.texto}" → ${c.relacionadas}
 ${SALIDA}`,
 };
 
+PROMPTS.web = (h) => `Sos el AGENTE DE LA WEB de la mesa de ${NEGOCIO}
+Tu trabajo: leer lo que hace la gente en la página (PostHog: productos y categorías que miran, lo que buscan, los clics a WhatsApp, el embudo de la tienda y de dónde llegan) y convertirlo en un plan concreto para vender más. Cruzá cada dato con lo que se pide y se vende por WhatsApp y con lo que hacen Redes y Productos. Para cada hallazgo decí qué hacer, quién y por qué, con el número.
+${MANUAL.comun}
+${MANUAL.web}
+${REGLAS}
+HECHOS:
+${textoHechos(h, ["web", "embudo", "productos", "redes"])}
+
+${SALIDA.slice(0, -1)}
+Agregá en ese mismo JSON, antes de cerrar la llave: "plan":[{"accion":"acción concreta con nombre propio (ej: sacar cupo de importación de tarjetas NFC)","tipo":"cupo|contenido|catalogo|precio|web|mercadolibre|atencion","quien":"Manuel|Sender|Buko|el agente","por_que":"el dato de la web y el cruce con WhatsApp o ventas, con números"}] (de 3 a 8, ordenado por impacto en ventas) y "como_seguir":"texto detallado (8 a 15 líneas) de cómo seguir estas dos semanas, en orden, como se lo explicarías a Manuel"}`;
+
 const normIdea = (t) => String(t || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
 async function guardarIdeas(env, dia, agente, lista) {
   const previas = (await todas(env, "SELECT texto FROM mesa_ideas ORDER BY ts DESC LIMIT 120")).map((x) => normIdea(x.texto));
@@ -501,7 +522,8 @@ async function guardarIdeas(env, dia, agente, lista) {
 async function correrAgente(env, iaJSON, nombre, h, extra, opts) {
   const prompt = PROMPTS[nombre](h, extra);
   const r = await iaJSON(env, prompt, opts).catch(() => null);
-  const datos = r && typeof r === "object" ? { resumen: corto(r.resumen, 600), hallazgos: (r.hallazgos || []).slice(0, 7).map((x) => ({ titulo: corto(x.titulo, 90), detalle: corto(x.detalle, 500), evidencia: corto(x.evidencia, 300) })), hipotesis: (r.hipotesis || []).filter((x) => METRICAS[x.metrica]).slice(0, 2).map((x) => ({ texto: corto(x.texto, 240), accion: corto(x.accion, 240), metrica: x.metrica, meta: +x.meta, dias: Math.min(30, Math.max(3, +x.dias || 7)) })), ideas: (r.ideas || []).slice(0, 5).map((x) => corto(x, 400)), para_manuel: (r.para_manuel || []).slice(0, 3).map((x) => corto(x, 240)) } : null;
+  const datos = r && typeof r === "object" ? { resumen: corto(r.resumen, 600), hallazgos: (r.hallazgos || []).slice(0, 7).map((x) => ({ titulo: corto(x.titulo, 90), detalle: corto(x.detalle, 500), evidencia: corto(x.evidencia, 300) })), hipotesis: (r.hipotesis || []).filter((x) => METRICAS[x.metrica]).slice(0, 2).map((x) => ({ texto: corto(x.texto, 240), accion: corto(x.accion, 240), metrica: x.metrica, meta: +x.meta, dias: Math.min(30, Math.max(3, +x.dias || 7)) })), ideas: (r.ideas || []).slice(0, 5).map((x) => corto(x, 400)), para_manuel: (r.para_manuel || []).slice(0, 3).map((x) => corto(x, 240)),
+    ...(nombre === "web" ? { plan: (Array.isArray(r.plan) ? r.plan : []).slice(0, 8).filter((x) => x?.accion).map((x) => ({ accion: corto(x.accion, 200), tipo: corto(x.tipo, 20), quien: corto(x.quien, 40), por_que: corto(x.por_que, 300) })), como_seguir: corto(r.como_seguir, 2500), foto: h.web?.dia || "" } : {}) } : null;
   if (datos?.ideas?.length) await guardarIdeas(env, h.hoy, nombre, datos.ideas).catch(() => {});
   const texto = datos ? [datos.resumen, ...datos.hallazgos.map((x) => `- ${x.titulo}: ${x.detalle} (${x.evidencia})`)].join("\n") : "La IA no respondió (sin cupo). Se reintenta en la próxima corrida.";
   await env.DB.prepare("INSERT INTO mesa_informes (id, ts, dia, agente, datos, texto) VALUES (?,?,?,?,?,?)").bind(`${nombre}:${Date.now()}`, Date.now(), h.hoy, nombre, JSON.stringify(datos || {}), texto).run().catch(() => {});
@@ -553,27 +575,27 @@ export async function verificarHipotesis(env, h) {
 // ---------------------------------------------------------------------------
 // DISCUSIÓN: los agentes se contestan entre sí y un crítico ataca la conclusión más floja, antes de que el integrador decida.
 // (Una sola llamada a la IA: cada agente habla solo desde su informe.)
-const AGENTES = { whatsapp: "WhatsApp", redes: "Redes", productos: "Productos", critico: "Crítico", integrador: "Integrador", mesa: "Mesa", todos: "todos" };
+const AGENTES = { whatsapp: "WhatsApp", redes: "Redes", productos: "Productos", web: "Web", critico: "Crítico", integrador: "Integrador", mesa: "Mesa", todos: "todos" };
 async function discutir(env, iaJSON, h, informes, opts) {
   const compacto = (d) => d ? { resumen: d.resumen, hallazgos: d.hallazgos.map((x) => `${x.titulo}: ${corto(x.detalle, 220)} [${corto(x.evidencia, 140)}]`), ideas: d.ideas } : "sin informe";
   const prompt = `DISCUSIÓN DE LA MESA de ${NEGOCIO}
-Abajo están los informes de hoy de tres agentes. Escribí la discusión entre ellos, en turnos cortos (2 a 4 líneas cada uno), como una reunión de equipo que busca la verdad y no quedar bien:
+Abajo están los informes de hoy de los agentes${informes.web ? " (también el de la WEB: lo que hace la gente en la página)" : ""}. Escribí la discusión entre ellos, en turnos cortos (2 a 4 líneas cada uno), como una reunión de equipo que busca la verdad y no quedar bien:
 - Cada agente habla SOLO desde los datos de su informe y de los hechos. Nadie inventa números.
-- Tiene que haber al menos un cruce Redes con WhatsApp (qué contenido trajo qué tipo de consulta y qué pasó después con esas consultas) y uno WhatsApp con Productos (qué se pide, qué se cotiza y qué cierra).
+- Tiene que haber al menos un cruce Redes con WhatsApp (qué contenido trajo qué tipo de consulta y qué pasó después con esas consultas) y uno WhatsApp con Productos (qué se pide, qué se cotiza y qué cierra).${informes.web ? "\n- La WEB tiene que cruzarse con Productos (lo que buscan y miran en la página contra lo que piden y compran por WhatsApp: ¿coincide? ¿hay demanda en la web que no llega al chat?) y con Redes (de dónde llega la gente y qué contenido la trae). Si la Web propone un cupo, Productos dice si conviene y WhatsApp si esa demanda cierra." : ""}
 - Si un agente dice algo que los datos de otro contradicen o matizan, ese otro lo marca con el dato.
 - El CRÍTICO entra una o dos veces: ataca la conclusión más floja (pocos casos, otra explicación posible, correlación que no es causa) y pide el dato que la confirmaría.
-- Máximo 8 turnos. Terminá con los acuerdos, los desacuerdos que quedan abiertos y lo que falta medir para cerrarlos.
+- Máximo ${informes.web ? 10 : 8} turnos. Terminá con los acuerdos, los desacuerdos que quedan abiertos y lo que falta medir para cerrarlos.
 - Español rioplatense con voseo, sin emojis, sin signos de apertura, sin guiones largos. Vapers, pods y tabaco no existen.
 ${MANUAL.comun}
 INFORME WHATSAPP: ${JSON.stringify(compacto(informes.whatsapp))}
 INFORME REDES: ${JSON.stringify(compacto(informes.redes))}
 INFORME PRODUCTOS: ${JSON.stringify(compacto(informes.productos))}
-HECHOS: ${textoHechos(h, ["embudo"])}
-Respondé SOLO JSON: {"turnos":[{"agente":"whatsapp|redes|productos|critico","a":"whatsapp|redes|productos|todos","texto":""}],"acuerdos":[""],"desacuerdos":[""],"falta_medir":[""]}`;
+${informes.web ? `INFORME WEB: ${JSON.stringify({ ...compacto(informes.web), plan: (informes.web.plan || []).map((x) => `${x.accion} (${x.por_que})`) })}\n` : ""}HECHOS: ${textoHechos(h, ["embudo"])}
+Respondé SOLO JSON: {"turnos":[{"agente":"whatsapp|redes|productos|${informes.web ? "web|" : ""}critico","a":"whatsapp|redes|productos|${informes.web ? "web|" : ""}todos","texto":""}],"acuerdos":[""],"desacuerdos":[""],"falta_medir":[""]}`;
   const r = await iaJSON(env, prompt, opts).catch(() => null);
   if (!r || !Array.isArray(r.turnos) || !r.turnos.length) return null;
   const lista = (x, n) => (Array.isArray(x) ? x : []).slice(0, n).map((t) => corto(t, 260)).filter(Boolean);
-  const datos = { turnos: r.turnos.slice(0, 8).filter((t) => t?.texto).map((t) => ({ agente: AGENTES[t.agente] && !["todos", "mesa", "integrador"].includes(t.agente) ? t.agente : "critico", a: AGENTES[t.a] ? t.a : "todos", texto: corto(t.texto, 520) })), acuerdos: lista(r.acuerdos, 4), desacuerdos: lista(r.desacuerdos, 4), falta_medir: lista(r.falta_medir, 4) };
+  const datos = { turnos: r.turnos.slice(0, informes.web ? 10 : 8).filter((t) => t?.texto).map((t) => ({ agente: AGENTES[t.agente] && !["todos", "mesa", "integrador"].includes(t.agente) ? t.agente : "critico", a: AGENTES[t.a] ? t.a : "todos", texto: corto(t.texto, 520) })), acuerdos: lista(r.acuerdos, 4), desacuerdos: lista(r.desacuerdos, 4), falta_medir: lista(r.falta_medir, 4) };
   const texto = datos.turnos.map((t) => `${AGENTES[t.agente]} a ${AGENTES[t.a]}: ${t.texto}`).join("\n");
   await env.DB.prepare("INSERT INTO mesa_informes (id, ts, dia, agente, datos, texto) VALUES (?,?,?,?,?,?)").bind(`debate:${Date.now()}`, Date.now(), h.hoy, "debate", JSON.stringify(datos), texto).run().catch(() => {});
   return datos;
@@ -585,7 +607,7 @@ async function integrar(env, iaJSON, h, informes, cerradas, opts, debate = null)
   const activas = await todas(env, "SELECT texto, accion, metrica, base, actual, meta, vence FROM mesa_hip WHERE estado='activa'");
   const previas = await todas(env, "SELECT texto FROM mesa_informes WHERE agente='integrador' ORDER BY ts DESC LIMIT 2");
   const prompt = `Sos el INTEGRADOR de la mesa de ${NEGOCIO}
-Tenés los informes de hoy de tres agentes (WhatsApp, Redes, Productos), las hipótesis en curso con su avance medido, las que se cerraron hoy y la memoria. Tu trabajo:
+Tenés los informes de hoy de los agentes (WhatsApp, Redes, Productos${informes.web ? " y Web, que lee lo que hace la gente en la página" : ""}), las hipótesis en curso con su avance medido, las que se cerraron hoy y la memoria. Tu trabajo:
 1) LECTURA: qué pasó en el embudo, por etapa (arriba: contenido y consultas; medio: atención y cotización; abajo: cierre), con los números. Dónde se pierde más.
 2) DECISIONES: máximo 3, ordenadas por impacto en ventas, cada una con quién la hace (Manuel, Sender, el agente, Buko) y el dato que la justifica. No repitas lo que ya decidiste en las lecturas anteriores salvo que haya un dato nuevo.
 3) HIPÓTESIS: máximo 2 nuevas (podés tomar las de los agentes). Nada de hipótesis si ya hay 4 activas; no dupliques métricas que ya tengan prueba en curso.
@@ -596,7 +618,7 @@ INFORMES DE HOY:
 WHATSAPP: ${JSON.stringify(informes.whatsapp || "sin informe")}
 REDES: ${JSON.stringify(informes.redes || "sin informe")}
 PRODUCTOS: ${JSON.stringify(informes.productos || "sin informe")}
-DISCUSIÓN ENTRE LOS AGENTES (tenela en cuenta: lo que quedó en desacuerdo no lo des por cierto; lo que falta medir puede ser una decisión): ${debate ? JSON.stringify({ turnos: debate.turnos.map((t) => `${AGENTES[t.agente]}: ${t.texto}`), acuerdos: debate.acuerdos, desacuerdos: debate.desacuerdos, falta_medir: debate.falta_medir }) : "no hubo"}
+${informes.web ? `WEB: ${JSON.stringify(informes.web)}\n` : ""}DISCUSIÓN ENTRE LOS AGENTES (tenela en cuenta: lo que quedó en desacuerdo no lo des por cierto; lo que falta medir puede ser una decisión): ${debate ? JSON.stringify({ turnos: debate.turnos.map((t) => `${AGENTES[t.agente]}: ${t.texto}`), acuerdos: debate.acuerdos, desacuerdos: debate.desacuerdos, falta_medir: debate.falta_medir }) : "no hubo"}
 HIPÓTESIS ACTIVAS (medidas hoy): ${JSON.stringify(activas) || "ninguna"}
 CERRADAS HOY: ${cerradas.map((c) => `${c.estado.toUpperCase()}: ${c.texto} → ${c.resultado}`).join(" | ") || "ninguna"}
 LECTURAS ANTERIORES (no las repitas): ${previas.map((p) => corto(p.texto, 500)).join(" || ") || "ninguna"}
@@ -624,6 +646,31 @@ async function avisarTelegram(env, texto, avisar = null) {
   return !!r?.ok;
 }
 
+// Informe detallado de la WEB (cada 14 días, con cada foto nueva de PostHog): qué pasa, cómo seguir, qué dijeron los otros agentes y qué decidió la mesa.
+// Telegram corta a 4096 caracteres: se parte en mensajes.
+export function informeWeb(web, debate, integrador, h) {
+  if (!web) return [];
+  const f = h.web?.dia ? h.web.dia.slice(5).split("-").reverse().join("/") : "";
+  const TIPO = { cupo: "📦", contenido: "🎬", catalogo: "🛍", precio: "💲", web: "🖥", mercadolibre: "🟡", atencion: "💬" };
+  const bloques = [
+    `📊 INFORME DE LA WEB · últimos ${h.web?.dias || FOTO_CADA_DIAS} días${f ? " (foto del " + f + ")" : ""}\n\n${web.resumen}`,
+    web.hallazgos?.length ? "🔎 QUÉ ESTÁ PASANDO\n" + web.hallazgos.map((x) => `• ${x.titulo}: ${x.detalle}${x.evidencia ? " (" + x.evidencia + ")" : ""}`).join("\n") : "",
+    web.plan?.length ? "✅ QUÉ HACER\n" + web.plan.map((x, i) => `${i + 1}. ${TIPO[x.tipo] || "•"} ${x.accion}${x.quien ? " · " + x.quien : ""}\n   Por qué: ${x.por_que}`).join("\n") : "",
+    web.como_seguir ? "🧭 CÓMO SEGUIR ESTAS DOS SEMANAS\n" + web.como_seguir : "",
+  ];
+  const conWeb = (debate?.turnos || []).filter((t) => t.agente === "web" || t.a === "web");
+  if (conWeb.length || debate?.acuerdos?.length) bloques.push("🗣 LO QUE DISCUTIÓ CON LOS OTROS AGENTES\n" + [...conWeb.map((t) => `${AGENTES[t.agente]} a ${AGENTES[t.a]}: ${t.texto}`), ...(debate?.acuerdos || []).map((a) => "Acuerdo: " + a), ...(debate?.desacuerdos || []).map((a) => "Queda abierto: " + a)].join("\n"));
+  if (integrador?.decisiones?.length) bloques.push("🎯 LO QUE DECIDIÓ LA MESA\n" + integrador.decisiones.map((d, i) => `${i + 1}. ${d.que} (${d.quien}: ${d.por_que})`).join("\n"));
+  const partes = []; let cur = "";
+  for (const b of bloques.filter(Boolean)) {
+    if (cur && (cur + "\n\n" + b).length > 3900) { partes.push(cur); cur = ""; }
+    cur = cur ? cur + "\n\n" + b : b;
+    while (cur.length > 3900) { partes.push(cur.slice(0, 3900)); cur = cur.slice(3900); }
+  }
+  if (cur) partes.push(cur);
+  return partes;
+}
+
 // ---------------------------------------------------------------------------
 // CORRIDA COMPLETA: hechos → verificar hipótesis → 3 agentes → discusión → integrador → aviso
 export async function correrMesa(env, iaJSON, { forzar = false, profundo = false, motivo = "cron", avisar = null, ahora = Date.now() } = {}) {
@@ -643,8 +690,16 @@ export async function correrMesa(env, iaJSON, { forzar = false, profundo = false
   informes.whatsapp = await correrAgente(env, iaJSON, "whatsapp", h, muestras, opts);
   informes.redes = await correrAgente(env, iaJSON, "redes", h, null, opts);
   informes.productos = await correrAgente(env, iaJSON, "productos", h, null, opts);
+  // La WEB: corre una vez por foto de PostHog (cada 14 días). En las otras corridas su último informe sigue en la mesa y discute igual.
+  let webNuevo = false;
+  if (h.web) {
+    const previo = (await todas(env, "SELECT datos FROM mesa_informes WHERE agente='web' ORDER BY ts DESC LIMIT 1"))[0];
+    let pd = null; try { pd = previo ? JSON.parse(previo.datos || "null") : null; } catch {}
+    if (pd?.resumen && pd.foto === h.web.dia) informes.web = pd;
+    else { informes.web = await correrAgente(env, iaJSON, "web", h, null, opts); webNuevo = !!informes.web; }
+  }
   await podarIdeasMesa(env, (h.productos || []).map((p) => p.producto)).catch(() => {});
-  for (const [k, d] of Object.entries(informes)) if (d?.hipotesis?.length) await crearHipotesis(env, h, k, d.hipotesis);
+  for (const [k, d] of Object.entries(informes)) if (d?.hipotesis?.length && (k !== "web" || webNuevo)) await crearHipotesis(env, h, k, d.hipotesis);   // el informe de la web reusado no repite hipótesis
   const ok = Object.values(informes).some(Boolean);
   const nInf = Object.values(informes).filter(Boolean).length;
   const debate = nInf >= 2 && env.MESA_DEBATE !== "0" ? await discutir(env, iaJSON, h, informes, opts).catch(() => null) : null;
@@ -656,6 +711,7 @@ export async function correrMesa(env, iaJSON, { forzar = false, profundo = false
     const hAR = new Date(ahora - AR).getUTCHours();
     const cab = `Mesa · ${motivo === "cron" ? (hAR < 12 ? "arranque del día" : hAR < 19 ? "mediodía" : "cierre del día") : motivo === "posthog" ? "datos nuevos de la web (PostHog, últimos " + FOTO_CADA_DIAS + " días)" : "corrida pedida"} ${hoy.slice(5).split("-").reverse().join("/")}\n`;
     await avisarTelegram(env, cab + integrador.mensaje + (cerradas.length ? "\n\nHipótesis cerradas: " + cerradas.map((c) => `${c.estado} "${corto(c.texto, 60)}"`).join("; ") : ""), avisar);
+    if (webNuevo) for (const parte of informeWeb(informes.web, debate, integrador, h)) await avisarTelegram(env, parte);   // el informe largo de la web, solo por Telegram
   }
   return { ok: !!integrador, informes, debate, integrador, cerradas, hechos: h };
 }
@@ -792,9 +848,10 @@ export async function ejecutarConsulta(env, c, ahora = Date.now()) {
 }
 
 const QUIEN = {
-  mesa: { nombre: "la MESA de agentes", partes: ["embudo", "whatsapp", "redes", "productos"], rol: "Sos la MESA de agentes (WhatsApp, Redes, Productos e Integrador). Contestá integrando las áreas: cuando un agente tenga un dato que aporte, que hable con su nombre en una o dos líneas (WhatsApp: ..., Redes: ..., Productos: ...) y cerrá con la conclusión y qué hacer." },
+  mesa: { nombre: "la MESA de agentes", partes: ["embudo", "whatsapp", "redes", "productos"], rol: "Sos la MESA de agentes (WhatsApp, Redes, Productos, Web e Integrador). Contestá integrando las áreas: cuando un agente tenga un dato que aporte, que hable con su nombre en una o dos líneas (WhatsApp: ..., Redes: ..., Productos: ..., Web: ...) y cerrá con la conclusión y qué hacer." },
   whatsapp: { nombre: "el AGENTE DE WHATSAPP", partes: ["embudo", "whatsapp"], rol: "Sos el agente de WHATSAPP de la mesa: sabés de las charlas, la atención, las cotizaciones, los seguimientos, la prospección y por qué se cierra o no." },
   redes: { nombre: "el AGENTE DE REDES", partes: ["embudo", "redes"], rol: "Sos el agente de REDES de la mesa: sabés qué contenido trae consultas que compran, qué dicen nuestros videos y qué se está pegando en otras cuentas." },
+  web: { nombre: "el AGENTE DE LA WEB", partes: ["embudo", "web", "productos"], rol: "Sos el agente de la WEB de la mesa: sabés qué hace la gente en la página (qué busca, qué categorías y productos mira, a qué WhatsApp hace clic, dónde se cae en la tienda y de dónde llega) y lo cruzás con lo que se pide y se vende por WhatsApp. Cada respuesta termina en acciones con nombre propio (cupo de X, contenido de la categoría Y, ficha de Z)." },
   productos: { nombre: "el AGENTE DE PRODUCTOS", partes: ["embudo", "productos"], rol: "Sos el agente de PRODUCTOS de la mesa: sabés qué se pide, qué se vende, cómo rinden los cupos y qué pasa en Mercado Libre." },
 };
 export async function preguntarMesa(env, iaJSON, pregunta, agente = "mesa") {

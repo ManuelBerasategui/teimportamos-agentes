@@ -112,7 +112,7 @@ input:focus,select:focus,textarea:focus{outline:2px solid color-mix(in srgb,var(
 <section id="v-mesa">
  <div class="est" id="mesaEst"></div>
  <div class="card" id="mesaChat"><div class="top"><b>Hablá con los agentes</b><span class="mu">Escribí corto: ellos amplían la pregunta, buscan en los chats, los videos y los números, y te contestan con datos.</span></div>
-  <div class="chips" id="mesaQuien"><button class="chip on" data-q="mesa">Toda la mesa</button><button class="chip" data-q="whatsapp">WhatsApp</button><button class="chip" data-q="redes">Redes</button><button class="chip" data-q="productos">Productos</button></div>
+  <div class="chips" id="mesaQuien"><button class="chip on" data-q="mesa">Toda la mesa</button><button class="chip" data-q="whatsapp">WhatsApp</button><button class="chip" data-q="redes">Redes</button><button class="chip" data-q="productos">Productos</button><button class="chip" data-q="web">Web</button></div>
   <div class="hilo" id="mesaHilo"></div>
   <div class="chips" id="mesaSug"></div>
   <div class="fila"><textarea id="mesaQ" rows="2" placeholder="Ej: qué pasa que no estamos cerrando?"></textarea></div><button class="b p" id="mesaEnv">Preguntar</button>
@@ -485,14 +485,14 @@ function pintarMesa(d) {
   $("#mesaLecTxt").className = dt.lectura ? "cons" : "cons mu"; $("#mesaLecTxt").textContent = dt.lectura || "Todavía no hay lectura. Tocá Correr ahora.";
   $("#mesaDec").innerHTML = (dt.decisiones || []).map(function (x, i) { return '<div class="nota"><b>' + (i + 1) + ". " + esc(x.que) + '</b> <span class="mu">(' + esc(x.quien) + ')</span><div class="mu">' + esc(x.por_que) + "</div></div>"; }).join("");
   $("#mesaRumbo").innerHTML = dt.cambio_rumbo ? '<div class="nota" style="background:color-mix(in srgb,var(--bad) 12%,var(--card))"><b>Cambio de rumbo:</b> ' + esc(dt.cambio_rumbo) + "</div>" : "";
-  var ids = d.ideas || [], NOMI = { whatsapp: "WhatsApp", redes: "Redes", productos: "Productos" };
+  var ids = d.ideas || [], NOMI = { whatsapp: "WhatsApp", redes: "Redes", productos: "Productos", web: "Web" };
   $("#mesaIdeasN").textContent = ids.filter(function (i) { return i.estado === "nueva"; }).length;
   $("#mesaIdeas").innerHTML = ids.map(function (i) { return '<div class="card" data-idea="' + esc(i.id) + '"><div class="top"><span class="tag">' + esc(NOMI[i.agente] || i.agente) + '</span><span class="mu">' + fechaHoraM(i.ts) + "</span>" + (i.estado === "util" ? '<span class="tag" style="color:var(--ok)">me sirve</span>' : "") + '</div><div class="que">' + esc(i.texto) + '</div><div class="acc">' + (i.estado === "util" ? "" : '<button class="b v" data-e="util">Me sirve</button>') + '<button class="b" data-e="hecha">Ya lo hice</button><button class="b x" data-e="descartada">No sirve</button><button class="b" data-e="preguntar">Preguntarle más</button></div></div>'; }).join("") || '<div class="mu">Todavía no hay ideas. Aparecen después de la próxima corrida.</div>';
   var vs = (d.hechos && d.hechos.ventas_sin_cargar) || [];
   $("#mesaVentasN").textContent = vs.length;
   $("#mesaVentas").innerHTML = vs.map(function (v) { return '<div class="card" data-conv="' + esc(v.conv) + '"><div class="top"><span class="tel" data-tel="' + esc(v.conv) + '">' + telFmt(v.conv) + "</span><b>" + esc(v.nombre) + '</b><span class="mu">' + esc(v.producto || "") + " · " + esc(v.fecha) + "</span>" + (v.usd ? '<span class="tag">~USD ' + plata(v.usd) + "</span>" : "") + "</div>" + (v.evidencia ? '<div class="ult">Señal: "' + esc(v.evidencia) + '"</div>' : "") + '<div class="acc"><button class="b v" data-a="vendido">Sí, fue venta</button><button class="b x" data-ventano="1">No fue venta</button></div></div>'; }).join("") +
     ((d.hechos && d.hechos.movimientos || []).length ? '<div class="mu" style="margin-top:6px">Pagos de clientes que ya habían comprado (no se cuentan como venta nueva): ' + d.hechos.movimientos.map(function (m) { return esc(m.nombre) + " " + esc(m.fecha); }).join(" · ") + "</div>" : "") || '<div class="mu">Ninguna señal de pago nueva.</div>';
-  var db = d.informes.debate, dd = (db && db.datos) || {}, NOM = { whatsapp: "WhatsApp", redes: "Redes", productos: "Productos", critico: "Crítico", todos: "todos" }, COL = { whatsapp: "var(--c-consulta)", redes: "var(--c-venta)", productos: "var(--c-cotizar)", critico: "var(--bad)" };
+  var db = d.informes.debate, dd = (db && db.datos) || {}, NOM = { whatsapp: "WhatsApp", redes: "Redes", productos: "Productos", web: "Web", critico: "Crítico", todos: "todos" }, COL = { whatsapp: "var(--c-consulta)", redes: "var(--c-venta)", productos: "var(--c-cotizar)", web: "var(--c-llamar)", critico: "var(--bad)" };
   var lista3 = function (t, l) { return (l || []).length ? "<div><b>" + t + "</b><ul>" + l.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul></div>" : ""; };
   $("#mesaDebate").innerHTML = (dd.turnos || []).length ? '<div class="mu">' + fechaHoraM(db.ts) + "</div>" + dd.turnos.map(function (t) { return '<div class="turno" style="--k:' + (COL[t.agente] || "var(--mu)") + '"><div class="av">' + esc(NOM[t.agente] || t.agente) + (t.a && t.a !== "todos" ? '<div class="mu" style="font-weight:500;text-transform:none">a ' + esc(NOM[t.a] || t.a) + "</div>" : "") + '</div><div class="tx">' + esc(t.texto) + "</div></div>"; }).join("") +
     '<div class="tri">' + lista3("Acuerdos", dd.acuerdos) + lista3("Desacuerdos abiertos", dd.desacuerdos) + lista3("Falta medir", dd.falta_medir) + "</div>" : '<div class="mu">Todavía no hubo discusión. Aparece en la próxima corrida.</div>';
@@ -505,14 +505,16 @@ function pintarMesa(d) {
   $("#mesaHip").innerHTML = hip.length ? "<table><tr><th>Hipótesis</th><th>Acción</th><th>Métrica</th><th>Base</th><th>Hoy</th><th>Meta</th><th>Vence</th><th>Estado</th><th></th></tr>" + hip.map(function (h) {
     return '<tr><td style="white-space:normal;min-width:180px">' + esc(h.texto) + '<div class="mu">' + esc(h.agente) + " · " + esc(h.dia) + '</div></td><td style="white-space:normal;min-width:160px">' + esc(h.accion) + "</td><td>" + esc((d.metricas || {})[h.metrica] || h.metrica) + "</td><td>" + (h.base == null ? "-" : h.base) + "</td><td>" + (h.actual == null ? "-" : h.actual) + "</td><td>" + h.meta + "</td><td>" + esc(h.vence) + "</td><td>" + (est2[h.estado] || esc(h.estado)) + (h.resultado ? '<div class="mu">' + esc(h.resultado) + "</div>" : "") + "</td><td>" + (h.estado === "activa" ? '<button class="b x" data-hip="' + esc(h.id) + '">Descartar</button>' : "") + "</td></tr>";
   }).join("") + "</table>" : '<div class="mu">Todavía no hay hipótesis.</div>';
-  var nombres = { whatsapp: "Agente de WhatsApp", redes: "Agente de Redes", productos: "Agente de Productos" };
-  $("#mesaAg").innerHTML = ["whatsapp", "redes", "productos"].map(function (k) {
-    var inf = d.informes[k]; if (!inf) return '<div class="card"><b>' + nombres[k] + '</b><div class="mu">Sin informe todavía.</div></div>';
+  var nombres = { whatsapp: "Agente de WhatsApp", redes: "Agente de Redes", productos: "Agente de Productos", web: "Agente de la Web" };
+  $("#mesaAg").innerHTML = ["whatsapp", "redes", "productos", "web"].map(function (k) {
+    var inf = d.informes[k]; if (!inf) return '<div class="card"><b>' + nombres[k] + '</b><div class="mu">' + (k === "web" ? "Sin informe todavía: corre con cada foto nueva de PostHog (cada 14 días)." : "Sin informe todavía.") + '</div></div>';
     var x = inf.datos || {};
     return '<details class="card"><summary><b>' + nombres[k] + '</b> <span class="mu">' + fechaHoraM(inf.ts) + '</span><div class="que">' + esc(x.resumen || inf.texto || "") + "</div></summary>" +
       (x.hallazgos || []).map(function (h) { return '<div class="nota"><b>' + esc(h.titulo) + "</b>: " + esc(h.detalle) + ' <span class="mu">' + esc(h.evidencia) + "</span></div>"; }).join("") +
       ((x.ideas || []).length ? '<div class="mu" style="margin-top:8px"><b>Ideas:</b><ul>' + x.ideas.map(function (i) { return "<li>" + esc(i) + "</li>"; }).join("") + "</ul></div>" : "") +
-      ((x.para_manuel || []).length ? '<div class="mu"><b>Para Manuel:</b><ul>' + x.para_manuel.map(function (i) { return "<li>" + esc(i) + "</li>"; }).join("") + "</ul></div>" : "") + "</details>";
+      ((x.para_manuel || []).length ? '<div class="mu"><b>Para Manuel:</b><ul>' + x.para_manuel.map(function (i) { return "<li>" + esc(i) + "</li>"; }).join("") + "</ul></div>" : "") +
+      ((x.plan || []).length ? '<div style="margin-top:8px"><b>Qué hacer:</b><ol>' + x.plan.map(function (p) { return "<li><b>" + esc(p.accion) + "</b>" + (p.quien ? ' <span class="mu">(' + esc(p.quien) + ")</span>" : "") + '<div class="mu">' + esc(p.por_que) + "</div></li>"; }).join("") + "</ol></div>" : "") +
+      (x.como_seguir ? '<div class="nota" style="white-space:pre-line"><b>Cómo seguir:</b> ' + esc(x.como_seguir) + "</div>" : "") + "</details>";
   }).join("");
   var h = d.hechos, kp = function (t, v, s) { return '<div class="card"><div class="kp">' + t + "</div><b>" + v + "</b>" + (s ? '<div class="mu">' + s + "</div>" : "") + "</div>"; };
   var conf = h && h.embudo.ventas_confirmadas != null ? h.embudo.ventas_confirmadas : null;
@@ -533,8 +535,8 @@ function pintarMesa(d) {
   ].join("") : '<div class="mu">Corré la mesa para ver los números.</div>';
   if (!MESA_OCUPADA) { MESA_HILO = d.chat || []; pintarMesaHilo(); }
 }
-var QUIEN = "mesa", NOMQ = { mesa: "Mesa", whatsapp: "WhatsApp", redes: "Redes", productos: "Productos" };
-var SUG_BASE = { mesa: ["qué pasa que no estamos cerrando?", "qué hago hoy primero?", "en qué no están de acuerdo los agentes?"], whatsapp: ["por qué no contestan las cotizaciones?", "qué objeción aparece más?", "plan A o plan B, cuál rinde más?"], redes: ["qué grabo esta semana?", "qué video trajo consultas que compran?", "qué viral de otros conviene adaptar?"], productos: ["qué producto empujo esta semana?", "mismo cupo, antes vendió y ahora no: por qué?", "qué dejo de cotizar?"] };
+var QUIEN = "mesa", NOMQ = { mesa: "Mesa", whatsapp: "WhatsApp", redes: "Redes", productos: "Productos", web: "Web" };
+var SUG_BASE = { mesa: ["qué pasa que no estamos cerrando?", "qué hago hoy primero?", "en qué no están de acuerdo los agentes?"], whatsapp: ["por qué no contestan las cotizaciones?", "qué objeción aparece más?", "plan A o plan B, cuál rinde más?"], redes: ["qué grabo esta semana?", "qué video trajo consultas que compran?", "qué viral de otros conviene adaptar?"], productos: ["qué producto empujo esta semana?", "mismo cupo, antes vendió y ahora no: por qué?", "qué dejo de cotizar?"] , web: ["qué producto conviene sacar en cupo por lo que buscan en la web?", "qué categoría miran más y qué hago con eso?", "dónde se cae la gente en la tienda?"]};
 function pintarSug(l) { $("#mesaSug").innerHTML = (l && l.length ? l : SUG_BASE[QUIEN]).map(function (t) { return '<button class="chip sug" data-sug="' + esc(t) + '">' + esc(t) + "</button>"; }).join(""); }
 function pintarMesaHilo() {
   $("#mesaHilo").innerHTML = MESA_HILO.map(function (m) { var u = m.rol === "u";
