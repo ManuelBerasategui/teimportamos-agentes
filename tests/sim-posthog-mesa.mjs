@@ -32,6 +32,10 @@ chk("embudo con desglose: suma los grupos", P.resumirEmbudo([[{ name: "a", count
 
 const o = P.resumirTendencia([{ breakdown_value: "$$_posthog_breakdown_other_$$", count: 165, compare_label: "current" }, { breakdown_value: "NFC PARA RESEÑAS", count: 7, compare_label: "current" }, { breakdown_value: "NFC PARA RESEÑAS", count: 2, compare_label: "previous" }]);
 chk("'Otros' de PostHog va con su nombre y al final; con menos de 5 antes no inventa porcentajes", o.filas[0].k === "NFC PARA RESEÑAS" && o.filas[1].k === "Otros" && o.filas[1].otro && o.lineas[1] === "NFC PARA RESEÑAS: 7 (antes 2)");
+const muchas = P.resumirTendencia([...Array.from({ length: 20 }, (_, i) => ({ breakdown_value: "termo " + i, count: 40 - i, compare_label: "current" })), { breakdown_value: "$$_posthog_breakdown_other_$$", count: 100, compare_label: "current" }]);
+chk("trae todas las filas para el panel, pero la mesa lee 8 y el resto sumado en Otros", muchas.filas.length === 21 && muchas.lineas.length === 10 && muchas.lineas[9] === "Otros: " + (100 + [8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19].reduce((a, i) => a + 40 - i, 0)));
+const j = P.juntarOtros(muchas.filas, 18);
+chk("tocar Otros muestra 10 más: quedan 2 ocultas sumadas al Otros de PostHog", j.length === 19 && j[18].k === "Otros" && j[18].ocultas === 2 && j[18].v === 100 + 22 + 21 && P.juntarOtros(muchas.filas, 50)[20].ocultas === 0);
 chk("usuarios activos por día se promedian, no se suman", P.resumirTendencia([{ label: "$pageview", data: [100, 80, 90], compare_label: "current" }], "dau").filas[0].v === 90);
 chk("nombres en castellano para insights, eventos y orígenes", P.nombreInsight("whatsapp_click count by event's destino") === "Clics a WhatsApp por destino" && P.nombreInsight("Weekly active users (WAUs)") === "Usuarios activos por semana" && P.nombreInsight("Pageview → catalog_filter → add_to_cart → order_placed user conversion rate") === "Embudo de compra" && P.nombreValor("$direct") === "Directo (sin origen)" && P.nombreValor("l.instagram.com") === "instagram.com");
 
@@ -63,7 +67,7 @@ globalThis.fetch = async (url, o) => {
 const f = await P.fotoWeb(env);
 const qTrend = llamadas.find((l) => l.q?.query?.kind === "TrendsQuery")?.q.query;
 chk("la foto trae los insights guardados (tendencias y embudos) y saltea tablas y borrados", f.ok && f.secciones.length === 3 && f.secciones[1].nombre === "Clics a WhatsApp por producto" && f.secciones[2].nombre === "Embudo de compra" && f.secciones[2].tipo === "embudo" && !/Tabla vieja|Borrado/.test(f.texto));
-chk("recalcula cada insight con los últimos 14 días contra los 14 anteriores, conservando su desglose", qTrend.dateRange.date_from === "-14d" && qTrend.compareFilter.compare === true && qTrend.breakdownFilter.breakdown === "producto");
+chk("recalcula cada insight con los últimos 14 días contra los 14 anteriores, conservando su desglose", qTrend.dateRange.date_from === "-14d" && qTrend.compareFilter.compare === true && qTrend.breakdownFilter.breakdown === "producto" && qTrend.breakdownFilter.breakdown_limit === 50);
 chk("el texto para la mesa trae números y comparación", /Tarjetas NFC: 42 \(antes 21, \+100%\)/.test(f.texto) && /conversión total 0\.5%/.test(f.texto) && /instagram\.com 70/.test(f.texto));
 chk("usa la clave personal contra la API de lectura", llamadas.every((l) => l.url.startsWith("https://us.posthog.com/api/projects/123/") && l.auth === "Bearer phx_test"));
 

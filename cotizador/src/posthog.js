@@ -55,7 +55,7 @@ export const PANEL_WEB = `<!doctype html><html lang="es"><head><meta charset="ut
 .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(330px,100%),1fr));gap:16px;margin-bottom:16px}.grid>*,.kpis>*{min-width:0}.full{margin-bottom:16px}
 h2{font-size:15px;margin:0;font-weight:650}.hd{display:flex;align-items:baseline;justify-content:space-between;gap:4px 10px;flex-wrap:wrap;margin-bottom:12px}.hd .t{font-size:13px;color:var(--tx2);white-space:nowrap;font-variant-numeric:tabular-nums}.hd .t b{color:var(--tx);font-size:15px}
 .it{margin:0 0 10px}.it:last-child{margin-bottom:0}.it .r{display:flex;justify-content:space-between;gap:10px;font-size:13px;margin-bottom:4px}.it .k{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--tx)}.it .v{white-space:nowrap;font-variant-numeric:tabular-nums;color:var(--tx)}
-.tr{height:6px;background:var(--grid);border-radius:4px}.tr i{display:block;height:100%;background:var(--bar);border-radius:4px;min-width:2px}.otro .tr i{background:var(--otro)}.otro .k{color:var(--mu)}
+.tr{height:6px;background:var(--grid);border-radius:4px}.tr i{display:block;height:100%;background:var(--bar);border-radius:4px;min-width:2px}.otro .tr i{background:var(--otro)}.otro .k{color:var(--mu)}.mas{cursor:pointer;border-radius:6px;outline-offset:3px}.mas:hover .k,.mas:focus .k{color:var(--tx)}.vm{color:var(--bar);font-weight:600;white-space:nowrap}
 .d{display:inline-block;font-size:11.5px;font-weight:600;margin-left:6px;padding:1px 6px;border-radius:6px;background:var(--chip)}.d.up{color:var(--up)}.d.down{color:var(--down)}.d.nu{color:var(--mu);font-weight:500}
 .fun .st{margin-bottom:6px}.fun .st .r{display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px}.fun .st .tr{height:22px;border-radius:5px}.fun .st .tr i{border-radius:5px}.fun .pa{color:var(--mu);font-size:12px;margin:2px 0 8px 2px}.fun .tot{margin-top:10px;font-size:13px;color:var(--tx2)}.fun .tot b{color:var(--tx)}
 .cols{position:relative;display:flex;align-items:flex-end;gap:3px;height:150px;border-bottom:1px solid var(--grid);padding-top:14px}.cols div{flex:1;background:var(--bar);border-radius:4px 4px 0 0;min-height:2px}.cols div:hover{opacity:.8}.cols .mx{position:absolute;left:0;right:0;top:14px;border-top:1px dashed var(--grid);font-size:11px;color:var(--mu)}.cols .mx span{position:absolute;right:0;top:-15px}
@@ -73,13 +73,20 @@ h2{font-size:15px;margin:0;font-weight:650}.hd{display:flex;align-items:baseline
 var $=function(s){return document.querySelector(s)},D=14,esc=function(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]})};
 var fmt=function(x){return Math.round(+x||0).toLocaleString("es-AR")},dm=function(d){var p=String(d).split("-");return p[2]+"/"+p[1]};
 function delta(a,b){if(b==null)return "";if(!b)return a?'<span class="d nu" title="no había datos antes">nuevo</span>':"";if(b<5)return '<span class="d nu" title="antes '+fmt(b)+'">antes '+fmt(b)+'</span>';var p=Math.round((a-b)/b*100);if(!p)return '<span class="d nu" title="antes '+fmt(b)+'">= igual</span>';return '<span class="d '+(p>0?"up":"down")+'" title="antes '+fmt(b)+'">'+(p>0?"▲ +":"▼ ")+p+'%</span>'}
-function barras(t,filas,o){o=o||{};if(!filas||!filas.length)return '<div class="ca"><div class="hd"><h2>'+esc(t)+'</h2></div><div class="vacio">Sin datos en este período.</div></div>';
- var mx=Math.max.apply(null,filas.filter(function(f){return !f.otro}).map(function(f){return f.v}).concat([1]));
- return '<div class="ca"><div class="hd"><h2>'+esc(t)+'</h2>'+(o.total!=null?'<span class="t"><b>'+fmt(o.total)+'</b> en total'+delta(o.total,o.totalAntes)+'</span>':'')+'</div>'+filas.map(function(f){return '<div class="it'+(f.otro?" otro":"")+'" title="'+esc(f.k)+": "+fmt(f.v)+(f.antes!=null?" (antes "+fmt(f.antes)+")":"")+'"><div class="r"><span class="k">'+esc(f.k)+'</span><span class="v">'+fmt(f.v)+delta(f.v,f.antes)+'</span></div><div class="tr"><i style="width:'+Math.min(100,Math.round(100*f.v/mx))+'%"></i></div></div>'}).join('')+(o.nota?'<div class="nota">'+esc(o.nota)+'</div>':'')+'</div>'}
+// Cada tarjeta de ranking muestra 8 filas; tocar "Otros" suma 10 más (lo oculto + el "Otros" de PostHog quedan sumados en esa fila)
+var CARDS=[];
+function juntar(filas,n){var sin=filas.filter(function(f){return !f.otro}),resto=sin.slice(n).concat(filas.filter(function(f){return f.otro}));if(!resto.length)return sin.slice(0,n);
+ var hayA=resto.some(function(f){return f.antes!=null});return sin.slice(0,n).concat([{k:"Otros",v:resto.reduce(function(a,f){return a+f.v},0),antes:hayA?resto.reduce(function(a,f){return a+(f.antes||0)},0):null,otro:true,ocultas:Math.max(0,sin.length-n)}])}
+function barras(t,filas,o){CARDS.push({t:t,filas:filas||[],o:o||{},n:8});return tarjeta(CARDS.length-1)}
+function tarjeta(i){var c=CARDS[i],t=c.t,o=c.o;if(!c.filas.length)return '<div class="ca" data-c="'+i+'"><div class="hd"><h2>'+esc(t)+'</h2></div><div class="vacio">Sin datos en este período.</div></div>';
+ var filas=juntar(c.filas,c.n),mx=Math.max.apply(null,filas.filter(function(f){return !f.otro}).map(function(f){return f.v}).concat([1]));
+ return '<div class="ca" data-c="'+i+'"><div class="hd"><h2>'+esc(t)+'</h2>'+(o.total!=null?'<span class="t"><b>'+fmt(o.total)+'</b> en total'+delta(o.total,o.totalAntes)+'</span>':'')+'</div>'+filas.map(function(f){var mas=f.otro&&f.ocultas>0;return '<div class="it'+(f.otro?" otro":"")+(mas?" mas":"")+'" title="'+(mas?"Tocá para ver "+Math.min(10,f.ocultas)+" más":esc(f.k)+": "+fmt(f.v)+(f.antes!=null?" (antes "+fmt(f.antes)+")":""))+'"'+(mas?' role="button" tabindex="0"':'')+'><div class="r"><span class="k">'+esc(f.k)+(mas?' <span class="vm">· ver '+Math.min(10,f.ocultas)+' más ▾</span>':'')+'</span><span class="v">'+fmt(f.v)+delta(f.v,f.antes)+'</span></div><div class="tr"><i style="width:'+Math.min(100,Math.round(100*f.v/mx))+'%"></i></div></div>'}).join('')+(c.n>8?'<div class="nota"><a href="#" class="menos">Ver menos ▴</a></div>':'')+(o.nota?'<div class="nota">'+esc(o.nota)+'</div>':'')+'</div>'}
+function abrir(e){var r=e.target.closest&&e.target.closest(".mas, .menos");if(!r)return;e.preventDefault();var el=r.closest("[data-c]"),i=+el.getAttribute("data-c");CARDS[i].n=r.classList.contains("menos")?8:CARDS[i].n+10;el.outerHTML=tarjeta(i)}
+document.addEventListener("click",abrir);document.addEventListener("keydown",function(e){if(e.key==="Enter"||e.key===" ")abrir(e)});
 function embudo(s){var p=s.pasos||[];if(!p.length)return barras(s.nombre,[]);var p0=p[0].v||1;
  return '<div class="ca fun full"><div class="hd"><h2>'+esc(s.nombre)+'</h2><span class="t">personas por paso</span></div>'+p.map(function(x,i){return (i?'<div class="pa">↓ '+(p[i-1].v?Math.round(x.v/p[i-1].v*100):0)+'% sigue al paso siguiente</div>':'')+'<div class="st" title="'+esc(x.k)+": "+fmt(x.v)+'"><div class="r"><span>'+esc(x.k)+'</span><b>'+fmt(x.v)+'</b></div><div class="tr"><i style="width:'+Math.max(1,Math.round(100*x.v/p0))+'%"></i></div></div>'}).join('')+(p.length>1?'<div class="tot">Conversión total: <b>'+(Math.round((p[p.length-1].v/p0)*1000)/10).toLocaleString("es-AR")+'%</b></div>':'')+(s.nota?'<div class="nota">'+esc(s.nota)+'</div>':'')+'</div>'}
 function kpi(l,v,b,u){return '<div class="ca kpi"><div class="l">'+esc(l)+'</div><div class="n">'+fmt(v)+'</div><div class="u">'+(delta(v,b)||"")+(u?' '+esc(u):'')+'</div></div>'}
-function pintar(m,ins){var h="",sec=(ins&&ins.ok?ins.secciones:[]).filter(function(s){return s.nombre!=="Tráfico de la web"});
+function pintar(m,ins){CARDS=[];var h="",sec=(ins&&ins.ok?ins.secciones:[]).filter(function(s){return s.nombre!=="Tráfico de la web"});
  $("#sub").textContent="Datos de PostHog · últimos "+D+" días"+(ins&&ins.ok?", comparados con los "+D+" anteriores":"");
  var tiles=sec.filter(function(s){return s.tipo==="tendencia"&&s.filas&&s.filas.length===1&&!s.desglose}),listas=sec.filter(function(s){return s.tipo==="tendencia"&&tiles.indexOf(s)<0}),funs=sec.filter(function(s){return s.tipo==="embudo"});
  var k="";if(m&&m.ok&&!tiles.some(function(s){return /^Vistas de página/.test(s.nombre)})){var vis=m.serie.reduce(function(a,x){return a+x.vistas},0);k+=kpi("Vistas de página",vis,null,"en "+D+" días")}
@@ -158,6 +165,13 @@ const valorSerie = (s, math) => {
 };
 
 // Una tendencia: top 8 valores del período actual (más "Otros" al final) con la comparación contra el período anterior
+// Las primeras n filas y el resto (más el "Otros" de PostHog) sumado en una fila "Otros" que dice cuántas quedaron ocultas
+export function juntarOtros(filas, n) {
+  const sin = filas.filter((f) => !f.otro), resto = [...sin.slice(n), ...filas.filter((f) => f.otro)];
+  if (!resto.length) return sin.slice(0, n);
+  const antes = resto.some((f) => f.antes != null) ? resto.reduce((a, f) => a + (f.antes || 0), 0) : null;
+  return [...sin.slice(0, n), { k: "Otros", v: resto.reduce((a, f) => a + f.v, 0), antes, otro: true, ocultas: Math.max(0, sin.length - n) }];
+}
 export function resumirTendencia(res, math = null) {
   const actual = {}, antes = {};
   let desglose = false;
@@ -168,10 +182,11 @@ export function resumirTendencia(res, math = null) {
   }
   const todas = Object.entries(actual).map(([k, v]) => ({ k, v: Math.round(v), antes: k in antes ? Math.round(antes[k]) : Object.keys(antes).length ? 0 : null, otro: k === "Otros" }));
   if (!todas.length) return { filas: [], desglose, lineas: ["sin datos"] };
-  const filas = [...todas.filter((f) => !f.otro).sort((a, b) => b.v - a.v).slice(0, 8), ...todas.filter((f) => f.otro)];
+  // Hasta 50 filas para el panel (las muestra de a 10 al tocar "Otros"); la mesa lee las 8 primeras y el resto sumado en "Otros"
+  const filas = [...todas.filter((f) => !f.otro).sort((a, b) => b.v - a.v).slice(0, 50), ...todas.filter((f) => f.otro)];
   const total = todas.reduce((a, f) => a + f.v, 0), totalAntes = Object.keys(antes).length ? Math.round(Object.values(antes).reduce((a, v) => a + v, 0)) : null;
   const unidad = MATH[math] || "";
-  const lineas = filas.map((f) => `${f.k}: ${f.v}${variacion(f.v, f.antes)}`);
+  const lineas = juntarOtros(filas, 8).map((f) => `${f.k}: ${f.v}${variacion(f.v, f.antes)}`);
   return { filas, total, totalAntes, desglose, unidad, lineas: filas.length > 1 ? [`total ${total}${variacion(total, totalAntes)}`, ...lineas] : lineas.map((l) => l + (unidad ? ` (${unidad})` : "")) };
 }
 // Un embudo: cada paso con su cantidad y el % que pasa desde el paso anterior, más la conversión total
@@ -213,6 +228,7 @@ export async function fotoWeb(env, { dias = FOTO_CADA_DIAS, ahora = Date.now() }
     const src = { ...ins.query.source, dateRange: { date_from: `-${dias}d`, date_to: null } };
     const embudo = src.kind === "FunnelsQuery", nombre = nombreInsight(ins.name || ins.derived_name || "Insight " + ins.short_id);
     if (!embudo) src.compareFilter = { compare: true };
+    if (!embudo && src.breakdownFilter) src.breakdownFilter = { ...src.breakdownFilter, breakdown_limit: 50 };   // más valores antes de que PostHog los junte en "Otros"
     try {
       const r = await api(env, "query/", { query: src });
       if (!embudo) { secciones.push({ nombre, tipo: "tendencia", ...resumirTendencia(r.results, src.series?.[0]?.math) }); continue; }
