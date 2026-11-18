@@ -286,6 +286,11 @@ export async function dispositivos(env) {
   // Pesado (30 días de mensajes): se recalcula una vez por día y se guarda
   let ms = null; try { const c = JSON.parse((await kvGet(env, "disp_cache")) || "null"); if (c && Date.now() - c.ts < 24 * 3600e3) ms = c.ms; } catch {}
   if (!ms) { ms = await todas(env, "SELECT autor, COUNT(*) n, MAX(ts) ult FROM w_msg INDEXED BY w_msg_priv WHERE ts>=? AND grupo=0 AND yo=1 AND hist=0 GROUP BY autor", Date.now() - 30 * DIA).catch(() => todas(env, "SELECT autor, COUNT(*) n, MAX(ts) ult FROM w_msg WHERE ts>=? AND grupo=0 AND yo=1 AND hist=0 GROUP BY autor", Date.now() - 30 * DIA)); await kvPut(env, "disp_cache", JSON.stringify({ ts: Date.now(), ms })); }
+  // Liviano y al momento: lo de hoy (así un dispositivo recién vinculado aparece enseguida, sin esperar la caché del día)
+  const hoyMs = await todas(env, "SELECT autor, COUNT(*) n, MAX(ts) ult FROM w_msg WHERE ts>=? AND grupo=0 AND yo=1 AND hist=0 GROUP BY autor", inicioDia(diaAR())).catch(() => []);
+  const vistos = new Set(ms.map((m) => m.autor));
+  ms = ms.concat(hoyMs.filter((m) => !vistos.has(m.autor)).map((m) => ({ ...m, soloHoy: true })));
+  for (const h of hoyMs) { const x = ms.find((m) => m.autor === h.autor); if (x && h.ult > x.ult) x.ult = h.ult; }
   const out = {};
   for (const m of ms) {
     const d = (String(m.autor || "").match(/:(\d+)/) || [])[1]; if (d === undefined) continue;
