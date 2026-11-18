@@ -83,6 +83,10 @@ input:focus,select:focus,textarea:focus{outline:2px solid color-mix(in srgb,var(
  <h2>Links esperando lectura <span class="n" id="cotColaN">0</span></h2><div id="cotCola"></div>
 </section>
 <section id="v-ml" hidden>
+ <h2>Candidatos para importar <span class="n" id="candN">0</span></h2>
+ <p class="mu">Filtro objetivo: semanas seguidas en Mercado Libre, ventas de los de arriba, tiendas oficiales, competencia (Full, calificación) y precio. Los que pasan se buscan solos en 1688 (hasta 3 por día) y se calcula el costo puesto con la calculadora de la web y el margen neto después de comisión, envío y publicidad.</p>
+ <div class="acc" style="margin:8px 0 12px"><button class="b p" id="candCorrer">Buscar en 1688 ahora</button><span class="mu" id="candEstado"></span></div>
+ <div id="candLista"><div class="vacio">Cargando candidatos…</div></div>
  <h2>Tendencias de Mercado Libre</h2>
  <p class="mu">Mercado Libre actualiza sus tendencias de búsqueda semanalmente; el lector toma una nueva lectura diaria. Priorizamos el puesto visible y la repetición en días distintos, y mostramos una publicación con precio para revisar competencia. Esto mide interés de búsqueda, no ventas ni rentabilidad garantizadas.</p>
  <div class="acc" style="margin:8px 0 12px"><button class="b p" id="mlActualizar">Actualizar lectura</button><span class="mu" id="mlEstado"></span></div>
@@ -455,7 +459,25 @@ $("#cotCola").addEventListener("click", function (e) { var q = e.target.closest(
 var MESA = null, MESA_HILO = [];
 function cargarMesa() { api("mesa").then(function (d) { MESA = d; pintarMesa(d); }).catch(function () {}); }
 function fechaHoraM(ts) { return ts ? new Date(ts).toLocaleString("es-AR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "-"; }
+var CAND_ESTADO = { ganador: ["ok", "Ganador"], no_da: ["warn", "No da el margen"], falta_dato: ["warn", "Falta un dato"], buscando: ["", "Buscando en 1688"], sin_proveedor: ["warn", "Sin proveedor en 1688"], en_cola: ["", "Pasa ML · en cola para 1688"], observando: ["", "Observando"] };
+function cargarCandidatos() { api("mesa?cand=1").then(pintarCandidatos).catch(function () { var e = $("#candEstado"); if (e) e.textContent = "No pude cargar los candidatos."; }); }
+function pintarCandidatos(d) {
+  d = d || {}; var r = d.resumen || {}, l = $("#candLista"); $("#candN").textContent = r.ganadores || 0;
+  $("#candEstado").textContent = (r.observados || 0) + " búsquedas observadas · " + (r.pasan_ml || 0) + " pasan Mercado Libre · " + (r.buscando || 0) + " buscando en 1688 · " + (r.semanas_con_datos || 0) + " semana(s) con datos" + (d.descartados ? " · " + d.descartados + " descartadas" : "");
+  var chk = function (k) { return '<div class="mu">' + (k.ok === true ? "✅" : k.ok === false ? "❌" : "⏳") + " " + esc(k.texto) + "</div>"; };
+  l.innerHTML = (d.items || []).map(function (x) {
+    var e = CAND_ESTADO[x.estado] || ["", x.estado], c = x.china || {}, m = c.cuenta || {}, p = c.mejor;
+    var ml = (x.top || []).map(function (t) { return t.url ? '<a href="' + esc(t.url) + '" target="_blank" rel="noopener noreferrer">' + esc(t.titulo) + "</a>" : esc(t.titulo); }).join(" · ");
+    var china = p ? '<div class="mu" style="margin-top:6px"><b>1688:</b> <a href="' + esc(p.link) + '" target="_blank" rel="noopener noreferrer">' + esc(p.titulo) + "</a> · USD " + p.fob_usd + " FOB · mín " + (p.minimo || "?") + (m.ok ? " · lote " + m.cantidad + " u = USD " + plata(m.inversion_usd) + " puesto (USD " + m.unitario_usd + "/u)" : "") + "</div>" : "";
+    return '<div class="card"><div class="top"><b>' + esc(x.palabra) + '</b><span class="pill ' + e[0] + '">' + e[1] + '</span><span class="tag">puntaje ' + x.puntaje + "</span>" + (m.ok ? '<span class="tag">margen ' + Math.round(m.margen * 100) + "%</span>" : "") + '<span class="mu">' + esc(x.categoria || "") + "</span></div>" +
+      (x.checks || []).concat(c.checks || []).map(chk).join("") + (ml ? '<div class="mu" style="margin-top:6px"><b>En ML:</b> ' + ml + "</div>" : "") + china +
+      '<div class="acc"><button class="b v" data-mlestado="interesa" data-mlclave="' + esc(x.clave) + '">Me interesa</button><button class="b x" data-mlestado="descartada" data-mlclave="' + esc(x.clave) + '">Descartar 30 días</button></div></div>';
+  }).join("") || '<div class="vacio">Todavía no hay candidatos: hacen falta lecturas de la PC en al menos ' + ((d.umbrales || {}).semanas || 3) + " semanas distintas.</div>";
+}
+$("#candCorrer").onclick = function () { $("#candEstado").textContent = "Corriendo…"; api("mesa", { accion: "cand_correr" }).then(function (r) { toast(r.lanzadas && r.lanzadas.length ? "Buscando en 1688: " + r.lanzadas.join(", ") : "No hay candidatos nuevos para buscar hoy"); cargarCandidatos(); }); };
+$("#candLista").addEventListener("click", function (e) { var b = e.target.closest("[data-mlestado]"); if (!b) return; api("mesa", { accion: "ml_feedback", clave: b.dataset.mlclave, estado: b.dataset.mlestado, nota: "" }).then(function (r) { toast(r.ok ? "Señal guardada" : "No pude guardar"); cargarCandidatos(); }); });
 function cargarMercadoLibre() {
+  cargarCandidatos();
   var estado = $("#mlEstado"); if (estado) estado.textContent = "Actualizando…";
   api("mesa?ml=1").then(pintarMercadoLibre).catch(function () { if (estado) estado.textContent = "No pude cargar las tendencias."; });
 }

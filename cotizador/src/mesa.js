@@ -920,6 +920,7 @@ export async function apiMesa(env, req, url, iaJSON, body = null) {
   const json = (d) => Response.json(d, { headers: { "Cache-Control": "no-store" } });
   if (req.method !== "POST") {
     if (url.searchParams.get("ml") === "1") return json(await recomendacionesMercadoLibre(env));
+    if (url.searchParams.get("cand") === "1") { const { listaCandidatos } = await import("./candidatos.js"); return json(await listaCandidatos(env)); }
     if (url.searchParams.get("hechos") === "1") return json(await hechos(env));
     return json(await estadoMesa(env));
   }
@@ -932,6 +933,7 @@ export async function apiMesa(env, req, url, iaJSON, body = null) {
     await kvPut(env, "virales_fuentes", JSON.stringify(f)); return json({ ok: true, fuentes: f });
   }
   if (b.accion === "idea" && b.id && ["util", "hecha", "descartada", "nueva"].includes(b.estado)) { await env.DB.prepare("UPDATE mesa_ideas SET estado=?, nota=? WHERE id=?").bind(b.estado, corto(b.nota, 200) || null, String(b.id)).run(); return json({ ok: true }); }
+  if (b.accion === "cand_correr") { const { cronCandidatos } = await import("./candidatos.js"); return json(await cronCandidatos(env, Date.now(), { forzar: true })); }
   if (b.accion === "ml_feedback") {
     const clave = claveML(b.clave), estado = String(b.estado || "");
     if (!clave || !["interesa", "probado", "descartada"].includes(estado)) return json({ error: "señal inválida" });
@@ -947,7 +949,7 @@ export async function apiMesa(env, req, url, iaJSON, body = null) {
 // Tendencias de Mercado Libre leídas desde la PC (sender/tendencias_ml.py)
 export async function guardarML(env, b) {
   await prepararMesa(env);
-  const items = (Array.isArray(b?.items) ? b.items : []).slice(0, 80).map((t) => ({ palabra: corto(t.palabra, 60), categoria: corto(t.categoria, 40), tipo: corto(t.tipo, 30), puesto: +t.puesto || null, resultados: +t.resultados || null, precio_min: +t.precio_min || null, precio_max: +t.precio_max || null, vendidos: corto(t.vendidos, 30), top: (Array.isArray(t.top) ? t.top : []).slice(0, 5).map((x) => { const u = corto(x.url, 500); const segura = /^https:\/\/([a-z0-9-]+\.)*mercadolibre\.com\.ar\//i.test(u); return { titulo: corto(x.titulo, 80), precio: +x.precio || null, vendidos: corto(x.vendidos, 30), url: segura ? u : "" }; }) })).filter((t) => t.palabra);
+  const items = (Array.isArray(b?.items) ? b.items : []).slice(0, 80).map((t) => ({ palabra: corto(t.palabra, 60), categoria: corto(t.categoria, 40), tipo: corto(t.tipo, 30), puesto: +t.puesto || null, resultados: +t.resultados || null, precio_min: +t.precio_min || null, precio_max: +t.precio_max || null, vendidos: corto(t.vendidos, 30), top: (Array.isArray(t.top) ? t.top : []).slice(0, 10).map((x) => { const u = corto(x.url, 500); const segura = /^https:\/\/([a-z0-9-]+\.)*mercadolibre\.com\.ar\//i.test(u); const f = { titulo: corto(x.titulo, 80), precio: +x.precio || null, vendidos: corto(x.vendidos, 30), url: segura ? u : "" }; if ("full" in x) Object.assign(f, { full: !!x.full, oficial: !!x.oficial, ad: !!x.ad, gratis: !!x.gratis, mas_vendido: !!x.mas_vendido, calif: +x.calif > 0 && +x.calif <= 5 ? +x.calif : null, vendidos_n: +x.vendidos_n > 0 ? Math.round(+x.vendidos_n) : null }); return f; }) })).filter((t) => t.palabra);
   const ts = Date.now(), dia = diaAR(ts);
   if (items.length) await env.DB.batch(items.map((t, i) => {
     const clave = claveML(t.palabra);
