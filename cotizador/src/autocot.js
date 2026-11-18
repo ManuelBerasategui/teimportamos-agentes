@@ -47,7 +47,7 @@ export function cfgDesdeWeb(filas) {
     impuestosBarcoPct: pos(t.calc_impuestos_barco_pct, CFG_DEF.impuestosBarcoPct), barcoGastosFijos: num(t.calc_barco_gastos_fijos, CFG_DEF.barcoGastosFijos), barcoDesde: pos(t.calc_barco_desde, CFG_DEF.barcoDesde),
     dolar: num(t.dolar_cotizacion, 0), plazoAereo: t.calc_cond_plazo_aereo || CFG_DEF.plazoAereo, plazoMaritimo: t.calc_cond_plazo_maritimo || CFG_DEF.plazoMaritimo, senaPct: pos(t.calc_cond_sena_pct, CFG_DEF.senaPct) };
 }
-async function claveWeb(env) {
+export async function claveWeb(env) {
   if (env.SUPABASE_KEY) return env.SUPABASE_KEY;
   const g = await kvGet(env, "sbkey"); if (g) return g;
   const RE = /sb_publishable_[\w-]+|eyJ[\w-]{20,}\.[\w-]{20,}\.[\w-]{20,}/;

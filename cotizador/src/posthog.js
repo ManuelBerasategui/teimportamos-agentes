@@ -1,3 +1,4 @@
+import { claveWeb } from "./autocot.js";
 // PostHog: eventos del embudo del negocio para ver gráficos (consultas, respuestas del agente, cotizaciones armadas, enviadas y revisadas).
 // Privacidad: nunca se mandan teléfonos, nombres ni textos de mensajes; el cliente se identifica con una huella (hash) irreconocible.
 // Si falta la variable POSTHOG_KEY no hace nada (el agente anda igual). Variables en Cloudflare: POSTHOG_KEY (la "Project API key", empieza con phc_)
@@ -27,17 +28,41 @@ const hogql = async (env, consulta) => {
   if (!r.ok) throw new Error(j?.detail || j?.error || `PostHog respondió ${r.status}`);
   return j.results || [];
 };
+// Nombre de cada página: /producto/<id> sale de la tabla products de la web (Supabase, la misma que usa el agente de WhatsApp);
+// si no está ahí (o es un combo), del título de la página que guarda PostHog. Un título que se repite en varias páginas es el
+// genérico del sitio y no se usa.
+const SUPABASE_WEB = "https://dybzgnmghisqapdzgknv.supabase.co";
+async function nombresProductos(env) {
+  try { const g = await env.DB.prepare("SELECT v, exp FROM kv WHERE k='web_productos'").first(); if (g?.v && (!g.exp || g.exp > Date.now())) return JSON.parse(g.v); } catch {}
+  const m = {};
+  try {
+    const k = await claveWeb(env);
+    if (k) { const d = await (await fetch(`${SUPABASE_WEB}/rest/v1/products?select=id,nombre`, { headers: { apikey: k, Authorization: `Bearer ${k}` }, signal: AbortSignal.timeout(8000) })).json(); if (Array.isArray(d)) for (const p of d) if (p?.id != null && p.nombre) m[String(p.id)] = String(p.nombre).trim().slice(0, 70); }
+  } catch {}
+  if (Object.keys(m).length) await env.DB.prepare("INSERT OR REPLACE INTO kv (k, v, exp) VALUES ('web_productos', ?, ?)").bind(JSON.stringify(m), Date.now() + 6 * 3600e3).run().catch(() => {});
+  return m;
+}
+const limpiarTitulo = (t) => String(t || "").split(/\s+[|·–—-]\s+/).filter((x) => !/te\s*importamos/i.test(x)).join(" - ").trim().slice(0, 70);
+export function nombrarPaginas(filas, productos = {}) {
+  const usos = {}; for (const f of filas) { const t = limpiarTitulo(f.t); if (t) usos[t] = (usos[t] || 0) + 1; }
+  return filas.map((f) => {
+    if (!/^\/(producto|combo)\//.test(f.p)) return { p: f.p, c: f.c };
+    const id = decodeURIComponent(f.p.split("/")[2] || ""), t = limpiarTitulo(f.t);
+    const n = (/^\/producto\//.test(f.p) && productos[id]) || (t && usos[t] === 1 ? t : "");
+    return n ? { p: f.p, c: f.c, n } : { p: f.p, c: f.c };
+  });
+}
 export async function metricasWeb(env, dias = 14) {
   if (!env.POSTHOG_PERSONAL_KEY || !env.POSTHOG_PROJECT_ID) return { ok: false, falta: "Faltan las variables POSTHOG_PERSONAL_KEY y POSTHOG_PROJECT_ID en Cloudflare." };
   const n = Math.min(Math.max(Math.round(+dias) || 14, 1), 90), desde = `timestamp >= now() - INTERVAL ${n} DAY`;
   try {
     const [serie, paginas, fuentes, eventos] = await Promise.all([
       hogql(env, `SELECT toString(toDate(timestamp)) d, count() vistas, count(DISTINCT person_id) visitantes FROM events WHERE event = '$pageview' AND ${desde} GROUP BY d ORDER BY d`),
-      hogql(env, `SELECT properties.$pathname p, count() c FROM events WHERE event = '$pageview' AND ${desde} GROUP BY p ORDER BY c DESC LIMIT 10`),
+      hogql(env, `SELECT properties.$pathname p, count() c, any(properties.$title) t FROM events WHERE event = '$pageview' AND ${desde} GROUP BY p ORDER BY c DESC LIMIT 10`),
       hogql(env, `SELECT coalesce(nullIf(properties.$referring_domain, ''), '(directo)') f, count() c FROM events WHERE event = '$pageview' AND ${desde} GROUP BY f ORDER BY c DESC LIMIT 10`),
       hogql(env, `SELECT event, count() c FROM events WHERE ${desde} AND NOT startsWith(event, '$') AND event NOT IN ('agente_decision','cotizacion_armada','cotizacion_enviada','cotizacion_revisada') GROUP BY event ORDER BY c DESC LIMIT 15`),
     ]);
-    return { ok: true, dias: n, serie: serie.map(([d, v, u]) => ({ d, vistas: +v, visitantes: +u })), paginas: paginas.map(([p, c]) => ({ p: p || "/", c: +c })), fuentes: fuentes.map(([f, c]) => ({ f: nombreValor(f), c: +c })), eventos: eventos.map(([e, c]) => ({ e, n: nombreEvento(e), c: +c })) };
+    return { ok: true, dias: n, serie: serie.map(([d, v, u]) => ({ d, vistas: +v, visitantes: +u })), paginas: await (async () => { const fs = paginas.map(([p, c, t]) => ({ p: p || "/", c: +c, t })); return nombrarPaginas(fs, fs.some((f) => /^\/producto\//.test(f.p)) ? await nombresProductos(env) : {}); })(), fuentes: fuentes.map(([f, c]) => ({ f: nombreValor(f), c: +c })), eventos: eventos.map(([e, c]) => ({ e, n: nombreEvento(e), c: +c })) };
   } catch (e) { return { ok: false, falta: "No pude leer PostHog: " + String(e?.message || e).slice(0, 200) }; }
 }
 export const PANEL_WEB = `<!doctype html><html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Métricas de la web</title>
@@ -97,7 +122,7 @@ function pintar(m,ins){CARDS=[];var h="",sec=(ins&&ins.ok?ins.secciones:[]).filt
  funs.forEach(function(s){h+=embudo(s)});
  if(listas.length)h+='<div class="grid">'+listas.map(function(s){return barras(s.nombre,s.filas,{total:s.filas.length>1?s.total:null,totalAntes:s.totalAntes,nota:s.unidad})}).join('')+'</div>';
  if(m&&m.ok){var hayRef=listas.some(function(s){return /De dónde llegan/.test(s.nombre)});
-  h+='<div class="grid">'+barras("Páginas más vistas",m.paginas.map(function(x){return{k:x.p,v:x.c}}))+(hayRef?"":barras("De dónde llegan",m.fuentes.map(function(x){return{k:x.f,v:x.c}})))+barras("Lo que hace la gente en la página",m.eventos.map(function(x){return{k:x.n||x.e,v:x.c}}))+'</div>'}
+  h+='<div class="grid">'+barras("Páginas más vistas",m.paginas.map(function(x){return{k:x.p+(x.n?" ("+x.n+")":""),v:x.c}}))+(hayRef?"":barras("De dónde llegan",m.fuentes.map(function(x){return{k:x.f,v:x.c}})))+barras("Lo que hace la gente en la página",m.eventos.map(function(x){return{k:x.n||x.e,v:x.c}}))+'</div>'}
  else if(m&&m.falta)h+='<div class="ca full">'+esc(m.falta)+'</div>';
  var av=(ins&&ins.avisos||[]).concat(ins&&!ins.ok&&ins.falta?[ins.falta]:[]);if(av.length)h+='<p class="nota">'+av.map(esc).join('<br>')+'</p>';
  $("#x").innerHTML=h||'<div class="ca">PostHog no devolvió datos.</div>'}
@@ -247,7 +272,7 @@ export async function fotoWeb(env, { dias = FOTO_CADA_DIAS, ahora = Date.now() }
     } catch (e) { avisos.push(`${q.nombre}: ${String(e?.message || e).slice(0, 100)}`); }
   }
   const web = await metricasWeb(env, dias).catch(() => null);
-  if (web?.ok) secciones.unshift({ nombre: "Tráfico de la web", tipo: "tendencia", lineas: [`${web.serie.reduce((a, x) => a + x.vistas, 0)} vistas de página`, `de dónde llegan: ${web.fuentes.slice(0, 5).map((f) => `${f.f} ${f.c}`).join(", ") || "-"}`, `páginas más vistas: ${web.paginas.slice(0, 5).map((p) => `${p.p} ${p.c}`).join(", ") || "-"}`] });
+  if (web?.ok) secciones.unshift({ nombre: "Tráfico de la web", tipo: "tendencia", lineas: [`${web.serie.reduce((a, x) => a + x.vistas, 0)} vistas de página`, `de dónde llegan: ${web.fuentes.slice(0, 5).map((f) => `${f.f} ${f.c}`).join(", ") || "-"}`, `páginas más vistas: ${web.paginas.slice(0, 8).map((p) => `${p.p}${p.n ? " (" + p.n + ")" : ""} ${p.c}`).join(", ") || "-"}`] });
   if (!secciones.length) return { ok: false, falta: avisos.join(" · ") || "PostHog no devolvió datos." };
   const dia = new Date(ahora - 3 * 3600e3).toISOString().slice(0, 10);
   const texto = secciones.map((s) => `${s.nombre}${s.tipo === "embudo" ? " (embudo)" : ""}: ${s.lineas.join(" · ")}`).join("\n").slice(0, 6000);

@@ -22,4 +22,7 @@ globalThis.fetch = async () => new Response(JSON.stringify({ detail: "clave inv�
 chk("si PostHog rechaza, avisa claro", /clave inválida/.test((await metricasWeb(env, 14)).falta));
 chk("la página del panel existe", /Métricas de la web/.test(PANEL_WEB) && /\/panel\/api\/web\/metricas/.test(PANEL_WEB));
 globalThis.fetch = real;
+{ const { nombrarPaginas } = await import("../cotizador/src/posthog.js");
+  const n = nombrarPaginas([{ p: "/", c: 9, t: "Te Importamos" }, { p: "/producto/143", c: 7, t: "Te Importamos" }, { p: "/producto/abc-uuid", c: 5, t: "Lámpara LED | Te Importamos" }, { p: "/combo/0", c: 4, t: "Combo Emprendedor - Te Importamos" }, { p: "/catalogo", c: 3, t: "Te Importamos" }], { "143": "Tarjetas NFC" });
+  chk("páginas de producto y combo con su nombre (de la base o del título; el título genérico no se usa)", !n[0].n && n[1].n === "Tarjetas NFC" && n[2].n === "Lámpara LED" && n[3].n === "Combo Emprendedor" && !n[4].n); }
 console.log(`\nsim-posthog: ${ok} ok, ${mal} fallas`); process.exit(mal ? 1 : 0);
