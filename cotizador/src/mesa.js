@@ -11,6 +11,7 @@ import { diaAR } from "./tablero.js";
 import { esBotTexto, plantillaSeg } from "./lector.js";
 import { podarIdeas, parecidas } from "./clasificar.js";
 import { esCierre } from "./cierre.js";
+import { fotoWeb, FOTO_CADA_DIAS } from "./posthog.js";
 
 const AR = 3 * 3600e3, DIA = 86400e3, H = 3600e3;
 const inicioDia = (dia) => Date.parse(dia + "T00:00:00Z") + AR;
@@ -115,7 +116,7 @@ export async function hechos(env, { dias = 14 } = {}) {
   await prepararMesa(env);
   const ahora = Date.now(), hoy = diaAR(ahora);
   const s7 = ahora - 7 * DIA, s14 = ahora - 14 * DIA, s30 = ahora - 30 * DIA, desde = ahora - Math.max(14, dias) * DIA;
-  const [convs, hitos, ventasCargadas, segLog, msgs7, grupos, ig, tt, prospectos, eq, mem, mlRaw, mlHist, mlFb, refs, vir, hitosVenta, ideasPrev] = await Promise.all([
+  const [convs, hitos, ventasCargadas, segLog, msgs7, grupos, ig, tt, prospectos, eq, mem, mlRaw, mlHist, mlFb, refs, vir, hitosVenta, ideasPrev, webRaw] = await Promise.all([
     todas(env, "SELECT conv, nombre, primer_ts, ult_ts, ult_yo, ult_cliente_ts, ult_yo_ts, ult_texto, perfil, presup_usd, producto, etapa, motivo, origen, cierre_ts, puntaje, resp FROM w_conv WHERE grupo=0 AND COALESCE(prov,0)=0 AND COALESCE(archivado,0)=0 AND (primer_ts>=? OR ult_ts>=?)", s30, s30),
     todas(env, "SELECT conv, tipo, ts, dato FROM w_hito WHERE ts>=? AND tipo='cotizacion'", s30 - 45 * DIA),
     todas(env, "SELECT ts, conv, nombre, producto, monto, moneda, ganancia, linea FROM ventas WHERE ts>=? ORDER BY ts DESC", s30),
@@ -134,6 +135,7 @@ export async function hechos(env, { dias = 14 } = {}) {
     todas(env, "SELECT id, ts, autor, link, texto, vistas, compartidos, guardados, seguidores, fuente, guion FROM virales WHERE ts>=? ORDER BY vistas DESC LIMIT 14", ahora - 45 * DIA),   // lo lee el worker buscador (virales.js); si la tabla no existe todavía, queda vacío
     todas(env, "SELECT conv, tipo, ts, dato FROM w_hito WHERE (tipo IN ('venta','comprobante') AND COALESCE(oculto,0)=0) OR tipo='no_venta' ORDER BY ts"),   // todas las señales de pago de la historia: hacen falta para saber cuál es la PRIMERA de cada cliente
     todas(env, "SELECT agente, texto, estado, nota FROM mesa_ideas ORDER BY ts DESC LIMIT 60"),
+    kvGet(env, "posthog_foto"),
   ]);
   const porConv = Object.fromEntries(convs.map((c) => [c.conv, c]));
   const activo = (c) => !["perdido", "vendido", "no_cliente"].includes(c.etapa);
@@ -320,7 +322,8 @@ export async function hechos(env, { dias = 14 } = {}) {
   let ml = null; try { ml = mlRaw ? JSON.parse(mlRaw) : null; } catch {}
   if (ml) ml.recomendaciones = recomendarML(mlHist, mlFb, ahora);
   const ideas = { podadas: ideasPrev.filter((i) => i.estado === "podada").slice(0, 10).map((i) => corto(i.texto, 100) + (i.nota ? ` (${corto(i.nota, 60)})` : "")), utiles: ideasPrev.filter((i) => i.estado === "util" || i.estado === "hecha").slice(0, 8).map((i) => corto(i.texto, 140)), descartadas: ideasPrev.filter((i) => i.estado === "descartada").slice(0, 10).map((i) => corto(i.texto, 110) + (i.nota ? ` (motivo: ${corto(i.nota, 80)})` : "")), abiertas: ideasPrev.filter((i) => i.estado === "nueva").slice(0, 12).map((i) => corto(i.texto, 110)) };
-  return { hoy, generado: ahora, ideas, esperando_total: esperando, embudo, perfiles, respuesta, pendientes, cotizaciones, seguimientos, prospeccion, productos, cupos: cuposR, redes, ventas, equipo, memoria: mem.map((m) => ({ tipo: m.tipo, texto: corto(m.texto, 160) })), ml, convs_30d: convs.length };
+  let web = null; try { const w = webRaw ? JSON.parse(webRaw) : null; if (w?.texto) web = { dia: w.dia, dias: w.dias, texto: w.texto, avisos: w.avisos || [] }; } catch {}
+  return { hoy, generado: ahora, web, ideas, esperando_total: esperando, embudo, perfiles, respuesta, pendientes, cotizaciones, seguimientos, prospeccion, productos, cupos: cuposR, redes, ventas, equipo, memoria: mem.map((m) => ({ tipo: m.tipo, texto: corto(m.texto, 160) })), ml, convs_30d: convs.length };
 }
 
 // Muestras de charlas reales (para que el agente de WhatsApp lea cómo hablamos, no solo los números)
@@ -341,7 +344,7 @@ export async function muestrasChats(env, h, { max = 12 } = {}) {
 }
 
 // Los hechos en texto compacto (lo que lee cada agente)
-export function textoHechos(h, partes = ["embudo", "whatsapp", "redes", "productos"]) {
+export function textoHechos(h, partes = ["embudo", "whatsapp", "redes", "productos", "web"]) {
   const L = [];
   const e = h.embudo;
   if (partes.includes("embudo")) {
@@ -397,6 +400,10 @@ export function textoHechos(h, partes = ["embudo", "whatsapp", "redes", "product
       }
     }
     else L.push("MERCADO LIBRE: sin datos todavía (corre tendencias_ml.bat en la PC para tenerlos)");
+  }
+  if (partes.includes("web")) {
+    if (h.web) L.push(`WEB (PostHog, foto del ${fecha(Date.parse(h.web.dia + "T12:00:00Z"))} de los últimos ${h.web.dias} días contra los ${h.web.dias} anteriores; se actualiza cada ${FOTO_CADA_DIAS} días). Es lo que hace la gente en la página antes de escribir: qué productos y categorías miran, qué buscan, a qué WhatsApp hacen clic y dónde se caen en el embudo de compra. Cruzalo con los chats y productos pedidos por WhatsApp:\n${h.web.texto}`);
+    else L.push("WEB (PostHog): todavía no hay foto (se toma sola cada " + FOTO_CADA_DIAS + " días cuando están cargadas las claves de PostHog).");
   }
   if (h.ideas?.utiles?.length) L.push(`IDEAS QUE MANUEL MARCÓ COMO ÚTILES O YA HIZO (más en esa línea): ${h.ideas.utiles.join(" | ")}`);
   if (h.ideas?.podadas?.length) L.push(`IDEAS QUE LA MESA PODÓ SOLA POR GENÉRICAS, REPETIDAS O MENOS CONCRETAS (no repitas ese estilo): ${h.ideas.podadas.join(" | ")}`);
@@ -468,7 +475,7 @@ ${MANUAL.comun}
 ${MANUAL.redes}
 ${REGLAS}
 HECHOS:
-${textoHechos(h, ["embudo", "redes", "productos"])}
+${textoHechos(h, ["embudo", "redes", "productos", "web"])}
 
 ${SALIDA}`,
   productos: (h) => `Sos el AGENTE DE PRODUCTOS de la mesa de ${NEGOCIO}
@@ -477,7 +484,7 @@ ${MANUAL.comun}
 ${MANUAL.productos}
 ${REGLAS}
 HECHOS:
-${textoHechos(h, ["embudo", "productos", "redes"])}
+${textoHechos(h, ["embudo", "productos", "redes", "web"])}
 CUPOS: ${h.cupos.lista.map((c) => `${c.fecha} "${c.texto}" → ${c.relacionadas} consultas del producto en 72 h`).join(" | ") || "sin cupos en 14 días"}
 
 ${SALIDA}`,
@@ -594,6 +601,7 @@ HIPÓTESIS ACTIVAS (medidas hoy): ${JSON.stringify(activas) || "ninguna"}
 CERRADAS HOY: ${cerradas.map((c) => `${c.estado.toUpperCase()}: ${c.texto} → ${c.resultado}`).join(" | ") || "ninguna"}
 LECTURAS ANTERIORES (no las repitas): ${previas.map((p) => corto(p.texto, 500)).join(" || ") || "ninguna"}
 EMBUDO: ${textoHechos(h, ["embudo"])}
+${textoHechos(h, ["web"])}
 Respondé SOLO JSON: {"lectura":"...","decisiones":[{"que":"","quien":"","por_que":""}],"hipotesis":[{"texto":"","accion":"","metrica":"","meta":número,"dias":7}],"cambio_rumbo":"","mensaje":"..."}`;
   const r = await iaJSON(env, prompt, opts).catch(() => null);
   if (!r || typeof r !== "object") return null;
@@ -646,7 +654,7 @@ export async function correrMesa(env, iaJSON, { forzar = false, profundo = false
     await kvPut(env, "mesa_corridas:" + hoy, n);
     await kvPut(env, "mesa_ult", JSON.stringify({ ts: Date.now(), dia: hoy, motivo, corrida: n }));
     const hAR = new Date(ahora - AR).getUTCHours();
-    const cab = `Mesa · ${motivo === "cron" ? (hAR < 12 ? "arranque del día" : hAR < 19 ? "mediodía" : "cierre del día") : "corrida pedida"} ${hoy.slice(5).split("-").reverse().join("/")}\n`;
+    const cab = `Mesa · ${motivo === "cron" ? (hAR < 12 ? "arranque del día" : hAR < 19 ? "mediodía" : "cierre del día") : motivo === "posthog" ? "datos nuevos de la web (PostHog, últimos " + FOTO_CADA_DIAS + " días)" : "corrida pedida"} ${hoy.slice(5).split("-").reverse().join("/")}\n`;
     await avisarTelegram(env, cab + integrador.mensaje + (cerradas.length ? "\n\nHipótesis cerradas: " + cerradas.map((c) => `${c.estado} "${corto(c.texto, 60)}"`).join("; ") : ""), avisar);
   }
   return { ok: !!integrador, informes, debate, integrador, cerradas, hechos: h };
@@ -813,7 +821,7 @@ Respondé SOLO JSON: {"entendi":"","consultas":[{"tipo":"","q":""}],"partes":["e
   const pedidas = (Array.isArray(plan?.consultas) ? plan.consultas : []).filter((c) => CONSULTAS[c?.tipo]).slice(0, 4);
   const datos = [];
   for (const c of pedidas) { const r = await ejecutarConsulta(env, c).catch(() => null); if (r) datos.push(r); }
-  const partes = [...new Set([...Q.partes, ...(Array.isArray(plan?.partes) ? plan.partes : []).filter((p) => ["embudo", "whatsapp", "redes", "productos"].includes(p))])];
+  const partes = [...new Set([...Q.partes, "web", ...(Array.isArray(plan?.partes) ? plan.partes : []).filter((p) => ["embudo", "whatsapp", "redes", "productos"].includes(p))])];
   const informes = A === "mesa" ? Object.fromEntries(Object.entries(est.informes).map(([k, v]) => [k, v.datos])) : { [A]: est.informes[A]?.datos || "sin informe hoy", integrador: est.informes.integrador?.datos || "sin lectura hoy", discusion: est.informes.debate?.datos || "no hubo" };
 
   // Paso 2: contestar
@@ -885,3 +893,29 @@ export async function guardarML(env, b) {
 
 // Diagnóstico (solo lectura, con el token del lector): los hechos tal como los ven los agentes y el último estado
 export async function diagMesa(env) { const h = await hechos(env); return { texto: textoHechos(h), hechos: h, estado: await estadoMesa(env) }; }
+
+// ---------------------------------------------------------------------------
+// WEB (PostHog): cada 14 días (FOTO_CADA_DIAS) se saca una foto de los insights de PostHog y la mesa corre una vez con esos datos
+// nuevos (avisa por Telegram con las decisiones). Entre fotos, las corridas de todos los días siguen viendo la última.
+// Se revisa una vez por hora (minuto 5); si PostHog falla, se reintenta a la hora siguiente.
+export async function cronFotoWeb(env, iaJSON, ts = Date.now(), avisar = null, { forzar = false } = {}) {
+  if (!env.DB || !env.POSTHOG_PERSONAL_KEY || !env.POSTHOG_PROJECT_ID) return { ok: false, motivo: "faltan las claves de PostHog" };
+  if (!forzar && new Date(ts).getUTCMinutes() !== 5) return { ok: false, motivo: "no es la hora" };
+  await prepararMesa(env);
+  const ult = +((await kvGet(env, "posthog_foto_ts")) || 0);
+  if (!forzar && ts - ult < FOTO_CADA_DIAS * DIA - H) return { ok: false, motivo: "la última foto tiene menos de " + FOTO_CADA_DIAS + " días" };
+  const foto = await fotoWeb(env, { ahora: ts });
+  if (!foto.ok) { console.log("PostHog foto:", foto.falta); return foto; }
+  const previa = await kvGet(env, "posthog_foto");
+  if (previa) await kvPut(env, "posthog_foto_ant", previa);
+  await kvPut(env, "posthog_foto", JSON.stringify(foto).slice(0, 60000));
+  await kvPut(env, "posthog_foto_ts", ts);
+  const mesa = env.MESA === "0" ? null : await correrMesa(env, iaJSON, { forzar: true, motivo: "posthog", avisar, ahora: ts }).catch((e) => (console.log("Mesa tras PostHog:", e?.stack || e), null));
+  return { ok: true, foto, mesa: !!mesa?.ok };
+}
+export async function estadoFotoWeb(env) {
+  await prepararMesa(env);
+  let foto = null; try { foto = JSON.parse((await kvGet(env, "posthog_foto")) || "null"); } catch {}
+  const ult = +((await kvGet(env, "posthog_foto_ts")) || 0);
+  return { foto, proxima: ult ? ult + FOTO_CADA_DIAS * DIA : null, cada_dias: FOTO_CADA_DIAS, claves: !!(env.POSTHOG_PERSONAL_KEY && env.POSTHOG_PROJECT_ID) };
+}

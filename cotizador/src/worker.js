@@ -5,14 +5,14 @@ import { apiBusquedas, PANEL_BUSQUEDAS, rutaInformes, rutaImagen } from "./busqu
 import { apiRedes, PANEL_REDES, cronRedes, contextoRedes } from "./redes.js";
 import { apiVideos, rutaVideosEditor, cronVideos, despertarEditor } from "./videos.js";
 import { conApp, rutaApp } from "./app.js";
-import { metricasWeb, PANEL_WEB } from "./posthog.js";
+import { metricasWeb, fotoWeb, PANEL_WEB } from "./posthog.js";
 import { altIA } from "./ia-alterna.js";
 import { apiTablero, cronTablero } from "./tablero.js";
 import { PANEL_P } from "./panel-p.js";
 import { rutaTelegram, apiAsistente, cronAsistente } from "./asistente.js";
 import { preguntarAgente, charlaAgente } from "./agente.js";
 import { paginaCotPublica } from "./cotiz-tg.js";
-import { cronMesa } from "./mesa.js";
+import { cronMesa, cronFotoWeb, estadoFotoWeb } from "./mesa.js";
 import { apiGrupos, cronGrupos } from "./grupos.js";
 import { simularRedactar } from "./autoresp.js";
 import { cronEntrenador } from "./entrenador.js";
@@ -2450,6 +2450,8 @@ async function panelAPI(env, req, url, quien) {
   await prepararTablas(env);
   if (ruta === "importar-viejos") return json({ n: (await importarViejos(env)) + (await limpiezaV13(env)) + (await reabrirV144(env)) });
   if (ruta === "web/metricas") return json(await metricasWeb(env, +url.searchParams.get("d") || 14));
+  if (ruta === "web/insights") return json(await fotoWeb(env, { dias: Math.min(Math.max(+url.searchParams.get("d") || 14, 1), 90) }));   // los insights guardados en PostHog, calculados en vivo (no corre la mesa)
+  if (ruta === "web/foto") return json(req.method === "POST" ? await cronFotoWeb(env, iaJSON, Date.now(), avisarAdmins, { forzar: true }) : await estadoFotoWeb(env));   // la foto de 14 días que lee la mesa; POST = sacarla ahora
   if (ruta === "estado") return json({ indexado: (await env.ESTADO.get("panel_indexado")) === "2", usuario: quien });
   if (ruta === "reindexar") return json(await reindexar(env, url.searchParams.get("desde") || ""));
   if (ruta === "tareas") {
@@ -3537,6 +3539,7 @@ export default {
       if (env.DB) await cronGrupos(env, iaJSON, evento.scheduledTime || Date.now(), BASE_URL).catch((e) => console.log("Error grupos:", e?.stack || e));
       if (env.DB) await cronRedes(env, iaJSON, evento.scheduledTime || Date.now(), BASE_URL, T).catch((e) => console.log("Error redes:", e?.stack || e));
       if (env.DB) await cronMesa(env, iaJSON, evento.scheduledTime || Date.now(), avisarAdmins).catch((e) => console.log("Error mesa:", e?.stack || e));
+      if (env.DB) await cronFotoWeb(env, iaJSON, evento.scheduledTime || Date.now(), avisarAdmins).catch((e) => console.log("Error foto PostHog:", e?.stack || e));   // cada 14 días: insights de PostHog → la mesa decide
     })());
   },
   async fetch(req, envBase, ctx) {
