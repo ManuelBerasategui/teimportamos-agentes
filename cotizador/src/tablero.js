@@ -170,8 +170,10 @@ export async function paraHacer(env) {
   // Seguimientos (el agente ya decide a quién y redacta el mensaje). Los que van al dueño pasan a "Llamar".
   const segs = await segsGuardados(env);
   const cierres = Object.fromEntries((await todas(env, "SELECT conv, cierre_ts FROM w_conv WHERE cierre_ts IS NOT NULL AND cierre_ts>=?", ahora - 3 * DIA)).map((x) => [x.conv, x.cierre_ts]));
+  // Al día: si ya le escribimos hoy, o ya está vendido/perdido/archivado, no se muestra aunque la lista guardada sea de hace un rato
+  const hechos = new Set((await todas(env, "SELECT conv FROM w_conv WHERE grupo=0 AND (COALESCE(ult_yo_ts,0)>=? OR etapa IN ('vendido','perdido','no_cliente') OR archivado=1)", inicioDia(diaAR())).catch(() => [])).map((x) => x.conv));
   for (const s of segs) {
-    if (cierres[s.conv] || !s.revisado || !s.borrador && !s.dueno) continue;   // solo los que la IA ya revisó y decidió seguir hoy (el resto lo revisa el cron durante el día)
+    if (cierres[s.conv] || hechos.has(s.conv) || !s.revisado || !s.borrador && !s.dueno) continue;   // solo los que la IA ya revisó y decidió seguir hoy (el resto lo revisa el cron durante el día)
     if (s.dueno && !(s.situacion === 8 || s.llamada || (s.presup_usd || 0) > 1000)) s.dueno = false;   // perfil A/B solo, sin monto ni negociación: seguimiento normal
     const c = { conv: s.conv, nombre: s.nombre, producto: s.producto, accion: s.dueno ? (s.llamada || "Pedido grande o negociación: conviene llamarlo") : (s.sit_texto || "Toca seguimiento"), puntaje: s.puntaje, presup_usd: s.presup_usd, ult_texto: s.ult_texto };
     poner(s.dueno ? "llamar" : "seguimiento", c, { borrador: s.borrador || "", toque: s.toque || 1, dias: s.dias_cot ?? null });
