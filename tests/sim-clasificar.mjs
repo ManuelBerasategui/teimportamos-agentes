@@ -48,11 +48,14 @@ const T = [
   ["redes", "Subir un video respondiendo un comentario de aduana con la fórmula de cotización para filtrar curiosos y atraer 10 comerciantes."],
 ];
 const ideas = T.map(([agente, texto], i) => ({ id: "i" + i, agente, texto, ts: Date.now() - i * 1000 }));
+ideas.push({ id: "copia", agente: "productos", texto: "Publicar un cupo en grupos de WhatsApp para lotes de tarjetas NFC con mínimo de 20 unidades, respaldado por las 6 consultas recientes.", ts: Date.now() - 20 * 1000 });
 ideas.push({ id: "vieja", agente: "redes", texto: "Reel de 30 segundos con termos Stanley para 50 comercios", ts: Date.now() - 10 * 86400e3 });
 const r = podarIdeas(ideas, { productos: ["tarjetas nfc", "ray-ban meta", "freidoras aire"] });
 const motivo = (id) => (r.podadas.find((p) => p.id === id) || {}).motivo || "";
 ok(/gen[eé]rica/.test(motivo("i3")) && /gen[eé]rica/.test(motivo("i4")), "las genéricas se podan");
-ok(/repetida/.test(motivo("i1")), "la segunda idea de NFC se poda por repetida");
+// Regla desde el 17/11: el mismo producto puede tener pruebas creativas distintas; solo se poda el concepto casi duplicado
+ok(/repetida/.test(motivo("copia")), "la idea casi idéntica de NFC se poda por repetida");
+ok(!/repetida/.test(motivo("i1")), "otra prueba con el mismo producto (historia en vez de grupos) no se poda por repetida");
 ok(/vieja/.test(motivo("vieja")), "la idea de más de 7 días se poda");
 ok(r.quedan.length <= 6, "quedan como mucho 6 ideas");
 const porAg = {}; for (const id of r.quedan) { const a = ideas.find((x) => x.id === id).agente; porAg[a] = (porAg[a] || 0) + 1; }

@@ -24,7 +24,7 @@ chk("cotiza con la cantidad que dijo el cliente", r1.estado === "lista" && r1.to
 const m1 = tgs.find((x) => x.metodo === "sendMessage");
 chk("llega por Telegram al chat del dueño con el resumen", m1?.chat_id === "111" && m1.text.includes("Cotización lista para Ana Pérez (+5493410000001)") && m1.text.includes("100 x Auriculares"));
 const kb = m1.reply_markup.inline_keyboard.flat(), pub = kb.find((b) => b.callback_data?.startsWith("cot:ok:")).callback_data.split(":")[2];
-chk("botones: Mandala, No va, La mando yo, Ver y Corregir", kb.map((b) => b.text).join("|") === "✅ Mandala|❌ No va|✏️ La mando yo|👀 Ver|📝 Corregir en el panel");
+chk("botones: Mandala, No va, La mando yo, Ver y Corregir (lleva a la sección Cotizar del panel)", kb.map((b) => b.text).join("|") === "✅ Mandala|❌ No va|✏️ La mando yo|👀 Ver|📝 Corregir en el panel" && kb.at(-1).url === "https://cotizador.berasateguimanuel07.workers.dev/panel#cot");
 const link = kb.find((b) => b.text === "👀 Ver").url;
 chk("el mensaje para el cliente no tiene números y lleva el link firmado", m1.text.includes("Hola Ana! Ya tengo tu cotización de Auriculares inalámbricos") && link === `https://cotizador.berasateguimanuel07.workers.dev/q/${pub}/${await CT.firmaCot(env, pub)}`);
 chk("La mando yo abre su WhatsApp con ese mensaje", kb.find((b) => b.text === "✏️ La mando yo").url.startsWith("https://wa.me/5493410000001?text=Hola%20Ana!"));

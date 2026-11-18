@@ -61,10 +61,10 @@ export async function avisarCotizacion(env, id) {
     msg = `🧾 Cotización lista para ${quien}\n${textoResultado(det)}${(det.avisos || []).length ? "\n⚠️ " + det.avisos.join("; ") : ""}\n\nLe mandaría:\n${texto}`;
     botones = [[{ text: "✅ Mandala", callback_data: "cot:ok:" + pub }, { text: "❌ No va", callback_data: "cot:no:" + pub }],
       [{ text: "✏️ La mando yo", url: `https://wa.me/${f.conv}?text=${encodeURIComponent(texto)}` }, { text: "👀 Ver", url: link }],
-      [{ text: "📝 Corregir en el panel", url: `${BASE(env)}/panel/cotizar` }]];
+      [{ text: "📝 Corregir en el panel", url: `${BASE(env)}/panel#cot` }]];
   } else {
     msg = `🧾 Cotización de ${quien}: no la pude terminar.\nFalta: ${f.falta || "datos"}.\nCompletala en el panel (pestaña Cotizar) y te la vuelvo a pasar lista para mandar.`;
-    botones = [[{ text: "📝 Completar en el panel", url: `${BASE(env)}/panel/cotizar` }, { text: "💬 Abrir el chat", url: `https://wa.me/${f.conv}` }]];
+    botones = [[{ text: "📝 Completar en el panel", url: `${BASE(env)}/panel#cot` }, { text: "💬 Abrir el chat", url: `https://wa.me/${f.conv}` }]];
   }
   const r = await tg(env, "sendMessage", { chat_id: chat, text: msg.slice(0, 4000), disable_web_page_preview: true, reply_markup: { inline_keyboard: botones } });
   if (!r?.ok) return null;

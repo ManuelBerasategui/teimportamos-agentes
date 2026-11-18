@@ -55,6 +55,7 @@ db.prepare("INSERT INTO w_seg_log VALUES ('s9','5493410000010',?,2,'2','dueno-ma
 // grupos: un cupo hace 3 días → Ana y Fede preguntaron por NFC después
 msg("120363@g.us", 1, "CUPO tarjetas NFC para reseñas de Google, USD 4,7 c/u, cierra el viernes", h(3), 1);
 db.prepare("INSERT INTO ig_posts (id, ts, tipo, texto, formato, gancho, alcance, vistas, guardados, compartidos, tiempo_ms) VALUES ('p1',?,'REELS','Vendí 100 NFC','ml_vendi','Cuánto me quedó?',5000,9000,40,12,9000)").run(h(1));
+db.prepare("INSERT INTO ig_posts (id, ts, tipo, texto, formato, gancho, alcance, vistas, guardados, compartidos, tiempo_ms) VALUES ('p0',?,'REELS','Traje NFC de China','reaccion','No lo puedo creer',3000,6000,20,5,8000)").run(h(3.5));   // ventana de 48 h completa
 db.prepare("INSERT INTO tt_posts (id, ts, texto, vistas, compartidos, guardados) VALUES ('t1',?,'Vendí 100 NFC',30000,80,200)").run(h(1));
 db.prepare("INSERT INTO prospectos (tel, negocio, rubro, estado, enviado_ts, respuesta, temperatura, act_ts) VALUES ('5493419990001','Perfumería X','perfumeria','enviado',?,'si, pasame precios','caliente',?),('5493419990002','Kiosco Y','kiosco','enviado',?,NULL,NULL,?)").run(h(2), h(1), h(2), h(2));
 
@@ -67,14 +68,17 @@ chk("embudo 7 días: 6 nuevos, 4 cotizados, 1 venta", hh.embudo.v7.nuevos === 6 
 chk("perfil A+B entre los nuevos", hh.perfiles.ab_pct === 50);
 chk("la primera respuesta humana no cuenta al bot (Ana esperó 40 min)", hh.respuesta.n >= 2 && hh.respuesta.p50 >= 5 && hh.respuesta.p50 <= 40);
 chk("pregunta sin responder: Beto hace más de 24 h", hh.pendientes.some((p) => p.nombre === "Beto"));
-chk("cotizaciones sin respuesta a 48 h se miden", hh.cotizaciones.n >= 3 && hh.cotizaciones.sin_resp >= 1);
+// Desde el 17/11 una cotización cuenta como "sin respuesta" recién cuando tuvo 48 h para contestar (las recientes van aparte)
+chk("cotizaciones sin respuesta a 48 h se miden (las de menos de 48 h van aparte)", hh.cotizaciones.total_7d >= 4 && hh.cotizaciones.maduras >= 2 && hh.cotizaciones.recientes_sin_madurar >= 2 && hh.cotizaciones.sin_resp >= 1 && hh.cotizaciones.sin_resp_lista.some((c) => c.nombre === "Dani"));
 chk("seguimientos por plan: A 2 enviados 50%, B 1 enviado 100%", hh.seguimientos.A.n === 2 && hh.seguimientos.A.resp_pct === 50 && hh.seguimientos.B.n === 1 && hh.seguimientos.B.resp_pct === 100);
 chk("seguimiento cargado a mano: va aparte, no se suma a ningún plan, y la respuesta se mide desde el mensaje real", hh.seguimientos.M.n === 1 && hh.seguimientos.M.resp_pct === 100 && hh.seguimientos.total.n === 4 && hh.seguimientos.sin_mensaje >= 0 && hh.seguimientos.ejemplos.M_si[0] === "hola eli, seguis interesada en los parlantes?" && !JSON.stringify(hh.seguimientos).includes("lista html"));
 chk("los marcados como mal no cuentan", hh.seguimientos.A.n === 2);
 chk("prospección 7 días: 2 enviados, 1 respondió", hh.prospeccion.enviados_7d === 2 && hh.prospeccion.resp_pct === 50);
 chk("productos pedidos agrupados: NFC x2 con perfil A", hh.productos.some((p) => /tarjetas nfc/.test(p.producto) && p.n === 2 && p.ab === 2));
 chk("cupo en grupos con consultas relacionadas en 72 h", hh.cupos.lista.length === 1 && hh.cupos.lista[0].relacionadas >= 1);
-chk("video con chats atribuidos en 48 h", hh.redes.videos.length === 1 && hh.redes.videos[0].chats_48h >= 2);
+// Desde el 17/11 los chats se cuentan recién cuando el video completó sus 48 h (antes sería atribuir de más)
+const vMad = hh.redes.videos.find((v) => v.texto === "Traje NFC de China"), vNuevo = hh.redes.videos.find((v) => v.texto === "Vendí 100 NFC");
+chk("video con chats atribuidos en 48 h (solo cuando completó la ventana)", hh.redes.videos.length === 2 && vMad?.maduro && vMad.chats_48h >= 2 && vNuevo && !vNuevo.maduro && vNuevo.chats_48h === null && hh.redes.videos_maduros === 1);
 chk("venta detectada en el chat y no cargada", hh.ventas.detectadas_sin_cargar.some((v) => v.nombre === "Caro"));
 const txt = M.textoHechos(hh);
 chk("texto de hechos con todas las secciones", /EMBUDO 7 DÍAS/.test(txt) && /VELOCIDAD HUMANA/.test(txt) && /PLAN A oferta concreta: 2 enviados/.test(txt) && /MANDADOS A MANO, SIN PLAN \(1\): 100% respuesta/.test(txt) && /no declares ganador/.test(txt) && /A MANO que SÍ contestaron: "hola eli/.test(txt) && /VIDEOS INSTAGRAM/.test(txt) && /PRODUCTOS PEDIDOS/.test(txt) && /MERCADO LIBRE: sin datos/.test(txt));
@@ -94,7 +98,7 @@ chk("pendientes: un solo número (los de verdad), sin el total de cierres", hv.e
 const prompts = [];
 const ia = async (_e, p) => {
   prompts.push(p);
-  if (/AGENTE DE WHATSAPP/.test(p)) return { resumen: "Cotizamos sin próximo paso.", hallazgos: [{ titulo: "Beto sin respuesta", detalle: "preguntó el envío", evidencia: "Beto +5493410000001" }], hipotesis: [{ texto: "Si contestamos en menos de 1 h, responden más", accion: "Manuel contesta antes de 1 h", metrica: "resp_mas_1h_pct", meta: 10, dias: 7 }], ideas: ["Responder hoy a Beto (+5493410000001) por el envío que preguntó hace 30 horas", "Crear un programa de fidelidad para clientes que han comprado anteriormente."], para_manuel: [] };
+  if (/AGENTE DE WHATSAPP/.test(p)) return { resumen: "Cotizamos sin próximo paso.", hallazgos: [{ titulo: "Beto sin respuesta", detalle: "preguntó el envío", evidencia: "Beto +5493410000001" }], hipotesis: [{ texto: "Si cada cotización termina con un próximo paso, contestan más", accion: "Manuel cierra cada cotización con una pregunta", metrica: "cotizados_sin_resp_48h_pct", meta: 20, dias: 7 }], ideas: ["Responder hoy a Beto (+5493410000001) por el envío que preguntó hace 30 horas", "Crear un programa de fidelidad para clientes que han comprado anteriormente."], para_manuel: [] };
   if (/AGENTE DE REDES/.test(p)) return { resumen: "El reel de NFC trajo 2 consultas.", hallazgos: [], hipotesis: [], ideas: ["Grabar otro reel de NFC mostrando las 2 consultas que trajo el anterior"], para_manuel: [] };
   if (/AGENTE DE PRODUCTOS/.test(p)) return { resumen: "NFC se pide y se vende.", hallazgos: [], hipotesis: [{ texto: "Un cupo de NFC trae consultas", accion: "Sender manda cupo", metrica: "cupo_consultas_72h", meta: 3, dias: 7 }], ideas: [], para_manuel: ["stockear NFC"] };
   if (/^DISCUSIÓN DE LA MESA/.test(p)) return { turnos: [{ agente: "redes", a: "whatsapp", texto: "El reel de NFC trajo 2 chats, qué pasó con ellos?" }, { agente: "whatsapp", a: "redes", texto: "Ana cotizada sin respuesta, Fede sin cotizar." }, { agente: "critico", a: "todos", texto: "Son 2 casos: es una pista, no un patrón." }, { agente: "inventado", a: "nadie", texto: "turno de un agente que no existe" }], acuerdos: ["NFC tiene demanda"], desacuerdos: ["si el cupo o el reel trajo las consultas"], falta_medir: ["origen declarado de Ana y Fede"] };
@@ -113,16 +117,21 @@ chk("el agente de WhatsApp lee charlas reales", /CHARLAS REALES/.test(prompts[0]
 chk("el integrador ve los tres informes y el embudo", /WHATSAPP: \{"resumen":"Cotizamos sin próximo paso/.test(prompts[4]) && /EMBUDO 7 DÍAS/.test(prompts[4]));
 chk("informes guardados por agente", db.prepare("SELECT COUNT(DISTINCT agente) n FROM mesa_informes").get().n === 5);
 const hips = db.prepare("SELECT * FROM mesa_hip").all();
-chk("hipótesis con base medida hoy (la de métrica inventada se descarta)", hips.length === 2 && hips.every((x) => x.estado === "activa") && hips.find((x) => x.metrica === "resp_mas_1h_pct").base === hh.respuesta.mas_1h_pct);
+chk("hipótesis con base medida hoy (la de métrica inventada se descarta)", hips.length === 2 && hips.every((x) => x.estado === "activa") && hips.find((x) => x.metrica === "cotizados_sin_resp_48h_pct").base === hh.cotizaciones.sin_resp_pct);
 chk("avisa al dueño con el mensaje corto", env.__captura.length === 1 && /Beto espera respuesta/.test(env.__captura[0]) && /corrida pedida/.test(env.__captura[0]));
 chk("no vuelve a correr sola antes de una hora", (await M.correrMesa(env, ia, { motivo: "cron" })).ok === false);
 
-// 3) Verificación de hipótesis: la de cupos se cumple si el valor llega a la meta; la vencida falla
-db.prepare("UPDATE mesa_hip SET vence=? WHERE metrica='resp_mas_1h_pct'").run("2020-01-01");
-db.prepare("UPDATE mesa_hip SET meta=1 WHERE metrica='cupo_consultas_72h'").run();
+// 3) Verificación de hipótesis (reglas desde el 17/11): se evalúan al vencer y con muestra suficiente (5 casos por defecto); si no, "sin datos"
+db.prepare("UPDATE mesa_hip SET vence=? WHERE metrica='cotizados_sin_resp_48h_pct'").run("2020-01-01");   // vencida, pero con solo 2 cotizaciones maduras
+db.prepare("UPDATE mesa_hip SET meta=1 WHERE metrica='cupo_consultas_72h'").run();   // ya llegó a la meta, pero no venció: no se cierra por un cruce pasajero
+const insH = db.prepare("INSERT INTO mesa_hip (id, ts, dia, agente, texto, accion, metrica, base, meta, vence, estado, actual, resultado, verificado) VALUES (?,?,?,?,?,?,?,?,?,?,'activa',?,NULL,0)");
+insH.run("hx1", Date.now(), "2020-01-01", "whatsapp", "Contestando todo en el día no quedan preguntas colgadas", "Manuel contesta todo antes de cerrar", "preguntas_sin_responder", 3, 0, "2020-01-01", 3);
+insH.run("hx2", Date.now(), "2020-01-01", "redes", "Con 2 reels más llegan 5 chats nuevos por semana", "grabar 2 reels", "chats_nuevos_7d", 3, 5, "2020-01-01", 3);
 const cerradas = await M.verificarHipotesis(env, await M.hechos(env));
-chk("vencida sin llegar → fallida; alcanzada → cumplida", cerradas.length === 2 && cerradas.some((c) => c.estado === "fallida") && cerradas.some((c) => c.estado === "cumplida"));
-chk("lo verificado queda en la memoria compartida", db.prepare("SELECT COUNT(*) n FROM ag_mem WHERE texto LIKE 'Hipótesis %'").get().n === 2);
+const estH = (m) => (cerradas.find((c) => c.metrica === m) || {}).estado;
+chk("vencida y con muestra: sin llegar → fallida; alcanzada → cumplida", estH("preguntas_sin_responder") === "fallida" && estH("chats_nuevos_7d") === "cumplida");
+chk("vencida con pocos casos → sin datos suficientes; alcanzada antes de vencer → sigue en curso", estH("cotizados_sin_resp_48h_pct") === "sin_datos" && !estH("cupo_consultas_72h") && db.prepare("SELECT estado FROM mesa_hip WHERE metrica='cupo_consultas_72h'").get().estado === "activa");
+chk("lo verificado queda en la memoria compartida", cerradas.length === 3 && db.prepare("SELECT COUNT(*) n FROM ag_mem WHERE texto LIKE 'Hipótesis %'").get().n === 3);
 
 // 4) Charla con la mesa: guarda decisiones e hipótesis del dueño
 const q = await M.preguntarMesa(env, ia, "los cupos de esta semana no vendieron nada, qué pasó?");
@@ -143,13 +152,13 @@ chk("la mesa poda sola las ideas genéricas (quedan guardadas con el motivo, no 
 
 // 5) Estado para el panel y API
 const est = await M.estadoMesa(env);
-chk("estado: informes, hipótesis, hechos resumidos y última corrida", est.informes.integrador && est.hipotesis.length === 3 && est.hechos.embudo.nuevos === 6 && est.ultima.motivo === "panel" && est.informes.debate.datos.turnos.length === 4 && est.virales.lista.length === 1 && est.virales.fuentes.hashtags.length > 3 && est.chat.at(-1).agente === "redes");
+chk("estado: informes, hipótesis, hechos resumidos y última corrida", est.informes.integrador && est.hipotesis.length === 5 && est.hipotesis.some((x) => x.agente === "manuel") && est.hechos.embudo.nuevos === 6 && est.ultima.motivo === "panel" && est.informes.debate.datos.turnos.length === 4 && est.virales.lista.length === 1 && est.virales.fuentes.hashtags.length > 3 && est.chat.at(-1).agente === "redes");
 const api = async (m, b) => (await M.apiMesa(env, { method: m, json: async () => { throw new Error("cuerpo ya leído"); } }, new URL("https://x/panel/p/api/mesa"), ia, b)).json();   // como en apiTablero: el cuerpo llega leído
 chk("API: descartar una hipótesis", (await api("POST", { accion: "hipotesis", id: hips[0].id, estado: "descartada" })).ok && db.prepare("SELECT estado FROM mesa_hip WHERE id=?").get(hips[0].id).estado === "descartada");
 chk("API: marcar ideas y los agentes lo leen en la corrida siguiente", (await api("POST", { accion: "idea", id: ideas.find((i) => /Beto/.test(i.texto)).id, estado: "descartada", nota: "ya lo hago" })).ok && (await api("POST", { accion: "idea", id: ideas.find((i) => /reel de NFC/.test(i.texto)).id, estado: "util" })).ok && /IDEAS QUE MANUEL DESCARTÓ.*motivo: ya lo hago/.test(M.textoHechos(await M.hechos(env))) && /IDEAS QUE MANUEL MARCÓ COMO ÚTILES/.test(M.textoHechos(await M.hechos(env))) && (await M.estadoMesa(env)).ideas.length === 1);
 chk("API: No fue venta saca la señal", (await api("POST", { accion: "venta_no", conv: "5493410000004" })).ok && !(await M.hechos(env)).ventas.detectadas_sin_cargar.some((v) => v.nombre === "Caro") && (await api("POST", { accion: "venta_no", conv: "x'; DROP" })).error);
 chk("API: elegir hashtags y cuentas de los virales y pedir una lectura", (await api("POST", { accion: "fuentes", hashtags: "#importar, alibaba alibaba", perfiles: "@otro.importador" })).fuentes.hashtags.join() === "importar,alibaba" && JSON.parse(db.prepare("SELECT v FROM kv WHERE k='virales_fuentes'").get().v).perfiles[0] === "otro.importador" && (await api("POST", { accion: "virales_leer" })).ok && (await M.estadoMesa(env)).virales.leyendo === true);
-chk("API: tendencias de Mercado Libre desde la PC", (await M.guardarML(env, { items: [{ palabra: "tarjetas nfc", puesto: 1, resultados: 1200, precio_min: 3000, precio_max: 9000, vendidos: "+500 vendidos", top: [{ titulo: "Tarjeta NFC", precio: 3500, vendidos: "+500" }] }] })).guardadas === 1 && /MERCADO LIBRE \(leído/.test(M.textoHechos(await M.hechos(env), ["productos"])));
+chk("API: tendencias de Mercado Libre desde la PC", (await M.guardarML(env, { items: [{ palabra: "tarjetas nfc", puesto: 1, resultados: 1200, precio_min: 3000, precio_max: 9000, vendidos: "+500 vendidos", top: [{ titulo: "Tarjeta NFC", precio: 3500, vendidos: "+500" }] }] })).guardadas === 1 && /MERCADO LIBRE \(lectura pública desde la PC.*tarjetas nfc · 1\.200 publicaciones/.test(M.textoHechos(await M.hechos(env), ["productos"])));
 
 // 6) Cron: corre a las 06:10 AR una vez y a las 20:30 la segunda; no antes de una hora entre intentos
 kv.clear(); db.exec("DELETE FROM kv WHERE k LIKE 'mesa_%'"); env.__captura.length = 0;
