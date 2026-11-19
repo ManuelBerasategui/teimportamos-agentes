@@ -1275,6 +1275,8 @@ export function validarSeg(mensaje, { sit = 0, en_curso = false, charla = "" } =
 // del dueño: cuando la IA tenía un borrador y él mandó otra cosa (lo que él escribió es el ejemplo bueno).
 // ---------------------------------------------------------------------------
 const CLAVE_APRENDIDO = "seg_aprendido";
+// Contestó pero para decir que no / que todavía no: no es un ejemplo de seguimiento que funcionó
+const RE_RESP_FLOJA = /todav[ií]a no|no estoy (para|con)|por el momento no|ahora no|no (me )?interes|no gracias|^\W*(hola|yola|ok|dale)\W*$/i;
 let segLogCols = false;
 async function asegurarSegLog(env) {
   if (segLogCols) return;
@@ -1299,7 +1301,7 @@ const parecidos = (a, b) => { const w = (t) => new Set(String(t || "").toLowerCa
 export async function aprenderSeguimientos(env, ahora = Date.now()) {
   await asegurarSegLog(env);
   const H = 3600e3, desde = ahora - 45 * 86400e3;
-  const log = ((await env.DB.prepare("SELECT conv, ts, toque, situacion, quien, texto, borrador, contexto FROM w_seg_log WHERE ts>=? AND ts<? AND COALESCE(texto,'')<>'' AND quien<>'dueno-mal' AND id NOT LIKE 'man:%' ORDER BY ts DESC LIMIT 400").bind(desde, ahora - 48 * H).all().catch(() => ({}))).results || []);
+  const log = ((await env.DB.prepare("SELECT conv, ts, toque, situacion, quien, texto, borrador, contexto FROM w_seg_log WHERE ts>=? AND ts<? AND COALESCE(texto,'')<>'' AND quien<>'dueno-mal' AND id NOT LIKE 'man:%' ORDER BY ts DESC LIMIT 400").bind(desde, ahora).all().catch(() => ({}))).results || []);
   if (!log.length) { const d = { ts: ahora, n: 0, por_sit: {}, ejemplos: [], correcciones: [], fallidos: [] }; await kvPut(env, CLAVE_APRENDIDO, JSON.stringify(d)); return d; }
   const convs = [...new Set(log.map((x) => x.conv))], msgs = new Map();
   for (let i = 0; i < convs.length; i += 80) {
@@ -1307,17 +1309,18 @@ export async function aprenderSeguimientos(env, ahora = Date.now()) {
     for (const m of ((await env.DB.prepare(`SELECT conv, yo, texto, ts FROM w_msg INDEXED BY w_msg_conv WHERE conv IN (${parte.map(() => "?").join(",")}) AND ts>=? AND grupo=0 AND COALESCE(texto,'')<>'' ORDER BY ts`).bind(...parte, desde - 5 * 86400e3).all().catch(() => ({}))).results || []))
       (msgs.get(m.conv) || msgs.set(m.conv, []).get(m.conv)).push(m);
   }
-  const casos = [];
+  let casos = [];
   for (const x of log) {
     const ms = msgs.get(x.conv) || [];
     const t0 = x.ts, resp = ms.find((m) => !m.yo && m.ts > t0 && m.ts - t0 < 48 * H);
     const antes = ms.filter((m) => m.ts < t0 - 60e3 && !(m.yo && esBot(m.texto))).slice(-4).map((m) => (m.yo ? "Nosotros: " : "Cliente: ") + String(m.texto).replace(/\s+/g, " ").slice(0, 140));
     const rt = resp ? String(resp.texto || "").replace(/\s+/g, " ").slice(0, 140) : "";
-    const bueno = !!resp && !RE_NO_SEGUIR.test(rt);
-    casos.push({ sit: String(x.situacion || "") || "?", toque: x.toque || 0, quien: x.quien, texto: String(x.texto).replace(/\s+/g, " ").slice(0, 300), borrador: String(x.borrador || "").replace(/\s+/g, " ").slice(0, 300),
+    const bueno = !!resp && !RE_NO_SEGUIR.test(rt) && !RE_RESP_FLOJA.test(rt);
+    casos.push({ maduro: t0 < ahora - 48 * H, sit: String(x.situacion || "") || "?", toque: x.toque || 0, quien: x.quien, texto: String(x.texto).replace(/\s+/g, " ").slice(0, 300), borrador: String(x.borrador || "").replace(/\s+/g, " ").slice(0, 300),
       contexto: String(x.contexto || "").slice(0, 160) || antes.join(" | ").slice(0, 400), resp: !!resp, bueno, respuesta: rt, ts: x.ts });
   }
-  const por_sit = {};
+  const por_sit = {}, todos = casos;
+  casos = casos.filter((c) => c.maduro);   // la respuesta se mide a las 48 h; las correcciones del equipo cuentan al instante
   for (const c of casos) { const g = por_sit[c.sit] || (por_sit[c.sit] = { n: 0, resp: 0, buenos: 0 }); g.n++; if (c.resp) g.resp++; if (c.bueno) g.buenos++; }
   // Ejemplos: los que tuvieron respuesta buena, hasta 3 por situación, primero los escritos a mano por el equipo y los más nuevos, sin repetir ideas
   const ejemplos = [];
@@ -1327,7 +1330,7 @@ export async function aprenderSeguimientos(env, ahora = Date.now()) {
     ejemplos.push(...elegidos);
   }
   // Correcciones del dueño: la IA tenía un borrador y salió otra cosa escrita a mano (más peso si le contestaron)
-  const correcciones = casos.filter((c) => c.quien === "mano" && c.borrador && parecidos(c.borrador, c.texto) < 0.5).sort((a, b) => b.resp - a.resp || b.ts - a.ts).slice(0, 6);
+  const correcciones = todos.filter((c) => c.quien === "mano" && c.borrador && parecidos(c.borrador, c.texto) < 0.5).sort((a, b) => b.resp - a.resp || b.ts - a.ts).slice(0, 6);
   // Lo que no funcionó: mensajes de la IA sin ninguna respuesta (para no repetir esas fórmulas)
   const fallidos = []; for (const c of casos.filter((c) => c.quien !== "mano" && !c.resp)) { if (fallidos.length >= 4) break; if (!fallidos.some((e) => parecidos(e.texto, c.texto) > 0.6)) fallidos.push(c); }
   const d = { ts: ahora, n: casos.length, por_sit, ejemplos: ejemplos.slice(0, 18), correcciones, fallidos };
