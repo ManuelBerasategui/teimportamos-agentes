@@ -51,6 +51,11 @@ chk("Ian queda con el borrador de respaldo del paso (sin ofertas)", /cómo vení
 chk("Ana sí queda con el mensaje de la IA", por.Ana?.ia_msg && /reservo con la seña/.test(por.Ana.borrador));
 chk("validador: cupos que no están en la charla se descartan", L.validarSeg("sumate al cupo de esta semana", { sit: 2, charla: "cuanto salen 20?" }).mensaje === "" && L.validarSeg("sumate al cupo", { sit: 2, charla: "hay cupo?" }).mensaje !== "");
 
+// Mensajes cruzados: nombra a otro cliente de la tanda → se descarta; la respuesta se ubica por id
+chk("validador: un mensaje que nombra a otro cliente se descarta", L.validarSeg("Hola Somos Dalia, ya evaluaste la cotización?", { nombre: "Ezequias Q.T", otros: ["Somos Dalia", "Facu"] }).mensaje === "" && L.validarSeg("ezequias, como va?", { nombre: "Ezequias Q.T", otros: ["Somos Dalia"] }).mensaje !== "");
+const tz = [{ conv: "5491100001111", nombre: "A" }, { conv: "5491100002222", nombre: "B" }];
+chk("la respuesta se ubica por id y si no coincide con el número se descarta", L.clienteDeRespuesta(tz, { n: 2, id: "2222" }) === tz[1] && L.clienteDeRespuesta(tz, { n: 1, id: "2222" }) === null && L.clienteDeRespuesta(tz, { n: 1 }) === tz[0]);
+chk("los seguimientos no usan la IA de último recurso", /sinRespaldo: true/.test(fs.readFileSync(path.join(dir, "lector.js"), "utf8").split("Respondé SOLO JSON: {\"mensajes\":[{\"n\":1,\"id\"")[1]?.slice(0, 400) || ""));
 // La PC (sender) solo recibe mensajes escritos por la IA, y nada si el lector está atrasado
 const pedir = async () => (await L.rutaLector(env, new Request("https://x/lector/seguimientos?listos=1&limite=20", { headers: { Authorization: "Bearer " + env.LECTOR_TOKEN } }), new URL("https://x/lector/seguimientos?listos=1&limite=20"), null, null)).json();
 let r = await pedir();

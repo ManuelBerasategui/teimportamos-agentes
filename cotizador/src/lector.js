@@ -1201,7 +1201,7 @@ async function candidatosSeguimiento(env, ahora = Date.now()) {
 const CLAVE_SEG_IA = "seg_ia";
 async function cacheSegIA(env) { try { return JSON.parse((await kvGet(env, CLAVE_SEG_IA)) || "{}"); } catch { return {}; } }
 // v2 (19/11): prompt con contexto primero y aprendizaje; todo lo escrito con el prompt anterior se rehace
-const firmaSeg = (s) => `v2:${s.cot_ts}:${s.ult_ts}`;
+const firmaSeg = (s) => `v3:${s.cot_ts}:${s.ult_ts}`;   // v3: se descartan los del respaldo que salieron cruzados
 const vigente = (c, s, ahora = Date.now()) => !!c && c.f === firmaSeg(s) && ahora - (c.ts || 0) < (c.seguir === false ? 3 : 2) * 86400e3;
 // Situación 7 (pidió que le escribamos en una fecha): no se le escribe antes de esa fecha aunque pase la revisión
 const esperaFecha = (c, ahora = Date.now()) => !!(c?.no_antes && Date.parse(c.no_antes + "T12:00:00-03:00") > ahora);
@@ -1261,11 +1261,25 @@ export function borradorBase(s) {
   if (t === 2) return "buenas" + n + ", para que te sirva " + que + ": a cuánto lo venderías vos? con eso te digo si el margen cierra y con qué cantidad conviene arrancar";
   return "buenas" + n + ", una consulta para pasarte algo útil: " + que + " es para revender o para tu negocio? según eso te armo la cantidad que más te conviene";
 }
+const idSeg = (conv) => String(conv || "").replace(/\D/g, "").slice(-4);
+// A qué cliente corresponde cada respuesta: por id (últimos 4 del número); si no vino id, por número de orden. Si no coinciden, se descarta.
+export function clienteDeRespuesta(tanda, x) {
+  const porN = tanda[(parseInt(x?.n) || 0) - 1] || null, id = String(x?.id ?? "").replace(/\D/g, "");
+  if (!id) return porN;
+  const porId = tanda.filter((s) => idSeg(s.conv) === id);
+  if (porId.length !== 1) return null;
+  return porN && porN !== porId[0] ? null : porId[0];
+}
 // Control final del mensaje de la IA. Si ofrece algo nuevo en una compra en curso, o nombra cupos que no están en la charla,
 // se descarta (queda sin mensaje: la PC no lo manda y en el panel sale el de respaldo para escribirlo a mano).
-export function validarSeg(mensaje, { sit = 0, en_curso = false, charla = "" } = {}) {
+export function validarSeg(mensaje, { sit = 0, en_curso = false, charla = "", nombre = "", otros = [] } = {}) {
   const t = String(mensaje || "");
   if (!t) return { mensaje: "", motivo: "" };
+  // Mensaje cruzado: nombra a otro cliente de la misma tanda y no a este
+  const pal = (n) => String(n || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z ]/g, " ").split(/\s+/).filter((w) => w.length >= 3 && !["somos", "los", "las", "del"].includes(w));
+  const tl = " " + t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z ]/g, " ") + " ", tiene = (w) => tl.includes(" " + w + " ");
+  const propio = pal(nombre);
+  if (!propio.some(tiene) && otros.some((o) => pal(o).some((w) => !propio.includes(w) && tiene(w)))) return { mensaje: "", motivo: "descartado: nombraba a otro cliente" };
   if ((en_curso || Number(sit) === 9) && RE_OFERTA_NUEVA.test(t)) return { mensaje: "", motivo: "descartado: ofrecía algo nuevo en una compra en curso" };
   if (charla && /\bcupos?\b|pedido grupal/i.test(t) && !/\bcupos?\b|grupal|compartid/i.test(charla)) return { mensaje: "", motivo: "descartado: ofrecía cupos que no salen en la charla" };
   return { mensaje: t, motivo: "" };
@@ -1398,16 +1412,17 @@ ${aprendido}${criterio}Estilo: rioplatense, voseo, minúsculas naturales, SIN ¿
 Nunca inventes precios, descuentos, stock, fechas ni casos: usá solo lo que está en la charla o en la cotización. Si falta el total y hace falta, no lo pongas.
 "producto", "cantidad" y "total": lo que le cotizamos según la charla (ej. "zapatillas Vans", "20 pares", "USD 640 total"). Si no se ve, "".
 CLIENTES:
-${tanda.map((s, j) => `#${j + 1} ${s.nombre || "sin nombre"} · producto: ${s.producto || "?"} · le mandamos ${{ precio: "precio", info: "info", archivo: "un archivo (precios o fotos)" }[s.tipo] || "una cotización"} hace ${s.dias_cot} días · ${s.reaccion} · PLAN ${plantillaSeg(s.conv)} · TOQUE ${s.toque} de 3${s.presup_usd ? " · aprox USD " + s.presup_usd : ""}${s.perfil ? " · perfil " + s.perfil : ""}${s.cot_dato ? " · cotización: " + String(s.cot_dato).replace(/\s+/g, " ").slice(0, 240) : ""}${s.en_curso ? ` · OJO: PARECE COMPRA EN CURSO (se habló de: "${s.paso_compra}")` : ""}
+${tanda.map((s, j) => `#${j + 1} ${s.nombre || "sin nombre"} [id ${idSeg(s.conv)}] · producto: ${s.producto || "?"} · le mandamos ${{ precio: "precio", info: "info", archivo: "un archivo (precios o fotos)" }[s.tipo] || "una cotización"} hace ${s.dias_cot} días · ${s.reaccion} · PLAN ${plantillaSeg(s.conv)} · TOQUE ${s.toque} de 3${s.presup_usd ? " · aprox USD " + s.presup_usd : ""}${s.perfil ? " · perfil " + s.perfil : ""}${s.cot_dato ? " · cotización: " + String(s.cot_dato).replace(/\s+/g, " ").slice(0, 240) : ""}${s.en_curso ? ` · OJO: PARECE COMPRA EN CURSO (se habló de: "${s.paso_compra}")` : ""}
 ${charlas[j].map((m) => `[${fechaHora(m.ts)}] ` + (m.yo ? "Nosotros: " : "Cliente: ") + String(m.texto).replace(/\s+/g, " ").slice(0, 300)).join("\n") || "(sin mensajes guardados)"}`).join("\n\n")}
-Respondé SOLO JSON: {"mensajes":[{"n":1,"contexto":"en qué quedó la charla y cuál es el próximo paso","situacion":2,"seguir":true,"dueno":false,"llamada":"","no_antes":"","motivo":"si seguir es false, por qué","producto":"","cantidad":"","total":"","mensaje":"..."}]}`).catch(() => null);
+Cada mensaje es para UN cliente: copiá su "n" y su "id" tal cual y usá solo su charla (nunca el nombre ni los datos de otro cliente).
+Respondé SOLO JSON: {"mensajes":[{"n":1,"id":"1234","contexto":"en qué quedó la charla y cuál es el próximo paso","situacion":2,"seguir":true,"dueno":false,"llamada":"","no_antes":"","motivo":"si seguir es false, por qué","producto":"","cantidad":"","total":"","mensaje":"..."}]}`, { sinRespaldo: true }).catch(() => null);
       // Los que la IA no devolvió quedan revisados igual (siguen en la lista, sin mensaje): no se re-preguntan en cada carga
       if (Array.isArray(r?.mensajes)) for (const s of tanda) cache[s.conv] = { f: firmaSeg(s), ts: ahora, seguir: true, motivo: "", producto: "", cantidad: "", total: "", mensaje: "" };
       for (const x of Array.isArray(r?.mensajes) ? r.mensajes : []) {
-        const s = tanda[(parseInt(x?.n) || 0) - 1]; if (!s) continue;
+        const s = clienteDeRespuesta(tanda, x); if (!s) continue;
         const sit = Math.min(Math.max(parseInt(x.situacion) || 0, 0), 9), noAntes = /^\d{4}-\d{2}-\d{2}$/.test(String(x.no_antes || "")) ? x.no_antes : "";
         const charlaTxt = charlas[tanda.indexOf(s)].map((m) => String(m.texto || "")).join(" ");
-        const { mensaje: msj, motivo: frenado } = validarSeg(String(x.mensaje || "").replace(/[¿¡]/g, "").replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, "").trim().slice(0, 700), { sit, en_curso: s.en_curso, charla: charlaTxt });
+        const { mensaje: msj, motivo: frenado } = validarSeg(String(x.mensaje || "").replace(/[¿¡]/g, "").replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, "").trim().slice(0, 700), { sit, en_curso: s.en_curso, charla: charlaTxt, nombre: s.nombre, otros: tanda.filter((o) => o !== s).map((o) => o.nombre) });
         cache[s.conv] = { f: firmaSeg(s), ts: ahora, seguir: x.seguir !== false, motivo: String(frenado || x.motivo || "").slice(0, 120), contexto: String(x.contexto || "").slice(0, 200), descartado: frenado ? String(x.mensaje || "").slice(0, 500) : "", producto: String(x.producto || "").slice(0, 60), cantidad: String(x.cantidad || "").slice(0, 40), total: String(x.total || "").slice(0, 50), mensaje: msj,
           situacion: sit, toque: s.toque, dueno: !!x.dueno, llamada: String(x.llamada || "").slice(0, 300), no_antes: noAntes };
         if (sit) await env.DB.prepare("UPDATE w_conv SET seg_situacion=? WHERE conv=?").bind(String(sit), s.conv).run().catch(() => {});
@@ -1421,6 +1436,7 @@ Respondé SOLO JSON: {"mensajes":[{"n":1,"contexto":"en qué quedó la charla y 
     for (const c of Object.keys(cache)) if (!vivos.has(c)) delete cache[c];      // solo se guarda lo que sigue en la lista
     await env.DB.prepare("DELETE FROM kv WHERE k>='seg_ia:' AND k<'seg_ia;'").run().catch(() => {});
     await kvPut(env, CLAVE_SEG_IA, JSON.stringify(cache));
+    await kvPut(env, "seg_ruta", "").catch(() => {});   // que la PC vea los mensajes nuevos ya, sin esperar los 15 min de caché
   }
   const ok = lista.filter((s) => !(vigente(cache[s.conv], s, ahora) && cache[s.conv].seguir === false) && !esperaFecha(cache[s.conv], ahora)).map((s) => conDetalle(s, cache[s.conv]));
   return limite ? ok.slice(0, limite) : ok;
