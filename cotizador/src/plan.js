@@ -89,14 +89,14 @@ export function detectarColumnas(filas) {
       if (/^[\d\s\-+()]{10,20}$/.test(v) && normTel(v)) t++;
       if (RE_ESTADO.test(v)) e++;
       if (RE_CANAL.test(v)) ca++;
-      if (plata(v) != null) p++;
+      if (plata(v)) p++;   // "$0.00" de las filas vacías no cuenta
     }
     puntos.fecha.push(f); puntos.tel.push(t); puntos.estado.push(e); puntos.canal.push(ca); puntos.plata.push(p);
   }
   const mejor = (k) => { const a = puntos[k]; const m = Math.max(0, ...a); return m >= 2 ? a.indexOf(m) : -1; };
   const col = { fecha: mejor("fecha"), tel: mejor("tel"), estado: mejor("estado"), canal: mejor("canal") };
   const max = Math.max(0, ...puntos.plata);
-  const dinero = puntos.plata.map((n, i) => [n, i]).filter(([n]) => n >= Math.max(2, max * 0.3)).map(([, i]) => i);
+  const dinero = puntos.plata.map((n, i) => [n, i]).filter(([n]) => n >= Math.max(2, max * 0.15)).map(([, i]) => i);
   col.costo = dinero[0] ?? -1; col.venta = dinero[1] ?? -1; col.ganancia = dinero.length >= 3 ? dinero[dinero.length - 1] : -1;
   col.producto = col.tel >= 0 && col.tel + 1 < nCol && ![col.estado, col.costo].includes(col.tel + 1) ? col.tel + 1 : -1;
   col.cliente = col.venta >= 0 && col.venta + 1 < nCol && col.venta + 1 !== col.ganancia ? col.venta + 1 : -1;
