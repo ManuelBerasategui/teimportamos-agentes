@@ -133,6 +133,7 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
   if (p === "/ml-tendencias" && req.method === "POST") { const { guardarML } = await import("./mesa.js"); return Response.json(await guardarML(env, await req.json().catch(() => ({})))); }
   if (p === "/tiktok-pendientes") { const { tiktokSinGuion } = await import("./tablero.js"); return Response.json(await tiktokSinGuion(env)); }
   if (p === "/tiktok-transcribir" && req.method === "POST") { const { transcribirTikTok } = await import("./tablero.js"); return Response.json(await transcribirTikTok(env, req.headers.get("x-video-id"), await req.arrayBuffer())); }
+  if (p === "/planilla" && req.method === "POST") { const { guardarPlanilla } = await import("./plan.js"); return Response.json(await guardarPlanilla(env, await req.json().catch(() => ({})))); }
   if (p === "/tiktok-studio" && req.method === "POST") { const { guardarStudio } = await import("./tablero.js"); return Response.json(await guardarStudio(env, await req.json().catch(() => ({})))); }
   // QR de vinculación: Termux lo sube y el panel lo muestra (para escanearlo con el celular del 805)
   if (p === "/qr" && req.method === "POST") {

@@ -12,6 +12,7 @@ import { esBotTexto, plantillaSeg } from "./lector.js";
 import { podarIdeas, parecidas } from "./clasificar.js";
 import { esCierre } from "./cierre.js";
 import { fotoWeb, FOTO_CADA_DIAS } from "./posthog.js";
+import { contarCampana, resumenPlanilla, textoPlanilla, textoPlan, sembrarPlan } from "./plan.js";
 
 const AR = 3 * 3600e3, DIA = 86400e3, H = 3600e3;
 const inicioDia = (dia) => Date.parse(dia + "T00:00:00Z") + AR;
@@ -106,6 +107,12 @@ export const METRICAS = {
   seg_con_plan_14d: { que: "seguimientos enviados con plan A o B en 14 días (los que manda el sender)", mejor: "sube", muestra: (h) => h.seguimientos.A.n + h.seguimientos.B.n, f: (h) => h.seguimientos.A.n + h.seguimientos.B.n },
   prosp_resp_pct: { que: "% de prospectos que respondieron (7 días)", mejor: "sube", muestra: (h) => h.prospeccion.enviados_7d, f: (h) => h.prospeccion.resp_pct },
   consultas_por_video: { que: "chats nuevos asociados por video maduro (ventana de 48 h, 14 días)", mejor: "sube", muestra: (h) => h.redes.videos_maduros, f: (h) => h.redes.consultas_por_video },
+  kw_nfc_7d: { que: "chats privados que escribieron NFC (7 días)", mejor: "sube", muestra: () => Infinity, f: (h) => h.campana?.total.nfc || 0 },
+  kw_mallas_7d: { que: "chats privados que escribieron MALLAS (7 días)", mejor: "sube", muestra: () => Infinity, f: (h) => h.campana?.total.mallas || 0 },
+  kw_combos_7d: { que: "chats privados que escribieron COMBOS (7 días)", mejor: "sube", muestra: () => Infinity, f: (h) => h.campana?.total.combos || 0 },
+  kw_historias_7d: { que: "chats que escribieron RESERVO, CUENTA o CUPO por las historias (7 días)", mejor: "sube", muestra: () => Infinity, f: (h) => h.campana?.total.historias || 0 },
+  planilla_pedidos_7d: { que: "pedidos anotados en la planilla Pedidos (7 días)", mejor: "sube", muestra: () => Infinity, f: (h) => (h.planilla?.actualizado ? h.planilla.v7.n : null) },
+  planilla_ganancia_7d: { que: "ganancia en miles de ARS de la planilla Pedidos (7 días)", mejor: "sube", muestra: () => Infinity, f: (h) => (h.planilla?.actualizado ? h.planilla.v7.ganancia / 1000 : null) },
   cupo_consultas_72h: { que: "consultas privadas asociadas a cupos (promedio, 14 días)", mejor: "sube", muestra: (h) => h.cupos.lista.length, f: (h) => h.cupos.promedio_consultas },
 };
 export const medir = (h, nombre) => { const m = METRICAS[nombre]; if (!m) return null; try { const v = m.f(h); return v == null || isNaN(v) ? null : Math.round(v * 10) / 10; } catch { return null; } };
@@ -323,7 +330,9 @@ export async function hechos(env, { dias = 14 } = {}) {
   if (ml) ml.recomendaciones = recomendarML(mlHist, mlFb, ahora);
   const ideas = { podadas: ideasPrev.filter((i) => i.estado === "podada").slice(0, 10).map((i) => corto(i.texto, 100) + (i.nota ? ` (${corto(i.nota, 60)})` : "")), utiles: ideasPrev.filter((i) => i.estado === "util" || i.estado === "hecha").slice(0, 8).map((i) => corto(i.texto, 140)), descartadas: ideasPrev.filter((i) => i.estado === "descartada").slice(0, 10).map((i) => corto(i.texto, 110) + (i.nota ? ` (motivo: ${corto(i.nota, 80)})` : "")), abiertas: ideasPrev.filter((i) => i.estado === "nueva").slice(0, 12).map((i) => corto(i.texto, 110)) };
   let web = null; try { const w = webRaw ? JSON.parse(webRaw) : null; if (w?.texto) web = { dia: w.dia, dias: w.dias, texto: w.texto, avisos: w.avisos || [] }; } catch {}
-  return { hoy, generado: ahora, web, ideas, esperando_total: esperando, embudo, perfiles, respuesta, pendientes, cotizaciones, seguimientos, prospeccion, productos, cupos: cuposR, redes, ventas, equipo, memoria: mem.map((m) => ({ tipo: m.tipo, texto: corto(m.texto, 160) })), ml, convs_30d: convs.length };
+  const campana = contarCampana(msgs7, Object.fromEntries(convs.map((c) => [c.conv, c.primer_ts])));
+  const planilla = await resumenPlanilla(env).catch(() => null);
+  return { hoy, generado: ahora, campana, planilla, web, ideas, esperando_total: esperando, embudo, perfiles, respuesta, pendientes, cotizaciones, seguimientos, prospeccion, productos, cupos: cuposR, redes, ventas, equipo, memoria: mem.map((m) => ({ tipo: m.tipo, texto: corto(m.texto, 160) })), ml, convs_30d: convs.length };
 }
 
 // Muestras de charlas reales (para que el agente de WhatsApp lea cómo hablamos, no solo los números)
@@ -348,6 +357,8 @@ export function textoHechos(h, partes = ["embudo", "whatsapp", "redes", "product
   const L = [];
   const e = h.embudo;
   if (partes.includes("embudo")) {
+    L.push(textoPlan(h, medir));
+    L.push(textoPlanilla(h.planilla));
     L.push(`EMBUDO 7 DÍAS: ${e.v7.nuevos} chats nuevos → ${e.v7.cotizados} cotizados (${e.v7.cot_pct}%) → ${e.v7.ventas} ventas (${e.v7.ventas_confirmadas ?? 0} CONFIRMADAS con el botón Vendido + ${e.v7.ventas - (e.v7.ventas_confirmadas ?? 0)} detectadas en el chat SIN CONFIRMAR; ${e.v7.venta_pct}% de los cotizados) · perdidos ${e.v7.perdidos} ${JSON.stringify(e.v7.motivos)}`);
     L.push(`7 DÍAS ANTERIORES: ${e.v7ant.nuevos} nuevos → ${e.v7ant.cotizados} cotizados → ${e.v7ant.ventas} ventas · 30 DÍAS: ${e.v30.nuevos} → ${e.v30.cotizados} → ${e.v30.ventas}`);
     L.push(`POR DÍA (nuevos/cotizados/ventas): ${e.por_dia.map((d) => `${d.dia} ${d.nuevos}/${d.cotizados}/${d.ventas}`).join(" · ")}`);
@@ -533,7 +544,7 @@ async function correrAgente(env, iaJSON, nombre, h, extra, opts) {
 // ---------------------------------------------------------------------------
 // HIPÓTESIS: las métricas son ventanas móviles; se evalúan al vencimiento, nunca por un cruce transitorio.
 async function crearHipotesis(env, h, agente, lista) {
-  const activas = await todas(env, "SELECT id, texto, metrica FROM mesa_hip WHERE estado='activa'");
+  const activas = await todas(env, "SELECT id, texto, metrica FROM mesa_hip WHERE estado='activa' AND agente<>'plan'");   // el plan semanal no ocupa lugar de los agentes
   const ops = [];
   const metricasNuevas = new Set();
   for (const x of lista || []) {
@@ -683,6 +694,7 @@ export async function correrMesa(env, iaJSON, { forzar = false, profundo = false
   await kvPut(env, "mesa_intento_ts", ahora);
   const h = await hechos(env, { dias: profundo ? 30 : 14 });
   await kvPut(env, "mesa_hechos", JSON.stringify(h).slice(0, 180000));
+  await sembrarPlan(env, h, medir).catch((e) => console.log("plan", e?.message || e));
   const cerradas = await verificarHipotesis(env, h);
   const opts = { prioridad: forzar };
   const muestras = await muestrasChats(env, h).catch(() => "");

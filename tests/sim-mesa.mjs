@@ -116,7 +116,9 @@ chk("el integrador lee la discusión", /DISCUSIÓN ENTRE LOS AGENTES/.test(promp
 chk("el agente de WhatsApp lee charlas reales", /CHARLAS REALES/.test(prompts[0]) && /COTIZADO SIN RESPUESTA/.test(prompts[0]) && /Beto/.test(prompts[0]));
 chk("el integrador ve los tres informes y el embudo", /WHATSAPP: \{"resumen":"Cotizamos sin próximo paso/.test(prompts[4]) && /EMBUDO 7 DÍAS/.test(prompts[4]));
 chk("informes guardados por agente", db.prepare("SELECT COUNT(DISTINCT agente) n FROM mesa_informes").get().n === 5);
-const hips = db.prepare("SELECT * FROM mesa_hip").all();
+const hips = db.prepare("SELECT * FROM mesa_hip WHERE agente<>'plan'").all();
+const plan = db.prepare("SELECT * FROM mesa_hip WHERE agente='plan'").all();
+chk("el plan semanal vigente se carga una vez con base medida (no ocupa lugar de los agentes)", (await import("../cotizador/src/plan.js")).planVigente(hh.hoy) ? plan.length === 7 && plan.every((x) => x.estado === "activa" && x.base != null) : plan.length === 0);
 chk("hipótesis con base medida hoy (la de métrica inventada se descarta)", hips.length === 2 && hips.every((x) => x.estado === "activa") && hips.find((x) => x.metrica === "cotizados_sin_resp_48h_pct").base === hh.cotizaciones.sin_resp_pct);
 chk("avisa al dueño con el mensaje corto", env.__captura.length === 1 && /Beto espera respuesta/.test(env.__captura[0]) && /corrida pedida/.test(env.__captura[0]));
 chk("no vuelve a correr sola antes de una hora", (await M.correrMesa(env, ia, { motivo: "cron" })).ok === false);
@@ -152,7 +154,7 @@ chk("la mesa poda sola las ideas genéricas (quedan guardadas con el motivo, no 
 
 // 5) Estado para el panel y API
 const est = await M.estadoMesa(env);
-chk("estado: informes, hipótesis, hechos resumidos y última corrida", est.informes.integrador && est.hipotesis.length === 5 && est.hipotesis.some((x) => x.agente === "manuel") && est.hechos.embudo.nuevos === 6 && est.ultima.motivo === "panel" && est.informes.debate.datos.turnos.length === 4 && est.virales.lista.length === 1 && est.virales.fuentes.hashtags.length > 3 && est.chat.at(-1).agente === "redes");
+chk("estado: informes, hipótesis, hechos resumidos y última corrida", est.informes.integrador && est.hipotesis.filter((x) => x.agente !== "plan").length === 5 && est.hipotesis.some((x) => x.agente === "manuel") && est.hechos.embudo.nuevos === 6 && est.ultima.motivo === "panel" && est.informes.debate.datos.turnos.length === 4 && est.virales.lista.length === 1 && est.virales.fuentes.hashtags.length > 3 && est.chat.at(-1).agente === "redes");
 const api = async (m, b) => (await M.apiMesa(env, { method: m, json: async () => { throw new Error("cuerpo ya leído"); } }, new URL("https://x/panel/p/api/mesa"), ia, b)).json();   // como en apiTablero: el cuerpo llega leído
 chk("API: descartar una hipótesis", (await api("POST", { accion: "hipotesis", id: hips[0].id, estado: "descartada" })).ok && db.prepare("SELECT estado FROM mesa_hip WHERE id=?").get(hips[0].id).estado === "descartada");
 chk("API: marcar ideas y los agentes lo leen en la corrida siguiente", (await api("POST", { accion: "idea", id: ideas.find((i) => /Beto/.test(i.texto)).id, estado: "descartada", nota: "ya lo hago" })).ok && (await api("POST", { accion: "idea", id: ideas.find((i) => /reel de NFC/.test(i.texto)).id, estado: "util" })).ok && /IDEAS QUE MANUEL DESCARTÓ.*motivo: ya lo hago/.test(M.textoHechos(await M.hechos(env))) && /IDEAS QUE MANUEL MARCÓ COMO ÚTILES/.test(M.textoHechos(await M.hechos(env))) && (await M.estadoMesa(env)).ideas.length === 1);
