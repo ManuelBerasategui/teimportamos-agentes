@@ -1042,6 +1042,7 @@ export const SITUACIONES = { 1: "pendiente nuestro", 2: "cotizado, silencio", 3:
 // Compra en curso: después de cotizarle ya se habló de pasos del pedido (proforma, pago, seña, comprobante, "cómo sigo"...).
 // Ahí el seguimiento es SOLO sobre ese paso: nada de ofertas, cupos, otras cantidades ni productos nuevos (caso Ian, 19/11).
 export const RE_EN_CURSO = /proforma|invoice|packing|comprobante|transfer[ií]|transferencia|\bse[ñn]a\b|pagu[eé]|ya pag|realizar el pago|link de pago|\balias\b|\bcbu\b|c[oó]mo sigo|c[oó]mo seguimos|ya (lo |se lo |te lo )?ped[ií]|hice el pedido|orden de compra|datos (de|para el) env[ií]o|direcci[oó]n de entrega/i;
+export const RE_EN_CURSO_NUESTRO = /proforma|invoice|packing|link de pago|comprobante|(le|se lo|ya lo) pediste|pudiste (hacer el |realizar el )?pago|te lleg[oó] (la|el) (proforma|pedido)/i;
 // Lo que NO puede traer un seguimiento de una compra en curso (ofrecer algo nuevo en vez de acompañar el paso)
 export const RE_OFERTA_NUEVA = /\bcupos?\b|pedido (grupal|que sale)|compartir (el )?(flete|env[ií]o)|arrancar con menos|menos unidades|otra cantidad|una alternativa|otro modelo|tambi[eé]n podemos|es un buen producto|te queda m[aá]s barato/i;
 // El lector atrasado = la IA vería charlas viejas: no se arman borradores nuevos ni la PC manda seguimientos solos
@@ -1180,7 +1181,8 @@ async function candidatosSeguimiento(env, ahora = Date.now()) {
     const diasSin = (ahora - movida) / 86400e3;
     if (diasSin < SEG.esperas[toques]) continue;
     const t = ultCli ? String(ultCli.texto || "").replace(/\s+/g, " ").trim() : "";
-    const pasoCompra = ms.slice(corte + 1).slice(-12).map((m) => String(m.texto || "")).find((x) => RE_EN_CURSO.test(x)) || "";
+    // Lo del cliente vale con cualquier señal; lo nuestro solo si es un paso del pedido ya en marcha (no "te digo cómo seguimos" ni "con transferencia")
+    const pasoCompra = ms.slice(corte + 1).slice(-12).map((m) => [m.yo, String(m.texto || "")]).find(([yo, x]) => (yo ? RE_EN_CURSO_NUESTRO : RE_EN_CURSO).test(x))?.[1] || "";
     const reaccion = !ultCli ? "no respondió" : /^\((archivo|audio|image|imagen|ptt|sticker)/i.test(t) ? "mandó un audio o archivo" : `dijo "${t.slice(0, 40)}"`;
     lista.push({ conv: f.conv, nombre: f.nombre, perfil: f.perfil, presup_usd: f.presup_usd, producto: f.producto || cotTxt.get(f.conv) || "", etapa: f.etapa, puntaje: f.puntaje,
       ult_yo_ts: f.ult_yo_ts, seg_visto: f.seg_visto, ult_texto: f.ult_texto, ult_ts: f.ult_ts || movida, cot_ts: base, cot_dato: cotTxt.get(f.conv) || "", tipo,
