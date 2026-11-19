@@ -4,7 +4,7 @@
 //  - Ventas: las carga el equipo con el botón "Vendido" (monto, ganancia, línea). Es la fuente de verdad de la plata.
 //  - Origen: links de WhatsApp con código "(H3)"; cuando alguien escribe desde ese link, el chat queda marcado con su origen.
 // No manda mensajes a nadie. Solo lee y guarda en D1.
-import { seguimientos, nombreDisp, cargarMapaEquipo, esBotTexto } from "./lector.js";
+import { seguimientos, nombreDisp, cargarMapaEquipo, esBotTexto, anotarSegManuales, aprenderSeguimientos } from "./lector.js";
 import { esCierre } from "./cierre.js";
 import { listarProspectos, editarProspecto } from "./prospeccion.js";
 import { estadoIA } from "./ia-alterna.js";
@@ -70,6 +70,16 @@ export async function cronTablero(env) {
   if (Date.now() - ult < 60 * 60e3) return;   // equipo y objetivos: una vez por hora alcanza
   if (horaAR >= 8 && Date.now() - +((await kvGet(env, "obj_ts")) || 0) > 60 * 60e3) { await calcularSeguimientosDia(env, diaAR()).catch((e) => console.log("obj", e?.message || e)); await kvPut(env, "obj_ts", Date.now()); }
   const ayerO = diaAR(Date.now() - DIA);
+  // Una sola vez (19/11): rearmar los últimos 30 días para registrar el texto real de los seguimientos a mano y que la IA aprenda de ellos
+  {
+    let pend = null; try { pend = JSON.parse((await kvGet(env, "seg_mano_backfill")) || "null"); } catch {}
+    if (pend === null) { pend = Array.from({ length: 30 }, (_, i) => diaAR(Date.now() - (i + 2) * DIA)); await kvPut(env, "seg_mano_backfill", JSON.stringify(pend)); }
+    if (pend.length && horaAR >= 1 && horaAR < 7) {   // de madrugada, de a uno por pasada, para no cargar D1
+      for (const d of pend.splice(0, 6)) await calcularSeguimientosDia(env, d).catch((e) => console.log("backfill seg", e?.message || e));
+      await kvPut(env, "seg_mano_backfill", JSON.stringify(pend));
+      if (!pend.length) await aprenderSeguimientos(env).catch((e) => console.log("aprender seg", e?.message || e));
+    }
+  }
   if (!(await kvGet(env, "objfin:" + ayerO))) { await calcularSeguimientosDia(env, ayerO).catch(() => {}); await kvPut(env, "objfin:" + ayerO, 1); }
   if ((await kvGet(env, "perdidos_dia")) !== diaAR()) { await perdidosAutomaticos(env).catch((e) => console.log("perdidos", e?.message || e)); await kvPut(env, "perdidos_dia", diaAR()); }
   await kvPut(env, "tab_ult", Date.now());
@@ -372,12 +382,14 @@ export async function calcularSeguimientosDia(env, dia) {
   const hechos = new Map();
   for (const a of auto) hechos.set(a.conv, "Sender");
   const desde = Object.fromEntries(cand.map((c) => [c.conv, c.ts]));
-  const lista = Object.keys(desde).filter((c) => !hechos.has(c));
+  const lista = Object.keys(desde).filter((c) => !hechos.has(c)), aMano = [];
   for (let i = 0; i < lista.length; i += 90) {
     const lote = lista.slice(i, i + 90);
     for (const m of await todas(env, `SELECT conv, autor, texto, ts FROM w_msg WHERE conv IN (${lote.map(() => "?").join(",")}) AND ts>=? AND ts<? AND yo=1 AND grupo=0 AND hist=0 ORDER BY ts`, ...lote, d0, d0 + DIA))
-      if (m.ts >= desde[m.conv] && !hechos.has(m.conv) && !esBotTexto(m.texto)) hechos.set(m.conv, nombreDisp(m.autor) || "Sin identificar");
+      if (m.ts >= desde[m.conv] && !hechos.has(m.conv) && !esBotTexto(m.texto)) { hechos.set(m.conv, nombreDisp(m.autor) || "Sin identificar"); aMano.push({ conv: m.conv, texto: m.texto, ts: m.ts }); }
   }
+  // El texto real de cada seguimiento a mano queda registrado para que la IA aprenda de los que tuvieron respuesta
+  await anotarSegManuales(env, aMano).catch((e) => console.log("seg a mano", e?.message || e));
   const por = {}; for (const p of hechos.values()) por[p] = (por[p] || 0) + 1;
   await env.DB.batch([env.DB.prepare("CREATE TABLE IF NOT EXISTS obj_dia (dia TEXT, clave TEXT, valor INTEGER, PRIMARY KEY (dia, clave))"),
     env.DB.prepare("DELETE FROM obj_dia WHERE dia=? AND clave LIKE 'seg:%'").bind(dia),

@@ -228,7 +228,9 @@ def mandar_seguimiento(pg, saltados):
     """Manda un seguimiento revisado del Worker, usando su borrador personalizado."""
     from playwright.sync_api import TimeoutError as PWTimeout
     try:
-        lista = [x for x in api("/seguimientos?limite=20&listos=1").get("lista", []) if x.get("conv") not in saltados and x.get("revisado") and x.get("borrador") and not x.get("dueno")]
+        d = api("/seguimientos?limite=20&listos=1")
+        if d.get("aviso"): print(f"  {d['aviso']}")
+        lista = [x for x in d.get("lista", []) if x.get("conv") not in saltados and x.get("revisado") and x.get("borrador") and not x.get("dueno")]
     except Exception as e:
         print(f"  No pude traer los seguimientos ({e})."); return False
     for s in lista:

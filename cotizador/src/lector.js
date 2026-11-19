@@ -158,7 +158,8 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
   // Vista previa autenticada para el sender. Puede refrescar borradores, pero no envía ni marca chats como enviados.
   if (p === "/seguimientos" && req.method === "GET") {
     const lim = Math.min(Math.max(+url.searchParams.get("limite") || 20, 1), 20);
-    if (url.searchParams.get("refrescar") === "1") await revisarSeguimientos(env, iaJSON, { limite: 0, tope: lim, forzar: true });
+    const atrasado = await lectorAtrasado(env);
+    if (url.searchParams.get("refrescar") === "1" && !atrasado) await revisarSeguimientos(env, iaJSON, { limite: 0, tope: lim, forzar: true });
     // Mismo criterio que el panel: revisado por la IA, con mensaje y "llamalo vos" solo si hay monto alto, negociación o pedido de llamada (perfil A/B solo no alcanza)
     const conDueno = (s) => !!s.dueno && (Number(s.situacion) === 8 || !!s.llamada || (s.presup_usd || 0) > 1000);
     const soloListos = url.searchParams.get("listos") === "1";
@@ -166,13 +167,14 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
     let todosSeg = null;
     if (url.searchParams.get("refrescar") !== "1") try { const c = JSON.parse((await kvGet(env, "seg_ruta")) || "null"); if (c && Date.now() - c.ts < 15 * 60e3) todosSeg = c.l; } catch {}
     if (!todosSeg) { todosSeg = await seguimientos(env); await kvPut(env, "seg_ruta", JSON.stringify({ ts: Date.now(), l: todosSeg })).catch(() => {}); }
-    const lista = todosSeg.filter((s) => /^\d{8,15}$/.test(String(s.conv)) && s.borrador && (!soloListos || (s.revisado && !conDueno(s)))).map((s) => ({ ...s, dueno: conDueno(s) })).slice(0, lim)
+    // Para mandar solos: solo mensajes escritos por la IA con la charla al día (nunca el de respaldo, nunca con el lector atrasado)
+    const lista = (soloListos && atrasado ? [] : todosSeg).filter((s) => /^\d{8,15}$/.test(String(s.conv)) && s.borrador && (!soloListos || (s.revisado && s.ia_msg && !conDueno(s)))).map((s) => ({ ...s, dueno: conDueno(s) })).slice(0, lim)
       .map((s) => ({ conv: s.conv, nombre: s.nombre, producto: s.producto, cantidad: s.cantidad, total: s.total, tipo: s.tipo, toque: s.toque, situacion: s.situacion, revisado: s.revisado, dueno: s.dueno, llamada: s.llamada, reaccion: s.reaccion, dias_cot: s.dias_cot, borrador: s.borrador }));
     // Cuántos seguimientos van hoy (lo que muestra el panel en Objetivos) y el objetivo, para que la PC frene al llegar
     const hoyAR = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
     const hechos = (await env.DB.prepare("SELECT valor FROM obj_dia WHERE dia=? AND clave='seg:total'").bind(hoyAR).first().catch(() => null))?.valor || 0;
     let objetivo = 50; try { objetivo = +JSON.parse((await kvGet(env, "objetivos")) || "{}").seg_max || 50; } catch {}
-    return Response.json({ ok: true, lista, hechos_hoy: hechos, objetivo });
+    return Response.json({ ok: true, lista, hechos_hoy: hechos, objetivo, ...(atrasado ? { aviso: "El lector del 805 está atrasado: no mando seguimientos solos hasta que se ponga al día." } : {}) });
   }
   // Programita de la PC: lista de seguimientos disponibles, sin enviarlos ni marcarlos aquí.
   if (p === "/enviar/prospectos-sync" && req.method === "POST") { const b = await req.json().catch(() => ({})); return Response.json({ ok: true, ...(await syncProspectos(env, b.filas, b.quien)) }); }
@@ -731,8 +733,9 @@ export async function cronLector(env, iaJSON, scheduledTime) {
   if (m % 15 === 7) await analizarChats(env, iaJSON).catch((e) => console.log("lector analizar", e?.stack || e));
   // Pendientes viejos: si ya le escribimos después de crearse (y lo último es nuestro), o pasaron 4 días sin que el cliente escriba, se cierran solos (van a seguimientos)
   if (m % 15 === 9) await env.DB.prepare("UPDATE tareas SET estado='resuelta' WHERE estado='abierta' AND ref LIKE 'w805:%' AND EXISTS (SELECT 1 FROM w_conv c WHERE c.conv=tareas.tel AND ((c.ult_yo=1 AND COALESCE(c.ult_yo_ts,0)>tareas.ts) OR (tareas.ts<? AND COALESCE(c.ult_cliente_ts,0)<tareas.ts)))").bind(Date.now() - 4 * 86400e3).run().catch((e) => console.log("lector pend cierre", e?.stack || e));
-  // Seguimientos: la IA va revisando la lista de a 20 durante el día (8 a 21 h), así a las 10 ya está casi toda lista
-  if (m === 43 && hAR >= 8 && hAR < 21 && hAR % 2 === 0) await revisarSeguimientos(env, iaJSON, { limite: 0, tope: SEG.revisarPorCron }).catch((e) => console.log("lector seguimientos", e?.stack || e));
+  // Seguimientos: la IA va revisando la lista de a 24 por hora durante el día (8 a 21 h), así a las 10 ya está casi toda lista
+  if (m === 43 && hAR >= 8 && hAR < 21 && !(await lectorAtrasado(env))) await revisarSeguimientos(env, iaJSON, { limite: 0, tope: SEG.revisarPorCron }).catch((e) => console.log("lector seguimientos", e?.stack || e));
+  if (m === 50 && (hAR === 5 || !(await kvGet(env, CLAVE_APRENDIDO)))) await aprenderSeguimientos(env).catch((e) => console.log("lector aprender seg", e?.stack || e));   // antes de que la IA arme los del día
   if (m % 15 === 11) await auditarCotizaciones(env, iaJSON, { limite: 18 }).catch((e) => console.log("lector auditar", e?.stack || e));
   if (m % 15 === 4) {   // recálculo de días anteriores, de a uno, hasta terminar
     const pend = JSON.parse((await kvGet(env, "lector_backfill")) || "[]");
@@ -905,6 +908,8 @@ export async function apiLector(env, req, url, iaJSON) {
   if (r === "telegram" && req.method === "POST") return json(await vincularTelegram(env));
     if (r === "preguntar" && req.method === "POST") { const b = await req.json().catch(() => ({})); return json(await preguntarVendedor(env, iaJSON, b.pregunta)); }
   if (r === "seguimiento") return json(await seguimientos(env));
+  // Lo que la IA aprendió de los seguimientos respondidos (GET lo muestra; POST lo recalcula ya)
+  if (r === "seg-aprendido") return json(req.method === "POST" ? await aprenderSeguimientos(env) : (await segAprendido(env)) || {});
   if (r === "objetivos") return json(await avanceObjetivos(env));
   if (r === "diag") {   // para ver por qué un chat figura como pendiente: /panel/api/805/diag?conv=549...
     const conv = String(url.searchParams.get("conv") || "").replace(/\D/g, "");
@@ -1031,9 +1036,20 @@ PARTE 4 · COMO LE RESPONDES A MANUEL
 //    aparecer ese día en ningún lado (Telegram, panel, agente).
 const RE_PREG_SEG = /seguimiento|(cotiz\w*|precio|info\w*).{0,80}(no (contest|respond)\w*|gracias|seguir|escribir)|(no (contest|respond)\w*|dijeron gracias).{0,80}(cotiz|precio|info)|a quien (le )?(tengo|tenemos|hay) que (escribir|seguir)/;
 // Máximo 3 toques por cotización: 1) a las 24-48 h, 2) unos 3 días después (4-5 días), 3) 4 días más (8-10): el tercero es de cierre con opciones
-const SEG = { dias: 30, esperas: [1, 3, 4], revisarPorLlamada: 40, revisarPorCron: 20, porLlamada: 8, buenosParaAuto: 10 };
+const SEG = { dias: 30, esperas: [1, 3, 4], revisarPorLlamada: 40, revisarPorCron: 24, porLlamada: 8, buenosParaAuto: 10 };
 // Situaciones (se guardan en w_conv.seg_situacion para medir). Solo 2, 3 y 6 pueden salir solas (después de 10 buenos seguidos).
-export const SITUACIONES = { 1: "pendiente nuestro", 2: "cotizado, silencio", 3: "cierre blando", 4: "consulta con un tercero", 5: "objeción", 6: "esperamos algo del cliente", 7: "pidió fecha futura", 8: "negociación con monto alto" };
+export const SITUACIONES = { 1: "pendiente nuestro", 2: "cotizado, silencio", 3: "cierre blando", 4: "consulta con un tercero", 5: "objeción", 6: "esperamos algo del cliente", 7: "pidió fecha futura", 8: "negociación con monto alto", 9: "compra en curso" };
+// Compra en curso: después de cotizarle ya se habló de pasos del pedido (proforma, pago, seña, comprobante, "cómo sigo"...).
+// Ahí el seguimiento es SOLO sobre ese paso: nada de ofertas, cupos, otras cantidades ni productos nuevos (caso Ian, 19/11).
+export const RE_EN_CURSO = /proforma|invoice|packing|comprobante|transfer[ií]|transferencia|\bse[ñn]a\b|pagu[eé]|ya pag|realizar el pago|link de pago|\balias\b|\bcbu\b|c[oó]mo sigo|c[oó]mo seguimos|ya (lo |se lo |te lo )?ped[ií]|hice el pedido|orden de compra|datos (de|para el) env[ií]o|direcci[oó]n de entrega/i;
+// Lo que NO puede traer un seguimiento de una compra en curso (ofrecer algo nuevo en vez de acompañar el paso)
+export const RE_OFERTA_NUEVA = /\bcupos?\b|pedido (grupal|que sale)|compartir (el )?(flete|env[ií]o)|arrancar con menos|menos unidades|otra cantidad|una alternativa|otro modelo|tambi[eé]n podemos|es un buen producto|te queda m[aá]s barato/i;
+// El lector atrasado = la IA vería charlas viejas: no se arman borradores nuevos ni la PC manda seguimientos solos
+export async function lectorAtrasado(env, ahora = Date.now()) {
+  const r = await env.DB.prepare("SELECT MAX(ts) t FROM w_msg").first().catch(() => null);
+  const h = (new Date(ahora).getUTCHours() + 21) % 24;
+  return !r?.t || ahora - r.t > (h >= 11 ? 3 : 12) * 3600e3;   // de día siempre entra algo cada pocas horas; de noche puede no entrar nada
+}
 const SIT_AUTO = new Set([2, 3, 6]);
 // Va al dueño (no sale solo): pedido grande, perfil A/B (Mercado Libre o empresa) o lo que la IA marcó (negociación, reclamo, pide llamada/factura/referencias)
 export const vaAlDueno = (s, c) => !!(c?.dueno || Number(c?.situacion) === 8 || (s.presup_usd || 0) > 1000 || s.perfil === "A" || s.perfil === "B");
@@ -1071,8 +1087,9 @@ async function logSeg(env, conv, quien) {
   }
   const cache = await cacheSegIA(env).catch(() => ({})), c = cache[conv] || {};
   const f = await env.DB.prepare("SELECT seg_situacion FROM w_conv WHERE conv=?").bind(conv).first().catch(() => null);
-  await env.DB.prepare("INSERT OR REPLACE INTO w_seg_log (id, conv, ts, toque, situacion, quien, texto, plantilla) VALUES (?,?,?,?,?,?,?,?)")
-    .bind(`${conv}:${Date.now()}`, conv, Date.now(), c.toque || 0, String(c.situacion || f?.seg_situacion || ""), quien, String(c.mensaje || "").slice(0, 500), plantillaSeg(conv)).run().catch(() => {});
+  await asegurarSegLog(env);
+  await env.DB.prepare("INSERT OR REPLACE INTO w_seg_log (id, conv, ts, toque, situacion, quien, texto, plantilla, contexto) VALUES (?,?,?,?,?,?,?,?,?)")
+    .bind(`${conv}:${Date.now()}`, conv, Date.now(), c.toque || 0, String(c.situacion || f?.seg_situacion || ""), quien, String(c.mensaje || "").slice(0, 500), plantillaSeg(conv), String(c.contexto || "").slice(0, 200)).run().catch(() => {});
 }
 // Reporte: por situación, cuántos seguimientos, cuántos respondieron en 48 h y cuántos compraron después
 export async function reporteSeguimientos(env, dias = 30) {
@@ -1163,10 +1180,12 @@ async function candidatosSeguimiento(env, ahora = Date.now()) {
     const diasSin = (ahora - movida) / 86400e3;
     if (diasSin < SEG.esperas[toques]) continue;
     const t = ultCli ? String(ultCli.texto || "").replace(/\s+/g, " ").trim() : "";
+    const pasoCompra = ms.slice(corte + 1).slice(-12).map((m) => String(m.texto || "")).find((x) => RE_EN_CURSO.test(x)) || "";
     const reaccion = !ultCli ? "no respondió" : /^\((archivo|audio|image|imagen|ptt|sticker)/i.test(t) ? "mandó un audio o archivo" : `dijo "${t.slice(0, 40)}"`;
     lista.push({ conv: f.conv, nombre: f.nombre, perfil: f.perfil, presup_usd: f.presup_usd, producto: f.producto || cotTxt.get(f.conv) || "", etapa: f.etapa, puntaje: f.puntaje,
       ult_yo_ts: f.ult_yo_ts, seg_visto: f.seg_visto, ult_texto: f.ult_texto, ult_ts: f.ult_ts || movida, cot_ts: base, cot_dato: cotTxt.get(f.conv) || "", tipo,
-      dias_cot: Math.floor((ahora - base) / 86400e3), dias_sin: Math.floor(diasSin), toque: toques + 1, reaccion, pri: PRI_PERFIL[f.perfil] ?? 2 });
+      dias_cot: Math.floor((ahora - base) / 86400e3), dias_sin: Math.floor(diasSin), toque: toques + 1, reaccion, pri: PRI_PERFIL[f.perfil] ?? 2,
+      en_curso: !!pasoCompra, paso_compra: pasoCompra.replace(/\s+/g, " ").slice(0, 120) });
   }
   // Los que no respondieron a ningún seguimiento pasan a "perdido" solos (si después escriben, vuelven a entrar normalmente)
   for (let i = 0; i < perdidos.length; i += 50) await env.DB.batch(perdidos.slice(i, i + 50).map((c) => env.DB.prepare("UPDATE w_conv SET etapa='perdido', motivo=COALESCE(NULLIF(motivo,''),'sin_respuesta') WHERE conv=? AND COALESCE(etapa,'')<>'vendido'").bind(c))).catch((e) => console.log("seg perdidos", e?.message || e));
@@ -1179,7 +1198,8 @@ async function candidatosSeguimiento(env, ahora = Date.now()) {
 // "No seguir" vale 3 días (por si quedó en escribir él en una fecha); el mensaje listo se rehace a los 2 días.
 const CLAVE_SEG_IA = "seg_ia";
 async function cacheSegIA(env) { try { return JSON.parse((await kvGet(env, CLAVE_SEG_IA)) || "{}"); } catch { return {}; } }
-const firmaSeg = (s) => `${s.cot_ts}:${s.ult_ts}`;
+// v2 (19/11): prompt con contexto primero y aprendizaje; todo lo escrito con el prompt anterior se rehace
+const firmaSeg = (s) => `v2:${s.cot_ts}:${s.ult_ts}`;
 const vigente = (c, s, ahora = Date.now()) => !!c && c.f === firmaSeg(s) && ahora - (c.ts || 0) < (c.seguir === false ? 3 : 2) * 86400e3;
 // Situación 7 (pidió que le escribamos en una fecha): no se le escribe antes de esa fecha aunque pase la revisión
 const esperaFecha = (c, ahora = Date.now()) => !!(c?.no_antes && Date.parse(c.no_antes + "T12:00:00-03:00") > ahora);
@@ -1217,7 +1237,8 @@ export async function seguimientosAuto805(env) {
 }
 function conDetalle(s, c) {
   const ok = vigente(c, s);
-  return { ...s, producto: (ok && c.producto) || s.producto, cantidad: (ok && c.cantidad) || "", total: (ok && c.total) || "", borrador: (ok && c.mensaje) || borradorBase(s), revisado: !!ok,
+  // ia_msg: el mensaje lo escribió la IA leyendo la charla. Solo esos puede mandar la PC sola (el de respaldo es genérico: solo para el botón del panel)
+  return { ...s, producto: (ok && c.producto) || s.producto, cantidad: (ok && c.cantidad) || "", total: (ok && c.total) || "", borrador: (ok && c.mensaje) || borradorBase(s), revisado: !!ok, ia_msg: !!(ok && c.mensaje),
     situacion: ok ? Number(c.situacion) || 0 : 0, sit_texto: ok ? SITUACIONES[c.situacion] || "" : "", dueno: vaAlDueno(s, ok ? c : null), llamada: (ok && c.llamada) || "", plantilla: plantillaSeg(s.conv) };
 }
 // Mensaje de base cuando la IA todavía no revisó el chat (así el botón nunca abre el WhatsApp vacío)
@@ -1227,6 +1248,7 @@ export const plantillaSeg = (conv) => (parseInt(String(conv || "").replace(/\D/g
 export function borradorBase(s) {
   const n = /\p{L}/u.test(String(s.nombre || "")) ? " " + String(s.nombre).trim().split(/\s+/)[0].toLowerCase() : "";
   const que = s.producto ? "lo de " + s.producto : "lo que te pasé";
+  if (s.en_curso) return "buenas" + n + ", cómo venís con " + que + "? si se trabó algo del pedido avisame y lo vemos";
   const t = s.toque || 1, plan = plantillaSeg(s.conv);
   if (plan === "A") {
     if (t >= 3) return "buenas" + n + ", lo dejo acá para no molestarte. si en algún momento querés retomar " + que + ", el precio que te pasé te lo sostengo hasta fin de mes";
@@ -1236,6 +1258,91 @@ export function borradorBase(s) {
   if (t >= 3) return "buenas" + n + ", cerramos " + que + " por ahora? qué te frenó más: 1) el precio total 2) la cantidad 3) el plazo 4) no es el momento 5) otra cosa. con un número me alcanza";
   if (t === 2) return "buenas" + n + ", para que te sirva " + que + ": a cuánto lo venderías vos? con eso te digo si el margen cierra y con qué cantidad conviene arrancar";
   return "buenas" + n + ", una consulta para pasarte algo útil: " + que + " es para revender o para tu negocio? según eso te armo la cantidad que más te conviene";
+}
+// Control final del mensaje de la IA. Si ofrece algo nuevo en una compra en curso, o nombra cupos que no están en la charla,
+// se descarta (queda sin mensaje: la PC no lo manda y en el panel sale el de respaldo para escribirlo a mano).
+export function validarSeg(mensaje, { sit = 0, en_curso = false, charla = "" } = {}) {
+  const t = String(mensaje || "");
+  if (!t) return { mensaje: "", motivo: "" };
+  if ((en_curso || Number(sit) === 9) && RE_OFERTA_NUEVA.test(t)) return { mensaje: "", motivo: "descartado: ofrecía algo nuevo en una compra en curso" };
+  if (charla && /\bcupos?\b|pedido grupal/i.test(t) && !/\bcupos?\b|grupal|compartid/i.test(charla)) return { mensaje: "", motivo: "descartado: ofrecía cupos que no salen en la charla" };
+  return { mensaje: t, motivo: "" };
+}
+
+// ---------------------------------------------------------------------------
+// Aprendizaje de seguimientos: cada día se mira qué seguimientos (del sender y a mano) tuvieron respuesta en 48 h,
+// con el contexto en que salieron, y los mejores van al prompt como ejemplos por situación. También las correcciones
+// del dueño: cuando la IA tenía un borrador y él mandó otra cosa (lo que él escribió es el ejemplo bueno).
+// ---------------------------------------------------------------------------
+const CLAVE_APRENDIDO = "seg_aprendido";
+let segLogCols = false;
+async function asegurarSegLog(env) {
+  if (segLogCols) return;
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS w_seg_log (id TEXT PRIMARY KEY, conv TEXT, ts INTEGER, toque INTEGER, situacion TEXT, quien TEXT, texto TEXT)").run().catch(() => {});
+  for (const c of ["plantilla TEXT", "borrador TEXT", "contexto TEXT"]) await env.DB.prepare("ALTER TABLE w_seg_log ADD COLUMN " + c).run().catch(() => {});
+  segLogCols = true;
+}
+// Seguimientos hechos a mano (detectados en el conteo del día): se guarda el texto REAL que salió y el borrador que tenía la IA
+export async function anotarSegManuales(env, items) {
+  const l = (Array.isArray(items) ? items : []).filter((x) => x?.conv && String(x.texto || "").trim());
+  if (!l.length) return 0;
+  await asegurarSegLog(env);
+  const cache = await cacheSegIA(env).catch(() => ({}));
+  const ops = l.map((x) => { const c = cache[x.conv] || {};
+    return env.DB.prepare("INSERT OR IGNORE INTO w_seg_log (id, conv, ts, toque, situacion, quien, texto, borrador, contexto) VALUES (?,?,?,?,?,?,?,?,?)")
+      .bind(`mano:${x.conv}:${diaAR(x.ts)}`, x.conv, x.ts, c.toque || 0, String(c.situacion || ""), "mano", String(x.texto).slice(0, 500), String(c.mensaje || c.descartado || "").slice(0, 500), String(c.contexto || "").slice(0, 200)); });
+  for (let i = 0; i < ops.length; i += 50) await env.DB.batch(ops.slice(i, i + 50)).catch((e) => console.log("seg manuales", e?.message || e));
+  return l.length;
+}
+const parecidos = (a, b) => { const w = (t) => new Set(String(t || "").toLowerCase().replace(/[^\p{L}\p{N} ]/gu, " ").split(/\s+/).filter((x) => x.length > 3));
+  const A = w(a), B = w(b); if (!A.size || !B.size) return 0; let n = 0; for (const x of A) if (B.has(x)) n++; return n / Math.min(A.size, B.size); };
+export async function aprenderSeguimientos(env, ahora = Date.now()) {
+  await asegurarSegLog(env);
+  const H = 3600e3, desde = ahora - 45 * 86400e3;
+  const log = ((await env.DB.prepare("SELECT conv, ts, toque, situacion, quien, texto, borrador, contexto FROM w_seg_log WHERE ts>=? AND ts<? AND COALESCE(texto,'')<>'' AND quien<>'dueno-mal' AND id NOT LIKE 'man:%' ORDER BY ts DESC LIMIT 400").bind(desde, ahora - 48 * H).all().catch(() => ({}))).results || []);
+  if (!log.length) { const d = { ts: ahora, n: 0, por_sit: {}, ejemplos: [], correcciones: [], fallidos: [] }; await kvPut(env, CLAVE_APRENDIDO, JSON.stringify(d)); return d; }
+  const convs = [...new Set(log.map((x) => x.conv))], msgs = new Map();
+  for (let i = 0; i < convs.length; i += 80) {
+    const parte = convs.slice(i, i + 80);
+    for (const m of ((await env.DB.prepare(`SELECT conv, yo, texto, ts FROM w_msg INDEXED BY w_msg_conv WHERE conv IN (${parte.map(() => "?").join(",")}) AND ts>=? AND grupo=0 AND COALESCE(texto,'')<>'' ORDER BY ts`).bind(...parte, desde - 5 * 86400e3).all().catch(() => ({}))).results || []))
+      (msgs.get(m.conv) || msgs.set(m.conv, []).get(m.conv)).push(m);
+  }
+  const casos = [];
+  for (const x of log) {
+    const ms = msgs.get(x.conv) || [];
+    const t0 = x.ts, resp = ms.find((m) => !m.yo && m.ts > t0 && m.ts - t0 < 48 * H);
+    const antes = ms.filter((m) => m.ts < t0 - 60e3 && !(m.yo && esBot(m.texto))).slice(-4).map((m) => (m.yo ? "Nosotros: " : "Cliente: ") + String(m.texto).replace(/\s+/g, " ").slice(0, 140));
+    const rt = resp ? String(resp.texto || "").replace(/\s+/g, " ").slice(0, 140) : "";
+    const bueno = !!resp && !RE_NO_SEGUIR.test(rt);
+    casos.push({ sit: String(x.situacion || "") || "?", toque: x.toque || 0, quien: x.quien, texto: String(x.texto).replace(/\s+/g, " ").slice(0, 300), borrador: String(x.borrador || "").replace(/\s+/g, " ").slice(0, 300),
+      contexto: String(x.contexto || "").slice(0, 160) || antes.join(" | ").slice(0, 400), resp: !!resp, bueno, respuesta: rt, ts: x.ts });
+  }
+  const por_sit = {};
+  for (const c of casos) { const g = por_sit[c.sit] || (por_sit[c.sit] = { n: 0, resp: 0, buenos: 0 }); g.n++; if (c.resp) g.resp++; if (c.bueno) g.buenos++; }
+  // Ejemplos: los que tuvieron respuesta buena, hasta 3 por situación, primero los escritos a mano por el equipo y los más nuevos, sin repetir ideas
+  const ejemplos = [];
+  for (const sit of Object.keys(por_sit)) {
+    const l = casos.filter((c) => c.sit === sit && c.bueno).sort((a, b) => (b.quien === "mano") - (a.quien === "mano") || b.ts - a.ts), elegidos = [];
+    for (const c of l) { if (elegidos.length >= 3) break; if (!elegidos.some((e) => parecidos(e.texto, c.texto) > 0.6)) elegidos.push(c); }
+    ejemplos.push(...elegidos);
+  }
+  // Correcciones del dueño: la IA tenía un borrador y salió otra cosa escrita a mano (más peso si le contestaron)
+  const correcciones = casos.filter((c) => c.quien === "mano" && c.borrador && parecidos(c.borrador, c.texto) < 0.5).sort((a, b) => b.resp - a.resp || b.ts - a.ts).slice(0, 6);
+  // Lo que no funcionó: mensajes de la IA sin ninguna respuesta (para no repetir esas fórmulas)
+  const fallidos = []; for (const c of casos.filter((c) => c.quien !== "mano" && !c.resp)) { if (fallidos.length >= 4) break; if (!fallidos.some((e) => parecidos(e.texto, c.texto) > 0.6)) fallidos.push(c); }
+  const d = { ts: ahora, n: casos.length, por_sit, ejemplos: ejemplos.slice(0, 18), correcciones, fallidos };
+  await kvPut(env, CLAVE_APRENDIDO, JSON.stringify(d));
+  return d;
+}
+export async function segAprendido(env) { try { return JSON.parse((await kvGet(env, CLAVE_APRENDIDO)) || "null"); } catch { return null; } }
+export function aprendidoTexto(d) {
+  if (!d || (!d.ejemplos?.length && !d.correcciones?.length)) return "";
+  const nom = (k) => SITUACIONES[k] ? `${k} ${SITUACIONES[k]}` : "sin clasificar";
+  const tasas = Object.entries(d.por_sit || {}).filter(([, g]) => g.n >= 3).map(([k, g]) => `${nom(k)}: ${Math.round((g.buenos * 100) / g.n)}% contestó bien (${g.n} enviados)`).join(" · ");
+  const grupos = {}; for (const e of d.ejemplos || []) (grupos[e.sit] || (grupos[e.sit] = [])).push(e);
+  return `APRENDIDO DE NUESTROS SEGUIMIENTOS (últimos 45 días, se actualiza solo cada día). Cómo usarlo: buscá el ejemplo de la MISMA situación y con un contexto parecido al de este cliente y tomá la IDEA (qué retoma, qué aporta, qué pregunta), nunca el texto. Si ningún contexto se parece, no fuerces un ejemplo.
+${tasas ? "Respuesta por situación: " + tasas + "\n" : ""}${Object.entries(grupos).map(([k, l]) => `Situación ${nom(k)}, LE CONTESTARON:\n` + l.map((e) => `- contexto: ${e.contexto} → mandamos: "${e.texto}" → contestó: "${e.respuesta}"`).join("\n")).join("\n")}
+${d.correcciones?.length ? "CORRECCIONES DEL EQUIPO (la IA proponía lo primero, el equipo mandó lo segundo: escribí como el equipo):\n" + d.correcciones.map((c) => `- contexto: ${c.contexto} → IA: "${c.borrador}" → equipo: "${c.texto}"${c.resp ? " (le contestaron)" : ""}`).join("\n") + "\n" : ""}${d.fallidos?.length ? "NO FUNCIONARON (nadie contestó, no repitas estas fórmulas):\n" + d.fallidos.map((c) => `- "${c.texto}"`).join("\n") + "\n" : ""}`;
 }
 // Una línea corta y útil: a quién, qué le cotizamos (cantidad y monto), cuándo y qué contestó
 export function lineaSeguimiento(s) {
@@ -1250,14 +1357,15 @@ export async function revisarSeguimientos(env, iaJSON, { limite = 10, tope = SEG
   const lista = await candidatosSeguimiento(env), cache = await cacheSegIA(env), ahora = Date.now();
   const faltan = lista.filter((s) => forzar || !vigente(cache[s.conv], s, ahora)).slice(0, tope);
   if (faltan.length && iaJSON) {
-    const criterio = pautasTexto(await pautasSeg(env));
+    const criterio = pautasTexto(await pautasSeg(env)), aprendido = aprendidoTexto(await segAprendido(env));
     for (let i = 0; i < faltan.length; i += SEG.porLlamada) {
       const tanda = faltan.slice(i, i + SEG.porLlamada);
       const charlas = await Promise.all(tanda.map((s) => env.DB.prepare("SELECT yo, texto, ts FROM w_msg WHERE conv=? AND COALESCE(texto,'')<>'' ORDER BY ts DESC LIMIT 40").bind(s.conv).all().then((r) => (r.results || []).reverse()).catch(() => [])));
       const oferta = (await kvGet(env, "seg_oferta")) !== "0";
       const r = await iaJSON(env, `Atendés el WhatsApp de "Te Importamos" (Rosario: gestionamos importaciones para revendedores y comercios: de China, y también de Paraguay y EE.UU. (ej. AirPods, iPhone, Apple, consolas y perfumes originales suelen ser de Paraguay/EE.UU., NO de China). En el mensaje no nombres el país de origen salvo que en el chat esté claro de dónde viene ESE producto; compras grupales/cupos y pedidos a medida por foto o link de Alibaba/1688; nos encargamos de proveedor, aduana y envío; mostramos costos reales; plazo real China puerta a puerta 25 a 40 días). A estos clientes les mandamos cotización, precio, catálogo o info y dejaron de contestar o no avanzaron. Ahora es ${fechaHora(Date.now())} (hora Argentina).
 Lo que cierra ventas NO es recordar que existimos: es sacarle la duda y el riesgo (cuánto paga en total, qué no incluye, qué pasa si sale mal, cómo sigue). Insistir sin aportar nada no funciona.
-PASO 1: leé TODA la charla y elegí UNA situación:
+PASO 0, LO MÁS IMPORTANTE: leé TODA la charla (tiene fecha y hora) y escribí en "contexto" una línea con EN QUÉ QUEDÓ: qué fue lo último que se habló, quién le debe qué a quién y cuál es el próximo paso concreto. El mensaje SIEMPRE retoma ESE próximo paso, con las palabras de esta charla. Si el mensaje le serviría igual a cualquier otro cliente, está mal: reescribilo.
+PASO 1: elegí UNA situación:
 1 pendiente nuestro (preguntó algo y no le contestamos, o prometimos algo y no lo dimos) → el mensaje es la respuesta atrasada, sin disculpas largas
 2 cotizado y silencio total
 3 cierre blando ("gracias", "ok", "lo veo", "después te digo")
@@ -1266,9 +1374,10 @@ PASO 1: leé TODA la charla y elegí UNA situación:
 6 esperamos algo del cliente (peso, cantidad, link, datos de envío, foto)
 7 pidió que le escribamos en una fecha futura → "no_antes" con esa fecha (AAAA-MM-DD) y seguir false si todavía no llegó
 8 negociación activa con monto alto → dueno true
-PASO 2: "seguir" false si ya compró, dijo que no o que lo deja, pidió que no le escriban, es proveedor o no es cliente, ya tiene un pedido en curso, le dijimos que eso no lo traemos, o NO tenés nada nuevo y real para aportar.
+9 compra en curso: después de cotizarle ya se habló de pasos del pedido (proforma, packing list, link de pago, seña, comprobante, datos de envío, "cómo sigo", ya lo está pidiendo él al proveedor) → el mensaje pregunta SOLO por ese paso y ofrece ayuda con eso (ej. "se lo pudiste pedir?", "te llegó la proforma?", "pudiste hacer el pago?"). PROHIBIDO ofrecerle cupos, otras cantidades, otro modelo, "arrancar con menos", un pedido grupal o cualquier producto: ya está comprando.
+PASO 2: "seguir" false si ya compró, dijo que no o que lo deja, pidió que no le escriban, es proveedor o no es cliente, le dijimos que eso no lo traemos, o NO tenés nada nuevo y real para aportar. (Si tiene un pedido en curso NO es false: es la situación 9.)
 "dueno" true (lo maneja el dueño, no sale solo) si hay negociación sobre costos/flete/aduana/condiciones de pago, pide llamada, factura o referencias, se enojó o reclama, o es un pedido grande o raro. En ese caso "llamada": 2 líneas con qué falta y qué decirle por teléfono.
-PASO 3, el mensaje. Cada cliente tiene un PLAN (A o B, va indicado) y un número de toque. Seguí el plan al pie de la letra: se mide cuál cierra más.
+PASO 3, el mensaje. Cada cliente tiene un PLAN (A o B, va indicado) y un número de toque. El plan es el ÁNGULO del mensaje SOLO en las situaciones 2 y 3, y aun ahí lo que pasó en la charla manda sobre el plan: si la charla ya contestó la pregunta del plan (ej. ya dijo que es para revender) o la oferta del plan no tiene sentido para este cliente, no la uses.
 PLAN A (oferta concreta, el mensaje TRAE algo):
 - toque 1: retomá producto y cantidad y ofrecé una alternativa concreta que ya esté en la charla (otra cantidad con su total si lo tenés, arrancar con menos, o entrar en el pedido que sale esta semana para compartir flete). Cerrá con el próximo paso fácil (con la seña del 30% lo pido).
 - toque 2: algo nuevo y real: fecha del próximo pedido, qué incluye el total (flete, aduana, honorarios), o el precio por otra cantidad si está en la charla. Una pregunta cerrada.
@@ -1277,22 +1386,24 @@ PLAN B (entender su negocio y ayudar, el mensaje PREGUNTA algo útil):
 - toque 1: UNA sola pregunta sobre su negocio (es para revender o para su negocio, a cuánto lo vende hoy) y ofrecé armarle la cantidad que le conviene.
 - toque 2: un dato útil para su decisión (margen estimado si en la charla hay precio de reventa, qué incluye el total, plazo real) y una pregunta.
 - toque 3: cierre con opciones numeradas: "qué te frenó? 1) el precio total 2) la cantidad 3) el plazo 4) no es el momento 5) otra cosa". No hay cuarto.
-En los dos planes: si la situación es 1 (le debemos una respuesta), el mensaje ES la respuesta, nada más. En los dos planes no prometas descuentos, rebajas ni un resultado de precio que no esté en la charla. Nunca "qué te frena?" a secas como mensaje entero. Nunca "lo pensaste?".
+En las situaciones 1, 4, 5, 6, 8 y 9 no hay plan: el mensaje responde a ESA situación. Si la situación es 1 (le debemos una respuesta), el mensaje ES la respuesta, nada más. En ningún caso: no prometas descuentos, rebajas ni un resultado de precio que no esté en la charla. Nunca "qué te frena?" a secas como mensaje entero. Nunca "lo pensaste?".
+Nunca nombres productos, cupos, pedidos grupales ni ofertas que no aparezcan en la charla. Nunca preguntes algo que la charla ya contestó. Si lo último que le escribimos fue una pregunta concreta (ej. "le pediste la proforma?"), el mensaje la retoma, no cambia de tema.
 Estructura: 1) algo concreto de ESTA charla (producto, cantidad, algo que dijo) 2) el aporte nuevo 3) UNA sola pregunta fácil de contestar con una palabra o un número.
-${criterio}Estilo: rioplatense, voseo, minúsculas naturales, SIN ¿ ni ¡, sin emojis, 2 a 4 líneas cortas, como una persona por WhatsApp. Prohibido: "estimado", "le escribo para", "seguimiento", "quedo atento", "estamos a disposición", "último mensajito", "te quedó alguna duda?" a secas, repetir un mensaje que ya le mandamos.
+${aprendido}${criterio}Estilo: rioplatense, voseo, minúsculas naturales, SIN ¿ ni ¡, sin emojis, 2 a 4 líneas cortas, como una persona por WhatsApp. Prohibido: "estimado", "le escribo para", "seguimiento", "quedo atento", "estamos a disposición", "último mensajito", "te quedó alguna duda?" a secas, repetir un mensaje que ya le mandamos.
 Nunca inventes precios, descuentos, stock, fechas ni casos: usá solo lo que está en la charla o en la cotización. Si falta el total y hace falta, no lo pongas.
 "producto", "cantidad" y "total": lo que le cotizamos según la charla (ej. "zapatillas Vans", "20 pares", "USD 640 total"). Si no se ve, "".
 CLIENTES:
-${tanda.map((s, j) => `#${j + 1} ${s.nombre || "sin nombre"} · producto: ${s.producto || "?"} · le mandamos ${{ precio: "precio", info: "info", archivo: "un archivo (precios o fotos)" }[s.tipo] || "una cotización"} hace ${s.dias_cot} días · ${s.reaccion} · PLAN ${plantillaSeg(s.conv)} · TOQUE ${s.toque} de 3${s.presup_usd ? " · aprox USD " + s.presup_usd : ""}${s.perfil ? " · perfil " + s.perfil : ""}${s.cot_dato ? " · cotización: " + String(s.cot_dato).replace(/\s+/g, " ").slice(0, 240) : ""}
-${charlas[j].map((m) => (m.yo ? "Nosotros: " : "Cliente: ") + String(m.texto).replace(/\s+/g, " ").slice(0, 300)).join("\n") || "(sin mensajes guardados)"}`).join("\n\n")}
-Respondé SOLO JSON: {"mensajes":[{"n":1,"situacion":2,"seguir":true,"dueno":false,"llamada":"","no_antes":"","motivo":"si seguir es false, por qué","producto":"","cantidad":"","total":"","mensaje":"..."}]}`).catch(() => null);
+${tanda.map((s, j) => `#${j + 1} ${s.nombre || "sin nombre"} · producto: ${s.producto || "?"} · le mandamos ${{ precio: "precio", info: "info", archivo: "un archivo (precios o fotos)" }[s.tipo] || "una cotización"} hace ${s.dias_cot} días · ${s.reaccion} · PLAN ${plantillaSeg(s.conv)} · TOQUE ${s.toque} de 3${s.presup_usd ? " · aprox USD " + s.presup_usd : ""}${s.perfil ? " · perfil " + s.perfil : ""}${s.cot_dato ? " · cotización: " + String(s.cot_dato).replace(/\s+/g, " ").slice(0, 240) : ""}${s.en_curso ? ` · OJO: PARECE COMPRA EN CURSO (se habló de: "${s.paso_compra}")` : ""}
+${charlas[j].map((m) => `[${fechaHora(m.ts)}] ` + (m.yo ? "Nosotros: " : "Cliente: ") + String(m.texto).replace(/\s+/g, " ").slice(0, 300)).join("\n") || "(sin mensajes guardados)"}`).join("\n\n")}
+Respondé SOLO JSON: {"mensajes":[{"n":1,"contexto":"en qué quedó la charla y cuál es el próximo paso","situacion":2,"seguir":true,"dueno":false,"llamada":"","no_antes":"","motivo":"si seguir es false, por qué","producto":"","cantidad":"","total":"","mensaje":"..."}]}`).catch(() => null);
       // Los que la IA no devolvió quedan revisados igual (siguen en la lista, sin mensaje): no se re-preguntan en cada carga
       if (Array.isArray(r?.mensajes)) for (const s of tanda) cache[s.conv] = { f: firmaSeg(s), ts: ahora, seguir: true, motivo: "", producto: "", cantidad: "", total: "", mensaje: "" };
       for (const x of Array.isArray(r?.mensajes) ? r.mensajes : []) {
         const s = tanda[(parseInt(x?.n) || 0) - 1]; if (!s) continue;
-        const sit = Math.min(Math.max(parseInt(x.situacion) || 0, 0), 8), noAntes = /^\d{4}-\d{2}-\d{2}$/.test(String(x.no_antes || "")) ? x.no_antes : "";
-        const msj = String(x.mensaje || "").replace(/[¿¡]/g, "").replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, "").trim().slice(0, 700);
-        cache[s.conv] = { f: firmaSeg(s), ts: ahora, seguir: x.seguir !== false, motivo: String(x.motivo || "").slice(0, 120), producto: String(x.producto || "").slice(0, 60), cantidad: String(x.cantidad || "").slice(0, 40), total: String(x.total || "").slice(0, 50), mensaje: msj,
+        const sit = Math.min(Math.max(parseInt(x.situacion) || 0, 0), 9), noAntes = /^\d{4}-\d{2}-\d{2}$/.test(String(x.no_antes || "")) ? x.no_antes : "";
+        const charlaTxt = charlas[tanda.indexOf(s)].map((m) => String(m.texto || "")).join(" ");
+        const { mensaje: msj, motivo: frenado } = validarSeg(String(x.mensaje || "").replace(/[¿¡]/g, "").replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, "").trim().slice(0, 700), { sit, en_curso: s.en_curso, charla: charlaTxt });
+        cache[s.conv] = { f: firmaSeg(s), ts: ahora, seguir: x.seguir !== false, motivo: String(frenado || x.motivo || "").slice(0, 120), contexto: String(x.contexto || "").slice(0, 200), descartado: frenado ? String(x.mensaje || "").slice(0, 500) : "", producto: String(x.producto || "").slice(0, 60), cantidad: String(x.cantidad || "").slice(0, 40), total: String(x.total || "").slice(0, 50), mensaje: msj,
           situacion: sit, toque: s.toque, dueno: !!x.dueno, llamada: String(x.llamada || "").slice(0, 300), no_antes: noAntes };
         if (sit) await env.DB.prepare("UPDATE w_conv SET seg_situacion=? WHERE conv=?").bind(String(sit), s.conv).run().catch(() => {});
         // Pasa al dueño: una tarea con el resumen y qué decirle por teléfono (una por cotización)
@@ -1392,9 +1503,9 @@ export async function guardarSegExternos(env, mensajes) {
   let n = 0;
   for (const x of Array.isArray(mensajes) ? mensajes : []) {
     const s = por.get(String(x?.conv || "")); if (!s) continue;
-    const sit = Math.min(Math.max(parseInt(x.situacion) || 0, 0), 8), noAntes = /^\d{4}-\d{2}-\d{2}$/.test(String(x.no_antes || "")) ? x.no_antes : "";
-    const msj = String(x.mensaje || "").replace(/[¿¡]/g, "").replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, "").replace(/ {2,}/g, " ").trim().slice(0, 900);
-    cache[s.conv] = { f: firmaSeg(s), ts: ahora, seguir: x.seguir !== false, motivo: String(x.motivo || "").slice(0, 120), producto: String(x.producto || "").slice(0, 60), cantidad: String(x.cantidad || "").slice(0, 40), total: String(x.total || "").slice(0, 50), mensaje: msj,
+    const sit = Math.min(Math.max(parseInt(x.situacion) || 0, 0), 9), noAntes = /^\d{4}-\d{2}-\d{2}$/.test(String(x.no_antes || "")) ? x.no_antes : "";
+    const { mensaje: msj, motivo: frenado } = validarSeg(String(x.mensaje || "").replace(/[¿¡]/g, "").replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, "").replace(/ {2,}/g, " ").trim().slice(0, 900), { sit, en_curso: s.en_curso, charla: "" });
+    cache[s.conv] = { f: firmaSeg(s), ts: ahora, seguir: x.seguir !== false, motivo: String(frenado || x.motivo || "").slice(0, 120), producto: String(x.producto || "").slice(0, 60), cantidad: String(x.cantidad || "").slice(0, 40), total: String(x.total || "").slice(0, 50), mensaje: msj,
       situacion: sit, toque: s.toque, dueno: !!x.dueno, llamada: String(x.llamada || "").slice(0, 300), no_antes: noAntes, externo: true };
     if (sit) await env.DB.prepare("UPDATE w_conv SET seg_situacion=? WHERE conv=?").bind(String(sit), s.conv).run().catch(() => {});
     n++;
