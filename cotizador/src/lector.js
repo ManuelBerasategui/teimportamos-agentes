@@ -733,8 +733,8 @@ export async function cronLector(env, iaJSON, scheduledTime) {
   if (m % 15 === 7) await analizarChats(env, iaJSON).catch((e) => console.log("lector analizar", e?.stack || e));
   // Pendientes viejos: si ya le escribimos después de crearse (y lo último es nuestro), o pasaron 4 días sin que el cliente escriba, se cierran solos (van a seguimientos)
   if (m % 15 === 9) await env.DB.prepare("UPDATE tareas SET estado='resuelta' WHERE estado='abierta' AND ref LIKE 'w805:%' AND EXISTS (SELECT 1 FROM w_conv c WHERE c.conv=tareas.tel AND ((c.ult_yo=1 AND COALESCE(c.ult_yo_ts,0)>tareas.ts) OR (tareas.ts<? AND COALESCE(c.ult_cliente_ts,0)<tareas.ts)))").bind(Date.now() - 4 * 86400e3).run().catch((e) => console.log("lector pend cierre", e?.stack || e));
-  // Seguimientos: la IA va revisando la lista de a 24 por hora durante el día (8 a 21 h), así a las 10 ya está casi toda lista
-  if (m === 43 && hAR >= 8 && hAR < 21 && !(await lectorAtrasado(env))) await revisarSeguimientos(env, iaJSON, { limite: 0, tope: SEG.revisarPorCron }).catch((e) => console.log("lector seguimientos", e?.stack || e));
+  // Seguimientos: la IA va revisando la lista de a 40 por hora (6 a 21 h; el cupo de Gemini vuelve ~5 h), así a las 10 ya está casi toda lista
+  if (m === 43 && hAR >= 6 && hAR < 21 && !(await lectorAtrasado(env))) await revisarSeguimientos(env, iaJSON, { limite: 0, tope: SEG.revisarPorCron }).catch((e) => console.log("lector seguimientos", e?.stack || e));
   if (m === 50 && (hAR === 5 || !(await kvGet(env, CLAVE_APRENDIDO)))) await aprenderSeguimientos(env).catch((e) => console.log("lector aprender seg", e?.stack || e));   // antes de que la IA arme los del día
   if (m % 15 === 11) await auditarCotizaciones(env, iaJSON, { limite: 18 }).catch((e) => console.log("lector auditar", e?.stack || e));
   if (m % 15 === 4) {   // recálculo de días anteriores, de a uno, hasta terminar
@@ -1036,7 +1036,7 @@ PARTE 4 · COMO LE RESPONDES A MANUEL
 //    aparecer ese día en ningún lado (Telegram, panel, agente).
 const RE_PREG_SEG = /seguimiento|(cotiz\w*|precio|info\w*).{0,80}(no (contest|respond)\w*|gracias|seguir|escribir)|(no (contest|respond)\w*|dijeron gracias).{0,80}(cotiz|precio|info)|a quien (le )?(tengo|tenemos|hay) que (escribir|seguir)/;
 // Máximo 3 toques por cotización: 1) a las 24-48 h, 2) unos 3 días después (4-5 días), 3) 4 días más (8-10): el tercero es de cierre con opciones
-const SEG = { dias: 30, esperas: [1, 3, 4], revisarPorLlamada: 40, revisarPorCron: 24, porLlamada: 8, buenosParaAuto: 10 };
+const SEG = { dias: 30, esperas: [1, 3, 4], revisarPorLlamada: 40, revisarPorCron: 40, porLlamada: 8, buenosParaAuto: 10 };
 // Situaciones (se guardan en w_conv.seg_situacion para medir). Solo 2, 3 y 6 pueden salir solas (después de 10 buenos seguidos).
 export const SITUACIONES = { 1: "pendiente nuestro", 2: "cotizado, silencio", 3: "cierre blando", 4: "consulta con un tercero", 5: "objeción", 6: "esperamos algo del cliente", 7: "pidió fecha futura", 8: "negociación con monto alto", 9: "compra en curso" };
 // Compra en curso: después de cotizarle ya se habló de pasos del pedido (proforma, pago, seña, comprobante, "cómo sigo"...).
