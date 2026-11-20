@@ -1141,6 +1141,13 @@ async function candidatosSeguimiento(env, ahora = Date.now()) {
       if (!cliDesde || (pareceToque && (envTs || !f.cot_ts))) { if (!envTs) { envTs = m.ts; tipo = q; toquesPrevios = 1; } cliDesde = false; continue; }   // primer "envío" visible ya era un seguimiento (el original quedó fuera de la ventana)
       envTs = m.ts; tipo = q === "archivo" ? (tipo === "precio" ? "precio" : "archivo") : q; toquesPrevios = 0; cliDesde = false;
     }
+    // Freno general: 3 días distintos con seguimientos nuestros ("pudiste ver…", "querés que avancemos"…) desde la última vez que habló el cliente
+    // = no respondió a nada. Va a perdido aunque haya una "cotización" registrada en el medio (a veces se registra por un seguimiento que nombra la cotización).
+    const ultCliMsg = [...ms].reverse().find((m) => !m.yo);
+    const diasToque = new Set(ms.filter((m) => m.yo && (!ultCliMsg || m.ts > ultCliMsg.ts) && RE_TOQUE.test(String(m.texto || ""))).map((m) => diaAR(m.ts)));
+    if (diasToque.size >= SEG.esperas.length) { if (f.etapa !== "perdido") perdidos.push(f.conv); continue; }
+    // Una cotización registrada pegada a un seguimiento nuestro (±2 h) es ese seguimiento, no una cotización nueva
+    if (f.cot_ts && ms.some((m) => m.yo && RE_TOQUE.test(String(m.texto || "")) && Math.abs(m.ts - f.cot_ts) < 2 * 3600e3)) f.cot_ts = envTs && envTs < f.cot_ts ? null : f.cot_ts;
     let base = f.cot_ts || 0;
     if (base && base >= envTs - 3600e3) tipo = "cotizacion";
     else if (envTs) { base = envTs; if (f.cot_ts) tipo = "cotizacion"; }
