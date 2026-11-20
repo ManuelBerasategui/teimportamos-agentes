@@ -14,6 +14,7 @@ import { preguntarAgente, charlaAgente } from "./agente.js";
 import { paginaCotPublica } from "./cotiz-tg.js";
 import { cronMesa, cronFotoWeb, estadoFotoWeb } from "./mesa.js";
 import { cronCandidatos } from "./candidatos.js";
+import { cronTendencias } from "./tendencias.js";
 import { apiGrupos, cronGrupos } from "./grupos.js";
 import { simularRedactar } from "./autoresp.js";
 import { cronEntrenador } from "./entrenador.js";
@@ -3542,6 +3543,7 @@ export default {
       if (env.DB) await cronMesa(env, iaJSON, evento.scheduledTime || Date.now(), avisarAdmins).catch((e) => console.log("Error mesa:", e?.stack || e));
       if (env.DB) await cronFotoWeb(env, iaJSON, evento.scheduledTime || Date.now(), avisarAdmins).catch((e) => console.log("Error foto PostHog:", e?.stack || e));   // cada 14 días: insights de PostHog → la mesa decide
       if (env.DB) await cronCandidatos(env, evento.scheduledTime || Date.now()).catch((e) => console.log("Error candidatos ML:", e?.stack || e));   // ML → 1688 → margen (minuto 20 de cada hora)
+      if (env.DB) await cronTendencias(env, evento.scheduledTime || Date.now(), avisarAdmins).catch((e) => console.log("Error tendencias:", e?.stack || e));   // 09:10 AR: tendencias del día (lunes: semana; día 1: mes) listas para grupos e Instagram
     })());
   },
   async fetch(req, envBase, ctx) {

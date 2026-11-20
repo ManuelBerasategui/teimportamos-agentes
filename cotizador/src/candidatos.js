@@ -44,7 +44,7 @@ export function umbrales(env = {}) {
 
 // Palabras que no son un producto importable por un revendedor (eventos, marcas, autos, inmuebles, línea blanca)
 // Se mira el COMIENZO de la búsqueda: "auto usado" no, "cubre volante auto" sí.
-const NO_PRODUCTO = /^(ofertas?|navidad|buscar|black friday|cyber ?monday|hot ?sale|dia del (padre|nino|nina|madre)|regalos?)$|tienda oficial|^(autos?|motos?|camionetas?|cuatriciclos?|departamentos?|depto|casas?|terrenos?|alquiler|inmuebles?|lavarropas|heladeras?|freezer|aires? acondicionados?|televisor|smart tv|tv|notebooks?|celular(es)?|iphone|samsung|motorola|xiaomi|apple|sony|playstation|ps5|xbox|nintendo|nike|adidas|puma|album|figuritas|mercedes|toyota|volkswagen|ford|fiat|chevrolet|renault|peugeot)\b|\b(whisky|blue label|vinos?|cervezas?|medicamentos?|vapes?|vapers?|cigarrillos?|tabaco)\b/i;
+export const NO_PRODUCTO = /^(ofertas?|navidad|buscar|black friday|cyber ?monday|hot ?sale|dia del (padre|nino|nina|madre)|regalos?)$|tienda oficial|^(autos?|motos?|camionetas?|cuatriciclos?|departamentos?|depto|casas?|terrenos?|alquiler|inmuebles?|lavarropas|heladeras?|freezer|aires? acondicionados?|televisor|smart tv|tv|notebooks?|celular(es)?|iphone|samsung|motorola|xiaomi|apple|sony|playstation|ps5|xbox|nintendo|nike|adidas|puma|album|figuritas|mercedes|toyota|volkswagen|ford|fiat|chevrolet|renault|peugeot)\b|\b(whisky|blue label|vinos?|cervezas?|medicamentos?|vapes?|vapers?|cigarrillos?|tabaco)\b/i;
 
 // "+10mil vendidos" → 10000 · "+500 vendidos" → 500 · "+1 M vendidos" → 1000000
 export function vendidosNum(s) {
@@ -77,7 +77,7 @@ export function competencia(top) {
 }
 
 // Paso 1: agrupar lo observado y pasar los checks de Mercado Libre. Función pura (la simulación la prueba sola).
-export function evaluarML(rows, feedback = [], ahora = Date.now(), U = umbrales()) {
+export function evaluarML(rows, feedback = [], ahora = Date.now(), U = umbrales(), google = new Map()) {
   const descartadas = new Set(feedback.filter((f) => f.estado === "descartada" && f.ts > ahora - 30 * DIA).map((f) => f.clave));
   const g = new Map();
   for (const r of rows) {
@@ -94,7 +94,9 @@ export function evaluarML(rows, feedback = [], ahora = Date.now(), U = umbrales(
     const checks = [];
     const add = (id, ok, texto) => checks.push({ id, ok, texto });
     add("producto", !NO_PRODUCTO.test(x.palabra), NO_PRODUCTO.test(x.palabra) ? "Es un evento, una marca, un auto, un inmueble o línea blanca: no se importa para revender" : "Es un producto genérico importable");
-    add("estable", x.semanas.size >= U.semanas, `Apareció en ${x.semanas.size} semana(s) distinta(s) (mínimo ${U.semanas}): ${x.semanas.size >= U.semanas ? "demanda que se sostiene, no una moda" : "todavía puede ser una moda"}`);
+    // Estable: 3 semanas viéndolo en Mercado Libre, o la curva de 90 días de Google ya muestra que se sostiene (no es un pico)
+    const gc = google.get(x.clave), gOk = !!gc && gc.ratio >= 1 && gc.volumen >= 5 && gc.ceros <= 0.4;
+    add("estable", x.semanas.size >= U.semanas || gOk, x.semanas.size >= U.semanas ? `Apareció en ${x.semanas.size} semanas distintas en Mercado Libre: demanda que se sostiene, no una moda` : gOk ? `Google: los últimos 30 días buscan ${Math.round(gc.ratio * 100)}% de lo que buscaban los 2 meses anteriores, con volumen: se sostiene` : `Visto en ${x.semanas.size} semana(s) (mínimo ${U.semanas}) y Google no muestra que se sostenga: todavía puede ser una moda`);
     if (!c) add("datos", null, "Falta la lectura del listado (publicaciones, precios y vendidos). La PC la trae en la próxima vuelta.");
     else {
       add("ventas", c.ventas == null ? null : c.ventas >= U.ventasTop, c.ventas == null ? "Las publicaciones no muestran vendidos" : `Las de arriba venden +${c.ventas.toLocaleString("es-AR")} (mediana; mínimo ${U.ventasTop})`);
@@ -141,7 +143,8 @@ const leerObs = (env, ahora) => Promise.all([
 export async function lanzarBusquedas(env, ahora = Date.now(), U = umbrales(env)) {
   await prepararCandidatos(env);
   const [rows, fb] = await leerObs(env, ahora);
-  const lista = evaluarML(rows, fb, ahora, U).filter((c) => c.pasa_ml);
+  const { curvasGoogle } = await import("./tendencias.js");
+  const lista = evaluarML(rows, fb, ahora, U, await curvasGoogle(env)).filter((c) => c.pasa_ml);
   const hechas = new Map((await todas(env, "SELECT clave, ts, busqueda FROM ml_cand")).map((x) => [x.clave, x]));
   const dia = diaAR(ahora), claveDia = `ml_busq_${dia}`;
   let hoy = +((await kvGet(env, claveDia)) || 0);
@@ -211,7 +214,8 @@ export async function listaCandidatos(env, ahora = Date.now()) {
   await prepararCandidatos(env);
   const U = umbrales(env);
   const [rows, fb] = await leerObs(env, ahora);
-  const ml = evaluarML(rows, fb, ahora, U);
+  const { curvasGoogle } = await import("./tendencias.js");
+  const ml = evaluarML(rows, fb, ahora, U, await curvasGoogle(env));
   const cand = new Map((await todas(env, "SELECT clave, ts, busqueda, estado, datos FROM ml_cand")).map((x) => { let d = {}; try { d = JSON.parse(x.datos || "{}"); } catch {} return [x.clave, { ...x, china: d.china || null }]; }));
   const orden = { ganador: 0, no_da: 1, falta_dato: 2, buscando: 3, sin_proveedor: 4 };
   const items = ml.map((m) => { const c = cand.get(m.clave); return { ...m, estado: c?.estado || (m.pasa_ml ? "en_cola" : m.estado_ml), busqueda: c?.busqueda || null, china: c?.china || null }; })

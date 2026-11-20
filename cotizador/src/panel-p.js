@@ -83,6 +83,10 @@ input:focus,select:focus,textarea:focus{outline:2px solid color-mix(in srgb,var(
  <h2>Links esperando lectura <span class="n" id="cotColaN">0</span></h2><div id="cotCola"></div>
 </section>
 <section id="v-ml" hidden>
+ <h2>Tendencias para publicar</h2>
+ <p class="mu">Google Trends Argentina (búsquedas en aumento y curva de 90 días) cruzado con Mercado Libre. Todos los días a las 9:10 llega por WhatsApp el del día; los lunes, el de la semana; el día 1, el del mes.</p>
+ <div class="acc" style="margin:8px 0 12px"><button class="b p" data-tend="dia">Día</button><button class="b" data-tend="semana">Semana</button><button class="b" data-tend="mes">Mes</button><span class="mu" id="tendEstado"></span></div>
+ <div id="tendLista"><div class="vacio">Cargando tendencias…</div></div>
  <h2>Candidatos para importar <span class="n" id="candN">0</span></h2>
  <p class="mu">Filtro objetivo: semanas seguidas en Mercado Libre, ventas de los de arriba, tiendas oficiales, competencia (Full, calificación) y precio. Los que pasan se buscan solos en 1688 (hasta 3 por día) y se calcula el costo puesto con la calculadora de la web y el margen neto después de comisión, envío y publicidad.</p>
  <div class="acc" style="margin:8px 0 12px"><button class="b p" id="candCorrer">Buscar en 1688 ahora</button><span class="mu" id="candEstado"></span></div>
@@ -476,7 +480,29 @@ function pintarCandidatos(d) {
 }
 $("#candCorrer").onclick = function () { $("#candEstado").textContent = "Corriendo…"; api("mesa", { accion: "cand_correr" }).then(function (r) { toast(r.lanzadas && r.lanzadas.length ? "Buscando en 1688: " + r.lanzadas.join(", ") : "No hay candidatos nuevos para buscar hoy"); cargarCandidatos(); }); };
 $("#candLista").addEventListener("click", function (e) { var b = e.target.closest("[data-mlestado]"); if (!b) return; api("mesa", { accion: "ml_feedback", clave: b.dataset.mlclave, estado: b.dataset.mlestado, nota: "" }).then(function (r) { toast(r.ok ? "Señal guardada" : "No pude guardar"); cargarCandidatos(); }); });
+var TEND_P = "dia";
+function cargarTendencias(p) {
+  TEND_P = p || TEND_P; document.querySelectorAll("[data-tend]").forEach(function (b) { b.className = "b" + (b.dataset.tend === TEND_P ? " p" : ""); });
+  $("#tendEstado").textContent = "Cargando…";
+  api("mesa?tend=" + TEND_P).then(function (d) {
+    var u = d.ultima, l = $("#tendLista"), f = d.fuentes || {};
+    $("#tendEstado").textContent = (u ? "Última lectura de la PC: " + new Date(u.ts).toLocaleString("es-AR") + (u.aviso ? " · " + u.aviso : "") : "La PC todavía no mandó datos de Google") + " · " + (f.google_curvas || 0) + " curvas de Google · " + (f.google_aumento || 0) + " búsquedas en aumento";
+    var t = d.textos || {};
+    var copiar = function (id, txt, rotulo) { return txt ? '<div class="card"><div class="top"><b>' + rotulo + '</b><button class="b v" data-copiar="' + id + '">Copiar</button></div><pre id="' + id + '" style="white-space:pre-wrap;font:inherit;margin:6px 0 0">' + esc(txt) + "</pre></div>" : ""; };
+    l.innerHTML = (d.lista || []).map(function (x, i) {
+      return '<div class="card"><div class="top"><b>' + (i + 1) + ". " + esc(x.palabra) + '</b><span class="tag">puntaje ' + x.puntaje + "</span>" + (x.cruce ? '<span class="pill ok">Google + Mercado Libre</span>' : "") + (x.poco_volumen ? '<span class="pill warn">poco volumen</span>' : "") + "</div>" +
+        (x.motivos || []).map(function (m) { return '<div class="mu">• ' + esc(m) + "</div>"; }).join("") +
+        '<div class="acc"><button class="b v" data-mlestado="interesa" data-mlclave="' + esc(x.clave) + '">Me interesa</button><button class="b x" data-mlestado="descartada" data-mlclave="' + esc(x.clave) + '">Descartar 30 días</button></div></div>';
+    }).join("") + copiar("tendWa", t.whatsapp, "Texto para los grupos de WhatsApp") + copiar("tendIg", t.instagram, "Texto para Instagram") || '<div class="vacio">Sin tendencias para este período todavía. Hace falta que corra tendencias_ml.bat en la PC.</div>';
+  }).catch(function () { $("#tendEstado").textContent = "No pude cargar las tendencias."; });
+}
+document.querySelectorAll("[data-tend]").forEach(function (b) { b.onclick = function () { cargarTendencias(b.dataset.tend); }; });
+$("#tendLista").addEventListener("click", function (e) {
+  var c = e.target.closest("[data-copiar]"); if (c) { var t = $("#" + c.dataset.copiar).textContent; (navigator.clipboard ? navigator.clipboard.writeText(t) : Promise.reject()).then(function () { toast("Copiado"); }, function () { toast("No pude copiar: seleccioná el texto"); }); return; }
+  var b = e.target.closest("[data-mlestado]"); if (!b) return; api("mesa", { accion: "ml_feedback", clave: b.dataset.mlclave, estado: b.dataset.mlestado, nota: "" }).then(function (r) { toast(r.ok ? "Señal guardada" : "No pude guardar"); cargarTendencias(); });
+});
 function cargarMercadoLibre() {
+  cargarTendencias();
   cargarCandidatos();
   var estado = $("#mlEstado"); if (estado) estado.textContent = "Actualizando…";
   api("mesa?ml=1").then(pintarMercadoLibre).catch(function () { if (estado) estado.textContent = "No pude cargar las tendencias."; });

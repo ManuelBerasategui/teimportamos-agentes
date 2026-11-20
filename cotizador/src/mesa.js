@@ -920,6 +920,7 @@ export async function apiMesa(env, req, url, iaJSON, body = null) {
   const json = (d) => Response.json(d, { headers: { "Cache-Control": "no-store" } });
   if (req.method !== "POST") {
     if (url.searchParams.get("ml") === "1") return json(await recomendacionesMercadoLibre(env));
+    if (url.searchParams.get("tend")) { const { tendenciasPanel } = await import("./tendencias.js"); return json(await tendenciasPanel(env, url.searchParams.get("tend"))); }
     if (url.searchParams.get("cand") === "1") { const { listaCandidatos } = await import("./candidatos.js"); return json(await listaCandidatos(env)); }
     if (url.searchParams.get("hechos") === "1") return json(await hechos(env));
     return json(await estadoMesa(env));

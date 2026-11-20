@@ -1,20 +1,26 @@
 """
-Lee Mercado Libre Argentina y lo manda al panel (pestaña Mercado Libre > Candidatos para importar):
-  1. Las 50 tendencias de búsqueda de la semana (tendencias.mercadolibre.com.ar).
-  2. Los "Más vendidos" de 4 categorías por día (rotan) y una subcategoría de cada una.
-  3. El listado de cada búsqueda: publicaciones, precio actual, vendidos, calificación, Full, tiendas oficiales y avisos.
-Con eso el worker filtra con criterios objetivos, busca en 1688 y calcula el margen.
+Busca productos en tendencia todos los días y los manda al panel (pestaña Mercado Libre):
+  1. Google Trends Argentina: "búsquedas en aumento" de semillas con intención de reventa ("por mayor", "para revender",
+     "comprar", "precio"): aparecen productos que todavía no están arriba en Mercado Libre.
+  2. Google Trends: curva diaria de 90 días de cada candidato (crecimiento del día, la semana y el mes).
+  3. Mercado Libre: las 50 tendencias de búsqueda, los "Más vendidos" de 4 categorías por día (rotan) y el listado de
+     cada búsqueda (precio actual, vendidos, calificación, Full, tiendas oficiales, avisos).
+El worker cruza todo, arma el ranking del día, la semana y el mes con el texto para los grupos y para Instagram, lo manda
+por WhatsApp a las 9:10, y además busca en 1688 los que pasan el filtro y calcula el margen.
 
-Mercado Libre ahora pide iniciar sesión para ver los listados. La primera vez abrí tendencias_ml_verificar.bat e
-ingresá con tu cuenta en la ventana: la sesión queda guardada en perfil_ml y las próximas vueltas corren solas.
-Si pide verificación (captcha) no se esquiva: se avisa y se hace a mano con el mismo .bat.
+Todo gratis y a ritmo de persona: usa tu Google Chrome (si está instalado) con un perfil propio (perfil_ml).
+Mercado Libre pide iniciar sesión para ver los listados: la primera vez abrí tendencias_ml_verificar.bat e ingresá con tu
+cuenta en la ventana (queda guardada). Si aparece un captcha no se esquiva: se avisa y se resuelve a mano con el mismo .bat.
+Si Google responde "429" (demasiadas consultas) espera 3 minutos, reintenta una vez y si no, sigue al otro día.
 
 Uso (desde la carpeta sender):
+  programar_tendencias.bat                deja programada la lectura todos los días a las 07:30 (recomendado)
   python tendencias_ml.py                 lee una vez y manda los datos
-  python tendencias_ml.py --cada 1440     queda leyendo una vez por día (dejalo abierto)
   python tendencias_ml.py --ver           muestra la ventana y espera si hay que iniciar sesión
-  python tendencias_ml.py --listados 35   cuántos listados abrir por vuelta (por defecto 35, ritmo de persona)
+  python tendencias_ml.py --listados 35   cuántos listados de Mercado Libre abrir por vuelta
   python tendencias_ml.py --categorias 4  cuántas categorías de "Más vendidos" por día
+Opcional en .env: GT_SEMILLAS (por defecto "por mayor,para revender,comprar|18,precio|18"; "|18" = categoría Compras),
+GT_SERIES (curvas de Google por día, 25), ML_CATEGORIAS.
 
 No publica, no compra ni cambia nada: solo lee.
 """
@@ -46,9 +52,9 @@ def num(t):
     t = re.sub(r"[^\d]", "", str(t or ""))
     return int(t) if t else None
 
-def mandar(items):
-    datos = json.dumps({"items": items}).encode()
-    req = urllib.request.Request(f"{URL}/lector/ml-tendencias", data=datos, method="POST",
+def mandar(cuerpo, ruta="ml-tendencias"):
+    datos = json.dumps(cuerpo).encode()
+    req = urllib.request.Request(f"{URL}/lector/{ruta}", data=datos, method="POST",
         headers={"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json", "User-Agent": "Mozilla/5.0 TeImportamos-ML"})
     with urllib.request.urlopen(req, timeout=60) as r: return json.load(r)
 
@@ -108,6 +114,101 @@ JS_TARJETAS = r"""
 JS_SUBCATS = r"""
 (base) => [...new Set([...document.querySelectorAll('a[href]')].map((a) => a.href.split('#')[0].split('?')[0]).filter((h) => h.startsWith(base) && h.length > base.length && /\/$/.test(h)))]
 """
+# GOOGLE TRENDS (gratis): se consulta desde la página de Google Trends abierta en el navegador, a ritmo de persona.
+# "En aumento" de semillas con intención de compra/reventa → productos nuevos. Curva diaria de 90 días → crecimiento.
+JS_GT_AUMENTO = r"""
+async ([kw, tiempo, cat]) => {
+  const leer = async (u) => { const r = await fetch(u); const t = await r.text(); if (r.status === 429) throw new Error('429'); if (!r.ok) throw new Error('http ' + r.status); return JSON.parse(t.slice(t.indexOf('{'))); };
+  try {
+    const req = { comparisonItem: [{ keyword: kw, geo: 'AR', time: tiempo }], category: cat || 0, property: '' };
+    const j = await leer('/trends/api/explore?hl=es-AR&tz=180&req=' + encodeURIComponent(JSON.stringify(req)));
+    const w = j.widgets.find((x) => x.id === 'RELATED_QUERIES'); if (!w) return { items: [] };
+    const d = await leer('/trends/api/widgetdata/relatedsearches?hl=es-AR&tz=180&req=' + encodeURIComponent(JSON.stringify(w.request)) + '&token=' + w.token);
+    const rl = d.default.rankedList || [];
+    return { items: ((rl[1] || {}).rankedKeyword || []).map((k) => ({ query: k.query, valor: k.formattedValue })) };
+  } catch (e) { return { error: String(e.message || e) }; }
+}
+"""
+JS_GT_SERIE = r"""
+async ([kw]) => {
+  const leer = async (u) => { const r = await fetch(u); const t = await r.text(); if (r.status === 429) throw new Error('429'); if (!r.ok) throw new Error('http ' + r.status); return JSON.parse(t.slice(t.indexOf('{'))); };
+  try {
+    const req = { comparisonItem: [{ keyword: kw, geo: 'AR', time: 'today 3-m' }], category: 0, property: '' };
+    const j = await leer('/trends/api/explore?hl=es-AR&tz=180&req=' + encodeURIComponent(JSON.stringify(req)));
+    const w = j.widgets.find((x) => x.id === 'TIMESERIES'); if (!w) return { error: 'sin curva' };
+    const d = await leer('/trends/api/widgetdata/multiline?hl=es-AR&tz=180&req=' + encodeURIComponent(JSON.stringify(w.request)) + '&token=' + w.token);
+    const tl = (d.default.timelineData || []).filter((x) => !x.isPartial);   // el último día suele estar incompleto
+    if (!tl.length) return { error: 'sin datos' };
+    return { fin: new Date(Number(tl[tl.length - 1].time) * 1000).toISOString().slice(0, 10), valores: tl.map((x) => x.value[0]) };
+  } catch (e) { return { error: String(e.message || e) }; }
+}
+"""
+# Semillas con intención de reventa o compra. "palabra|18" = solo dentro de la categoría Compras de Google (saca juegos, dólar, autos).
+SEMILLAS = [x.strip() for x in os.environ.get("GT_SEMILLAS", "por mayor,para revender,comprar|18,precio|18").split(",") if x.strip()]
+TIEMPOS_GT = ["now 7-d", "today 1-m"]          # semana (y día) · mes
+GT_SERIES = int(os.environ.get("GT_SERIES", "25"))
+GT_PAUSA = (9, 16)                              # segundos entre consultas: Google corta (429) si se va más rápido
+GT_CACHE = AQUI / "gt_cache.json"
+RUIDO = re.compile(r"\bpara\s+revender\b|\b(directo\s+)?de\s+f[aá]brica\b|\b(al\s+)?(x\s+|por\s+)?mayor(ista|istas|eo)?\b|\bdonde\s+comprar\b|\bcomprar\b|\bprecios?\b|\bimportad[oa]s?\b|\bmercado\s*libre\b|\b(temu|shein|aliexpress|amazon|alibaba)\b|\ben\s+(once|flores|rosario|caba|cordoba|córdoba|mendoza)\b|\b(argentina|rosario|caba|online|baratos?|baratas?|ofertas?|venta|cuanto\s+(sale|cuesta)|20\d\d)\b", re.I)
+NO_GOOGLE = re.compile(r"\bgta\b|play ?5|\bps[45]\b|xbox|nintendo|pasajes?|\btren\b|\breal\b|bitcoin|cripto|d[oó]lares|\beuro|jeep|honda|toyota|fiat|ford|chevrolet|volkswagen|peugeot|renault|nafta|aguinaldo|monotributo|plazo fijo|seguro|alquiler|cuotas?\b|netflix|gala|eliminaci|f[uú]tbol|boca|river|partido|dolar|d[oó]lar|clima|estafa|logo|es confiable|tienda online|black friday|cyber monday|hot sale|noche de los museos|login|iniciar sesi|app\b|whatsapp|instagram|tiktok|youtube|canva|mercado pago", re.I)
+
+def limpiar(q):
+    t = RUIDO.sub(" ", q.lower())
+    t = re.sub(r"\s+", " ", t).strip(" -.,")
+    t = re.sub(r"^(de|para|en|el|la|los|las)\s+|\s+(de|para|en|al|x|el|la)$", "", t).strip()
+    generico = re.fullmatch(r"(productos?|cosas|art[ií]culos|mercader[ií]a|todo|ropa|negocio|emprendimiento|ideas?)", t)
+    return t if 3 <= len(t) <= 40 and len(t.split()) <= 5 and not generico and not NO_GOOGLE.search(q) else ""
+
+def google(pg, candidatos_ml):
+    """Devuelve (descubiertas, series, aviso). candidatos_ml: palabras de Mercado Libre para medir su curva."""
+    desc, series, aviso = [], [], ""
+    try:
+        pg.goto("https://trends.google.com/trends/explore?geo=AR&hl=es", wait_until="domcontentloaded", timeout=60000); time.sleep(4)
+    except Exception as e: return desc, series, f"Google Trends no abrió: {str(e)[:60]}"
+    def llamar(js, args):
+        for intento in range(2):
+            r = pg.evaluate(js, args)
+            if r.get("error") == "429":
+                if intento: return r
+                print("  Google pide ir más despacio (429): espero 3 minutos..."); time.sleep(180); continue
+            return r
+        return r
+    # 1) Búsquedas en aumento
+    for semilla in SEMILLAS:
+        sem, _, cat = semilla.partition("|")
+        for t in TIEMPOS_GT:
+            r = llamar(JS_GT_AUMENTO, [sem, t, int(cat or 0)]); time.sleep(random.uniform(*GT_PAUSA))
+            if r.get("error"):
+                if r["error"] == "429": aviso = "Google Trends limitó las consultas: sigo mañana"; break
+                continue
+            for k in r.get("items", []):
+                pal = limpiar(k["query"])
+                if pal and pal != sem: desc.append({"palabra": pal, "semilla": sem, "tiempo": t, "valor": k["valor"], "consulta": k["query"]})
+        if aviso: break
+    print(f"{len(desc)} búsquedas en aumento en Google ({len(set(d['palabra'] for d in desc))} productos)")
+    # 2) Curva de 90 días: primero lo que Google descubrió (más crecimiento), después lo de Mercado Libre
+    try: cache = json.loads(GT_CACHE.read_text(encoding="utf-8"))
+    except Exception: cache = {}
+    hoy = int(time.time() // 86400)
+    crec = lambda v: 5000 if re.search(r"aumento|breakout", str(v), re.I) else int(re.sub(r"[^\d]", "", str(v)) or 0)
+    orden = [d["palabra"] for d in sorted(desc, key=lambda d: -crec(d["valor"]))] + candidatos_ml
+    vistos, cola = set(), []
+    for pal in orden:
+        k = pal.lower()
+        if k in vistos or hoy - cache.get(k, -99) < 2: continue
+        vistos.add(k); cola.append(pal)
+    for pal in cola[:GT_SERIES]:
+        if aviso: break
+        r = llamar(JS_GT_SERIE, [pal]); time.sleep(random.uniform(*GT_PAUSA))
+        if r.get("error"):
+            if r["error"] == "429": aviso = "Google Trends limitó las consultas: sigo mañana"
+            continue
+        series.append({"palabra": pal, "fin": r["fin"], "valores": r["valores"]}); cache[pal.lower()] = hoy
+    print(f"{len(series)} curvas de Google medidas")
+    try: GT_CACHE.write_text(json.dumps({k: v for k, v in cache.items() if hoy - v < 10}), encoding="utf-8")
+    except Exception: pass
+    return desc, series, aviso
+
 # Categorías con productos importables para revender. Se pueden cambiar con ML_CATEGORIAS en .env (separadas por coma).
 CATEGORIAS = [c.strip() for c in os.environ.get("ML_CATEGORIAS", "hogar-muebles-jardin,deportes-fitness,accesorios-vehiculos,belleza-cuidado-personal,animales-mascotas,herramientas,bebes,juegos-juguetes,celulares-telefonos,electronica-audio-video,computacion,salud-equipamiento-medico,arte-papeleria-merceria").split(",") if c.strip()]
 # Búsquedas que no son productos (no vale la pena abrir su listado)
@@ -157,10 +258,14 @@ def leer(ver=False, maximo=50, listados=35, categorias=4):
     except Exception: pass
     hoy = int(time.time() // 86400)
     salida, aviso = [], None
+    desc, series, aviso_g = [], [], ""
     with sync_playwright() as p:
         # Mercado Libre bloquea el navegador oculto: se abre una ventana real fuera de la pantalla (con --ver queda a la vista).
         # El perfil (perfil_ml) guarda la sesión: hay que iniciarla una vez con tendencias_ml_verificar.bat.
-        ctx = p.chromium.launch_persistent_context(str(PERFIL), headless=False, viewport={"width": 1280, "height": 900}, locale="es-AR", args=[] if ver else ["--window-position=-2400,-2400"])
+        # Se usa el Google Chrome instalado (el mismo que usás vos); si no está, el Chromium de Playwright.
+        opciones = dict(headless=False, viewport={"width": 1280, "height": 900}, locale="es-AR", args=[] if ver else ["--window-position=-2400,-2400"])
+        try: ctx = p.chromium.launch_persistent_context(str(PERFIL), channel="chrome", **opciones)
+        except Exception: ctx = p.chromium.launch_persistent_context(str(PERFIL), **opciones)
         pg = ctx.pages[0] if ctx.pages else ctx.new_page()
         # 1) Tendencias de búsqueda (las 50 de la portada: mayor crecimiento, más deseadas, más populares)
         pg.goto(TENDENCIAS, wait_until="domcontentloaded", timeout=60000); time.sleep(3)
@@ -193,13 +298,20 @@ def leer(ver=False, maximo=50, listados=35, categorias=4):
             print(f"{len(vend)} más vendidos en {len(elegidas)} categorías")
         if aviso == "login":
             print("  Mercado Libre pide iniciar sesión para ver los listados. Abrí tendencias_ml_verificar.bat, ingresá con tu cuenta UNA vez y listo (queda guardada).")
-        # 3) Listado de cada búsqueda: competencia, precios, vendidos. Primero lo que no se miró hace más de 6 días.
-        todas = [t for t in tend if not NO_PRODUCTO.search(t["palabra"])] + vend
+        # 3) Google Trends: búsquedas en aumento + curva de 90 días (de lo descubierto y de lo que vino de Mercado Libre)
+        desc, series, aviso_g = google(pg, [t["palabra"] for t in tend if not NO_PRODUCTO.search(t["palabra"])] + [v["palabra"] for v in vend])
+        crec = lambda v: 5000 if re.search(r"aumento|breakout", str(v), re.I) else int(re.sub(r"[^\d]", "", str(v)) or 0)
+        g_top, g_vistos = [], set()
+        for d in sorted(desc, key=lambda d: -crec(d["valor"])):
+            if d["palabra"] not in g_vistos: g_vistos.add(d["palabra"]); g_top.append({"palabra": d["palabra"], "tipo": "google", "categoria": "google: " + d["semilla"]})
+        # 4) Listado de cada búsqueda en Mercado Libre: competencia, precios, vendidos.
+        #    Primero lo que Google descubrió (es lo que no se ve a mano), después lo que no se miró hace más de 6 días.
+        todas = g_top[:15] + [t for t in tend if not NO_PRODUCTO.search(t["palabra"])] + vend
         vistos, cola = set(), []
         for t in todas:
             k = t["palabra"].lower()
             if k and k not in vistos: vistos.add(k); cola.append(t)
-        cola.sort(key=lambda t: visit.get(t["palabra"].lower(), 0))
+        cola.sort(key=lambda t: (t.get("tipo") != "google", visit.get(t["palabra"].lower(), 0)))
         abiertos = 0
         for t in cola:
             fila = {"palabra": t["palabra"], "puesto": t.get("puesto"), "categoria": t.get("categoria", ""), "tipo": t.get("tipo", "")}
@@ -225,14 +337,16 @@ def leer(ver=False, maximo=50, listados=35, categorias=4):
         ctx.close()
     try: VISITADOS.write_text(json.dumps({k: v for k, v in visit.items() if hoy - v < 30}), encoding="utf-8")
     except Exception: pass
-    DEBUG.write_text(json.dumps(salida, ensure_ascii=False, indent=1), encoding="utf-8")
+    DEBUG.write_text(json.dumps({"mercado_libre": salida, "google": {"descubiertas": desc, "series": len(series)}}, ensure_ascii=False, indent=1), encoding="utf-8")
     if aviso: print("AVISO:", "falta iniciar sesión en Mercado Libre (tendencias_ml_verificar.bat)" if aviso == "login" else "Mercado Libre pidió verificación (tendencias_ml_verificar.bat)")
-    return salida
+    return salida, {"descubiertas": desc, "series": series, "aviso": aviso_g or (("falta iniciar sesión en Mercado Libre" if aviso == "login" else "Mercado Libre pidió verificación") if aviso else "")}
 
 def una_vez(ver=False, maximo=50, listados=35, categorias=4):
-    items = leer(ver, maximo, listados, categorias)
-    if not items: print("No leí nada (¿cambió la página?). Mirá ml_debug.json o corré con --ver."); return
-    r = mandar(items); print("Mandado al panel:", r)
+    items, g = leer(ver, maximo, listados, categorias)
+    if g["descubiertas"] or g["series"] or g["aviso"]:
+        print("Google al panel:", mandar(g, "tendencias-google"))
+    if not items: print("No leí nada de Mercado Libre (¿cambió la página?). Mirá ml_debug.json o corré con --ver."); return
+    print("Mercado Libre al panel:", mandar({"items": items}))
 
 if __name__ == "__main__":
     a = sys.argv[1:]
