@@ -152,6 +152,30 @@ def ultimo_del_cliente(pg):
 
 def _norm(t): return re.sub(r"\s+", " ", str(t or "")).strip()
 
+JS_ULT_FILA = """() => {
+  const main = document.querySelector('#main'); if (!main) return '';
+  const filas = [...main.querySelectorAll('[role="row"]')].filter(e => (e.innerText || '').trim());
+  if (filas.length) return filas[filas.length - 1].innerText || '';
+  const m = [...main.querySelectorAll('.message-in')]; return m.length ? (m[m.length - 1].innerText || '') : '';
+}"""
+
+def ultimo_texto_cliente(pg):
+    """Texto de la última burbuja del chat abierto (cuando la última es del cliente)."""
+    for js in (JS_ULT_FILA, JS_ULTIMO_TEXTO):
+        try:
+            t = pg.evaluate(js) or ""
+            if t.strip(): return t
+        except Exception: pass
+    return ""
+
+def _plano(t): return re.sub(r"[^a-z0-9ñ ]", "", re.sub(r"\s+", " ", str(t or "").lower().translate(str.maketrans("áéíóúü", "aeiouu")))).strip()
+
+def mismo_mensaje(visto, del_panel):
+    """La última burbuja que se ve es el mismo mensaje que evaluó el panel (la burbuja trae además la hora)."""
+    a, b = _plano(visto), _plano(del_panel)
+    if not a or not b: return False
+    return b[:40] in a or (len(a) > 6 and re.sub(r"\s*\d{1,2} ?\d{2}( ?[ap] ?m)?$", "", a)[:40] in b)
+
 def igual_a_lo_escrito(pg, texto):
     """La caja del chat abierto tiene exactamente lo que el agente escribió (si no, alguien tocó la ventana)."""
     try: return _norm(pg.locator(CAJA).first.inner_text()) == _norm(texto)
@@ -258,7 +282,13 @@ def mandar_seguimiento(pg, saltados):
             if ult is None:   # la charla todavía no cargó (WhatsApp Web recién vinculado no trae el historial): espero un poco y vuelvo a mirar
                 dormir(4); ult = ultimo_del_cliente(pg)
             if ult is True:
-                print("  El cliente escribió después de nuestro último mensaje: no mando seguimiento (hay que contestarle)."); saltados.add(s["conv"]); continue
+                # Que el cliente haya escrito último no frena solo: el panel ya leyó la charla y decidió que no hace falta contestarle
+                # ("dale, mañana te aviso", "gracias", "lo veo"). Se manda solo si lo último que se ve es ESE mismo mensaje (no algo nuevo).
+                visto = ultimo_texto_cliente(pg)
+                if s.get("cli_ultimo") and s.get("ult_cli_txt") and mismo_mensaje(visto, s["ult_cli_txt"]):
+                    print(f"  El cliente escribió último (\"{_norm(s['ult_cli_txt'])[:60]}\"), pero por la charla no hace falta contestarle: mando el seguimiento.")
+                else:
+                    print("  El cliente escribió algo nuevo después de nuestro último mensaje: no mando seguimiento (hay que contestarle)."); saltados.add(s["conv"]); continue
             if ult is None: print("  No se ve la charla en WhatsApp Web (no sincronizó el historial). Según el panel el último mensaje es nuestro: mando igual.")
             caja = pg.locator(CAJA).first
             if caja.inner_text().strip(): print("  La caja ya tenía texto. Lo salteo."); saltados.add(s["conv"]); continue
