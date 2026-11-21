@@ -130,6 +130,7 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
   if (p === "/ali-leido" && req.method === "POST") return Response.json(await linkLeido(env, iaJSON, await req.json().catch(() => ({}))));
   if (p === "/ali-latido" && req.method === "POST") return Response.json(await latidoPC(env, await req.json().catch(() => ({}))));
   if (p === "/mesa-diag") { const { diagMesa } = await import("./mesa.js"); return Response.json(await diagMesa(env)); }
+  if (p === "/ml-api-estado") { const { estadoParaPC } = await import("./mlapi.js"); return Response.json(await estadoParaPC(env)); }
   if (p === "/tendencias-google" && req.method === "POST") { const { guardarGoogle } = await import("./tendencias.js"); return Response.json(await guardarGoogle(env, await req.json().catch(() => ({})))); }
   if (p === "/ml-tendencias" && req.method === "POST") { const { guardarML } = await import("./mesa.js"); return Response.json(await guardarML(env, await req.json().catch(() => ({})))); }
   if (p === "/tiktok-pendientes") { const { tiktokSinGuion } = await import("./tablero.js"); return Response.json(await tiktokSinGuion(env)); }

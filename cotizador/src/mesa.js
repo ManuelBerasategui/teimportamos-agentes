@@ -920,6 +920,7 @@ export async function apiMesa(env, req, url, iaJSON, body = null) {
   const json = (d) => Response.json(d, { headers: { "Cache-Control": "no-store" } });
   if (req.method !== "POST") {
     if (url.searchParams.get("ml") === "1") return json(await recomendacionesMercadoLibre(env));
+    if (url.searchParams.get("mlapi") === "1") { const { estadoML } = await import("./mlapi.js"); return json(await estadoML(env)); }
     if (url.searchParams.get("tend")) { const { tendenciasPanel } = await import("./tendencias.js"); return json(await tendenciasPanel(env, url.searchParams.get("tend"))); }
     if (url.searchParams.get("cand") === "1") { const { listaCandidatos } = await import("./candidatos.js"); return json(await listaCandidatos(env)); }
     if (url.searchParams.get("hechos") === "1") return json(await hechos(env));
@@ -934,6 +935,7 @@ export async function apiMesa(env, req, url, iaJSON, body = null) {
     await kvPut(env, "virales_fuentes", JSON.stringify(f)); return json({ ok: true, fuentes: f });
   }
   if (b.accion === "idea" && b.id && ["util", "hecha", "descartada", "nueva"].includes(b.estado)) { await env.DB.prepare("UPDATE mesa_ideas SET estado=?, nota=? WHERE id=?").bind(b.estado, corto(b.nota, 200) || null, String(b.id)).run(); return json({ ok: true }); }
+  if (b.accion === "mlapi_correr") { const { cronMLApi } = await import("./mlapi.js"); return json(await cronMLApi(env, Date.now(), { forzar: true })); }
   if (b.accion === "cand_correr") { const { cronCandidatos } = await import("./candidatos.js"); return json(await cronCandidatos(env, Date.now(), { forzar: true })); }
   if (b.accion === "ml_feedback") {
     const clave = claveML(b.clave), estado = String(b.estado || "");
@@ -955,9 +957,12 @@ export async function guardarML(env, b) {
   if (items.length) await env.DB.batch(items.map((t, i) => {
     const clave = claveML(t.palabra);
     return env.DB.prepare("INSERT OR REPLACE INTO ml_observaciones (id, ts, dia, clave, palabra, categoria, tipo, puesto, resultados, precio_min, precio_max, vendidos, top) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)")
-      .bind(`${ts}:${i}:${clave.slice(0, 35)}`, ts, dia, clave, t.palabra, t.categoria, t.tipo, t.puesto, t.resultados, t.precio_min, t.precio_max, t.vendidos, JSON.stringify(t.top));
+      .bind(`${ts}:${i}:${Math.random().toString(36).slice(2, 6)}:${clave.slice(0, 30)}`, ts, dia, clave, t.palabra, t.categoria, t.tipo, t.puesto, t.resultados, t.precio_min, t.precio_max, t.vendidos, JSON.stringify(t.top));
   }));
-  await kvPut(env, "ml_tendencias", JSON.stringify({ ts, items }));
+  // La API de Mercado Libre manda de a partes (acumular): la lista "actual" junta todas las partes del mismo día
+  let lista = items;
+  if (b?.acumular) { try { const prev = JSON.parse((await kvGet(env, "ml_tendencias")) || "null"); if (prev && diaAR(prev.ts) === dia) { const nuevas = new Set(items.map((t) => claveML(t.palabra))); lista = [...prev.items.filter((t) => !nuevas.has(claveML(t.palabra))), ...items].slice(-400); } } catch {} }
+  await kvPut(env, "ml_tendencias", JSON.stringify({ ts, items: lista }));
   await env.DB.prepare("DELETE FROM ml_observaciones WHERE ts<?").bind(ts - 180 * DIA).run().catch(() => {});
   await env.DB.prepare("DELETE FROM ml_feedback WHERE ts<?").bind(ts - 180 * DIA).run().catch(() => {});
   return { ok: true, guardadas: items.length, historial: true, ts };

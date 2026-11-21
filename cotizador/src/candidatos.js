@@ -99,12 +99,14 @@ export function evaluarML(rows, feedback = [], ahora = Date.now(), U = umbrales(
     add("estable", x.semanas.size >= U.semanas || gOk, x.semanas.size >= U.semanas ? `Apareció en ${x.semanas.size} semanas distintas en Mercado Libre: demanda que se sostiene, no una moda` : gOk ? `Google: los últimos 30 días buscan ${Math.round(gc.ratio * 100)}% de lo que buscaban los 2 meses anteriores, con volumen: se sostiene` : `Visto en ${x.semanas.size} semana(s) (mínimo ${U.semanas}) y Google no muestra que se sostenga: todavía puede ser una moda`);
     if (!c) add("datos", null, "Falta la lectura del listado (publicaciones, precios y vendidos). La PC la trae en la próxima vuelta.");
     else {
-      add("ventas", c.ventas == null ? null : c.ventas >= U.ventasTop, c.ventas == null ? "Las publicaciones no muestran vendidos" : `Las de arriba venden +${c.ventas.toLocaleString("es-AR")} (mediana; mínimo ${U.ventasTop})`);
+      // La API oficial no siempre muestra vendidos: si falta, no frena (la demanda ya la miden "estable" y Google)
+      if (c.ventas == null) checks.push({ id: "ventas", ok: null, blando: true, texto: "Mercado Libre no muestra cuánto venden: la demanda se toma de la tendencia y de Google" });
+      else add("ventas", c.ventas >= U.ventasTop, `Las de arriba venden +${c.ventas.toLocaleString("es-AR")} (mediana; mínimo ${U.ventasTop})`);
       add("precio", c.precio >= U.precioMin && c.precio <= U.precioMax, `Precio mediano $${Math.round(c.precio).toLocaleString("es-AR")} (rango sano $${U.precioMin.toLocaleString("es-AR")}–$${U.precioMax.toLocaleString("es-AR")})`);
       add("marcas", c.oficial == null ? null : c.oficial <= U.oficialesMax, c.oficial == null ? "Sin dato de tiendas oficiales (lectura vieja)" : `${Math.round(c.oficial * 100)}% de arriba son tiendas oficiales (máximo ${Math.round(U.oficialesMax * 100)}%)`);
       add("competencia", c.calidad == null ? null : c.calidad <= U.calidadMax, c.calidad == null ? "Sin dato de Full ni calificación (lectura vieja)" : `Competencia ${c.calidad}/100 (Full ${Math.round(c.full * 100)}%, oficiales ${Math.round(c.oficial * 100)}%${c.calif ? `, calificación ${c.calif}` : ""}; máximo ${U.calidadMax})`);
     }
-    const falla = checks.some((k) => k.ok === false), falta = checks.some((k) => k.ok === null);
+    const falla = checks.some((k) => k.ok === false), falta = checks.some((k) => k.ok === null && !k.blando);
     // Puntaje 0-100 para ordenar: semanas 30 · ventas 30 · competencia floja 25 · precio en rango 15
     const puntaje = Math.round(Math.min(1, x.semanas.size / 6) * 30 + (c?.ventas ? Math.min(1, Math.log10(c.ventas) / 4) * 30 : 0) + (c?.calidad != null ? (1 - c.calidad / 100) * 25 : 0) + (c && c.precio >= U.precioMin && c.precio <= U.precioMax ? 15 : 0));
     return { clave: x.clave, palabra: x.palabra, categoria: x.categoria, semanas: x.semanas.size, dias: x.dias.size, tipos: [...x.tipos], ultima: x.ultima, resultados: x.resultados, competencia: c, top: (x.top || []).filter((t) => !t.ad).slice(0, 3), checks, pasa_ml: !falla && !falta, estado_ml: falla ? "descartado" : falta ? "observando" : "pasa", puntaje };

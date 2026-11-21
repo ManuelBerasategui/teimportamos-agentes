@@ -56,7 +56,21 @@ export async function guardarGoogle(env, b = {}) {
   }
   for (let i = 0; i < st.length; i += 50) await env.DB.batch(st.slice(i, i + 50));
   await kvPut(env, "gt_ultima", JSON.stringify({ ts: ahora, descubiertas: desc.length, series: series.length, aviso: corto(b.aviso, 200) }));
-  return { ok: true, guardadas: st.length };
+  // Con la API de Mercado Libre conectada, el worker busca en ML lo que Google descubrió (competencia, precios)
+  let aML = 0;
+  if (await kvGet(env, "mlapi_token")) {
+    let cola = []; try { cola = JSON.parse((await kvGet(env, "mlapi_cola")) || "[]"); } catch {}
+    const vistos = new Set(cola.filter((q) => q.t === "search").map((q) => claveML(q.fila.palabra)));
+    const orden = [...desc].sort((a, b) => crecDe(b.valor) - crecDe(a.valor));
+    for (const d of orden) {
+      const palabra = corto(d.palabra, 60), clave = claveML(palabra);
+      if (!clave || vistos.has(clave) || NO_PRODUCTO.test(palabra) || aML >= 15) continue;
+      vistos.add(clave); aML++;
+      cola.push({ t: "search", fila: { palabra, tipo: "google", puesto: null, categoria: "google: " + corto(d.semilla, 30) } });
+    }
+    if (aML) await kvPut(env, "mlapi_cola", JSON.stringify(cola));
+  }
+  return { ok: true, guardadas: st.length, a_mercado_libre: aML };
 }
 
 // Crecimiento de una curva diaria de Google (0-100). Función pura.

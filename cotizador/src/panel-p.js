@@ -83,6 +83,8 @@ input:focus,select:focus,textarea:focus{outline:2px solid color-mix(in srgb,var(
  <h2>Links esperando lectura <span class="n" id="cotColaN">0</span></h2><div id="cotCola"></div>
 </section>
 <section id="v-ml" hidden>
+ <h2>Conexión con Mercado Libre</h2>
+ <div class="card" id="mlApi"><div class="mu">Cargando…</div></div>
  <h2>Tendencias para publicar</h2>
  <p class="mu">Google Trends Argentina (búsquedas en aumento y curva de 90 días) cruzado con Mercado Libre. Todos los días a las 9:10 llega por WhatsApp el del día; los lunes, el de la semana; el día 1, el del mes.</p>
  <div class="acc" style="margin:8px 0 12px"><button class="b p" data-tend="dia">Día</button><button class="b" data-tend="semana">Semana</button><button class="b" data-tend="mes">Mes</button><span class="mu" id="tendEstado"></span></div>
@@ -480,6 +482,16 @@ function pintarCandidatos(d) {
 }
 $("#candCorrer").onclick = function () { $("#candEstado").textContent = "Corriendo…"; api("mesa", { accion: "cand_correr" }).then(function (r) { toast(r.lanzadas && r.lanzadas.length ? "Buscando en 1688: " + r.lanzadas.join(", ") : "No hay candidatos nuevos para buscar hoy"); cargarCandidatos(); }); };
 $("#candLista").addEventListener("click", function (e) { var b = e.target.closest("[data-mlestado]"); if (!b) return; api("mesa", { accion: "ml_feedback", clave: b.dataset.mlclave, estado: b.dataset.mlestado, nota: "" }).then(function (r) { toast(r.ok ? "Señal guardada" : "No pude guardar"); cargarCandidatos(); }); });
+function cargarMLApi() {
+  api("mesa?mlapi=1").then(function (d) {
+    var u = d.ultima || {}, h = "";
+    if (d.falta && d.falta.length) h = '<b>Falta crear la app gratis de Mercado Libre.</b><div class="mu">1) Entrá a developers.mercadolibre.com.ar → Mis aplicaciones → Crear aplicación. 2) En "URI de redirect" pegá: <code>' + esc(d.redireccion) + '</code>. 3) Permisos: lectura. 4) Copiá el App ID y la Clave secreta a Cloudflare → Variables: ML_APP_ID y ML_SECRET. 5) Volvé acá y tocá Conectar.</div>';
+    else if (!d.conectado) h = '<b>App lista, falta conectar tu cuenta.</b><div class="acc"><a class="b p" href="' + esc(d.url_conectar) + '" target="_blank" rel="noopener">Conectar Mercado Libre</a></div>';
+    else h = '<span class="pill ok">Conectado' + (d.usuario ? " · " + esc(d.usuario) : "") + '</span> <span class="mu">Lee solo todos los días a las 7:00 (tendencias por categoría y listados, sin navegador).' + (u.ts ? " Última: " + new Date(u.ts).toLocaleString("es-AR") + " · " + (u.trends || 0) + " tendencias · " + (u.busquedas || 0) + " listados" + (d.en_cola ? " · " + d.en_cola + " en cola" : "") : "") + (u.error ? " · ⚠️ " + esc(u.error) : "") + ((u.errores || []).length ? " · errores: " + esc(u.errores.join(" | ")) : "") + '</span><div class="acc"><button class="b" id="mlApiCorrer">Leer ahora</button><a class="b" href="' + esc(d.url_conectar) + '" target="_blank" rel="noopener">Reconectar</a></div>';
+    $("#mlApi").innerHTML = h;
+    var b = $("#mlApiCorrer"); if (b) b.onclick = function () { b.textContent = "Leyendo…"; api("mesa", { accion: "mlapi_correr" }).then(function (r) { toast(r.ok ? "Leídas " + (r.hechas || 0) + " · sigue sola en segundo plano" : "No pude: " + (r.motivo || "")); cargarMLApi(); }); };
+  }).catch(function () { $("#mlApi").innerHTML = '<div class="mu">No pude ver el estado de la conexión.</div>'; });
+}
 var TEND_P = "dia";
 function cargarTendencias(p) {
   TEND_P = p || TEND_P; document.querySelectorAll("[data-tend]").forEach(function (b) { b.className = "b" + (b.dataset.tend === TEND_P ? " p" : ""); });
@@ -502,6 +514,7 @@ $("#tendLista").addEventListener("click", function (e) {
   var b = e.target.closest("[data-mlestado]"); if (!b) return; api("mesa", { accion: "ml_feedback", clave: b.dataset.mlclave, estado: b.dataset.mlestado, nota: "" }).then(function (r) { toast(r.ok ? "Señal guardada" : "No pude guardar"); cargarTendencias(); });
 });
 function cargarMercadoLibre() {
+  cargarMLApi();
   cargarTendencias();
   cargarCandidatos();
   var estado = $("#mlEstado"); if (estado) estado.textContent = "Actualizando…";

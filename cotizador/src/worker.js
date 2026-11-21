@@ -15,6 +15,7 @@ import { paginaCotPublica } from "./cotiz-tg.js";
 import { cronMesa, cronFotoWeb, estadoFotoWeb } from "./mesa.js";
 import { cronCandidatos } from "./candidatos.js";
 import { cronTendencias } from "./tendencias.js";
+import { cronMLApi } from "./mlapi.js";
 import { apiGrupos, cronGrupos } from "./grupos.js";
 import { simularRedactar } from "./autoresp.js";
 import { cronEntrenador } from "./entrenador.js";
@@ -3543,6 +3544,7 @@ export default {
       if (env.DB) await cronMesa(env, iaJSON, evento.scheduledTime || Date.now(), avisarAdmins).catch((e) => console.log("Error mesa:", e?.stack || e));
       if (env.DB) await cronFotoWeb(env, iaJSON, evento.scheduledTime || Date.now(), avisarAdmins).catch((e) => console.log("Error foto PostHog:", e?.stack || e));   // cada 14 días: insights de PostHog → la mesa decide
       if (env.DB) await cronCandidatos(env, evento.scheduledTime || Date.now()).catch((e) => console.log("Error candidatos ML:", e?.stack || e));   // ML → 1688 → margen (minuto 20 de cada hora)
+      if (env.DB) await cronMLApi(env, evento.scheduledTime || Date.now()).catch((e) => console.log("Error ML API:", e?.stack || e));   // 07:00 AR: tendencias y listados por la API oficial de Mercado Libre (de a poco, cada minuto)
       if (env.DB) await cronTendencias(env, evento.scheduledTime || Date.now(), avisarAdmins).catch((e) => console.log("Error tendencias:", e?.stack || e));   // 09:10 AR: tendencias del día (lunes: semana; día 1: mes) listas para grupos e Instagram
     })());
   },
@@ -3554,6 +3556,7 @@ export default {
     { const a = rutaApp(url); if (a) return a; }   // app web (manifest e íconos, públicos)
     { const mq = url.pathname.match(/^\/q\/([0-9a-f]{16})\/([0-9a-f]{16})$/); if (mq && req.method === "GET") return paginaCotPublica(env, mq[1], mq[2]); }   // la cotización que ve el cliente (link firmado, sin login)
     if (url.pathname.startsWith("/tg/") && req.method === "POST") return rutaTelegram(env, req, url, ctx, iaJSON);   // asistente de tareas por Telegram
+    if (url.pathname === "/ml/callback") { const { callbackML } = await import("./mlapi.js"); return callbackML(env, url); }   // vuelta de la autorización de Mercado Libre (API oficial)
     if (url.pathname.startsWith("/lector/")) return rutaLector(env, req, url, ctx, iaJSON, { T });
     if (url.pathname.startsWith("/informes/")) return rutaInformes(env, url);
     if (url.pathname.startsWith("/img/")) return rutaImagen(env, url);   // foto de referencia para la búsqueda por imagen en 1688   // cola de informes para la tarea programada de Claude

@@ -251,7 +251,9 @@ def palabra_de_titulo(titulo, vendedor=""):
     palabras = [w for w in re.findall(r"[\wáéíóúñü]+", titulo.lower()) if w not in marca]
     return " ".join(palabras[:4])
 
-def leer(ver=False, maximo=50, listados=35, categorias=4):
+def leer(ver=False, maximo=50, listados=35, categorias=4, estado=None):
+    estado = estado or {}
+    por_api = bool(estado.get("api_conectada"))   # Mercado Libre lo lee el panel por la API oficial: acá solo Google
     from playwright.sync_api import sync_playwright
     visit = {}
     try: visit = json.loads(VISITADOS.read_text(encoding="utf-8"))
@@ -268,12 +270,15 @@ def leer(ver=False, maximo=50, listados=35, categorias=4):
         except Exception: ctx = p.chromium.launch_persistent_context(str(PERFIL), **opciones)
         pg = ctx.pages[0] if ctx.pages else ctx.new_page()
         # 1) Tendencias de búsqueda (las 50 de la portada: mayor crecimiento, más deseadas, más populares)
-        pg.goto(TENDENCIAS, wait_until="domcontentloaded", timeout=60000); time.sleep(3)
-        tend = [dict(t, categoria="tendencias") for t in pg.evaluate(JS_TENDENCIAS)][:maximo]
-        print(f"{len(tend)} tendencias de búsqueda")
+        tend = []
+        if por_api: print("Mercado Libre conectado por la API oficial: lo lee el panel. Acá solo Google Trends.")
+        else:
+            pg.goto(TENDENCIAS, wait_until="domcontentloaded", timeout=60000); time.sleep(3)
+            tend = [dict(t, categoria="tendencias") for t in pg.evaluate(JS_TENDENCIAS)][:maximo]
+            print(f"{len(tend)} tendencias de búsqueda")
         # 2) Más vendidos por categoría: rota las categorías día a día (y una subcategoría de cada una)
         vend = []
-        if CATEGORIAS:
+        if CATEGORIAS and not por_api:
             inicio = (hoy * categorias) % len(CATEGORIAS)
             elegidas = [CATEGORIAS[(inicio + i) % len(CATEGORIAS)] for i in range(min(categorias, len(CATEGORIAS)))]
             for cat in elegidas:
@@ -297,16 +302,17 @@ def leer(ver=False, maximo=50, listados=35, categorias=4):
                 except Exception as e: print("  categoría", cat, "error:", str(e)[:80])
             print(f"{len(vend)} más vendidos en {len(elegidas)} categorías")
         if aviso == "login":
-            print("  Mercado Libre pide iniciar sesión para ver los listados. Abrí tendencias_ml_verificar.bat, ingresá con tu cuenta UNA vez y listo (queda guardada).")
+            print("  Mercado Libre pide iniciar sesión y no deja hacerlo en una ventana automática. Solución: conectá Mercado Libre")
+            print("  por la API oficial desde el panel (pestaña Mercado Libre > Conexión con Mercado Libre). Sigo con Google Trends.")
         # 3) Google Trends: búsquedas en aumento + curva de 90 días (de lo descubierto y de lo que vino de Mercado Libre)
-        desc, series, aviso_g = google(pg, [t["palabra"] for t in tend if not NO_PRODUCTO.search(t["palabra"])] + [v["palabra"] for v in vend])
+        desc, series, aviso_g = google(pg, [t["palabra"] for t in tend if not NO_PRODUCTO.search(t["palabra"])] + [v["palabra"] for v in vend] + [w for w in estado.get("palabras", []) if not NO_PRODUCTO.search(w)])
         crec = lambda v: 5000 if re.search(r"aumento|breakout", str(v), re.I) else int(re.sub(r"[^\d]", "", str(v)) or 0)
         g_top, g_vistos = [], set()
         for d in sorted(desc, key=lambda d: -crec(d["valor"])):
             if d["palabra"] not in g_vistos: g_vistos.add(d["palabra"]); g_top.append({"palabra": d["palabra"], "tipo": "google", "categoria": "google: " + d["semilla"]})
         # 4) Listado de cada búsqueda en Mercado Libre: competencia, precios, vendidos.
         #    Primero lo que Google descubrió (es lo que no se ve a mano), después lo que no se miró hace más de 6 días.
-        todas = g_top[:15] + [t for t in tend if not NO_PRODUCTO.search(t["palabra"])] + vend
+        todas = [] if por_api else g_top[:15] + [t for t in tend if not NO_PRODUCTO.search(t["palabra"])] + vend   # con la API, el panel busca en ML lo que descubrió Google
         vistos, cola = set(), []
         for t in todas:
             k = t["palabra"].lower()
@@ -342,10 +348,16 @@ def leer(ver=False, maximo=50, listados=35, categorias=4):
     return salida, {"descubiertas": desc, "series": series, "aviso": aviso_g or (("falta iniciar sesión en Mercado Libre" if aviso == "login" else "Mercado Libre pidió verificación") if aviso else "")}
 
 def una_vez(ver=False, maximo=50, listados=35, categorias=4):
-    items, g = leer(ver, maximo, listados, categorias)
+    estado = {}
+    try:
+        with urllib.request.urlopen(urllib.request.Request(f"{URL}/lector/ml-api-estado", headers={"Authorization": f"Bearer {TOKEN}", "User-Agent": "Mozilla/5.0 TeImportamos-ML"}), timeout=30) as r: estado = json.load(r)
+    except Exception as e: print("No pude consultar el panel (sigo igual):", str(e)[:80])
+    items, g = leer(ver, maximo, listados, categorias, estado)
     if g["descubiertas"] or g["series"] or g["aviso"]:
         print("Google al panel:", mandar(g, "tendencias-google"))
-    if not items: print("No leí nada de Mercado Libre (¿cambió la página?). Mirá ml_debug.json o corré con --ver."); return
+    if not items:
+        if not estado.get("api_conectada"): print("No leí listados de Mercado Libre. Conectá la API oficial desde el panel (pestaña Mercado Libre) y no hace falta navegador.")
+        return
     print("Mercado Libre al panel:", mandar({"items": items}))
 
 if __name__ == "__main__":
