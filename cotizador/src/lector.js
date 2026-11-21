@@ -1063,6 +1063,8 @@ const RE_PIDE = /pas[aá]me|mand[aá]me|cu[aá]nto|precio|quiero|necesito|ten[e�
 const esAcuse = (t) => { t = String(t || "").trim(); return t.length > 0 && t.length < 140 && !/\?/.test(t) && !RE_PIDE.test(t) && (RE_ACUSE.test(t) || RE_ACUSE_EN.test(t)); };
 // Dijo claramente que no, o que ya lo resolvió: no se le insiste (el resto lo decide la IA leyendo la charla)
 const RE_NO_SEGUIR = /\bno (me )?(interesa|sirve|gracias|va|voy a (comprar|seguir))|lo dejo\b|lo dejamos\b|ya (lo )?(compr[eé]|consegu[ií]|consegu[ií]|lo tengo|tengo proveedor)|no (estoy|ando) (buscando|interesad)|desisto|olvidate|no quise hacer(te|les)? perder|no me (genera|da) confianza|no me (cierra|conviene|convenci[oó]|convence)|(abrazo|saludos?)\W{0,3}(y )?suerte|por ahora no\b|ya no (lo )?(necesito|quiero)/i;
+// El cliente quedó en pensarlo / avisar: no se le escribe antes de 48 h
+const RE_EVALUANDO = /te (aviso|confirmo|digo|escribo|contesto|respondo)\b|(lo|la|las|los) (evalu|analiz|pens|charl|convers|habl|vemos|veo)\w*|evaluando|analizando|pensando|charlando|estamos en contacto|seguimos en contacto|con mi (socio|socia|señora|mujer|marido|viejo|jefe|hermano)|en estos d[ií]as|m[aá]s adelante|despu[eé]s te|cualquier cosa te/i;
 // Mensaje nuestro con cara de seguimiento (aunque repita el precio): cuenta como toque, no como algo nuevo
 const RE_TOQUE = /pudiste ver|lleg[aó] a ver|alcanzaste a ver|viste (la|el|lo)|quer[eé]s que avancemos|seguimos con|segu[ií]s interesad|te interesa seguir|no respondiste|te qued[oó] (alguna )?duda|algo no te cerr[oó]|c[oó]mo (lo )?ven[ií]s|retomamos|te escribo (de nuevo|otra vez|por lo de)|record(arte|ás)/i;
 // Lo que mandamos que cuenta como "le pasamos algo" (escrito por una persona, no el bot automático)
@@ -1188,7 +1190,9 @@ async function candidatosSeguimiento(env, ahora = Date.now()) {
     }
     const movida = Math.max(f.ult_yo_ts || 0, f.ult_cliente_ts || 0, f.seg_visto || 0, ult?.ts || 0);
     const diasSin = (ahora - movida) / 86400e3;
-    if (diasSin < SEG.esperas[toques]) continue;
+    // Si lo último que dijo es "lo evaluamos y te aviso", "en estos días te confirmo", "estamos en contacto"…: 48 h de aire antes de volver a escribirle
+    const evalua = ultCli && RE_EVALUANDO.test(String(ultCli.texto || "")) && !ms.some((m) => !m.yo && m.ts > ultCli.ts);
+    if (diasSin < Math.max(SEG.esperas[toques], evalua ? 2 : 0)) continue;
     const t = ultCli ? String(ultCli.texto || "").replace(/\s+/g, " ").trim() : "";
     // Lo del cliente vale con cualquier señal; lo nuestro solo si es un paso del pedido ya en marcha (no "te digo cómo seguimos" ni "con transferencia")
     const pasoCompra = ms.slice(corte + 1).slice(-12).map((m) => [m.yo, String(m.texto || "")]).find(([yo, x]) => (yo ? RE_EN_CURSO_NUESTRO : RE_EN_CURSO).test(x))?.[1] || "";

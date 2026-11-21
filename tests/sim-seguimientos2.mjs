@@ -47,6 +47,15 @@ msg("5493410000007", 1, "Hola! Las camisetas a USD 20.5 c/u, querés que avancem
 msg("5493410000007", 1, "hola, veo que no respondiste a la cotizacion, decime si te interesa seguir adelante", h(8));
 msg("5493410000007", 1, "hola como va? pudiste ver la cotizacion de las 10 unidades de camisetas? si algo no te cerro decime y lo vemos", h(5));
 cot("5493410000007", h(5) + 60000);
+// Hugo: le cotizamos hace 3 días, contestó ayer "lo sigo evaluando, en estos días te confirmo" → nada hasta 48 h después
+conv("5493410000008", { nombre: "Hugo", ult: h(1), ult_yo: 0, cli: h(1), yo: h(3), producto: "mallas" });
+msg("5493410000008", 1, "Total USD 300 las mallas puestas en tu casa", h(3)); cot("5493410000008", h(3));
+msg("5493410000008", 0, "Hola como estas? Lo sigo evaluando! Estoy charlandolo con mi socio, muchas gracias!", h(1.2));
+msg("5493410000008", 0, "En estos dias te confirmo", h(1.2) + 60000);
+// Iván: igual pero lo dijo hace 2,5 días → ya entra
+conv("5493410000009", { nombre: "Ivan", ult: h(2.5), ult_yo: 0, cli: h(2.5), yo: h(4), producto: "mallas" });
+msg("5493410000009", 1, "Total USD 300 las mallas puestas en tu casa", h(4)); cot("5493410000009", h(4));
+msg("5493410000009", 0, "Bueno joya, ahora lo evaluamos y te aviso", h(2.5));
 const futura = new Date(ahora + 5 * D).toISOString().slice(0, 10);
 let prompts = [];
 const ia = async (_e, p) => { prompts.push(p); const n = (nom) => { const m = p.match(new RegExp("#(\\d+) " + nom)); return m ? +m[1] : 0; };
@@ -69,6 +78,7 @@ chk("perfil A pasa al dueño con tarea de llamada", por.Dani?.dueno && !!db.prep
 chk("pidió fecha futura: no aparece antes", !por.Eli);
 chk("seguimientos que repiten el precio cuentan como toques: Fede no recibe otro", !por.Fede);
 chk("cotización registrada por un seguimiento no reinicia: Gabi sin quinto y perdido", !por.Gabi && db.prepare("SELECT etapa FROM w_conv WHERE conv='5493410000007'").get().etapa === "perdido");
+chk("dijo 'lo evaluamos y te aviso': nada antes de 48 h (Hugo no, Iván sí)", !por.Hugo && !!por.Ivan);
 chk("Fede queda como perdido (sin_respuesta)", (() => { const r = db.prepare("SELECT etapa, motivo FROM w_conv WHERE conv='5493410000006'").get(); return r.etapa === "perdido" && r.motivo === "sin_respuesta"; })());
 chk("borrador de respaldo sin emojis ni ¿ y toque 3 con opciones", !/[¿¡🙌]/u.test(L.borradorBase({ nombre: "Ana", toque: 1 })) && /1\) el precio total/.test(L.borradorBase({ toque: 3, conv: "5493410000001" })) && /sostengo hasta fin de mes/.test(L.borradorBase({ toque: 3, conv: "5493410000002" })));
 // Envío automático: nada hasta 10 buenos; después solo situaciones simples sin dueño
