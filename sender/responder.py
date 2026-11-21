@@ -224,13 +224,24 @@ def mandar_envio(pg, e, fallidos):
         except Exception: time.sleep(5)
     print("  Cotización enviada ✅"); return True
 
+_ULT_REFRESCO = 0
+
 def mandar_seguimiento(pg, saltados):
     """Manda un seguimiento revisado del Worker, usando su borrador personalizado."""
     from playwright.sync_api import TimeoutError as PWTimeout
     try:
-        d = api("/seguimientos?limite=20&listos=1")
+        # Los salteados se mandan al Worker para que traiga los siguientes (antes volvían siempre los mismos 20 y quedaba "nada para contestar")
+        excl = ",".join(sorted(saltados))[-3000:]
+        d = api(f"/seguimientos?limite=20&listos=1&excluir={excl}")
         if d.get("aviso"): print(f"  {d['aviso']}")
         lista = [x for x in d.get("lista", []) if x.get("conv") not in saltados and x.get("revisado") and x.get("borrador") and not x.get("dueno")]
+        global _ULT_REFRESCO
+        if not lista and d.get("sin_revisar", 0) and time.time() - _ULT_REFRESCO > 600:
+            # Quedan seguimientos que la IA todavía no revisó: le pido que revise otra tanda (como mucho cada 10 minutos)
+            _ULT_REFRESCO = time.time()
+            print(f"  Quedan {d['sin_revisar']} seguimientos sin revisar por la IA: pido otra tanda…")
+            d = api(f"/seguimientos?refrescar=1&limite=20&listos=1&excluir={excl}")
+            lista = [x for x in d.get("lista", []) if x.get("conv") not in saltados and x.get("revisado") and x.get("borrador") and not x.get("dueno")]
     except Exception as e:
         print(f"  No pude traer los seguimientos ({e})."); return False
     for s in lista:

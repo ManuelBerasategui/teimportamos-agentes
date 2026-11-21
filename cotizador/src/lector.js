@@ -170,13 +170,15 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
     if (url.searchParams.get("refrescar") !== "1") try { const c = JSON.parse((await kvGet(env, "seg_ruta")) || "null"); if (c && Date.now() - c.ts < 15 * 60e3) todosSeg = c.l; } catch {}
     if (!todosSeg) { todosSeg = await seguimientos(env); await kvPut(env, "seg_ruta", JSON.stringify({ ts: Date.now(), l: todosSeg })).catch(() => {}); }
     // Para mandar solos: solo mensajes escritos por la IA con la charla al día (nunca el de respaldo, nunca con el lector atrasado)
-    const lista = (soloListos && atrasado ? [] : todosSeg).filter((s) => /^\d{8,15}$/.test(String(s.conv)) && s.borrador && (!soloListos || (s.revisado && s.ia_msg && !conDueno(s)))).map((s) => ({ ...s, dueno: conDueno(s) })).slice(0, lim)
+    const excluir = new Set(String(url.searchParams.get("excluir") || "").split(",").map((x) => x.trim()).filter(Boolean));
+    const lista = (soloListos && atrasado ? [] : todosSeg).filter((s) => /^\d{8,15}$/.test(String(s.conv)) && !excluir.has(String(s.conv)) && s.borrador && (!soloListos || (s.revisado && s.ia_msg && !conDueno(s)))).map((s) => ({ ...s, dueno: conDueno(s) })).slice(0, lim)
       .map((s) => ({ conv: s.conv, nombre: s.nombre, producto: s.producto, cantidad: s.cantidad, total: s.total, tipo: s.tipo, toque: s.toque, situacion: s.situacion, revisado: s.revisado, dueno: s.dueno, llamada: s.llamada, reaccion: s.reaccion, dias_cot: s.dias_cot, borrador: s.borrador }));
     // Cuántos seguimientos van hoy (lo que muestra el panel en Objetivos) y el objetivo, para que la PC frene al llegar
     const hoyAR = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
     const hechos = (await env.DB.prepare("SELECT valor FROM obj_dia WHERE dia=? AND clave='seg:total'").bind(hoyAR).first().catch(() => null))?.valor || 0;
     let objetivo = 50; try { objetivo = +JSON.parse((await kvGet(env, "objetivos")) || "{}").seg_max || 50; } catch {}
-    return Response.json({ ok: true, lista, hechos_hoy: hechos, objetivo, ...(atrasado ? { aviso: "El lector del 805 está atrasado: no mando seguimientos solos hasta que se ponga al día." } : {}) });
+    const sinRevisar = todosSeg.filter((s) => /^\d{8,15}$/.test(String(s.conv)) && !excluir.has(String(s.conv)) && !(s.revisado && s.ia_msg)).length;
+    return Response.json({ ok: true, lista, hechos_hoy: hechos, objetivo, sin_revisar: sinRevisar, total: todosSeg.length, ...(atrasado ? { aviso: "El lector del 805 está atrasado: no mando seguimientos solos hasta que se ponga al día." } : {}) });
   }
   // Programita de la PC: lista de seguimientos disponibles, sin enviarlos ni marcarlos aquí.
   if (p === "/enviar/prospectos-sync" && req.method === "POST") { const b = await req.json().catch(() => ({})); return Response.json({ ok: true, ...(await syncProspectos(env, b.filas, b.quien)) }); }
