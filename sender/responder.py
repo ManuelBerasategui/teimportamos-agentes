@@ -289,6 +289,14 @@ def mandar_seguimiento(pg, saltados):
                     print(f"  El cliente escribió último (\"{_norm(s['ult_cli_txt'])[:60]}\"), pero por la charla no hace falta contestarle: mando el seguimiento.")
                 else:
                     print("  El cliente escribió algo nuevo después de nuestro último mensaje: no mando seguimiento (hay que contestarle)."); saltados.add(s["conv"]); continue
+            if ult is False and s.get("ult_yo_txt"):
+                # Lo último es nuestro pero NO es lo último que vio el panel: alguien ya le escribió a mano hace poco → eso es el seguimiento
+                visto = ultimo_texto_cliente(pg)
+                if visto.strip() and not mismo_mensaje(visto, s["ult_yo_txt"]):
+                    print("  Ya le escribieron algo nuevo que el panel todavía no vio: cuenta como seguimiento, no mando otro.")
+                    try: api("/enviar/seg-registrar", {"convs": [s["conv"]], "nota": "a mano (visto por la PC)"})
+                    except Exception: pass
+                    saltados.add(s["conv"]); continue
             if ult is None: print("  No se ve la charla en WhatsApp Web (no sincronizó el historial). Según el panel el último mensaje es nuestro: mando igual.")
             caja = pg.locator(CAJA).first
             if caja.inner_text().strip(): print("  La caja ya tenía texto. Lo salteo."); saltados.add(s["conv"]); continue

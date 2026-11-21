@@ -172,7 +172,7 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
     // Para mandar solos: solo mensajes escritos por la IA con la charla al día (nunca el de respaldo, nunca con el lector atrasado)
     const excluir = new Set(String(url.searchParams.get("excluir") || "").split(",").map((x) => x.trim()).filter(Boolean));
     const lista = (soloListos && atrasado ? [] : todosSeg).filter((s) => /^\d{8,15}$/.test(String(s.conv)) && !excluir.has(String(s.conv)) && s.borrador && (!soloListos || (s.revisado && s.ia_msg && !conDueno(s)))).map((s) => ({ ...s, dueno: conDueno(s) })).slice(0, lim)
-      .map((s) => ({ conv: s.conv, nombre: s.nombre, producto: s.producto, cantidad: s.cantidad, total: s.total, tipo: s.tipo, toque: s.toque, situacion: s.situacion, revisado: s.revisado, dueno: s.dueno, llamada: s.llamada, reaccion: s.reaccion, dias_cot: s.dias_cot, borrador: s.borrador, cli_ultimo: !!s.cli_ultimo, ult_cli_txt: s.ult_cli_txt || "" }));
+      .map((s) => ({ conv: s.conv, nombre: s.nombre, producto: s.producto, cantidad: s.cantidad, total: s.total, tipo: s.tipo, toque: s.toque, situacion: s.situacion, revisado: s.revisado, dueno: s.dueno, llamada: s.llamada, reaccion: s.reaccion, dias_cot: s.dias_cot, borrador: s.borrador, cli_ultimo: !!s.cli_ultimo, ult_cli_txt: s.ult_cli_txt || "", ult_yo_txt: s.ult_yo_txt || "" }));
     // Cuántos seguimientos van hoy (lo que muestra el panel en Objetivos) y el objetivo, para que la PC frene al llegar
     const hoyAR = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
     const hechos = (await env.DB.prepare("SELECT valor FROM obj_dia WHERE dia=? AND clave='seg:total'").bind(hoyAR).first().catch(() => null))?.valor || 0;
@@ -1208,6 +1208,7 @@ async function candidatosSeguimiento(env, ahora = Date.now()) {
       ult_yo_ts: f.ult_yo_ts, seg_visto: f.seg_visto, ult_texto: f.ult_texto, ult_ts: f.ult_ts || movida, cot_ts: base, cot_dato: cotTxt.get(f.conv) || "", tipo,
       dias_cot: Math.floor((ahora - base) / 86400e3), dias_sin: Math.floor(diasSin), toque: toques + 1, reaccion, pri: PRI_PERFIL[f.perfil] ?? 2,
       en_curso: !!pasoCompra, paso_compra: pasoCompra.replace(/\s+/g, " ").slice(0, 120),
+      ult_yo_txt: String(nuestroUlt?.texto || "").replace(/\s+/g, " ").trim().slice(0, 200),
       cli_ultimo: !!clienteUltimo, ult_cli_txt: clienteUltimo ? String(ult?.texto ?? f.ult_texto ?? "").replace(/\s+/g, " ").trim().slice(0, 200) : "" });
   }
   // Los que no respondieron a ningún seguimiento pasan a "perdido" solos (si después escriben, vuelven a entrar normalmente)
