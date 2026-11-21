@@ -1178,7 +1178,7 @@ async function candidatosSeguimiento(env, ahora = Date.now()) {
     if (clienteUltimo) {
       // Si lo último es del cliente, solo sigue si es un acuse ("gracias", "lo veo", "después te digo") que no pide respuesta
       const txt = String(ult?.texto ?? f.ult_texto ?? "");
-      const iaDiceQueNo = f.resp === 0 && (f.analizado_ts || 0) >= (f.ult_ts || 0) && !/\?/.test(txt);
+      const iaDiceQueNo = f.resp === 0 && (f.analizado_ts || 0) >= (f.ult_ts || 0) && !/\?/.test(txt) && !RE_PIDE.test(txt);   // "precio", "tenés…" piden algo: aunque el bot de WhatsApp haya contestado, nos toca a nosotros
       if (!(esAcuse(txt) || iaDiceQueNo)) continue;
     }
     // Lo que dijo el cliente DESPUÉS de lo que le mandamos (por orden, así cuenta aunque sea el mismo minuto)
