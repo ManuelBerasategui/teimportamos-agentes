@@ -1065,6 +1065,8 @@ const RE_PIDE = /pas[aá]me|mand[aá]me|cu[aá]nto|precio|quiero|necesito|ten[e�
 const esAcuse = (t) => { t = String(t || "").trim(); return t.length > 0 && t.length < 140 && !/\?/.test(t) && !RE_PIDE.test(t) && (RE_ACUSE.test(t) || RE_ACUSE_EN.test(t)); };
 // Dijo claramente que no, o que ya lo resolvió: no se le insiste (el resto lo decide la IA leyendo la charla)
 const RE_NO_SEGUIR = /\bno (me )?(interesa|sirve|gracias|va|voy a (comprar|seguir))|lo dejo\b|lo dejamos\b|ya (lo )?(compr[eé]|consegu[ií]|consegu[ií]|lo tengo|tengo proveedor)|no (estoy|ando) (buscando|interesad)|desisto|olvidate|no quise hacer(te|les)? perder|no me (genera|da) confianza|no me (cierra|conviene|convenci[oó]|convence)|(abrazo|saludos?)\W{0,3}(y )?suerte|por ahora no\b|ya no (lo )?(necesito|quiero)/i;
+// Promesa nuestra pendiente: "te paso", "te consigo", "te averiguo", "ya te mando"…
+const RE_PROMESA_NUESTRA = /\b(te|les?) (paso|consigo|averiguo|consulto|busco|mando|env[ií]o|armo|confirmo|cotizo|traigo)\b|\bya te (paso|mando|digo)|\b(dejame|d[eé]jame) (ver|consultar|averiguar|buscar|chequear)|\b(consulto|averiguo|chequeo) y te\b/i;
 // El cliente quedó en pensarlo / avisar: no se le escribe antes de 48 h
 const RE_EVALUANDO = /te (aviso|confirmo|digo|escribo|contesto|respondo)\b|(lo|la|las|los) (evalu|analiz|pens|charl|convers|habl|vemos|veo)\w*|evaluando|analizando|pensando|charlando|estamos en contacto|seguimos en contacto|con mi (socio|socia|señora|mujer|marido|viejo|jefe|hermano)|en estos d[ií]as|m[aá]s adelante|despu[eé]s te|cualquier cosa te/i;
 // Mensaje nuestro con cara de seguimiento (aunque repita el precio): cuenta como toque, no como algo nuevo
@@ -1170,6 +1172,9 @@ async function candidatosSeguimiento(env, ahora = Date.now()) {
     const ult = ms[ms.length - 1] || null;
     if (!ult && !f.cot_ts) continue;
     const clienteUltimo = ult ? !ult.yo : f.ult_yo === 0;
+    // Le quedamos debiendo algo ("te consigo el catálogo y te paso los modelos", "ya te averiguo") y no se lo mandamos: no es seguimiento, es contestarle
+    const nuestroUlt = [...ms].reverse().find((m) => m.yo);
+    if (nuestroUlt && RE_PROMESA_NUESTRA.test(String(nuestroUlt.texto || "")) && !/https?:\/\/|^\((archivo|document|image|imagen)|\$\s?\d|\d\s*(usd|u\$s|d[oó]lares)/i.test(String(nuestroUlt.texto || ""))) continue;
     if (clienteUltimo) {
       // Si lo último es del cliente, solo sigue si es un acuse ("gracias", "lo veo", "después te digo") que no pide respuesta
       const txt = String(ult?.texto ?? f.ult_texto ?? "");

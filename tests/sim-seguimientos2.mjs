@@ -56,6 +56,11 @@ msg("5493410000008", 0, "En estos dias te confirmo", h(1.2) + 60000);
 conv("5493410000009", { nombre: "Ivan", ult: h(2.5), ult_yo: 0, cli: h(2.5), yo: h(4), producto: "mallas" });
 msg("5493410000009", 1, "Total USD 300 las mallas puestas en tu casa", h(4)); cot("5493410000009", h(4));
 msg("5493410000009", 0, "Bueno joya, ahora lo evaluamos y te aviso", h(2.5));
+// Juli: le pasamos precio, después le prometimos el catálogo y contestó "dale" → nos toca a nosotros, no es seguimiento
+conv("5493410000010", { nombre: "Juli", ult: h(2), ult_yo: 0, cli: h(2), yo: h(2.1), producto: "zapatillas" });
+msg("5493410000010", 1, "Las zapatillas salen USD 25 c/u", h(4)); cot("5493410000010", h(4));
+msg("5493410000010", 1, "te consigo el catalogo y te paso los modelos asi me decis cuantos queres", h(2.1));
+msg("5493410000010", 0, "dale", h(2));
 const futura = new Date(ahora + 5 * D).toISOString().slice(0, 10);
 let prompts = [];
 const ia = async (_e, p) => { prompts.push(p); const n = (nom) => { const m = p.match(new RegExp("#(\\d+) " + nom)); return m ? +m[1] : 0; };
@@ -79,6 +84,7 @@ chk("pidió fecha futura: no aparece antes", !por.Eli);
 chk("seguimientos que repiten el precio cuentan como toques: Fede no recibe otro", !por.Fede);
 chk("cotización registrada por un seguimiento no reinicia: Gabi sin quinto y perdido", !por.Gabi && db.prepare("SELECT etapa FROM w_conv WHERE conv='5493410000007'").get().etapa === "perdido");
 chk("dijo 'lo evaluamos y te aviso': nada antes de 48 h (Hugo no, Iván sí)", !por.Hugo && !!por.Ivan);
+chk("le prometimos algo y no se lo mandamos: Juli no va a seguimientos", !por.Juli);
 chk("Fede queda como perdido (sin_respuesta)", (() => { const r = db.prepare("SELECT etapa, motivo FROM w_conv WHERE conv='5493410000006'").get(); return r.etapa === "perdido" && r.motivo === "sin_respuesta"; })());
 chk("borrador de respaldo sin emojis ni ¿ y toque 3 con opciones", !/[¿¡🙌]/u.test(L.borradorBase({ nombre: "Ana", toque: 1 })) && /1\) el precio total/.test(L.borradorBase({ toque: 3, conv: "5493410000001" })) && /sostengo hasta fin de mes/.test(L.borradorBase({ toque: 3, conv: "5493410000002" })));
 // Envío automático: nada hasta 10 buenos; después solo situaciones simples sin dueño
