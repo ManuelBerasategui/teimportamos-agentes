@@ -484,6 +484,7 @@ def main():
                     if not dormir(120): break
                     continue
                 lista, cots = pend
+                if solo_seguimientos: lista, cots = [], []   # seguimientos.bat solo hace seguimientos: no contesta chats ni manda cotizaciones (eso queda para vos o para responder.bat)
                 for c in cots:
                     if parar(): break
                     if c["id"] in fallidas: continue
