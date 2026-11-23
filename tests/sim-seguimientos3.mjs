@@ -57,7 +57,7 @@ const tz = [{ conv: "5491100001111", nombre: "A" }, { conv: "5491100002222", nom
 chk("la respuesta se ubica por id y si no coincide con el número se descarta", L.clienteDeRespuesta(tz, { n: 2, id: "2222" }) === tz[1] && L.clienteDeRespuesta(tz, { n: 1, id: "2222" }) === null && L.clienteDeRespuesta(tz, { n: 1 }) === tz[0]);
 chk("los seguimientos no usan la IA de último recurso", /sinRespaldo: true/.test(fs.readFileSync(path.join(dir, "lector.js"), "utf8").split("Respondé SOLO JSON: {\"mensajes\":[{\"n\":1,\"id\"")[1]?.slice(0, 400) || ""));
 // La PC (sender) solo recibe mensajes escritos por la IA, y nada si el lector está atrasado
-const pedir = async () => (await L.rutaLector(env, new Request("https://x/lector/seguimientos?listos=1&limite=20", { headers: { Authorization: "Bearer " + env.LECTOR_TOKEN } }), new URL("https://x/lector/seguimientos?listos=1&limite=20"), null, null)).json();
+const pedir = async () => (await L.rutaLector(env, new Request("https://x/lector/seguimientos?listos=1&normal=1&limite=20", { headers: { Authorization: "Bearer " + env.LECTOR_TOKEN } }), new URL("https://x/lector/seguimientos?listos=1&normal=1&limite=20"), null, null)).json();
 let r = await pedir();
 chk("con el lector atrasado (último mensaje hace 1 día) la PC no recibe nada y avisa", r.lista.length === 0 && /atrasado/.test(r.aviso || ""));
 msg("5490000000000", 0, "hola", ahora - 10 * 60e3);   // entra un mensaje recién: el lector está al día

@@ -1,4 +1,5 @@
 import { syncProspectos } from "./prospeccion.js";
+import { listaCampana, marcarCampana, resultadoCampana } from "./campana.js";
 import { opsLinks, pendientesPC, linkLeido, latidoPC, ESQUEMA_AUTOCOT } from "./autocot.js";
 import { rutaAutoresp } from "./autoresp.js";
 import { esCierre } from "./cierre.js";
@@ -156,11 +157,18 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
     if (!lote.history && n.clienteNuevo) ctx?.waitUntil(alertasRapidas(env).catch(() => {}));
     return Response.json({ ok: true, guardados: n.mensajes });
   }
-  if (p.startsWith("/enviar/") && p !== "/enviar/lista" && !p.startsWith("/enviar/seg-externos") && p !== "/enviar/seg-registrar" && p !== "/enviar/prospectos" && p !== "/enviar/prospecto-respuesta" && p !== "/enviar/prospectos-sync" && p !== "/enviar/pautas-seg" && p !== "/enviar/hecho" && p !== "/enviar/no") { const r = await rutaAutoresp(env, req, p, url, iaJSON, h); if (r) return r; }
+  if (p.startsWith("/enviar/") && p !== "/enviar/lista" && !p.startsWith("/enviar/seg-externos") && p !== "/enviar/seg-registrar" && p !== "/enviar/prospectos" && p !== "/enviar/prospecto-respuesta" && p !== "/enviar/prospectos-sync" && p !== "/enviar/pautas-seg" && p !== "/enviar/hecho" && p !== "/enviar/no" && p !== "/enviar/campana-resultado") { const r = await rutaAutoresp(env, req, p, url, iaJSON, h); if (r) return r; }
   // Vista previa autenticada para el sender. Puede refrescar borradores, pero no envía ni marca chats como enviados.
   if (p === "/seguimientos" && req.method === "GET") {
     const lim = Math.min(Math.max(+url.searchParams.get("limite") || 20, 1), 20);
     const atrasado = await lectorAtrasado(env);
+    // Campaña activa (ej. cupo de suecos): la PC manda SOLO los mensajes de la campaña hasta la meta del día
+    if (url.searchParams.get("listos") === "1" && url.searchParams.get("normal") !== "1") {
+      const excl = new Set(String(url.searchParams.get("excluir") || "").split(",").map((x) => x.trim()).filter(Boolean));
+      const camp = await listaCampana(env, iaJSON, { excluir: excl, lim }).catch((e) => (console.log("campaña", e?.message || e), null));
+      if (camp) return Response.json({ ok: true, lista: atrasado ? [] : camp.lista, hechos_hoy: camp.enviados_hoy, objetivo: camp.meta, sin_revisar: 0, total: camp.lista.length, campana: camp.campana,
+        ...(atrasado ? { aviso: "El lector del 805 está atrasado: no mando seguimientos solos hasta que se ponga al día." } : {}) });
+    }
     if (url.searchParams.get("refrescar") === "1" && !atrasado) await revisarSeguimientos(env, iaJSON, { limite: 0, tope: lim, forzar: true });
     // Mismo criterio que el panel: revisado por la IA, con mensaje y "llamalo vos" solo si hay monto alto, negociación o pedido de llamada (perfil A/B solo no alcanza)
     const conDueno = (s) => !!s.dueno && (Number(s.situacion) === 8 || !!s.llamada || (s.presup_usd || 0) > 1000);
@@ -191,6 +199,7 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
     if (convs.length) await env.DB.batch(convs.map((c) => env.DB.prepare("INSERT OR IGNORE INTO w_seg_log (id, conv, ts, toque, situacion, quien, texto) VALUES (?,?,?,0,'','dueno',?)").bind(`man:${c}:${new Date(ts - 3 * 3600e3).toISOString().slice(0, 10)}`, c, ts, String(b.nota || "").slice(0, 200))));
     return Response.json({ ok: true, registrados: convs.length });
   }
+  if (p === "/enviar/campana-resultado") return Response.json({ ok: true, ...(await resultadoCampana(env)) });
   if (p === "/enviar/seg-externos") return Response.json({ ok: true, ...(await segExternos(env, Math.min(+url.searchParams.get("limite") || 40, 80))) });
   if (p === "/enviar/seg-externos-guardar" && req.method === "POST") return Response.json({ ok: true, ...(await guardarSegExternos(env, (await req.json().catch(() => ({}))).mensajes)) });
   // Pautas de seguimiento del dueño (GET las muestra; POST {pautas:[{situacion, pauta, ejemplo}]} las reemplaza; [] las borra)
@@ -205,6 +214,7 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
     const b = await req.json().catch(() => ({}));
     await env.DB.prepare(p === "/enviar/hecho" ? "UPDATE w_conv SET seg_visto=? WHERE conv=?" : "UPDATE w_conv SET seg_no=? WHERE conv=?").bind(Date.now(), String(b.conv || "")).run();
     if (p === "/enviar/hecho") await logSeg(env, String(b.conv || ""), "auto");
+    if (p === "/enviar/hecho") await marcarCampana(env, String(b.conv || "")).catch(() => {});
     // Sacarlo ya de la lista del panel (Hoy > seguimientos), sin esperar a que se recalcule
     try { const v = await kvGet(env, "tab_segs"); if (v) { const l = JSON.parse(v); const f = l.filter((x) => String(x.conv) !== String(b.conv || "")); if (f.length !== l.length) await kvPut(env, "tab_segs", JSON.stringify(f)); } } catch {}
     for (const k of ["seg_ruta"]) try { const c = JSON.parse((await kvGet(env, k)) || "null"); if (c?.l) { c.l = c.l.filter((x) => String(x.conv) !== String(b.conv || "")); await kvPut(env, k, JSON.stringify(c)); } } catch {}
