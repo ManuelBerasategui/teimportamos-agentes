@@ -144,6 +144,24 @@ def revisar(filas, pg, PWTimeout, solo_recientes=False):
     for r in toca: print(f"  - {r['negocio']} (+{r['telefono']}) [{r['temperatura']}]: {r['proximo_mensaje']}")
     print(f"\nTodo quedó en {PLANILLA.name} (columnas respuesta, temperatura, recontacto y proximo_mensaje).")
 
+
+# WhatsApp Web cargado: la lista de chats cambió de nombre en versiones nuevas, así que se acepta cualquiera de estas señales.
+LISTO_WA = '#pane-side, #side, [aria-label="Lista de chats"], [aria-label="Chat list"], div[role="grid"][aria-rowcount], [data-icon="new-chat-outline"], [data-icon="chat"]'
+
+def esperar_whatsapp(pg, minutos=10):
+    """Espera a que cargue WhatsApp Web (o a que escanees el QR). Avisa cada tanto en vez de cortarse a los 3 minutos."""
+    import time as _t
+    fin, aviso_qr = _t.time() + minutos * 60, False
+    while _t.time() < fin:
+        try:
+            pg.wait_for_selector(LISTO_WA, timeout=20000); return True
+        except Exception:
+            try: qr = pg.query_selector('canvas[aria-label], [data-ref] canvas, div[data-ref]')
+            except Exception: qr = None
+            if qr and not aviso_qr: print("  WhatsApp Web pide escanear el QR: abrí WhatsApp en el celular > Dispositivos vinculados > Vincular dispositivo."); aviso_qr = True
+            elif not qr: print("  WhatsApp Web sigue cargando (puede ser la conexión). Sigo esperando…")
+    raise RuntimeError("WhatsApp Web no terminó de cargar en 10 minutos. Revisá la conexión a internet o que la sesión siga vinculada en el celular.")
+
 def main():
     filas = leer()
     if "--prueba" in sys.argv:
@@ -163,7 +181,7 @@ def main():
         pg = ctx.pages[0] if ctx.pages else ctx.new_page()
         pg.goto("https://web.whatsapp.com")
         print("Esperando WhatsApp Web (si pide QR, escanealo con el celular)...")
-        pg.wait_for_selector("#pane-side", timeout=180000)
+        esperar_whatsapp(pg)
         sincronizar(filas)
         if modo_revisar: revisar(filas, pg, PWTimeout); sincronizar(filas); ctx.close(); return
         if "--todo" in sys.argv: bucle(filas, pg, PWTimeout); ctx.close(); return
