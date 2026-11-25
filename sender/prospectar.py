@@ -1,3 +1,4 @@
+from pathlib import Path
 """Prospección por WhatsApp: le escribe un primer mensaje distinto a cada negocio de la planilla prospectos.csv.
 Uso:  python prospectar.py --prueba   -> arma los mensajes que falten (IA, según el rubro) y los guarda en la planilla para que los revises. NO abre WhatsApp.
       python prospectar.py            -> manda los mensajes de la planilla, como una persona, con tope por día y pausas largas.
@@ -156,11 +157,13 @@ def esperar_whatsapp(pg, minutos=10):
         try:
             pg.wait_for_selector(LISTO_WA, timeout=20000); return True
         except Exception:
-            try: qr = pg.query_selector('canvas[aria-label], [data-ref] canvas, div[data-ref]')
+            try: qr = pg.query_selector('canvas')
             except Exception: qr = None
             if qr and not aviso_qr: print("  WhatsApp Web pide escanear el QR: abrí WhatsApp en el celular > Dispositivos vinculados > Vincular dispositivo."); aviso_qr = True
             elif not qr: print("  WhatsApp Web sigue cargando (puede ser la conexión). Sigo esperando…")
-    raise RuntimeError("WhatsApp Web no terminó de cargar en 10 minutos. Revisá la conexión a internet o que la sesión siga vinculada en el celular.")
+    try: pg.screenshot(path=str(Path(__file__).with_name("debug.png")))
+    except Exception: pass
+    raise RuntimeError("WhatsApp Web no terminó de cargar en 10 minutos. Dejé una foto de cómo se veía en debug.png (carpeta sender). Revisá la conexión o si pide escanear el QR.")
 
 def main():
     filas = leer()

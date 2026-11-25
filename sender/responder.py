@@ -1,3 +1,4 @@
+from pathlib import Path
 """Contesta los mensajes de WhatsApp que esperan respuesta, escribiendo como una persona (WhatsApp Web, ventana propia).
 Uso:  python responder.py --prueba   -> muestra respuestas y seguimientos, NO abre WhatsApp ni envía nada
       python responder.py --prueba --solo-seguimientos -> vista previa de hasta 10 seguimientos
@@ -415,11 +416,13 @@ def esperar_whatsapp(pg, minutos=10):
         try:
             pg.wait_for_selector(LISTO_WA, timeout=20000); return True
         except Exception:
-            try: qr = pg.query_selector('canvas[aria-label], [data-ref] canvas, div[data-ref]')
+            try: qr = pg.query_selector('canvas')
             except Exception: qr = None
             if qr and not aviso_qr: print("  WhatsApp Web pide escanear el QR: abrí WhatsApp en el celular > Dispositivos vinculados > Vincular dispositivo."); aviso_qr = True
             elif not qr: print("  WhatsApp Web sigue cargando (puede ser la conexión). Sigo esperando…")
-    raise RuntimeError("WhatsApp Web no terminó de cargar en 10 minutos. Revisá la conexión a internet o que la sesión siga vinculada en el celular.")
+    try: pg.screenshot(path=str(Path(__file__).with_name("debug.png")))
+    except Exception: pass
+    raise RuntimeError("WhatsApp Web no terminó de cargar en 10 minutos. Dejé una foto de cómo se veía en debug.png (carpeta sender). Revisá la conexión o si pide escanear el QR.")
 
 def main():
     global QUEDAN
