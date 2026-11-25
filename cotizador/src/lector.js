@@ -166,8 +166,9 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
     if (url.searchParams.get("listos") === "1" && url.searchParams.get("normal") !== "1") {
       const excl = new Set(String(url.searchParams.get("excluir") || "").split(",").map((x) => x.trim()).filter(Boolean));
       const camp = await listaCampana(env, iaJSON, { excluir: excl, lim }).catch((e) => (console.log("campaña", e?.message || e), null));
-      if (camp) return Response.json({ ok: true, lista: atrasado ? [] : camp.lista, hechos_hoy: camp.enviados_hoy, objetivo: camp.meta, sin_revisar: 0, total: camp.lista.length, campana: camp.campana,
-        ...(atrasado ? { aviso: "El lector del 805 está atrasado: no mando seguimientos solos hasta que se ponga al día." } : {}) });
+      // La campaña no espera al lector: la PC abre cada chat y no manda si el cliente escribió algo nuevo o si ya le escribimos
+      if (camp) return Response.json({ ok: true, lista: camp.lista, hechos_hoy: camp.enviados_hoy, objetivo: camp.meta, sin_revisar: 0, total: camp.lista.length, campana: camp.campana,
+        ...(atrasado ? { aviso: "Lector del 805 atrasado: igual mando la campaña, revisando cada chat en WhatsApp antes de escribir." } : {}) });
     }
     if (url.searchParams.get("refrescar") === "1" && !atrasado) await revisarSeguimientos(env, iaJSON, { limite: 0, tope: lim, forzar: true });
     // Mismo criterio que el panel: revisado por la IA, con mensaje y "llamalo vos" solo si hay monto alto, negociación o pedido de llamada (perfil A/B solo no alcanza)
