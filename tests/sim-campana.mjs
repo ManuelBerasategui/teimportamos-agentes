@@ -24,6 +24,7 @@ conv("5493410000104", "Dani", "auriculares", h(1), 0); msg("5493410000104", 1, "
 conv("5493410000105", "Eli", "mallas", h(0.2), 1); msg("5493410000105", 0, "hola", h(1)); msg("5493410000105", 1, "hola eli, te paso lo de las mallas", h(0.2));
 conv("5493410000106", "Fede", "zapatillas", h(5), 1); msg("5493410000106", 0, "listo te transferí, mando comprobante", h(6)); msg("5493410000106", 1, "recibido! tu pedido sale esta semana", h(5));
 conv("5493410000107", "Gabi", "mallas", h(1.5), 1); msg("5493410000107", 0, "me interesan las mallas", h(2)); msg("5493410000107", 1, "dale te paso precios", h(1.5));
+conv("5493410000108", "Conect Cell - Servicio Tecnico", "fundas", h(9), 1); msg("5493410000108", 0, "tenes fundas para iphone para mi local?", h(10)); msg("5493410000108", 1, "si, salen USD 2", h(9));
 msg("5493419999999", 0, "mensaje de otro chat (lector al día)", ahora - 60000);
 const cands = await C.candidatosCampana(env);
 const por = Object.fromEntries(cands.map((x) => [x.nombre.split(" ")[0], x]));
@@ -31,6 +32,7 @@ chk("elige a Ana (local de zapatillas) y Beto (cerró con 'gracias')", !!por.Ana
 chk("no elige a quien dijo 'no me interesa'", !por.Caro);
 chk("no elige a quien nos hizo una pregunta sin responder", !por.Dani);
 chk("no elige a quien ya le escribimos hoy", !por.Eli);
+chk("no elige rubros ajenos (servicio técnico de celulares)", !cands.some((x) => /Conect/.test(x.nombre)));
 chk("no elige a quien pagó y espera su pedido", !por.Fede);
 chk("no elige a quien tiene la charla activa (últimos 3 días)", !por.Gabi);
 const r = await L.rutaLector(env, new Request("https://x/lector/seguimientos?listos=1&limite=20", { headers: { authorization: "Bearer t" } }), new URL("https://x/lector/seguimientos?listos=1&limite=20"), null, async () => null, {}).catch((e) => ({ json: async () => ({ err: String(e) }) }));

@@ -15,7 +15,9 @@ export const CAMPANA = {
 };
 
 const listaPrecios = (c = CAMPANA) => c.precios.map(([u, p]) => `${u} u a USD ${p}`).join(", ");
-const RE_INTERES = /calzad|zapat|zapa\b|sandal|ojota|suec|ropa|indument|mallas?\b|moda|tienda|local|revend|revent|negocio|boutique|showroom|feria|emprend/i;
+// Solo clientes afines al producto: calzado, ropa, moda, mallas o reventa de indumentaria. Un servicio técnico de celulares no.
+const RE_INTERES = /calzad|zapat|zapa\b|zapas|sandal|ojota|suec|crocs|ropa|indument|mallas?\b|shorts?\b|remeras?|buzos?|camperas?|moda|boutique|showroom|vestimenta|outfit|textil|feria americana|tienda de ropa|local de ropa/i;
+const RE_NO_AFIN = /servicio t[eé]cnico|t[eé]cnico|celular|cell\b|repuest|autopart|ferreter|electr[oó]nic|inform[aá]tic|computaci|gamer|barber|peluquer|veterinar|inmobiliar|farmac|kiosco|librer|construcc|taller mec|insumos/i;
 const RE_NO = /\bno (me )?(interesa|sirve|gracias|va|voy a (comprar|seguir))|lo dejo\b|lo dejamos\b|dej[aá] de escribir|no me escrib|no molest|borr[aá]me|dar de baja|ya tengo proveedor|no me convenc/i;
 const RE_ACUSE = /^\s*(ok(a|as|ey|is)?|okay|dale|gracias|muchas gracias|mil gracias|genial|perfecto|buen[ií]simo|bueno|b[aá]rbaro|joya|listo|de una|👍|🙏|❤️|😊|🙌)[\s!.,a-záéíóúñ👍🙏]{0,40}$/i;
 // Cliente "activo": hay plata o un pedido en el medio (pagó, señó, está esperando que le llegue). A esos NO se les manda promoción.
@@ -72,7 +74,10 @@ export async function candidatosCampana(env, c = CAMPANA, { max = 120 } = {}) {
       if (ms.some((m) => ahora - m.ts < 45 * 864e5 && RE_ACTIVO.test(String(m.texto || "")))) return;   // pagó / pedido en curso / esperando envío
       if (ms.some((m) => m.yo && /suec/i.test(String(m.texto || "")))) return;            // ya le hablamos de suecos (a mano o por campaña)
       const todo = ms.map((m) => m.texto).join(" ") + " " + (f.producto || "") + " " + (f.perfil || "");
-      const puntos = (f.puntaje || 0) + (RE_INTERES.test(todo) ? 6 : 0) + (/^[AB]$/.test(f.perfil) ? 3 : 0) + Math.max(0, 4 - (ahora - f.ult_ts) / (10 * 864e5));
+      const afin = RE_INTERES.test(todo + " " + (f.nombre || ""));
+      if (!afin) return;                                                                   // no habló de nada relacionado: es mensaje desperdiciado
+      if (RE_NO_AFIN.test((f.nombre || "") + " " + (f.producto || "")) && !RE_INTERES.test(cli.map((m) => m.texto).join(" "))) return;   // rubro ajeno y nunca preguntó por ropa/calzado
+      const puntos = (f.puntaje || 0) + (/calzad|zapat|zapas|sandal|ojota|suec|crocs/i.test(todo) ? 6 : 0) + (/^[AB]$/.test(f.perfil) ? 3 : 0) + Math.max(0, 4 - (ahora - f.ult_ts) / (10 * 864e5));
       const ultYo = [...ms].reverse().find((m) => m.yo);
       out.push({ ...f, puntos, charla: ms.slice(-8), cli_ultimo: !ult.yo, ult_cli_txt: !ult.yo ? String(ult.texto || "").replace(/\s+/g, " ").trim().slice(0, 200) : "", ult_yo_txt: String(ultYo?.texto || "").replace(/\s+/g, " ").trim().slice(0, 200) });
     });
@@ -111,7 +116,7 @@ Respondé SOLO JSON: {"mensajes":[{"n":1,"mensaje":"..."}]}`, { prioridad: true 
 // Lista para la PC (misma forma que /seguimientos). Guarda la tanda del día en kv para no recalcular en cada pedido.
 export async function listaCampana(env, iaJSON, { excluir = new Set(), lim = 20 } = {}) {
   const c = await campanaActiva(env); if (!c) return null;
-  const hoy = diaAR(), clave = "camp_lista2:" + c.id;
+  const hoy = diaAR(), clave = "camp_lista3:" + c.id;
   let est = null; try { est = JSON.parse((await kv(env, clave)) || "null"); } catch {}
   if (!est || est.dia !== hoy) {
     const cands = (await candidatosCampana(env, c)).slice(0, Math.round(c.meta * 1.6));
@@ -130,7 +135,7 @@ export async function listaCampana(env, iaJSON, { excluir = new Set(), lim = 20 
 // Al confirmarse un envío: queda registrado (para medir qué variante respondió más) y sale de la lista
 export async function marcarCampana(env, conv) {
   const c = await campanaActiva(env); if (!c) return false;
-  const clave = "camp_lista2:" + c.id;
+  const clave = "camp_lista3:" + c.id;
   let est = null; try { est = JSON.parse((await kv(env, clave)) || "null"); } catch {}
   const it = est?.items?.find((f) => String(f.conv) === String(conv)); if (!it) return false;
   if (!est.enviados.includes(String(conv))) est.enviados.push(String(conv));
