@@ -38,7 +38,7 @@ const d = await r.json();
 chk("/seguimientos devuelve la campaña", d.campana === C.CAMPANA.id && d.lista?.length === 2 && d.objetivo === 50);
 const a = d.lista?.find((x) => x.variante === "A"), b = d.lista?.find((x) => x.variante === "B");
 chk("variante A con precios", !!a && /20 u a USD 20/.test(a.borrador) && /100 u a USD 15/.test(a.borrador));
-chk("variante B sin precios", !!b && !/USD/.test(b.borrador) && /te paso la lista/.test(b.borrador));
+chk("variante B sin precios", !!b && !/USD/.test(b.borrador) && /fotos y precios/.test(b.borrador));
 chk("sin ¿ ni ¡", d.lista?.every((x) => !/[¿¡]/.test(x.borrador)));
 chk("Beto lleva lo último que dijo (para que la PC no lo frene)", d.lista?.find((x) => x.nombre === "Beto")?.ult_cli_txt === "genial gracias");
 await L.rutaLector(env, new Request("https://x/lector/enviar/hecho", { method: "POST", body: JSON.stringify({ conv: "5493410000101" }), headers: { authorization: "Bearer t" } }), new URL("https://x/lector/enviar/hecho"), null, async () => null, {}).catch(() => {});

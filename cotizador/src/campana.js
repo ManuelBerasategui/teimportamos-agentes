@@ -38,8 +38,8 @@ export function mensajeCampana(f, variante, c = CAMPANA) {
   const nom = String(f.nombre || "").split(/\s+/)[0].replace(/[^\p{L}]/gu, "").toLowerCase();
   const hola = nom && nom.length > 1 && nom.length < 15 ? `hola ${nom}, como va?` : "hola, como va?";
   const antes = f.producto && !/suec/i.test(f.producto) ? ` te escribo porque cuando hablamos de ${String(f.producto).toLowerCase().slice(0, 40)} me quedaste en mente para esto.` : "";
-  if (variante === "A") return `${hola}${antes} largamos un cupo de suecos con plantilla de corcho, en negro, camel y crudo. por cantidad quedan así: ${listaPrecios(c)} c/u. son ${c.limitado}, te guardo un lugar?`;
-  return `${hola}${antes} estamos armando un cupo de suecos con plantilla de corcho, el calzado que más se está pidiendo para el verano. arranca desde 20 unidades y el precio baja según la cantidad. te paso la lista?`;
+  if (variante === "A") return `${hola}${antes} te la tiro por si te sirve: traemos suecos por mayor y nos estamos quedando sin cupos, liquidamos los últimos. por cantidad quedan así: ${listaPrecios(c)} c/u. si te sirve, reservás y te doy prioridad`;
+  return `${hola}${antes} paso a dejarte acceso a los últimos cupos de suecos que estamos largando, quedan pocos. si querés te mando fotos y precios y reservás antes que se terminen`;
 }
 
 // Elige los clientes: chats privados con charla real, sin "no me interesa", sin algo pendiente de contestar, sin mensaje nuestro en las últimas 20 h
@@ -88,8 +88,12 @@ export async function escribirCampana(env, iaJSON, lista, c = CAMPANA) {
     let r = null;
     if (iaJSON) r = await iaJSON(env, `Atendés el WhatsApp de "Te Importamos" (Rosario): importamos para revendedores y comercios con cupos grupales.
 Hoy promocionamos por privado un CUPO DE ${c.producto.toUpperCase()}: ${c.descripcion}. Precios por par según cantidad (${c.limitado}): ${listaPrecios(c)}.
+Contexto: nos estamos quedando SIN CUPOS, son los últimos lugares (urgencia real, sin exagerar).
+Tono: casual, como un mensaje que le mandás a un conocido, corto, nada de vendedor ni de folleto. Ejemplos del estilo que queremos (NO los copies, adaptalos a cada charla):
+- "hola como andas, te la tiro por si te sirve, traemos suecos por mayor y nos estamos quedando sin cupos, liquidamos los últimos. querés ver los precios? si te sirven, reservás"
+- "buenas! paso a dejarte acceso a los cupos de suecos, estamos largando los últimos. te doy prioridad si querés reservar, avisame y te mando fotos o precios"
 Escribí UN mensaje de WhatsApp para cada cliente, personalizado según lo que hablamos antes (nombrá lo que venía viendo o su negocio si sirve para conectar; si antes no avanzó por precio o cantidad, usalo a favor: arranca desde 20 unidades).
-Variante A: incluí la lista de precios completa, corta. Variante B: NO pongas precios; contá el cupo y ofrecé pasarle la lista.
+Variante A: incluí la lista de precios completa, corta. Variante B: NO pongas precios; contá que quedan los últimos cupos y ofrecé mandarle fotos o precios.
 Reglas: rioplatense, voseo, minúsculas como chat, sin ¿ ni ¡, sin emojis, máximo 3 oraciones, una sola pregunta al final, no inventes datos ni plazos, no prometas descuentos extra, no digas que es un mensaje automático.
 ${tanda.map((f, k) => `CLIENTE ${k + 1} · variante ${f.variante} · nombre: ${f.nombre || "-"} · venía viendo: ${f.producto || "-"}\n${f.charla.map((m) => (m.yo ? "Nosotros: " : "Cliente: ") + String(m.texto || "").replace(/\s+/g, " ").slice(0, 220)).join("\n")}`).join("\n\n")}
 Respondé SOLO JSON: {"mensajes":[{"n":1,"mensaje":"..."}]}`, { prioridad: true }).catch(() => null);
@@ -107,7 +111,7 @@ Respondé SOLO JSON: {"mensajes":[{"n":1,"mensaje":"..."}]}`, { prioridad: true 
 // Lista para la PC (misma forma que /seguimientos). Guarda la tanda del día en kv para no recalcular en cada pedido.
 export async function listaCampana(env, iaJSON, { excluir = new Set(), lim = 20 } = {}) {
   const c = await campanaActiva(env); if (!c) return null;
-  const hoy = diaAR(), clave = "camp_lista:" + c.id;
+  const hoy = diaAR(), clave = "camp_lista2:" + c.id;
   let est = null; try { est = JSON.parse((await kv(env, clave)) || "null"); } catch {}
   if (!est || est.dia !== hoy) {
     const cands = (await candidatosCampana(env, c)).slice(0, Math.round(c.meta * 1.6));
@@ -126,7 +130,7 @@ export async function listaCampana(env, iaJSON, { excluir = new Set(), lim = 20 
 // Al confirmarse un envío: queda registrado (para medir qué variante respondió más) y sale de la lista
 export async function marcarCampana(env, conv) {
   const c = await campanaActiva(env); if (!c) return false;
-  const clave = "camp_lista:" + c.id;
+  const clave = "camp_lista2:" + c.id;
   let est = null; try { est = JSON.parse((await kv(env, clave)) || "null"); } catch {}
   const it = est?.items?.find((f) => String(f.conv) === String(conv)); if (!it) return false;
   if (!est.enviados.includes(String(conv))) est.enviados.push(String(conv));
