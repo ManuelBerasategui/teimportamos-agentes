@@ -18,6 +18,8 @@ const listaPrecios = (c = CAMPANA) => c.precios.map(([u, p]) => `${u} u a USD ${
 const RE_INTERES = /calzad|zapat|zapa\b|sandal|ojota|suec|ropa|indument|mallas?\b|moda|tienda|local|revend|revent|negocio|boutique|showroom|feria|emprend/i;
 const RE_NO = /\bno (me )?(interesa|sirve|gracias|va|voy a (comprar|seguir))|lo dejo\b|lo dejamos\b|dej[aá] de escribir|no me escrib|no molest|borr[aá]me|dar de baja|ya tengo proveedor|no me convenc/i;
 const RE_ACUSE = /^\s*(ok(a|as|ey|is)?|okay|dale|gracias|muchas gracias|mil gracias|genial|perfecto|buen[ií]simo|bueno|b[aá]rbaro|joya|listo|de una|👍|🙏|❤️|😊|🙌)[\s!.,a-záéíóúñ👍🙏]{0,40}$/i;
+// Cliente "activo": hay plata o un pedido en el medio (pagó, señó, está esperando que le llegue). A esos NO se les manda promoción.
+const RE_ACTIVO = /pag(o|u[eé]|aste|amos|ado)\b|transfer|comprobante|se[ñn]a(r|ste|mos)?\b|alias|cbu|cvu|factura|recib(imos|í) (el|tu) pago|tu pedido|su pedido|el pedido|despach|en camino|llega(ría)? (el|la|en)|cu[aá]ndo (me )?lleg|tracking|seguimiento del env|andreani|oca\b|correo argentino|retir(o|ar|ás) (el|en)/i;
 const diaAR = (ts = Date.now()) => new Date(ts - 3 * 3600e3).toISOString().slice(0, 10);
 
 async function kv(env, k, v) {
@@ -49,7 +51,10 @@ export async function candidatosCampana(env, c = CAMPANA, { max = 120 } = {}) {
     ORDER BY COALESCE(puntaje,0) DESC, ult_ts DESC LIMIT 400`).bind(0, ahora - 120 * 864e5).all().catch(async () =>
     env.DB.prepare(`SELECT conv, nombre, producto, puntaje, etapa, ult_ts, ult_yo, ult_texto, ult_cliente_ts, ult_yo_ts, '' AS perfil FROM w_conv
     WHERE grupo=0 AND COALESCE(archivado,0)=0 AND COALESCE(ult_cliente_ts,0) > 0 AND ult_ts > ? ORDER BY COALESCE(puntaje,0) DESC, ult_ts DESC LIMIT 400`).bind(ahora - 120 * 864e5).all())).results || [];
-  const pre = filas.filter((f) => /^\d{8,15}$/.test(String(f.conv)) && !ya.has(String(f.conv))
+  // Pedidos de la planilla que no están entregados ni cancelados: esos clientes esperan su compra
+  const conPedido = new Set(((await env.DB.prepare("SELECT conv, tel, estado FROM planilla WHERE COALESCE(ts,0) > ?").bind(ahora - 120 * 864e5).all().catch(() => ({}))).results || [])
+    .filter((p) => !/entregad|cancel|anulad/i.test(String(p.estado || ""))).flatMap((p) => [String(p.conv || ""), String(p.tel || "").replace(/\D/g, "")]).filter(Boolean));
+  const pre = filas.filter((f) => !conPedido.has(String(f.conv)) && !/vendido|pagad|pedido|envio|transito/i.test(String(f.etapa || ""))) .filter((f) => /^\d{8,15}$/.test(String(f.conv)) && !ya.has(String(f.conv))
     && !/no_cliente|proveedor|spam|vendido_hoy/i.test(String(f.etapa || ""))
     && ahora - Math.max(f.ult_yo_ts || 0, f.ult_yo ? f.ult_ts : 0) > 20 * 3600e3);
   const out = [];
@@ -63,6 +68,9 @@ export async function candidatosCampana(env, c = CAMPANA, { max = 120 } = {}) {
       const ult = ms[ms.length - 1];
       if (!ult.yo && !RE_ACUSE.test(String(ult.texto || "")) && ahora - ult.ts < 10 * 864e5) return;   // nos debe respuesta a nosotros
       if (ms.some((m) => m.yo && ahora - m.ts < 20 * 3600e3)) return;                    // ya le escribimos hoy
+      if (cli.some((m) => ahora - m.ts < 3 * 864e5)) return;                               // charla activa en los últimos 3 días: no se interrumpe con promo
+      if (ms.some((m) => ahora - m.ts < 45 * 864e5 && RE_ACTIVO.test(String(m.texto || "")))) return;   // pagó / pedido en curso / esperando envío
+      if (ms.some((m) => m.yo && /suec/i.test(String(m.texto || "")))) return;            // ya le hablamos de suecos (a mano o por campaña)
       const todo = ms.map((m) => m.texto).join(" ") + " " + (f.producto || "") + " " + (f.perfil || "");
       const puntos = (f.puntaje || 0) + (RE_INTERES.test(todo) ? 6 : 0) + (/^[AB]$/.test(f.perfil) ? 3 : 0) + Math.max(0, 4 - (ahora - f.ult_ts) / (10 * 864e5));
       const ultYo = [...ms].reverse().find((m) => m.yo);
