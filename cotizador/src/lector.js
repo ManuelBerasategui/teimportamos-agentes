@@ -157,7 +157,7 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
     if (!lote.history && n.clienteNuevo) ctx?.waitUntil(alertasRapidas(env).catch(() => {}));
     return Response.json({ ok: true, guardados: n.mensajes });
   }
-  if (p.startsWith("/enviar/") && p !== "/enviar/lista" && !p.startsWith("/enviar/seg-externos") && p !== "/enviar/seg-registrar" && p !== "/enviar/prospectos" && p !== "/enviar/prospecto-respuesta" && p !== "/enviar/prospectos-sync" && p !== "/enviar/pautas-seg" && p !== "/enviar/hecho" && p !== "/enviar/no" && p !== "/enviar/campana-resultado") { const r = await rutaAutoresp(env, req, p, url, iaJSON, h); if (r) return r; }
+  if (p.startsWith("/enviar/") && p !== "/enviar/lista" && !p.startsWith("/enviar/seg-externos") && p !== "/enviar/seg-registrar" && p !== "/enviar/prospectos" && p !== "/enviar/prospecto-respuesta" && p !== "/enviar/prospectos-sync" && p !== "/enviar/pautas-seg" && p !== "/enviar/hecho" && p !== "/enviar/no" && p !== "/enviar/campana-resultado" && p !== "/enviar/buscar") { const r = await rutaAutoresp(env, req, p, url, iaJSON, h); if (r) return r; }
   // Vista previa autenticada para el sender. Puede refrescar borradores, pero no envía ni marca chats como enviados.
   if (p === "/seguimientos" && req.method === "GET") {
     const lim = Math.min(Math.max(+url.searchParams.get("limite") || 20, 1), 20);
@@ -199,6 +199,15 @@ export async function rutaLector(env, req, url, ctx, iaJSON = null, h = {}) {
     const convs = (Array.isArray(b.convs) ? b.convs : []).map((c) => String(c).replace(/\D/g, "")).filter((c) => c.length >= 8);
     if (convs.length) await env.DB.batch(convs.map((c) => env.DB.prepare("INSERT OR IGNORE INTO w_seg_log (id, conv, ts, toque, situacion, quien, texto) VALUES (?,?,?,0,'','dueno',?)").bind(`man:${c}:${new Date(ts - 3 * 3600e3).toISOString().slice(0, 10)}`, c, ts, String(b.nota || "").slice(0, 200))));
     return Response.json({ ok: true, registrados: convs.length });
+  }
+  // Buscador de chats privados por palabra (ej. "led"): devuelve número, nombre, fecha y el mensaje. Usa el índice por fecha (últimos N días).
+  if (p === "/enviar/buscar") {
+    const q = String(url.searchParams.get("q") || "").trim().toLowerCase().slice(0, 60);
+    const dias = Math.min(Math.max(+url.searchParams.get("dias") || 90, 1), 365);
+    if (q.length < 2) return Response.json({ ok: false, error: "palabra muy corta" });
+    const r = (await env.DB.prepare("SELECT m.conv, m.yo, m.texto, m.ts, c.nombre FROM w_msg m INDEXED BY w_msg_priv LEFT JOIN w_conv c ON c.conv=m.conv WHERE m.ts>=? AND m.grupo=0 AND m.hist=0 AND lower(m.texto) LIKE ? ORDER BY m.ts DESC LIMIT 60")
+      .bind(Date.now() - dias * 864e5, "%" + q + "%").all().catch((e) => ({ error: String(e?.message || e) })));
+    return Response.json({ ok: !r.error, error: r.error, resultados: (r.results || []).map((x) => ({ conv: x.conv, nombre: x.nombre || "", quien: x.yo ? "nosotros" : "cliente", fecha: new Date(x.ts - 3 * 3600e3).toISOString().slice(0, 16).replace("T", " "), texto: String(x.texto || "").replace(/\s+/g, " ").slice(0, 200) })) });
   }
   if (p === "/enviar/campana-resultado") return Response.json({ ok: true, ...(await resultadoCampana(env)) });
   if (p === "/enviar/seg-externos") return Response.json({ ok: true, ...(await segExternos(env, Math.min(+url.searchParams.get("limite") || 40, 80))) });
